@@ -35,7 +35,7 @@ import {
   stringLiteralRanges,
   inStringLiteral,
   execOutsideStrings,
-  maskJsxForFile,
+  maskSourceForFile,
   trimmedRanges,
 } from './string-literals.mjs';
 
@@ -334,7 +334,7 @@ export function scanTextFull(text, file = '<text>') {
   const isPhp = lang === 'php';
   const lines = splitLines(text);
   // #1188: .tsx/.jsx lines are read through a twin with JSX text blanked.
-  const masked = maskJsxForFile(text, file);
+  const masked = maskSourceForFile(text, file);
   const masks = splitLines(masked);
   const findings = [];
   // #493 root cause 2: SV003's why asserts persistence, so a file that

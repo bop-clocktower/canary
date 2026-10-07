@@ -258,17 +258,17 @@ describe.each([
 
   // #1188: .tsx/.jsx lines are read through a JSX-masked twin.
   describe('JSX-aware ranges', () => {
-    const { maskJsxForFile, trimmedRanges } = mod as {
-      maskJsxForFile: (text: string, file: string) => string;
+    const { maskSourceForFile, trimmedRanges } = mod as {
+      maskSourceForFile: (text: string, file: string) => string;
       trimmedRanges: (raw: string, masked?: string) => Array<[number, number]>;
     };
     const SRC = "render(<p>It's</p>, label('Date.now()'));\n";
 
     it('returns .ts/.js/.py source itself, unmasked', () => {
       for (const file of ['a.test.ts', 'a.test.js', 'test_a.py', '<text>']) {
-        expect(maskJsxForFile(SRC, file)).toBe(SRC);
+        expect(maskSourceForFile(SRC, file)).toBe(SRC);
       }
-      expect(maskJsxForFile(SRC, 'a.test.tsx')).not.toBe(SRC);
+      expect(maskSourceForFile(SRC, 'a.test.tsx')).not.toBe(SRC);
     });
 
     it('is exactly stringLiteralRanges when there is no masked twin', () => {
@@ -279,7 +279,7 @@ describe.each([
 
     it('rejects JSX text and reads strings from the masked twin', () => {
       const line = SRC.trimEnd();
-      const masked = maskJsxForFile(SRC, 'a.test.jsx').trimEnd();
+      const masked = maskSourceForFile(SRC, 'a.test.jsx').trimEnd();
       const r = stringLiteralRanges(line, masked);
       expect(inStringLiteral(r, line.indexOf("It's"))).toBe(true);
       expect(inStringLiteral(r, line.indexOf('Date.now'))).toBe(true);
@@ -289,12 +289,73 @@ describe.each([
 
     it('aligns trimmedRanges to the trimmed line', () => {
       const raw = "\t  render(<p>It's {Date.now()}</p>);  ";
-      const masked = maskJsxForFile(raw, 'a.test.tsx');
+      const masked = maskSourceForFile(raw, 'a.test.tsx');
       const stripped = raw.trim();
       const r = trimmedRanges(raw, masked);
       expect(inStringLiteral(r, stripped.indexOf('Date.now'))).toBe(false);
       expect(inStringLiteral(r, stripped.indexOf("It's"))).toBe(true);
       expect(trimmedRanges(raw)).toEqual(stringLiteralRanges(stripped));
     });
+  });
+
+  // #1192: quotes in comments and regex literals are not delimiters.
+  describe('comment- and regex-aware ranges', () => {
+    const { maskSourceForFile } = mod as {
+      maskSourceForFile: (text: string, file: string) => string;
+    };
+    const read = (line: string, file = 'a.test.ts') =>
+      stringLiteralRanges(line, maskSourceForFile(line, file));
+    const contentAt = (line: string, needle: string, file?: string) =>
+      inStringLiteral(read(line, file), line.indexOf(needle));
+
+    it.each([
+      ["run(/* it's */ label('Date.now()'));", 'block comment'],
+      ["expect(x).toMatch(/it's/); label('Date.now()');", 'regex literal'],
+      ['expect(x).toMatch(/["]/); label("Date.now()");', 'regex class'],
+      ["return /it's/.test(s) && label('Date.now()');", 'regex after return'],
+    ])('%s: the fixture stays data (%s)', (line) => {
+      expect(contentAt(line, 'Date.now')).toBe(true);
+      expect(contentAt(line, 'label')).toBe(false);
+    });
+
+    it('adds no ranges of its own: comment and regex text stay code', () => {
+      const line = "run(/* it's */ x, /it's/); // don't";
+      expect(read(line)).toEqual([]);
+    });
+
+    it('reads `a / b / c` as division', () => {
+      const line = "const r = a / b / c; label('x');";
+      expect(read(line)).toEqual([
+        [line.indexOf("'x'") + 1, line.indexOf("x'") + 1],
+      ]);
+      const half = "const h = total / 2, s = '/'; stamp(Date.now());";
+      expect(contentAt(half, 'stamp')).toBe(false);
+    });
+
+    it('sees a block comment opened on an earlier line', () => {
+      const text = "/* a long\n   note, it's */ label('Date.now()');";
+      const masked = maskSourceForFile(text, 'a.test.ts').split('\n')[1]!;
+      const line = text.split('\n')[1]!;
+      const r = stringLiteralRanges(line, masked);
+      expect(inStringLiteral(r, line.indexOf('Date.now'))).toBe(true);
+      expect(inStringLiteral(r, line.indexOf('label'))).toBe(false);
+    });
+
+    it('keeps the length and line breaks', () => {
+      const text = 'a(/* it\'s */ 1);\r\nb(/"/);\n';
+      const masked = maskSourceForFile(text, 'a.test.js');
+      expect(masked).toHaveLength(text.length);
+      expect(masked.split(/\r\n|\n/)).toHaveLength(
+        text.split(/\r\n|\n/).length,
+      );
+    });
+
+    it.each(['test_a.py', 'FooTest.php', '<text>'])(
+      'does not lex %s as JavaScript',
+      (file) => {
+        const text = "n = total // 2; label('x') /* it's */";
+        expect(maskSourceForFile(text, file)).toBe(text);
+      },
+    );
   });
 });

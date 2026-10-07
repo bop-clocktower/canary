@@ -78,7 +78,10 @@ The static pass is a scanner with no parser dependency, so it ships anywhere
   signal (test titles, docstrings) legitimately lives inside strings. In
   `.tsx`/`.jsx`, JSX children text is prose: it is masked before lines are read,
   so an apostrophe in it (`<p>It's</p>`) opens no string, and the teardown and
-  restore checks read the masked source too (#1188).
+  restore checks read the masked source too (#1188). In every JS/TS file a quote
+  inside a comment or a regex literal (`/* it's */`, `/it's/`) is not a
+  delimiter either, so it cannot turn a later fixture string into code (#1192).
+  Python and PHP comments are not lexed this way.
 - **Restoration check is file-level.** `SV003` suppression cannot verify that a
   fixture actually applies to the mutating test, and a computed-key loop restore
   is assumed to cover the whole family — the same file-wide trade blackhawk
