@@ -54,7 +54,17 @@ describe('valid corpus (planted positives)', () => {
 
   it('reports its denominator: a site feed counts its nested records', () => {
     expect(validateDocument(valid('run')).checked).toBe(1);
-    expect(validateDocument(valid('site')).checked).toBe(1 + 2 + 1);
+    // feed + 2 runs + 1 assessment + 1 flaky row + 1 register row (#1154 S8)
+    expect(validateDocument(valid('site')).checked).toBe(1 + 2 + 1 + 1 + 1);
+  });
+
+  it('counts flaky[] and register[] rows, not scopes[] or suites[] (#1154 S8)', () => {
+    const doc = valid('site');
+    doc.flaky.push({ ...doc.flaky[0], title: 'second flaky' });
+    doc.register.push({ ...doc.register[0], title: 'second row' });
+    doc.scopes.push({ id: 'other', env: 'ci' });
+    doc.suites.push({ ...doc.suites[0], suite: 'other' });
+    expect(validateDocument(doc).checked).toBe(1 + 2 + 1 + 2 + 2);
   });
 });
 
@@ -306,6 +316,97 @@ describe('fork E: unknown fields tolerated, wrong layer refused', () => {
       {
         path: 'contract',
         message: expect.stringMatching(/expected canary\.run\/1/),
+      },
+    ]);
+  });
+});
+
+describe('#1154 S7: one leading UTF-8 byte-order mark is stripped', () => {
+  const BOM = '\uFEFF';
+
+  it('validates a BOM-prefixed document as if there were no BOM', () => {
+    const res = validateText(BOM + JSON.stringify(valid('run')));
+    expect(res.errors).toEqual([]);
+    expect(res).toMatchObject({ valid: true, checked: 1 });
+  });
+
+  it('still refuses a BOM followed by unparseable text (control)', () => {
+    expect(validateText(BOM + '{').errors).toEqual([
+      { path: '$', message: expect.stringMatching(/^not parseable JSON/) },
+    ]);
+  });
+
+  it('strips only one: a second BOM is still a parse error', () => {
+    const res = validateText(BOM + BOM + JSON.stringify(valid('run')));
+    expect(res).toMatchObject({ valid: false, checked: 0 });
+  });
+
+  it('a BOM alone is empty input, so refused (criterion 18)', () => {
+    expect(validateText(BOM)).toMatchObject({ valid: false, checked: 0 });
+  });
+});
+
+describe('#1154 S4: rule non-blank', () => {
+  it('refuses a whitespace-only title, naming results[0].title', () => {
+    const doc = valid('run');
+    doc.results[0].title = '  ';
+    expect(validateDocument(doc).errors).toEqual([
+      { path: 'results[0].title', message: 'must not be blank' },
+    ]);
+  });
+
+  it('refuses a blank env nested in a site feed, naming runs[0].scope.env', () => {
+    const doc = valid('site');
+    doc.runs[0].scope.env = ' \t';
+    expect(refusedPaths(doc)).toEqual(['runs[0].scope.env']);
+  });
+
+  it('a blank not-assessed reason is refused by both the schema and status-shape', () => {
+    const errors = validateDocument({
+      ...valid('assessment'),
+      status: 'not-assessed',
+      value: null,
+      reason: '   ',
+    }).errors;
+    expect(errors).toEqual([
+      { path: 'reason', message: 'must not be blank' },
+      { path: 'reason', message: expect.stringMatching(/is required/) },
+    ]);
+  });
+
+  it('accepts null in a nullable non-empty field (control)', () => {
+    expect(
+      validateDocument({ ...valid('assessment'), unit: null }).errors,
+    ).toEqual([]);
+  });
+});
+
+describe('#1154 S3: rule repo-relative (ADR 0029)', () => {
+  it('refuses a run file that escapes the repo root, naming results[0].file', () => {
+    const doc = valid('run');
+    doc.results[0].file = '../outside.spec.ts';
+    expect(validateDocument(doc).errors).toEqual([
+      {
+        path: 'results[0].file',
+        message: 'escapes the repository root (ADR 0029)',
+      },
+    ]);
+  });
+
+  it('refuses home-relative and backslash-rooted files in flaky[] and register[]', () => {
+    const doc = valid('site');
+    doc.flaky[0].file = '~/x.spec.ts';
+    doc.register[0].file = '\\x.spec.ts';
+    expect(refusedPaths(doc)).toEqual(['flaky[0].file', 'register[0].file']);
+  });
+
+  it("a leading / stays the schema pattern's one error, not two", () => {
+    const doc = valid('run');
+    doc.collected[0].file = '/abs.spec.ts';
+    expect(validateDocument(doc).errors).toEqual([
+      {
+        path: 'collected[0].file',
+        message: expect.stringMatching(/does not match the pattern/),
       },
     ]);
   });

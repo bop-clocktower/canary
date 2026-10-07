@@ -213,13 +213,16 @@ name a role or handle, never an email address). The ledger's `marker` and
   `suites: []` (declared, and empty); `results: null` on an older run is not
   `results: []`.
 - **Nested rules apply in place.** The run rules (`counts-safe`,
-  `totals-match-results`, `totals-sum`, `real-dates`) and the assessment rules
-  (`status-shape`, `verified-derived`, `verification-pair`, `real-dates`) apply
-  to every nested record, with the record's position as the path prefix.
+  `totals-match-results`, `totals-sum`, `real-dates`, `repo-relative`) and the
+  assessment rules (`status-shape`, `verified-derived`, `verification-pair`,
+  `real-dates`) apply to every nested record, with the record's position as the
+  path prefix. `non-blank` applies to every `minLength: 1` string in the feed.
 - **Rule `register-no-author`.** A register row carrying a `who` or `author` key
   is refused, whatever its value.
 - **Rule `real-dates`.** `generated_at` and every register row's `recorded_at`
   name a real instant, as in the run contract.
+- **Rule `repo-relative`.** Every `flaky[].file` and `register[].file` is
+  repo-relative, as in the run contract.
 
 ## Deferred to phase 2
 
@@ -239,9 +242,11 @@ node agents/skills/lib/contracts/validate.mjs --layer site site.json
 
 Exit codes, error shape and `--json` output are the same as for
 [canary.run/1](canary-run-contract.md#validating). For a site feed, `checked`
-counts the feed plus its nested runs and assessments: the fixture above reports
-`1 + 2 + 1 = 4`. Refusing a feed with zero runs is the deploy workflow's job
-(D14), not the validator's.
+counts the feed plus its nested runs, assessments, flaky rows and register rows:
+the fixture above reports `1 + 2 + 1 + 1 + 1 = 6`. `scopes[]` and `suites[]`
+entries are keys that records refer to, not records, so they are not counted.
+Refusing a feed with zero runs is the deploy workflow's job (D14), not the
+validator's.
 
 ## Consumers
 

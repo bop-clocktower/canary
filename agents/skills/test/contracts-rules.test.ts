@@ -236,10 +236,104 @@ describe('real-dates (#1151 phase 3 review)', () => {
     ]);
   });
 
+  it.each([
+    '2026-02-30T00:00:00Z',
+    '2025-02-29T00:00:00Z',
+    '1900-02-29T00:00:00Z',
+    '2026-04-31T00:00:00Z',
+    '2026-00-10T00:00:00Z',
+    '2026-10-00T00:00:00Z',
+    '2026-10-06T24:00:00Z',
+    '2026-10-06T23:60:00Z',
+    '2026-10-06T23:59:60Z',
+    '2026-10-06T10:00:00+24:00',
+    '2026-10-06T10:00:00+05:60',
+  ])('refuses %s: no such calendar date or clock (#1154 S2)', (ts) => {
+    expect(crossFieldErrors('run', run(ts))).toEqual([
+      {
+        path: 'run.finished_at',
+        message: `${JSON.stringify(ts)} matches the timestamp pattern but is not a real date`,
+      },
+    ]);
+  });
+
+  it.each([
+    '2024-02-29T00:00:00Z',
+    '2000-02-29T00:00:00Z',
+    '0000-02-29T00:00:00Z',
+    '2026-12-31T23:59:59.999-23:59',
+  ])('accepts %s: a real instant, leap days included (control)', (ts) => {
+    expect(crossFieldErrors('run', run(ts))).toEqual([]);
+  });
+
+  it('leaves a string the pattern refuses to the schema: one error, not two', () => {
+    expect(crossFieldErrors('run', run('yesterday'))).toEqual([]);
+  });
+
   it('leaves a non-string timestamp to the schema', () => {
     const errs = crossFieldErrors('assessment', assessment({ observed_at: 5 }));
     expect(
       errs.filter((e: { message: string }) => e.message.includes('real date')),
     ).toEqual([]);
+  });
+});
+
+describe('repo-relative (#1154 S3, ADR 0029)', () => {
+  const ESCAPES = 'escapes the repository root (ADR 0029)';
+  const HOME = 'is home-relative (~), not repo-relative (ADR 0029)';
+  const ROOTED = 'is absolute (\\), not repo-relative (ADR 0029)';
+  const runWith = (file: unknown) => ({
+    totals: totals(),
+    results: [{ file, duration_ms: 1, retries: 0 }],
+    collected: [{ title: 't', file }],
+  });
+
+  it.each([
+    ['../x.spec.ts', ESCAPES],
+    ['a/../../x.spec.ts', ESCAPES],
+    ['..\\x.spec.ts', ESCAPES],
+    ['./../x.spec.ts', ESCAPES],
+    ['~/x.spec.ts', HOME],
+    ['~', HOME],
+    ['~bob/x.spec.ts', HOME],
+    ['\\x.spec.ts', ROOTED],
+    ['\\\\server\\share\\x.spec.ts', ROOTED],
+  ])('refuses %j in results[] and collected[]', (file, message) => {
+    expect(crossFieldErrors('run', runWith(file))).toEqual([
+      { path: 'results[0].file', message },
+      { path: 'collected[0].file', message },
+    ]);
+  });
+
+  it.each([
+    'a/../b.spec.ts',
+    '..foo/x.spec.ts',
+    './x.spec.ts',
+    'a/b~/c.spec.ts',
+    'tests/x.spec.ts',
+  ])('accepts %j (control)', (file) => {
+    expect(crossFieldErrors('run', runWith(file))).toEqual([]);
+  });
+
+  it('leaves a non-string file, a null row and a non-array list to the schema', () => {
+    const run = {
+      totals: totals({ passed: 2, total: 2 }),
+      results: [{ file: 7, duration_ms: 1, retries: 0 }, null],
+      collected: 'x',
+    };
+    expect(crossFieldErrors('run', run)).toEqual([]);
+  });
+
+  it('checks runs[], flaky[] and register[] in a site feed, with paths', () => {
+    const errs = crossFieldErrors('site', {
+      runs: [{ ...runWith('../x.spec.ts'), collected: null }],
+      flaky: [{ file: '~/x.spec.ts' }],
+      register: [{ file: '\\x.spec.ts' }],
+    });
+    expect(paths(errs)).toEqual([
+      'runs[0].results[0].file',
+      'flaky[0].file',
+      'register[0].file',
+    ]);
   });
 });
