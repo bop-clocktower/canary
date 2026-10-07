@@ -6,6 +6,8 @@
  * test suite.
  */
 
+import type { TestShape } from './test-shapes.js';
+
 // HTTP verb + slash-prefixed path: "GET /users", "POST /items/{id}".
 const HTTP_VERB_PATH_RE = /\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\//i;
 // Bare uppercase HTTP verb (case-sensitive, to avoid English-word false hits).
@@ -13,7 +15,7 @@ const HTTP_VERB_RE = /\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/;
 
 // Explicit framework name → implied test_type. Order matters: the alternation
 // is tried leftmost-first at the earliest match position (as in Python).
-const FRAMEWORK_HINTS: ReadonlyArray<readonly [string, string]> = [
+const FRAMEWORK_HINTS: ReadonlyArray<readonly [string, TestShape]> = [
   ['playwright', 'e2e_ui'],
   ['cypress', 'e2e_ui'],
   ['vitest', 'frontend_unit'],
@@ -52,7 +54,9 @@ const FRAMEWORK_HINTS: ReadonlyArray<readonly [string, string]> = [
 const HINT_TYPE = new Map(FRAMEWORK_HINTS);
 
 // Specialized categories keyed by high-specificity phrases; first match wins.
-const CATEGORY_KEYWORDS: ReadonlyArray<readonly [string, readonly string[]]> = [
+const CATEGORY_KEYWORDS: ReadonlyArray<
+  readonly [TestShape, readonly string[]]
+> = [
   ['accessibility', ['accessibility', 'a11y', 'wcag', 'screen reader']],
   [
     'security',
@@ -168,7 +172,7 @@ export function extractFrameworkHint(prompt: string): string | null {
   return m ? m[1]!.toLowerCase() : null;
 }
 
-function result(testType: string, confidence: number): ClassificationResult {
+function result(testType: TestShape, confidence: number): ClassificationResult {
   return { intent: 'generate_tests', test_type: testType, confidence };
 }
 
@@ -227,7 +231,7 @@ const PERFORMANCE_KEYWORDS = ['performance', 'load test', 'stress test'];
 // [keywords, testType, confidence] — the generic fallbacks checked after the
 // framework-hint and HTTP-signal rules; first match wins.
 const TRAILING_RULES: ReadonlyArray<
-  readonly [readonly string[], string, number]
+  readonly [readonly string[], TestShape, number]
 > = [
   [['api', 'endpoint', 'request'], 'api', 0.85],
   [['component', 'react', 'frontend'], 'frontend_unit', 0.9],

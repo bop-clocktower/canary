@@ -76,6 +76,14 @@ under the project's former name) are documented in the
   exits 3, and `--json` gains an additive `abstained` key. A re-apply where
   every skill is already current still exits 0, as do the dry run and an
   `--apply` with no overlay (scaffold only).
+- **`canary overlay lint` called `mobile` a typo** (#1206). Its `deploy_to`
+  allow-list was a hand-kept copy of five shapes, so `mobile`, `accessibility`,
+  `visual`, `contract`, `mutation`, `integration`, `synthetic_data` and the
+  other shapes canary's own classifier and probes emit drew a "probably a typo"
+  warning. The shapes now live in one list, `ts/src/core/test-shapes.ts`: the
+  classifier and probes are typed against it, and the lint reads a verbatim
+  mirror that `npm/scripts/sync-gate-result.mjs --check` (npm's `pretest`) keeps
+  from drifting. Custom shapes still warn, never error.
 - **Skill CLIs ran nothing through a symlink or a URL-encoded path** (#1182).
   All 14 skill `cli.mjs` entry points compared `import.meta.url` with a
   hand-built `file://${process.argv[1]}`, which is false through a symlink

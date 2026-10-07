@@ -182,6 +182,35 @@ describe('lintOverlay', () => {
     assert.deepEqual(errors(lintOverlay(ov)), []);
   });
 
+  it('accepts `mobile` without a typo warning — canary itself emits it (#1206)', () => {
+    // The classifier and probes map wdio/appium/maestro to `mobile`; an
+    // overlay targeting a shape canary emits must not be told it is a typo.
+    writeSkill(ov, 'mobile-skill', {
+      name: 'mobile-skill',
+      description: 'x',
+      deploy_to: ['mobile'],
+    });
+    assert.deepEqual(lintOverlay(ov).findings, []);
+  });
+
+  it('accepts every shape the engine can emit, with no warning (#1206)', () => {
+    // TEST_SHAPES is the engine's single shape list (ts/src/core/
+    // test-shapes.ts), mirrored here verbatim by sync-gate-result.mjs and
+    // drift-checked in `pretest`. The classifier and probes are typed against
+    // it, so this is every shape they can emit — and a new one can never land
+    // without becoming a valid deploy_to target.
+    const { TEST_SHAPES } = require('../../dist/test-shapes.js');
+    assert.ok(TEST_SHAPES.length > 0, 'shape list must not be empty');
+    writeSkill(ov, 'every-shape', {
+      name: 'every-shape',
+      description: 'x',
+      deploy_to: [...TEST_SHAPES, 'all'],
+    });
+    const r = lintOverlay(ov);
+    assert.deepEqual(r.findings, []);
+    assert.equal(r.skillsChecked, 1);
+  });
+
   it('flags a cli: path that does not exist', () => {
     writeSkill(ov, 'deadcli', {
       name: 'deadcli',

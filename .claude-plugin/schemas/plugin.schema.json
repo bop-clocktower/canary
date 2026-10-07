@@ -9,7 +9,7 @@
     "version":     { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
     "description": { "type": "string", "minLength": 1 },
     "skills":      { "type": "array",  "items": { "type": "string" } },
-    "agents":      { "type": "string" },
+    "agents":      { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string", "pattern": "^\\./.+\\.md$" } }] },
     "mcpServers": {
       "type": "object",
       "minProperties": 1,
