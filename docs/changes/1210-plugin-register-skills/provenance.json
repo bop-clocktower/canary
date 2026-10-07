@@ -1,0 +1,17 @@
+{
+  "issues": [1210],
+  "route": "bug",
+  "stages": ["debugging", "tdd", "rework:curate-public-skills"],
+  "reproducingTest": "ts/test/plugin-skills.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "The skills key shape was confirmed against the Claude Code plugins reference (code.claude.com/docs/en/plugins-reference): a path or array of paths, each either a directory of <name>/SKILL.md folders or one folder holding SKILL.md directly, and it ADDS to the default skills/ scan (agents/commands replace theirs). The curated set uses the second form: one path per skill folder, so no skill directory moved.",
+    "Human decision (curate before merge): only adopter-facing skills are registered. INTERNAL (not registered): canary-add-framework - edits canary's own framework registry (ts/src/data/frameworks/registry.json) and classifier contract; canary-setup-harness - configures canary's own harness.config.json, CI workflows and security ledger in a canary project or fork; canary-ship - encodes canary's own ship gate: reviewer roster, no co-author trailer, squash/admin merge, roadmap update.",
+    "PUBLIC (registered, 33): canary-barda, canary-batwoman, canary-blackhawk, canary-cassandra, canary-ci-ready, canary-clocktower, canary-company-knowledge, canary-critical-areas, canary-edge-case-discovery, canary-fail-fast, canary-failure-impact, canary-fleet-health, canary-generate-test, canary-instrument, canary-judomaster, canary-katana, canary-manhunter, canary-misfit, canary-mission-briefing, canary-pr-guardian, canary-promote-test, canary-question, canary-rewind, canary-savant, canary-screech, canary-shadow, canary-shiva, canary-signal, canary-starling, canary-strix, canary-sweep, canary-test-pipeline, canary-test-reporter. Each serves any repo that adopts canary (test authoring/review/flake/risk analysis, run-history and QA reporting, PR/release evidence, accessibility, public-repo identifier hygiene). Several mention ts/src paths or this repo only as explanatory pointers to the canary engine they call, which ships to adopters via npm; that does not make them repo-internal.",
+    "Borderline calls kept public: canary-shadow (generic differential parity testing; the Python-to-TS port is only its origin story), canary-strix (identifier hygiene for any public repo), canary-batwoman (audits any repo's closed issues), canary-company-knowledge (scaffolds the adopter's own .canary/company.json).",
+    "A new skill under agents/skills/claude-code must be classified: ts/test/plugin-skills.test.ts fails until it is added to plugin.json skills or to INTERNAL_SKILLS.",
+    "On machines that also have the harness plugin, its generated harness:canary-* commands list alongside the plugin's canary:* skills. Accepted; either can be suppressed via skillOverrides.",
+    "Descriptions state the agent count as a word (eight), derived by the test from plugin.json agents; the skill count is deliberately not stated.",
+    "plugin.json and marketplace.json are kept in JSON.stringify(_, null, 2) form because version-consistency.test.ts requires bump-version.mjs to be a byte-for-byte fixed point (#1064)."
+  ]
+}

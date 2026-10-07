@@ -166,17 +166,43 @@ const finishedAt = (records) =>
   Math.max(...records.map((r) => Date.parse(r.run.finished_at)));
 
 /**
+ * Why a logical run cannot be vouched for as a whole run, or null: a sharded
+ * run with fewer distinct shard indices than its `shard.total` measured part
+ * of the suite ("re-run failed jobs" reruns one shard under a new attempt id;
+ * a cancelled shard never uploads). A duplicate index is one shard (#1200).
+ */
+function missingShards(records) {
+  const shards = records.map((r) => r.run.shard).filter(Boolean);
+  if (shards.length === 0) return null;
+  const total = Math.max(...shards.map((s) => s.total));
+  // An index past `total` is not one of the run's shards.
+  const indices = shards.map((s) => s.index).filter((i) => i <= total);
+  const have = new Set(indices).size;
+  return have < total ? `${have} of ${total} shards reported` : null;
+}
+
+/**
  * Newest first per suite, by logical run. `window` keeps every kept record's
  * results (flaky[] needs them); `feed` drops results on all but every shard
  * of each suite's newest logical run. Dropped results become `results: null`
  * and the run's totals stay, so the run still validates ("not carried", never
- * "zero tests").
+ * "zero tests"). A logical run missing shards is left out and named in
+ * `notes`, like a history row starling cannot vouch for.
  */
-export function selectRuns(runs) {
+export function selectRuns(runs, notes = []) {
   const window = [];
   const feed = [];
   for (const group of groupBy(runs, suiteKey).values()) {
-    const kept = [...groupBy(group, logicalId).values()]
+    const kept = [...groupBy(group, logicalId)]
+      .filter(([id, records]) => {
+        const why = missingShards(records);
+        if (why)
+          notes.push(
+            `left out run ${id} (suite ${records[0].run.suite}): ${why}`,
+          );
+        return !why;
+      })
+      .map(([, records]) => records)
       .sort((a, b) => finishedAt(b) - finishedAt(a))
       .slice(0, RUNS_PER_SUITE);
     kept.forEach((records, i) => {

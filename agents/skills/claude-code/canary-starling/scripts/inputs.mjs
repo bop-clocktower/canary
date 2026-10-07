@@ -48,7 +48,7 @@ export function readInputs(args, scope, notes) {
   const records = (args.records ?? []).map(readRecord);
   const runs = records.filter(isRun);
   if (args.history) runs.push(...historyRuns(args.history, scope, notes));
-  const { window, feed } = selectRuns(runs);
+  const { window, feed } = selectRuns(runs, notes);
   return {
     assessments: records.filter((r) => !isRun(r)),
     window,
