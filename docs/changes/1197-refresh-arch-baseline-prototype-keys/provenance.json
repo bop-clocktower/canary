@@ -1,0 +1,19 @@
+{
+  "issues": [1197],
+  "route": "bug",
+  "stages": [
+    "harness:debugging investigate (reproduced on main: exit 0, 'refreshed constructor: undefined -> 5')",
+    "harness:debugging analyze (root cause: inherited Object.prototype lookup in planUpdate's metrics[category])",
+    "harness:tdd red (4 prototype-key tests failing, own-key control passing)",
+    "fix (Object.hasOwn own-property lookup)",
+    "green + revert-and-fail check"
+  ],
+  "assumptions": [
+    "An unknown category already abstains with exit 3 ('the baseline records no metric'); a prototype-named category the baseline does not own is treated exactly the same way.",
+    "A baseline that genuinely records an OWN metric named after a prototype key (e.g. 'constructor') is still refreshed; Object.hasOwn gates the lookup, not the name.",
+    "applyRefresh is left unchanged: after the fix every update it receives comes from an own key (planUpdate now requires one; staleFloors iterates Object.entries), so its write can no longer reach the prototype.",
+    "Object.prototype non-pollution is evidenced by abstention before applyRefresh runs plus a byte-identical baseline file; the script is CLI-only (planRefresh deliberately unexported), so the child process's prototype is not directly inspectable from the test."
+  ],
+  "closingKeyword": "Closes",
+  "reproducingTest": "ts/test/refresh-arch-baseline.test.ts"
+}
