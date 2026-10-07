@@ -91,6 +91,11 @@ declared" (`suites: null`); an empty list declares zero suites.
   `duration_ms`, a malformed count, neither `tests` nor any count, or a test
   outside passed/failed/flaky/skipped (or with an absolute path) is left out and
   named on stderr, never given an invented value.
+- **Left-out partial runs**: a sharded logical run with fewer distinct shard
+  indices than its `shard.total` (a "re-run failed jobs" attempt that reran one
+  shard, or a shard that never uploaded) measured part of the suite. It is left
+  out of the feed and the flaky window and named on stderr, so it never stands
+  in as the suite's newest run (#1200).
 - **Dark ledger**: the default ledger path missing is named on stderr; ledger
   rows with no date, commit or reason are left out and named.
 - **Not-assessed metrics**: with no `--ci-ready`, a report with no `observed_at`

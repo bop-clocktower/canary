@@ -1,0 +1,14 @@
+{
+  "issues": [1200],
+  "route": "bug",
+  "stages": ["debugging", "tdd"],
+  "reproducingTest": "agents/skills/test/canary-starling.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Human-answered fork: option 1 -- starling leaves out a logical run with fewer than shard.total distinct shard indices and names it in its notes (stderr), like a left-out history row. No contract or schema change.",
+    "A run's required shard count is the largest shard.total among its records; an index above that total is not counted as one of its shards, and a duplicate index counts once.",
+    "The left-out run is dropped before the 30-run window, so the newest COMPLETE run carries per-test results and the flaky window counts only complete runs.",
+    "selectRuns takes notes as an optional second argument (default: a throwaway list) so its existing callers and tests are unchanged; the only production caller, inputs.mjs readInputs, passes the CLI's notes.",
+    "Scope kept to run selection: agents/skills/lib/contracts/ (lane #1154) and the katana register path (#1199) are untouched."
+  ]
+}
