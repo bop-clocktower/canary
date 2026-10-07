@@ -5,12 +5,12 @@
     "name": "Bri Stevenski",
     "url": "https://github.com/bri-stevenski"
   },
-  "description": "Canary — AI-powered test automation. Generate, review, recommend, and de-flake tests across Playwright, Vitest, Pytest, and k6 with four specialist personas.",
+  "description": "Canary — AI-powered test automation. Generate, review, recommend, and de-flake tests across Playwright, Vitest, Pytest, and k6 with eight agents, the canary skills, slash commands, and the canary-mcp MCP server.",
   "plugins": [
     {
       "name": "canary",
       "source": ".",
-      "description": "Canary plugin with four MVP personas (test-author, test-reviewer, framework-advisor, flake-hunter) and the canary-mcp MCP server. Personal-source build maintained by Bri Stevenski.",
+      "description": "Canary plugin with eight agents (test-author, test-generator, test-reviewer, test-healer, flake-hunter, framework-advisor, initializer, migrator), the canary skills, slash commands, and the canary-mcp MCP server. Personal-source build maintained by Bri Stevenski.",
       "version": "9.0.0",
       "author": {
         "name": "Bri Stevenski",
