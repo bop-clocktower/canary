@@ -71,11 +71,17 @@ function readContract(doc, expected) {
   return { layer };
 }
 
+/**
+ * A site feed's nested arrays whose rows are validated records (#1154 S8).
+ * `scopes[]` and `suites[]` are keys records refer to, so they are not counted.
+ */
+const SITE_RECORD_KEYS = ['runs', 'assessments', 'flaky', 'register'];
+
 /** The denominator: documents plus the records nested in a site feed. */
 function countRecords(layer, doc) {
   if (layer !== 'site') return 1;
   const len = (key) => (Array.isArray(doc[key]) ? doc[key].length : 0);
-  return 1 + len('runs') + len('assessments');
+  return SITE_RECORD_KEYS.reduce((n, key) => n + len(key), 1);
 }
 
 function verdict(layer, errors, checked) {

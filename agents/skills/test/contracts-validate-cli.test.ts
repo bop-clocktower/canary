@@ -16,6 +16,7 @@ import { main } from '../lib/contracts/validate.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, '..', 'lib', 'contracts', 'validate.mjs');
 const RUN = path.join(HERE, 'fixtures', 'contracts', 'run.valid.json');
+const SITE = path.join(HERE, 'fixtures', 'contracts', 'site.valid.json');
 const ASSESSMENT = path.join(
   HERE,
   'fixtures',
@@ -44,6 +45,12 @@ describe('validate.mjs CLI (in-process)', () => {
     const r = call([RUN]);
     expect(r.code).toBe(0);
     expect(r.stdout).toBe('valid canary.run/1: 1 record checked, 0 errors');
+  });
+
+  it("counts a site feed's flaky and register rows (#1154 S8)", () => {
+    expect(call([SITE]).stdout).toBe(
+      'valid canary.site/1: 6 records checked, 0 errors',
+    );
   });
 
   it('exits 1 on a refused document and prints each path', () => {

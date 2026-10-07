@@ -54,7 +54,17 @@ describe('valid corpus (planted positives)', () => {
 
   it('reports its denominator: a site feed counts its nested records', () => {
     expect(validateDocument(valid('run')).checked).toBe(1);
-    expect(validateDocument(valid('site')).checked).toBe(1 + 2 + 1);
+    // feed + 2 runs + 1 assessment + 1 flaky row + 1 register row (#1154 S8)
+    expect(validateDocument(valid('site')).checked).toBe(1 + 2 + 1 + 1 + 1);
+  });
+
+  it('counts flaky[] and register[] rows, not scopes[] or suites[] (#1154 S8)', () => {
+    const doc = valid('site');
+    doc.flaky.push({ ...doc.flaky[0], title: 'second flaky' });
+    doc.register.push({ ...doc.register[0], title: 'second row' });
+    doc.scopes.push({ id: 'other', env: 'ci' });
+    doc.suites.push({ ...doc.suites[0], suite: 'other' });
+    expect(validateDocument(doc).checked).toBe(1 + 2 + 1 + 2 + 2);
   });
 });
 
