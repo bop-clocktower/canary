@@ -22,6 +22,9 @@ const CONTRACT_RE = /^canary\.([a-z]+)\/(\d+)$/;
 
 const schemaId = (layer) => `${layer}.v1.schema.json`;
 
+/** One leading U+FEFF is an encoding marker, not JSON (#1154 S7). */
+const stripBom = (text) => (text.startsWith('\uFEFF') ? text.slice(1) : text);
+
 function loadRegistry() {
   const registry = Object.create(null);
   for (const layer of LAYERS) {
@@ -71,11 +74,17 @@ function readContract(doc, expected) {
   return { layer };
 }
 
+/**
+ * A site feed's nested arrays whose rows are validated records (#1154 S8).
+ * `scopes[]` and `suites[]` are keys records refer to, so they are not counted.
+ */
+const SITE_RECORD_KEYS = ['runs', 'assessments', 'flaky', 'register'];
+
 /** The denominator: documents plus the records nested in a site feed. */
 function countRecords(layer, doc) {
   if (layer !== 'site') return 1;
   const len = (key) => (Array.isArray(doc[key]) ? doc[key].length : 0);
-  return 1 + len('runs') + len('assessments');
+  return SITE_RECORD_KEYS.reduce((n, key) => n + len(key), 1);
 }
 
 function verdict(layer, errors, checked) {
@@ -119,7 +128,7 @@ export function validateDocument(doc, opts = {}) {
 export function validateText(text, opts = {}) {
   let doc;
   try {
-    doc = JSON.parse(text);
+    doc = JSON.parse(stripBom(text));
   } catch (err) {
     return verdict(
       null,

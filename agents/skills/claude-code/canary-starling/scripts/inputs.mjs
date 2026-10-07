@@ -41,7 +41,8 @@ const isRun = (r) => r.contract === 'canary.run/1';
 /**
  * Reads the RECORD files, the history store, the ledger and the ci-ready
  * report. `window` is every selected run with its results (flaky[] needs
- * them); `feed` is what the site carries. `report` is null when none was named.
+ * them); `feed` is what the site carries. `report` is null when none was named;
+ * `ledgerUnread` is why no katana ledger was read, else null.
  * @throws on an unreadable or invalid RECORD file, store or report
  */
 export function readInputs(args, scope, notes) {
@@ -49,11 +50,13 @@ export function readInputs(args, scope, notes) {
   const runs = records.filter(isRun);
   if (args.history) runs.push(...historyRuns(args.history, scope, notes));
   const { window, feed } = selectRuns(runs, notes);
+  const ledger = ledgerRegister(args.ledger, scope, notes);
   return {
     assessments: records.filter((r) => !isRun(r)),
     window,
     feed,
-    register: ledgerRegister(args.ledger, scope, notes),
+    register: ledger.rows,
+    ledgerUnread: ledger.unread,
     report: args.ciReady ? readJson(args.ciReady, 'ci-ready report') : null,
   };
 }

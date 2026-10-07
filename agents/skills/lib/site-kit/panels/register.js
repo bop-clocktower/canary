@@ -1,12 +1,12 @@
 // <canary-register> -- skipped and removed tests as visible debt, oldest first
 // (#1151 phase 3). No author is shown (the contract refuses one).
 //
-// canary.site/1 cannot yet tell an empty ledger from an unread one (register
-// is a required array), so an empty register is announced as ambiguous
-// rather than rendered as "no debt" -- see #1199.
+// An empty register is "no debt" only when the ledger was read: canary-starling
+// marks an unread one with a not-assessed `canary.katana` assessment, and the
+// panel says "not assessed" with its reason instead (#1199).
 
 import { CanaryPanel, el } from '../panel.js';
-import { ageDays } from '../model.js';
+import { ageDays, registerUnread } from '../model.js';
 
 /** The row's age as text; a date the reader's clock cannot age says why. */
 function age(r, now) {
@@ -46,13 +46,15 @@ export class Register extends CanaryPanel {
   }
 
   build(doc) {
-    if (doc.register.length === 0)
+    if (doc.register.length === 0) {
+      const unread = registerUnread(doc);
       return {
         nodes: [],
         abstentions: [
-          'The register lists no skipped or removed tests. An empty register can also mean no ledger was read; this feed does not say which.',
+          unread ? `Not assessed — ${unread}` : 'No skipped or removed tests.',
         ],
       };
+    }
     const now = this.now();
     const rows = [...doc.register].sort((a, b) => sortKey(a) - sortKey(b));
     const skewed = rows.filter((r) => unageable(r, now)).length;

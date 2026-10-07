@@ -1,0 +1,20 @@
+{
+  "issues": [1199],
+  "route": "bug",
+  "stages": [
+    "harness:debugging/investigate: ledgerRegister pushed a dark ledger's reason only onto stderr notes; the feed carried register: [] for both read-empty and unread",
+    "harness:debugging/analyze: canary.assessment/1 already has not-assessed (value null, reason required) and starling's ci-ready abstentions are the working pattern; no schema change needed",
+    "harness:tdd/red: 6 failing tests (starling dark ledger marker, register panel not-assessed vs empty, summary tile not-assessed vs 0)",
+    "harness:debugging/fix: starling emits a not-assessed canary.katana/register assessment for a dark ledger; site kit reads it via model.registerUnread",
+    "harness:debugging/verify: revert check (6 fail without the fix), skills + ts gates, perf/entropy ratchets vs merge base, check-deps"
+  ],
+  "assumptions": [
+    "Human-settled fork: Option 2 (abstention marker). register keeps its v1 array shape; no change under agents/skills/lib/contracts/.",
+    "The marker goes through withAbstentions like the ci-ready abstentions, so a real RECORD assessment for canary.katana/register (none exist today) would take precedence over it.",
+    "The panels match the marker by source, metric and status only, not by scope: starling writes one feed per config scope and the register rows carry that same scope.",
+    "A feed from a pre-fix starling has no marker, so its empty register now reads as genuinely empty (0) rather than ambiguous. Accepted as the cost of Option 2.",
+    "The marker also appears as a not-assessed card in <canary-pillars>, which renders every assessment; left as is, since an abstention should be visible."
+  ],
+  "closingKeyword": "Closes",
+  "reproducingTest": "agents/skills/test/canary-starling.test.ts"
+}

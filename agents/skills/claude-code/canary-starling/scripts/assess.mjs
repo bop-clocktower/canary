@@ -112,6 +112,19 @@ export function ciReadyAssessments(report, scope, { now, source }) {
   };
 }
 
+/**
+ * The katana register's abstention (#1199): a dark ledger is not an empty
+ * one. `register` stays a v1 array; this record is what tells a reader the
+ * `[]` beside it was never read. Null when the ledger was read.
+ */
+export function registerAbstention(scope, now, unread) {
+  if (!unread) return null;
+  return {
+    ...abstain(scope, 'register', now, [], unread),
+    source: 'canary.katana',
+  };
+}
+
 const assessmentKey = (a) =>
   [a.scope.id, a.scope.env, a.source, a.metric].join('\u0000');
 
