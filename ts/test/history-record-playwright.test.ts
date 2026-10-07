@@ -128,6 +128,26 @@ describe('Playwright report reader', () => {
     });
   });
 
+  it('keys recovery on expectedStatus: a test.fail() that passed is failed, not flaky (#1194)', () => {
+    const xfail = { expectedStatus: 'failed' };
+    const r = report([
+      spec('unexpected pass', [pwTest('unexpected', [PASS()], xfail)]),
+      spec('expected failure', [pwTest('expected', [FAIL()], xfail)]),
+      spec('genuine flake', [
+        pwTest('unexpected', [FAIL(), PASS()], { expectedStatus: 'passed' }),
+      ]),
+    ]);
+    const built = buildRunFromReport('playwright', r, CTX);
+    const byName = Object.fromEntries(
+      built.results.map((t) => [t.test_name.split(' > ').pop(), t.status]),
+    );
+    expect(byName).toEqual({
+      'unexpected pass': 'failed',
+      'expected failure': 'passed',
+      'genuine flake': 'flaky',
+    });
+  });
+
   it('keeps the last failing message for failed and flaky tests (G8, #1125)', () => {
     const r = report([
       spec('fails', [pwTest('unexpected', [FAIL(5, 'x'.repeat(3000))])]),
