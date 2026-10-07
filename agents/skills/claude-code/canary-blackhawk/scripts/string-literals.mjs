@@ -22,28 +22,44 @@
 //   a string is content.
 // - An unterminated quote marks the REST OF THE LINE as string. That is the
 //   safe default for multi-line Python strings whose opener ends mid-line,
-//   and for apostrophes in trailing comments: this helper only ever REJECTS
-//   matches, so with no later quote on the line the worst case is a
-//   suppressed match. A LATER real quote breaks that: the phantom string
-//   closes there and the fixture after it reads as code, which can fabricate
-//   a finding (#1192 tracks comments and regexes; JSX text is fixed below).
+//   and this helper only ever REJECTS matches. A quote that is not a
+//   delimiter at all must therefore never reach it: a phantom string closes
+//   at the next REAL quote, so the fixture after it reads as code and a
+//   finding is fabricated (#1192). Comments, regex literals and JSX text are
+//   handled below.
 // - Strings spanning lines (template literals, triple quotes) are only seen
 //   on their opening line; continuation lines look like code. Accepted: the
 //   scanners are line-based by design.
-// - Regex literals containing quotes (/['"]/) can open a phantom string for
-//   the rest of the line. Same argument and the same caveat (#1192).
+// - Comments and regex literals (#1192): in a JS-family file an apostrophe
+//   in `/* it's */` or `// it's`, or a quote in `/it's/` or `/['"]/`, is not
+//   a delimiter. maskSourceForFile replaces each such quote with a stand-in
+//   (lib/js-literals.mjs, whole-file, so a block comment opened on an earlier
+//   line counts), and the line is read through that twin. Only the quote
+//   characters change: comment text stays code for the rules and pragmas,
+//   exactly as an apostrophe-free comment always read. `/` is a regex only
+//   where an expression may start (after an operator, `(`, `,`, `=`, `:`,
+//   `[`, `{`, `;`, `!`, `&`, `|`, `?`, a keyword like `return`, or at the
+//   start of the file); anywhere else it is division. Python and PHP are not
+//   lexed: `//` is floor division in Python, and neither has regex literals.
 // - JSX children text (#1188): in `.tsx`/`.jsx` an apostrophe in prose
 //   (`<p>It's</p>`) is not a quote. Read raw, it opened a phantom string that
 //   suppressed a real finding after it on the line -- and, worse, flipped a
 //   later quoted fixture into CODE, which DID fabricate findings. So a
 //   JSX file is masked whole-source first (lib/jsx-text.mjs blanks children
 //   text, keeping every offset and line break) and each line is read through
-//   its masked twin: `stringLiteralRanges(line, masked)` / `trimmedRanges`
+//   its masked twin (the same twin as above): `stringLiteralRanges(line, masked)` / `trimmedRanges`
 //   take string literals from the twin and add the blanked JSX text as
 //   rejected (data) ranges. Every other extension has no twin and reads
 //   exactly as before.
 
+import {
+  hideQuotesInCommentsAndRegexes,
+  QUOTE_STAND_IN,
+} from '../../../lib/js-literals.mjs';
 import { isJsxPath, maskJsxText } from '../../../lib/jsx-text.mjs';
+
+/** The extensions lexed as JavaScript/TypeScript (#1192). */
+const JS_FAMILY = /\.[cm]?[jt]sx?$/i;
 
 /**
  * Compute the [start, end) index ranges of string-literal CONTENT in `line`
@@ -60,13 +76,17 @@ export function stringLiteralRanges(line, masked = line) {
   return [...quotedRanges(masked), ...blankedRuns(line, masked)];
 }
 
-/** The [start, end) runs where `masked` differs from `line`. */
+/**
+ * The [start, end) runs where `masked` blanked `line`. A quote stand-in
+ * (#1192) is not blanking: it only stops a quote acting as a delimiter.
+ */
 function blankedRuns(line, masked) {
   /** @type {Array<[number, number]>} */
   const runs = [];
   let start = -1;
   for (let i = 0; i <= line.length; i += 1) {
-    const blanked = i < line.length && masked[i] !== line[i];
+    const blanked =
+      i < line.length && masked[i] !== line[i] && masked[i] !== QUOTE_STAND_IN;
     if (blanked && start < 0) start = i;
     if (!blanked && start >= 0) {
       runs.push([start, i]);
@@ -166,15 +186,17 @@ export function execOutsideStrings(pattern, line, ranges) {
 }
 
 /**
- * The source a file's lines are read through: for `.tsx`/`.jsx`, `text` with
- * JSX children text blanked (same length and line breaks); otherwise `text`
- * itself, so every other language reads exactly as before (#1188).
+ * The source a file's lines are read through, same length and line breaks:
+ * for `.tsx`/`.jsx`, JSX children text is blanked (#1188); for every
+ * JS-family file, quotes inside comments and regex literals are replaced by
+ * a stand-in (#1192). Any other file (Python, PHP) is `text` itself.
  * @param {string} text
  * @param {string} file
  * @returns {string}
  */
-export function maskJsxForFile(text, file) {
-  return isJsxPath(file) ? maskJsxText(text) : text;
+export function maskSourceForFile(text, file) {
+  const read = isJsxPath(file) ? maskJsxText(text) : text;
+  return JS_FAMILY.test(file) ? hideQuotesInCommentsAndRegexes(read) : read;
 }
 
 /**

@@ -117,6 +117,22 @@ describe('blankStringContent', () => {
     expect(blankStringContent(code)).toBe("/* don't */ it(' ', () => {});");
   });
 
+  // #1192: the skills' per-line helper had this flaw; the engine never did.
+  // Pinned so the two readings cannot drift apart.
+  it('ignores quotes inside a regex literal', () => {
+    const code = "expect(x).toMatch(/it's/); label('Date.now()');";
+    expect(blankStringContent(code)).toBe(
+      "expect(x).toMatch(/it's/); label('          ');",
+    );
+  });
+
+  it('reads `a / b / c` as division, not as a regex literal', () => {
+    const code = "const h = a / b / c, s = '/'; stamp(Date.now());";
+    expect(blankStringContent(code)).toBe(
+      "const h = a / b / c, s = ' '; stamp(Date.now());",
+    );
+  });
+
   it('blanks python triple-quoted blocks when python is set', () => {
     const code = ['DIFF = """', 'def test_x():', '"""', 'assert 1'].join('\n');
     const out = blankStringContent(code, { python: true });

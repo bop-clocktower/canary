@@ -11,7 +11,7 @@ import {
   stringLiteralRanges,
   execOutsideStrings,
   inStringLiteral,
-  maskJsxForFile,
+  maskSourceForFile,
   trimmedRanges,
 } from './string-literals.mjs';
 
@@ -164,7 +164,7 @@ function phpCodeEnd(line, ranges) {
 export function scanTextFull(text, file = '<text>') {
   const lines = splitLines(text);
   // #1188: .tsx/.jsx lines are read through a twin with JSX text blanked.
-  const masks = splitLines(maskJsxForFile(text, file));
+  const masks = splitLines(maskSourceForFile(text, file));
   const frozen = frozenClockMarkers(text).length > 0;
   const pragmas = parsePragmas(lines, masks);
   const php = isPhp(file);

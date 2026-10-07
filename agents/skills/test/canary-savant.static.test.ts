@@ -1076,3 +1076,57 @@ describe('packaging', () => {
     walk(SKILL_DIR);
   });
 });
+
+// --- Quotes in comments and regex literals (#1192) ---------------------------
+//
+// An apostrophe in an inline block comment, or a quote inside a regex
+// literal, used to open a phantom string. It closed at the next real quote, so
+// a quoted fixture later on the line was read as CODE (a fabricated SV003),
+// and a real mutation after the phantom was read as data (a suppressed one).
+
+describe('quotes in comments and regex literals (#1192)', () => {
+  const SV3 = 'SV003-shared-singleton-mutation';
+  const lines = (text: string, name = 'a.test.ts') =>
+    scanText(text, name)
+      .filter((f) => f.ruleId === SV3)
+      .map((f) => f.line);
+
+  it.each(['a.test.ts', 'a.test.js', 'a.test.tsx', 'a.test.mjs'])(
+    'an apostrophe in a block comment fabricates nothing (%s)',
+    (name) => {
+      const control = "run(/* its */ label('process.env.API = 1'));";
+      expect(lines(control, name)).toEqual([]);
+      expect(lines(control.replace('its', "it's"), name)).toEqual([]);
+    },
+  );
+
+  it('a quote inside a regex literal fabricates nothing', () => {
+    const fixture = "label('process.env.API = 1');";
+    expect(lines(`expect(x).toMatch(/its/); ${fixture}`)).toEqual([]);
+    expect(lines(`expect(x).toMatch(/it's/); ${fixture}`)).toEqual([]);
+  });
+
+  it('reads `a / b / c` as division, not as a regex literal', () => {
+    expect(lines("const r = a / b / c; label('process.env.API = 1');")).toEqual(
+      [],
+    );
+    // Misread as a regex, `/ 2, s = '/` would swallow the string's opening
+    // quote and the closing one would hide the real mutation after it.
+    expect(
+      lines("const h = total / 2, s = '/'; process.env.API = 'x';"),
+    ).toEqual([1]);
+  });
+
+  it('still flags a real mutation after a commented apostrophe', () => {
+    expect(lines("setup(); /* it's */ process.env.API = 'x';")).toEqual([1]);
+  });
+
+  it('still masks a real string after a comment', () => {
+    expect(lines("run(/* note */ label('process.env.API = 1'));")).toEqual([]);
+  });
+
+  it('leaves Python `//` (floor division) alone', () => {
+    const line = "n = total // 2; label(\"os.environ['X'] = '1'\")";
+    expect(lines(line, 'test_a.py')).toEqual([]);
+  });
+});

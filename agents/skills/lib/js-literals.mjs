@@ -7,6 +7,7 @@
 // an expression may start. A lexer, not a parser: it decides from the
 // previous significant character only. Standard library only, ascii-only;
 // ts/test/jsx-mask-conformance.test.ts holds it to the engine's reading.
+// hideQuotesInCommentsAndRegexes (#1192) is the one skill-only addition.
 
 const KEYWORD_BEFORE =
   /(?:^|[^\w$])(?:return|yield|default|await|case|throw|typeof|void|delete|in|of|new)$/;
@@ -83,6 +84,48 @@ function interpolationEnd(code, i) {
     last = j;
   }
   return code.length;
+}
+
+/**
+ * What a quote inside a comment or regex literal becomes (#1192). Neither a
+ * quote nor whitespace nor a word character, so it reads like the quote it
+ * replaces to every rule regex, but can never open a string.
+ */
+export const QUOTE_STAND_IN = '\u0001';
+
+const QUOTES = new Set(['"', "'", '`']);
+
+/**
+ * `code` with every quote inside a comment or a regex literal replaced by
+ * QUOTE_STAND_IN (#1192). Same length, same line breaks, nothing else touched.
+ * Skill-only: the engine's string blanker skips comments and regexes in its
+ * own walk, but the skills' per-line reader cannot see a comment opened on an
+ * earlier line, so it reads lines from this twin instead.
+ */
+export function hideQuotesInCommentsAndRegexes(code) {
+  const out = code.split('');
+  let last = -1;
+  for (let i = 0; i < code.length; i += 1) {
+    if (/\s/.test(code[i])) continue;
+    const comment = commentEnd(code, i);
+    const end = comment ?? literalEnd(code, i, last);
+    if (end === null) {
+      last = i;
+      continue;
+    }
+    // Strings and templates keep their quotes; a comment is not a token, so
+    // it leaves `last` alone for the regex-or-division decision after it.
+    if (comment !== null || code[i] === '/') standIn(out, i, end);
+    if (comment === null) last = end - 1;
+    i = end - 1;
+  }
+  return out.join('');
+}
+
+function standIn(out, from, to) {
+  for (let j = from; j < to; j += 1) {
+    if (QUOTES.has(out[j])) out[j] = QUOTE_STAND_IN;
+  }
 }
 
 /** A regex literal: to the next unescaped `/` outside a class, on one line. */

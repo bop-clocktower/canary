@@ -1058,3 +1058,70 @@ describe('PHP support (#1107)', () => {
     });
   });
 });
+
+// --- Quotes in comments and regex literals (#1192) ---------------------------
+//
+// An apostrophe in an inline block comment, or a quote inside a regex
+// literal, used to open a phantom string. It closed at the next real quote, so
+// a quoted fixture later on the line was read as CODE (a fabricated BH001),
+// and a real call after the phantom was read as data (a suppressed one).
+
+describe('quotes in comments and regex literals (#1192)', () => {
+  const BH1 = 'BH001-wall-clock';
+  const lines = (text: string, name = 'a.test.ts') =>
+    scan(text, name)
+      .filter((f) => f.ruleId === BH1)
+      .map((f) => f.line);
+
+  it.each(['a.test.ts', 'a.test.js', 'a.test.tsx', 'a.test.mjs'])(
+    'an apostrophe in a block comment fabricates nothing (%s)',
+    (name) => {
+      expect(lines("run(/* its */ label('Date.now()'));", name)).toEqual([]);
+      expect(lines("run(/* it's */ label('Date.now()'));", name)).toEqual([]);
+    },
+  );
+
+  it('a quote inside a regex literal fabricates nothing', () => {
+    expect(lines("expect(x).toMatch(/its/); label('Date.now()');")).toEqual([]);
+    expect(lines("expect(x).toMatch(/it's/); label('Date.now()');")).toEqual(
+      [],
+    );
+    expect(lines('expect(x).toMatch(/["]/); label("Date.now()");')).toEqual([]);
+  });
+
+  it('reads `a / b / c` as division, not as a regex literal', () => {
+    expect(lines("const r = a / b / c; label('Date.now()');")).toEqual([]);
+    // Misread as a regex, `/ 2, s = '/` would swallow the string's opening
+    // quote and the closing one would hide the real call after it.
+    expect(lines("const h = total / 2, s = '/'; stamp(Date.now());")).toEqual([
+      1,
+    ]);
+  });
+
+  it('still flags real code after a commented apostrophe', () => {
+    expect(lines("run(/* it's */ Date.now());")).toEqual([1]);
+    expect(lines("run(/it's/, Date.now());")).toEqual([1]);
+  });
+
+  it('still masks a real string after a comment', () => {
+    expect(lines("run(/* note */ label('Date.now()'), 1);")).toEqual([]);
+    // A block comment closing on a later line: that line opens mid-comment.
+    const multi = "/* a long\n   note, it's */ label('Date.now()');";
+    expect(lines(multi)).toEqual([]);
+  });
+
+  it('leaves Python `//` (floor division) alone', () => {
+    expect(lines("n = total // 2; label('time.time()')", 'test_a.py')).toEqual(
+      [],
+    );
+  });
+
+  it('a pragma in a comment with an apostrophe still applies', () => {
+    const r = scanTextFull(
+      "stamp(Date.now()); // blackhawk-ignore BH001 -- it's frozen upstream",
+      'a.test.ts',
+    );
+    expect(r.findings).toEqual([]);
+    expect(r.suppressed.map((f) => f.ruleId)).toEqual([BH1]);
+  });
+});

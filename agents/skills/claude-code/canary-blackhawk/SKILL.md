@@ -124,6 +124,9 @@ anywhere `node` does. The cost, stated plainly:
   continuation lines are still scanned like code. In `.tsx`/`.jsx`, JSX children
   text is prose: it is masked before the line is read, so an apostrophe in it
   (`<p>It's</p>`) opens no string and a rule pattern in it never fires (#1188).
+  In every JS/TS file a quote inside a comment or a regex literal (`/* it's */`,
+  `/it's/`) is not a delimiter either, so it cannot turn a later fixture string
+  into code (#1192). Python and PHP comments are not lexed this way.
 - **No type awareness.** `.toLocaleString()` on a `Number` reads the same as on
   a `Date`.
 - **Suppression is a substring match.** A mention of `freezegun` in a comment

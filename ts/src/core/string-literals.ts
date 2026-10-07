@@ -45,9 +45,11 @@
  *   matches the deliberate choice already made in `blankMultilineStrings`.
  *
  * Fidelity limits (a state machine, not a parser):
- * - A regex literal containing a quote (`/['"]/`) can open a phantom string.
- *   Because an unterminated run is discarded, the usual outcome is a no-op;
- *   the residual risk is a suppressed finding, never a fabricated one.
+ * - Comments and regex literals are skipped, so a quote inside one (an
+ *   apostrophe in a comment, the quotes in `/['"]/`) never opens a string. A `/` is a regex only where an
+ *   expression may start (`regexLiteralEnd`); misread as division, a regex
+ *   with a quote can still open a phantom string, and because an
+ *   unterminated run is discarded the usual outcome is a no-op.
  * - Python f-string nesting beyond `${...}` is not modelled.
  * - JSX children text is modelled only when the caller passes `jsx` (for
  *   `.tsx`/`.jsx`): see `jsx-text.ts` (#1180).

@@ -68,6 +68,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary-blackhawk` and `canary-savant` no longer read a quote in a comment
+  or regex literal as a string delimiter** (#1192). In a JS/TS test file,
+  `run(/* it's */ label('Date.now()'))` or
+  `expect(x).toMatch(/it's/); label('Date.now()')` opened a phantom string that
+  closed at the fixture's quote, so the fixture read as code and fabricated a
+  `BH001` (or `SV003`), and a real call after the phantom was suppressed. The
+  per-line helper now reads each line through a twin with those quotes replaced
+  (`/` is a regex only where an expression may start, so `a / b / c` is still
+  division). Python and PHP files read exactly as before.
 - **A `test.fail()` test that unexpectedly passed is `failed`, not `flaky`**
   (#1194). `canary history` Playwright ingest and `canary-test-reporter` counted
   any failing test with a passing attempt as a recovered flake, so an unexpected

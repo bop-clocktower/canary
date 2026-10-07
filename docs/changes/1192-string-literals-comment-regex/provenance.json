@@ -1,0 +1,20 @@
+{
+  "issues": [1192],
+  "route": "bug",
+  "stages": ["debugging", "tdd"],
+  "closingKeyword": "Closes",
+  "reproducingTest": "agents/skills/test/canary-blackhawk.test.ts",
+  "reproducingTests": [
+    "agents/skills/test/canary-blackhawk.test.ts",
+    "agents/skills/test/canary-savant.static.test.ts",
+    "agents/skills/test/string-literals.test.ts"
+  ],
+  "assumptions": [
+    "Only the quote characters inside comments and regex literals change (to a U+0001 stand-in); comment text stays code for the rules and pragmas, as an apostrophe-free comment always read. Rejecting comment text outright would break blackhawk-ignore/savant-ignore pragmas (matched outside strings) and SV004, which fires on comments by design.",
+    "Consequence: a rule pattern inside a trailing comment that also holds an apostrophe (`x(); // don't use Date.now()`) now fires, exactly as the same comment without the apostrophe always did. Before, the phantom string hid it by accident.",
+    "Lexing is JS-family only (.js/.jsx/.ts/.tsx/.mjs/.cjs and .mts/.cts). Python (`//` is floor division) and PHP (no regex literals) read exactly as before; Python `#`-comment phantoms stay out of scope, since after `#` the rest of the line is comment anyway.",
+    "The regex-vs-division decision reuses the shared lib/js-literals.mjs lexer (the engine port from #1193): the previous significant character across lines, not literal line start. `}` is not an expression start there (it mirrors the engine), so `} /x'/` reads as division.",
+    "The comment/regex pass runs whole-file in the existing masked twin (maskJsxForFile renamed maskSourceForFile), so a block comment opened on an earlier line counts. blankedRuns ignores the stand-in, so the twin adds no rejected ranges.",
+    "ts/src/core/string-literals.ts does NOT share the flaw: it already skips comments (skipComment) and regex literals (regexLiteralEnd). Only its header's stale fidelity note was corrected, plus two pinning tests in ts/test/string-literals.test.ts."
+  ]
+}
