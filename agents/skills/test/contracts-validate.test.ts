@@ -345,3 +345,38 @@ describe('#1154 S7: one leading UTF-8 byte-order mark is stripped', () => {
     expect(validateText(BOM)).toMatchObject({ valid: false, checked: 0 });
   });
 });
+
+describe('#1154 S4: rule non-blank', () => {
+  it('refuses a whitespace-only title, naming results[0].title', () => {
+    const doc = valid('run');
+    doc.results[0].title = '  ';
+    expect(validateDocument(doc).errors).toEqual([
+      { path: 'results[0].title', message: 'must not be blank' },
+    ]);
+  });
+
+  it('refuses a blank env nested in a site feed, naming runs[0].scope.env', () => {
+    const doc = valid('site');
+    doc.runs[0].scope.env = ' \t';
+    expect(refusedPaths(doc)).toEqual(['runs[0].scope.env']);
+  });
+
+  it('a blank not-assessed reason is refused by both the schema and status-shape', () => {
+    const errors = validateDocument({
+      ...valid('assessment'),
+      status: 'not-assessed',
+      value: null,
+      reason: '   ',
+    }).errors;
+    expect(errors).toEqual([
+      { path: 'reason', message: 'must not be blank' },
+      { path: 'reason', message: expect.stringMatching(/is required/) },
+    ]);
+  });
+
+  it('accepts null in a nullable non-empty field (control)', () => {
+    expect(
+      validateDocument({ ...valid('assessment'), unit: null }).errors,
+    ).toEqual([]);
+  });
+});

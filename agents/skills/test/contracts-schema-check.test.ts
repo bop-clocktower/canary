@@ -74,6 +74,18 @@ describe('checkValue — keywords', () => {
     expect(check({ minLength: 1 }, 7)).toEqual([]);
   });
 
+  it('minLength >= 1 refuses a whitespace-only string as blank (#1154 S4)', () => {
+    const blank = [{ path: '$', message: 'must not be blank' }];
+    expect(check({ minLength: 1 }, '  ')).toEqual(blank);
+    expect(check({ minLength: 1 }, '\t\n')).toEqual(blank);
+    expect(check({ minLength: 1 }, '')).toEqual([
+      { path: '$', message: 'must be at least 1 character(s)' },
+    ]);
+    expect(check({ minLength: 1 }, ' x ')).toEqual([]);
+    expect(check({ minLength: 0 }, '  ')).toEqual([]);
+    expect(check({ type: ['string', 'null'], minLength: 1 }, null)).toEqual([]);
+  });
+
   it('$ref resolves a local pointer and a pointer into another schema', () => {
     const local = {
       $defs: { s: { required: ['env'] } },
