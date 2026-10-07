@@ -1,0 +1,22 @@
+{
+  "issues": [1196],
+  "route": "bug",
+  "stages": [
+    "debugging:investigate",
+    "debugging:analyze",
+    "debugging:hypothesize",
+    "tdd:red",
+    "debugging:fix",
+    "tdd:green",
+    "revert-and-fail"
+  ],
+  "assumptions": [
+    "Repo context = ts/package.json OR .git exists beside npm/ (the issue fix direction). Keyed on markers, never on the missing source itself; .git is a file in a worktree, existsSync covers both.",
+    "In-repo missing/unreadable engine source exits 3 (EXIT_ABSTAINED, the doctrine code) and names the full source path on stderr, in both --check and write mode.",
+    "Outside a checkout the exit stays 0 but now prints a one-line skipped note on stdout. The published tarball ships no scripts/, so in practice this branch serves only trees with no engine sources.",
+    "Drift (1) outranks abstention (3) when mirrors disagree, matching gateOutcome in ts/src/core/gate-result.ts: a finding proves something was checked.",
+    "Regression test lives in ts/test (vitest) beside script-entry-guards.test.ts rather than a new npm .test.js, to avoid a new entropy entry point."
+  ],
+  "closingKeyword": "Closes",
+  "reproducingTest": "ts/test/sync-gate-result-missing-source.test.ts"
+}

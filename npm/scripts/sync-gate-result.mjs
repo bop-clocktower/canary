@@ -28,15 +28,36 @@
  * Usage:
  *   node scripts/sync-gate-result.mjs            # write the copies
  *   node scripts/sync-gate-result.mjs --check    # exit 1 if any has drifted
+ *
+ * Exit 3 (abstained) when an engine source is unreadable inside a canary
+ * checkout; outside one there is nothing to compare, so it notes the skip
+ * and exits 0.
  */
 
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const npmRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const engineCore = resolve(npmRoot, '..', 'ts', 'src', 'core');
+const repoRoot = resolve(npmRoot, '..');
+const engineCore = resolve(repoRoot, 'ts', 'src', 'core');
+
+/** The doctrine's abstention exit code (#508 D2): the gate checked nothing. */
+const EXIT_ABSTAINED = 3;
+
+/**
+ * True when this package sits inside a canary checkout rather than a tree
+ * that genuinely has no engine sources. Keyed on markers that exist beside
+ * `npm/` in every checkout and worktree (`.git` is a file in a worktree), not
+ * on the engine source itself: "the source is missing" is the failure being
+ * judged, so it cannot also be the evidence of where we are (#1196).
+ */
+function insideRepo() {
+  return ['ts/package.json', '.git'].some((marker) =>
+    existsSync(join(repoRoot, marker)),
+  );
+}
 
 /** Each mirrored module: its engine source of truth and generated CJS copy. */
 export const MIRRORS = ['gate-result.ts', 'test-shapes.ts'].map((file) => ({
@@ -64,9 +85,22 @@ function syncOne({ file, source: sourcePath, target }, check) {
   try {
     source = readFileSync(sourcePath, 'utf-8');
   } catch {
-    // The engine source is absent in a published tarball (`files` ships only
-    // bin/ and dist/), where the already-generated copy is what matters.
-    // Nothing to sync and nothing to verify — succeed quietly.
+    // Inside the repo a missing or unreadable source means the gate compared
+    // nothing — a loud abstention, never a quiet pass (#1196). Outside one
+    // (no engine sources ship with the package) the already-generated copy
+    // is what matters: succeed, but say the check did not run.
+    if (insideRepo()) {
+      process.stderr.write(
+        `sync-gate-result: ABSTAINED — cannot read ${sourcePath}, so ` +
+          `npm/src/${file} was not checked.\n` +
+          '  Restore the engine source (or update MIRRORS if it moved).\n',
+      );
+      return EXIT_ABSTAINED;
+    }
+    process.stdout.write(
+      `sync-gate-result: skipped npm/src/${file} — no engine source ` +
+        'outside a canary checkout.\n',
+    );
     return 0;
   }
   const expected = render(source, file);
@@ -98,9 +132,10 @@ function syncOne({ file, source: sourcePath, target }, check) {
 function main(argv) {
   const check = argv.includes('--check');
   // Every mirror is visited even after a failure, so one run names them all.
-  return MIRRORS.map((m) => syncOne(m, check)).some((code) => code !== 0)
-    ? 1
-    : 0;
+  // A drift outranks an abstention: it proves something was checked.
+  const codes = MIRRORS.map((m) => syncOne(m, check));
+  if (codes.includes(1)) return 1;
+  return codes.includes(EXIT_ABSTAINED) ? EXIT_ABSTAINED : 0;
 }
 
 /**
