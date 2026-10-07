@@ -236,6 +236,40 @@ describe('real-dates (#1151 phase 3 review)', () => {
     ]);
   });
 
+  it.each([
+    '2026-02-30T00:00:00Z',
+    '2025-02-29T00:00:00Z',
+    '1900-02-29T00:00:00Z',
+    '2026-04-31T00:00:00Z',
+    '2026-00-10T00:00:00Z',
+    '2026-10-00T00:00:00Z',
+    '2026-10-06T24:00:00Z',
+    '2026-10-06T23:60:00Z',
+    '2026-10-06T23:59:60Z',
+    '2026-10-06T10:00:00+24:00',
+    '2026-10-06T10:00:00+05:60',
+  ])('refuses %s: no such calendar date or clock (#1154 S2)', (ts) => {
+    expect(crossFieldErrors('run', run(ts))).toEqual([
+      {
+        path: 'run.finished_at',
+        message: `${JSON.stringify(ts)} matches the timestamp pattern but is not a real date`,
+      },
+    ]);
+  });
+
+  it.each([
+    '2024-02-29T00:00:00Z',
+    '2000-02-29T00:00:00Z',
+    '0000-02-29T00:00:00Z',
+    '2026-12-31T23:59:59.999-23:59',
+  ])('accepts %s: a real instant, leap days included (control)', (ts) => {
+    expect(crossFieldErrors('run', run(ts))).toEqual([]);
+  });
+
+  it('leaves a string the pattern refuses to the schema: one error, not two', () => {
+    expect(crossFieldErrors('run', run('yesterday'))).toEqual([]);
+  });
+
   it('leaves a non-string timestamp to the schema', () => {
     const errs = crossFieldErrors('assessment', assessment({ observed_at: 5 }));
     expect(

@@ -169,11 +169,33 @@ function authorExcluded(row, prefix) {
   }));
 }
 
+const TIMESTAMP_RE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+/** Hour, minute, second, offset hour, offset minute. A leap second is refused. */
+const CLOCK_MAX = [23, 59, 59, 23, 59];
+
+/** setUTCFullYear, not Date.UTC: Date.UTC reads years 0-99 as 1900-1999. */
+const daysInMonth = (year, month) =>
+  new Date(new Date(0).setUTCFullYear(year, month, 0)).getUTCDate();
+
+const isRealDay = (y, mo, d) =>
+  mo >= 1 && mo <= 12 && d >= 1 && d <= daysInMonth(y, mo);
+
+/**
+ * Range-checks the timestamp's own fields; `Date.parse` rolls 02-30 over to
+ * 03-02 (#1154 S2). A string the pattern refuses is the schema's error.
+ */
+function isRealInstant(value) {
+  const m = TIMESTAMP_RE.exec(value);
+  if (m === null) return true;
+  const [y, mo, d, ...clock] = m.slice(1).map((g) => Number(g ?? 0));
+  return isRealDay(y, mo, d) && clock.every((v, i) => v <= CLOCK_MAX[i]);
+}
+
 /**
  * Rule `real-dates`: a timestamp names an instant. The pattern admits month 13
- * or hour 25, which `Date.parse` reads as NaN; a reader then sorts that record
- * as the newest and never ages it dark (#1151 phase 3 review). Only strings
- * are checked; a non-string is the schema's error.
+ * or February 30, which a reader sorts or dates wrongly (#1151 phase 3 review,
+ * #1154 S2). Only strings are checked; a non-string is the schema's error.
  */
 const realDates =
   (...paths) =>
@@ -183,8 +205,7 @@ const realDates =
         (o, key) => (isPlainObject(o) ? o[key] : undefined),
         record,
       );
-      if (typeof value !== 'string' || Number.isFinite(Date.parse(value)))
-        return [];
+      if (typeof value !== 'string' || isRealInstant(value)) return [];
       return [
         {
           path: at(prefix, path.join('.')),
