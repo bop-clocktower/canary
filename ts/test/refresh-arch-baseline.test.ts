@@ -236,6 +236,53 @@ describe('refresh-arch-baseline', () => {
     expect(run([reportPath, '--baseline', baselinePath]).code).toBe(3);
   });
 
+  // #1197: `metrics[category]` on a plain object resolved these names to
+  // inherited Object.prototype members, so the script "refreshed" a metric the
+  // baseline never recorded (exit 0, `undefined -> 5`) and wrote `value` onto
+  // the Object function / Object.prototype instead of the baseline.
+  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+    'abstains (3) on prototype-key category "%s" the baseline does not carry',
+    (category) => {
+      writeFileSync(
+        reportPath,
+        JSON.stringify(reportFixture([{ category, currentValue: 5 }])),
+      );
+      const before = readFileSync(baselinePath, 'utf-8');
+
+      const { code, out } = run([reportPath, '--baseline', baselinePath]);
+
+      expect(code).toBe(3);
+      expect(out).toContain(`the baseline records no metric "${category}"`);
+      expect(out).not.toContain('refreshed');
+      expect(readFileSync(baselinePath, 'utf-8')).toBe(before);
+    },
+  );
+
+  it('still refreshes a prototype-named metric the baseline really records', () => {
+    const fixture = baselineFixture();
+    const baseline = {
+      ...fixture,
+      metrics: {
+        ...fixture.metrics,
+        constructor: { value: 3, violationIds: ['z'] },
+      },
+    };
+    writeFileSync(baselinePath, JSON.stringify(baseline, null, 2));
+    writeFileSync(
+      reportPath,
+      JSON.stringify(
+        reportFixture([{ category: 'constructor', currentValue: 5 }]),
+      ),
+    );
+
+    const { code } = run([reportPath, '--baseline', baselinePath]);
+
+    expect(code).toBe(0);
+    const metrics = readBaseline().metrics;
+    expect(Object.hasOwn(metrics, 'constructor')).toBe(true);
+    expect(metrics.constructor).toEqual({ value: 5, violationIds: ['z'] });
+  });
+
   describe('stale floor caught by arch-baseline-freshness (#1013)', () => {
     let allowanceDir: string;
     let configPath: string;
