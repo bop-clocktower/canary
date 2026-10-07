@@ -343,14 +343,18 @@ via slash commands.
   list and the top-level files differ.
 - **Skills:** `agents/skills/claude-code/<name>/SKILL.md`. Claude Code's default
   skill scan reads only a top-level `skills/`, so `plugin.json` **declares**
-  `"skills": ["./agents/skills/claude-code/"]` (this key adds to the default
-  scan; `agents` replaces it). Without it a plugin-only install got no canary
-  skills (#1210). Skills list as `canary:<name>`; on a machine that also has the
-  harness plugin, its generated `harness:canary-*` commands list too (suppress
-  either via `skillOverrides`). `ts/test/plugin-skills.test.ts` fails if the key
-  is dropped, if any skill there would not load (missing `SKILL.md`, `name` ≠
-  directory, no `description`), or if the manifest descriptions stop naming the
-  real agent count, the skills and the MCP server.
+  `skills` as one path per adopter-facing skill folder (this key adds to the
+  default scan; `agents` replaces it). Without it a plugin-only install got no
+  canary skills (#1210). Repo-internal skills (`canary-ship`,
+  `canary-setup-harness`, `canary-add-framework`) are deliberately left out so
+  they never reach plugin users; never register the parent directory. A new
+  skill must be added to `skills` or to `INTERNAL_SKILLS` in
+  `ts/test/plugin-skills.test.ts`, which fails on an unclassified skill, an
+  internal one registered, a registered one that would not load (missing
+  `SKILL.md`, `name` ≠ directory, no `description`), or descriptions that stop
+  naming the real agent count, the skills and the MCP server. Skills list as
+  `canary:<name>`; on a machine that also has the harness plugin, its generated
+  `harness:canary-*` commands list too (suppress either via `skillOverrides`).
   - `canary-starling` (#1151): the QA site feed composer. Reads the run-history
     store, `canary.run/1` run files, the katana ledger and a
     `canary ci-ready --json` report, and writes one `canary.site/1` `site.json`,
