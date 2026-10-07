@@ -57,11 +57,9 @@ const _PACKAGE_SCRIPT_PATTERNS: Array<[RegExp, string, string]> = [
   [/\bwdio\b/, 'wdio', 'mobile'],
 ];
 
-// package.json dependency name -> (framework, shape) (#1205). Exact package
-// names only, mapped onto frameworks the registry already knows, reusing the
-// framework/shape vocabulary of the config and script tables above.
-// `@playwright/test` is refined to api/e2e_ui by `inferPlaywrightTestType`,
-// as the config tier does.
+// package.json dependency -> (framework, shape) (#1205): exact names, registry
+// frameworks only, same vocabulary as the tables above. `@playwright/test` is
+// refined by `inferPlaywrightTestType`, as the config tier does.
 const _JS_DEP_PACKAGES: Array<[string, string, string]> = [
   ['@playwright/test', 'playwright', 'e2e_ui'],
   ['vitest', 'vitest', 'frontend_unit'],
@@ -70,11 +68,7 @@ const _JS_DEP_PACKAGES: Array<[string, string, string]> = [
   ['webdriverio', 'wdio', 'mobile'],
 ];
 
-const _JS_DEP_FIELDS = [
-  'dependencies',
-  'devDependencies',
-  'peerDependencies',
-] as const;
+const _JS_DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'];
 
 // Python dependency -> (framework, shape). MULTILINE `^` anchored on `\n` only.
 const _PYTHON_DEP_PATTERNS: Array<[RegExp, string, string]> = [
@@ -190,10 +184,10 @@ function probeRequirements(root: string): ProbeResult | null {
 
 /** package.json as an object, or null when absent, unreadable, or not JSON. */
 function readPackageJson(root: string): Record<string, unknown> | null {
-  const text = readTextOrNull(join(root, 'package.json'));
-  if (text === null) return null;
   try {
-    const pkg: unknown = JSON.parse(text);
+    const pkg: unknown = JSON.parse(
+      readFileSync(join(root, 'package.json'), 'utf-8'),
+    );
     return isRecord(pkg) ? pkg : null;
   } catch {
     return null;
@@ -205,9 +199,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Every string `scripts.*` entry, `test` first. Multi-target suites often
- * expose only `test:<variant>` scripts (#1205); keeping `test` first means a
- * package that does declare one resolves exactly as it did before.
+ * Every string `scripts.*` entry, `test` first so a package declaring one
+ * resolves as before; multi-target suites often have only `test:<x>` (#1205).
  */
 function orderedScripts(pkg: Record<string, unknown>): Array<[string, string]> {
   const scripts = isRecord(pkg['scripts']) ? pkg['scripts'] : {};
@@ -235,22 +228,17 @@ function probePackageScripts(root: string): ProbeResult | null {
 }
 
 /**
- * Tier 2d -- package.json dependency scan (#1205).
- *
- * Ranked below scripts: a script says how the suite is *run*, a dependency
- * only that the tool is installed. Ranked above the language fallback because
- * a declared dependency is evidence observed in this package, where the
- * language tier is inherited from harness config. Returns confidence
- * `content`, like the other tiers that read a file's contents.
+ * Tier 2d -- package.json dependency scan (#1205). Below scripts: a script says
+ * how the suite runs, a dependency only that the tool is installed. Above the
+ * language fallback: a dependency is observed here, a language is inherited.
  */
 function probePackageDeps(root: string): ProbeResult | null {
   const pkg = readPackageJson(root);
   if (pkg === null) return null;
   for (const [dep, framework, shape] of _JS_DEP_PACKAGES) {
-    const field = _JS_DEP_FIELDS.find((f) => {
-      const deps = pkg[f];
-      return isRecord(deps) && Object.hasOwn(deps, dep);
-    });
+    const field = _JS_DEP_FIELDS.find(
+      (f) => isRecord(pkg[f]) && Object.hasOwn(pkg[f] as object, dep),
+    );
     if (field === undefined) continue;
     const refined =
       framework === 'playwright' ? inferPlaywrightTestType(root) : shape;
