@@ -109,6 +109,18 @@ export const passCounts = (t) => ({
 });
 
 /**
+ * Why a logical run has no pass rate, or null. Every panel that prints a
+ * run's count or rate asks this first, so none prints "0/0" or "40/40" over a
+ * run that measured nothing or measured part of the suite (#1200).
+ */
+export function rateProblem(run) {
+  if (run.incomplete)
+    return `${run.shards.reported} of ${run.shards.total} shards reported`;
+  if (!(passCounts(run.totals).denominator > 0)) return 'no tests counted';
+  return null;
+}
+
+/**
  * Rounded DOWN to one decimal from integers: 996/1000 is 99.6% and 999/1000
  * is never 100%. An empty denominator is ABSENT, never 0%.
  */
@@ -146,6 +158,16 @@ export function timeProblem(finishedMs, now) {
 /** An undated run is dark: it is no evidence of a recent run. */
 export const isDark = (finishedMs, now) =>
   !Number.isFinite(finishedMs) || now - finishedMs > DARK_AFTER_DAYS * DAY_MS;
+
+/** "14h ago" / "3d ago"; a time this page cannot age is ABSENT. */
+export function ago(finishedMs, now) {
+  if (timeProblem(finishedMs, now)) return ABSENT;
+  // Inside the skew allowance, but still ahead: say so, not "just now".
+  if (finishedMs - now > 60_000) return 'ahead of this clock';
+  const hours = Math.floor((now - finishedMs) / 3_600_000);
+  if (hours < 1) return 'just now';
+  return hours < 48 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
+}
 
 export const ageDays = (isoTime, now) =>
   Math.floor((now - Date.parse(isoTime)) / DAY_MS);

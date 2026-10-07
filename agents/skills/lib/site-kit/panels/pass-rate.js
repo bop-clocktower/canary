@@ -8,20 +8,13 @@ import {
   logicalRuns,
   passCounts,
   percent,
+  rateProblem,
   scopeLabel,
 } from '../model.js';
 
-/** Why this run's rate is not shown, or null. */
-function whyAbsent(run, denominator) {
-  if (run.incomplete)
-    return `${run.shards.reported} of ${run.shards.total} shards reported`;
-  if (!(denominator > 0)) return 'no tests counted';
-  return null;
-}
-
 function runItem(run) {
   const { numerator, denominator } = passCounts(run.totals);
-  const absent = whyAbsent(run, denominator);
+  const absent = rateProblem(run);
   const when = Number.isFinite(run.finished)
     ? new Date(run.finished).toISOString()
     : null;
@@ -37,10 +30,35 @@ function runItem(run) {
       {},
       when ? el('time', { datetime: when }, when.slice(0, 10)) : ABSENT,
       ' ',
-      el('strong', {}, absent ? ABSENT : percent(numerator, denominator)),
-      el('span', { class: 'muted' }, ` (${detail}${notRun})`),
+      bar(absent ? null : numerator / denominator),
+      el(
+        'strong',
+        { class: 'num' },
+        absent ? ABSENT : percent(numerator, denominator),
+      ),
+      el('span', { class: 'muted num' }, ` (${detail}${notRun})`),
     ),
   };
+}
+
+/** Where a rate stops reading as healthy; colour only, never a verdict. */
+const tone = (ratio) =>
+  ratio >= 0.95 ? 'passing' : ratio >= 0.8 ? 'degraded' : 'failing';
+
+/** A track with a fill; an absent rate is an empty track, never a 0% bar. */
+function bar(ratio) {
+  const fill = el('span');
+  // CSSOM, not a style attribute: a strict style-src CSP allows this.
+  if (ratio !== null) fill.style.width = `${Math.floor(ratio * 1000) / 10}%`;
+  return el(
+    'span',
+    {
+      class: 'bar',
+      'aria-hidden': 'true',
+      ...(ratio === null ? {} : { 'data-state': tone(ratio) }),
+    },
+    fill,
+  );
 }
 
 /** One sentence per kind of run whose rate or date could not be shown. */
@@ -85,11 +103,17 @@ export class PassRate extends CanaryPanel {
     const sections = [...bySuite.values()].map((runs) => {
       const items = runs.map(runItem);
       all.push(...items);
+      const head = items[0].node.querySelector('strong').textContent;
       return el(
         'section',
         {},
-        el('h3', {}, `${scopeLabel(runs[0].scope)} · ${runs[0].suite}`),
-        el('ol', {}, ...items.map((i) => i.node)),
+        el(
+          'div',
+          { class: 'row' },
+          el('h3', {}, `${scopeLabel(runs[0].scope)} · ${runs[0].suite}`),
+          el('span', { class: 'big', 'aria-hidden': 'true' }, head),
+        ),
+        el('ol', { class: 'trend' }, ...items.map((i) => i.node)),
       );
     });
     const abstentions = announce(all);

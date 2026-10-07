@@ -20,6 +20,7 @@ import {
 import { isMain } from '../../../lib/is-main.mjs';
 import { buildSite, outProblem } from './build.mjs';
 import { readFeed } from './feed.mjs';
+import { PANEL_TAGS } from './page.mjs';
 
 const PREFIX = 'canary-barda:';
 const EXIT_ABSTAINED = 3;
@@ -53,7 +54,7 @@ function summarize(args, doc, files) {
     return args.strict ? EXIT_ABSTAINED : 0;
   }
   console.log(
-    `${PREFIX} built ${args.out}: ${files} file(s), 6 panels, ${doc.runs.length} run(s)`,
+    `${PREFIX} built ${args.out}: ${files} file(s), ${PANEL_TAGS.length} panels, ${doc.runs.length} run(s)`,
   );
   return 0;
 }

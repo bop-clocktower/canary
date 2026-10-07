@@ -131,9 +131,9 @@ slash-command entry points.
   THIN SAMPLE banner. Emits only, never posts.
 - [`canary-barda`](./claude-code/canary-barda/SKILL.md) — Bundled executable
   skill (`scripts/cli.mjs`). QA site builder: validates a `canary.site/1` feed
-  and writes a self-contained static site (index.html, site.json, the six-panel
-  kit) that runs under `script-src 'self'`. An invalid feed builds nothing; zero
-  runs builds but reports ABSTAINED.
+  and writes a self-contained static site (index.html, site.json, the
+  seven-panel kit) that runs under `script-src 'self'`. An invalid feed builds
+  nothing; zero runs builds but reports ABSTAINED.
 - [`canary-starling`](./claude-code/canary-starling/SKILL.md) — Bundled
   executable skill (`scripts/cli.mjs`). QA site feed composer: reads the
   run-history store, `canary.run/1` files, the katana ledger and a

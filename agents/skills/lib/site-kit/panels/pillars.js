@@ -6,7 +6,7 @@ import { CanaryPanel, el } from '../panel.js';
 import { ABSENT, formatMeasure, scopeLabel } from '../model.js';
 
 const evidence = (e) =>
-  ` · evidence: ${e.tier ?? ABSENT}${e.denominator === null ? '' : ` over ${e.denominator}`}`;
+  `evidence: ${e.tier ?? ABSENT}${e.denominator === null ? '' : ` over ${e.denominator}`}`;
 
 const order = (a, b) =>
   scopeLabel(a.scope).localeCompare(scopeLabel(b.scope)) ||
@@ -21,11 +21,11 @@ function card(a) {
           'p',
           {},
           el('strong', {}, formatMeasure(a.value, a.unit)),
-          evidence(a.evidence),
+          el('span', { class: 'muted' }, evidence(a.evidence)),
         );
   return el(
     'li',
-    { 'data-state': a.status },
+    { 'data-state': a.status, class: 'card' },
     el('h3', {}, a.metric),
     el(
       'p',
@@ -37,6 +37,10 @@ function card(a) {
 }
 
 export class Pillars extends CanaryPanel {
+  get bodyClass() {
+    return '';
+  }
+
   get heading() {
     return 'Pillars';
   }
@@ -48,6 +52,9 @@ export class Pillars extends CanaryPanel {
     const abstentions = sorted
       .filter((a) => a.status === 'not-assessed')
       .map((a) => `${a.metric}: not assessed (${a.reason}).`);
-    return { nodes: [el('ul', {}, ...sorted.map(card))], abstentions };
+    return {
+      nodes: [el('ul', { class: 'cards tiles' }, ...sorted.map(card))],
+      abstentions,
+    };
   }
 }

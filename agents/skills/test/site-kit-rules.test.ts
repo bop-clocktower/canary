@@ -22,7 +22,7 @@ const defined = new Set(
 
 describe('site-kit source rules', () => {
   it('reads the whole kit (a zero denominator here is an abstention, not a pass)', () => {
-    expect(files('.js')).toHaveLength(9);
+    expect(files('.js')).toHaveLength(10);
   });
 
   it.each(files('.js'))('$file holds no color literal', ({ text }) => {

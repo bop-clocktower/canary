@@ -161,7 +161,7 @@ const ROWS: SkillGateRow[] = [
   },
   {
     command: 'canary-barda (zero runs in the feed)',
-    forbid: ['6 panels,'],
+    forbid: ['7 panels,'],
     run: (base) => run(bardaMain, bardaArgs(base)),
     strict: (base) => run(bardaMain, [...bardaArgs(base), '--strict']),
   },

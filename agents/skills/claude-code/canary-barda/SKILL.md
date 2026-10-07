@@ -3,8 +3,8 @@ name: canary-barda
 description:
   QA site builder. Turns a validated canary.site/1 feed (from canary-starling)
   into a self-contained static site — index.html, site.json and the site kit's
-  six panels — that runs under a strict `script-src 'self'` CSP. An invalid feed
-  builds nothing; a feed with zero runs still builds but reports ABSTAINED.
+  seven panels — that runs under a strict `script-src 'self'` CSP. An invalid
+  feed builds nothing; a feed with zero runs still builds but reports ABSTAINED.
   Writes only, never deploys.
 cli: scripts/cli.mjs
 requires: [node>=20]
@@ -13,9 +13,10 @@ requires: [node>=20]
 # Canary Barda
 
 `canary-starling` writes the feed; `canary-barda` turns it into a page. The page
-shows six panels — pipeline health, pass rate, failures by area, flaky tests,
-pillars, and the skipped/removed register — and every one of them says what it
-could not show instead of rendering an empty "all clear".
+shows seven panels — a summary row of counts, pipeline health, pass rate,
+failures by area, flaky tests, pillars, and the skipped/removed register — and
+every one of them says what it could not show instead of rendering an empty "all
+clear".
 
 ## What this is not
 
@@ -47,9 +48,9 @@ canary skills run canary-barda -- --help
 
 ```text
 site-out/
-  index.html      six panels, no inline script or style
+  index.html      seven panels, no inline script or style
   site.json       the feed, as validated
-  kit/            canary-site.js, model.js, panel.js, panels/, tokens.css, page.css
+  kit/            canary-site.js, model.js, panel.js, panels/, tokens.css, page.css, mark.svg
 ```
 
 Serve the directory from any static host. `index.html` declares the feed with
@@ -73,5 +74,10 @@ Serve the directory from any static host. `index.html` declares the feed with
 ## Theming
 
 Panels read only the custom properties in `kit/tokens.css`. Redefine them on
-`:root` (or set `data-theme="dark"` / `"light"`) to re-theme. Embedding panels
-in an existing site is `canary-vixen`'s job (phase 4).
+`:root` (or set `data-theme="dark"` / `"light"`) to re-theme. Each state color
+(`--canary-ok`, `-fail`, `-warn`, `-dark`) has a matching `-tint` used behind
+pills and tiles; redefine the pair together, or a light tint lands behind light
+text. `--canary-page` follows `--canary-bg` unless set; `--canary-track`,
+`--canary-shadow`, `--canary-brand` / `--canary-on-brand` (the header bar) and
+`--canary-accent-tint` complete the set. Embedding panels in an existing site is
+`canary-vixen`'s job (phase 4).

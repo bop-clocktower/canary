@@ -57,7 +57,7 @@ export class Register extends CanaryPanel {
     const rows = [...doc.register].sort((a, b) => sortKey(a) - sortKey(b));
     const skewed = rows.filter((r) => unageable(r, now)).length;
     return {
-      nodes: [el('ul', {}, ...rows.map((r) => row(r, now)))],
+      nodes: [el('ul', { class: 'rows' }, ...rows.map((r) => row(r, now)))],
       abstentions: skewed
         ? [
             `${skewed} row(s) have a date this page cannot age (clock skew or no real date).`,

@@ -101,4 +101,115 @@ describe('<canary-pipeline-health> (criterion 10)', () => {
     const root = mount(PipelineHealth, siteFeed({ suites: [] }));
     expect(live(root)).toBe('No suite has reported a run.');
   });
+
+  it('cards each suite with its last run and a run strip, oldest first', () => {
+    const root = mount(
+      PipelineHealth,
+      siteFeed({
+        suites: declared('ts-engine', 'e2e'),
+        runs: [
+          runRecord({
+            id: 'old',
+            status: 'failed',
+            finished: iso(NOW - 2 * DAY),
+          }),
+          runRecord({ id: 'new', finished: iso(NOW - 3 * 3_600_000) }),
+        ],
+      }),
+    );
+    const [engine, e2e] = root.querySelectorAll('li');
+    expect(engine.textContent).toContain('last run 3h ago · 1/1 passed');
+    expect(
+      [...engine.querySelectorAll('.strip span')].map((s) =>
+        s.getAttribute('data-state'),
+      ),
+    ).toEqual(['failed', 'passed']);
+    // A suite that never reported has no strip: an empty strip would read as
+    // "no failures", which nothing measured.
+    expect(e2e.querySelector('.strip')).toBeNull();
+    expect(e2e.textContent).toContain('no run in the feed');
+    expect(root.querySelector('.summary')!.textContent).toBe(
+      '1 of 2 suite(s) passing',
+    );
+    // A suite that never reported is unproven, not failed: grey, not red.
+    expect(root.querySelector('.summary')!.getAttribute('data-state')).toBe(
+      'dark',
+    );
+  });
+
+  it('labels the run strip for assistive tech instead of hiding it', () => {
+    const root = mount(
+      PipelineHealth,
+      siteFeed({
+        suites: declared('ts-engine'),
+        runs: [
+          runRecord({
+            id: 'a',
+            status: 'failed',
+            finished: iso(NOW - 2 * DAY),
+          }),
+          runRecord({ id: 'b', finished: iso(NOW - DAY) }),
+        ],
+      }),
+    );
+    const strip = root.querySelector('.strip')!;
+    expect(strip.getAttribute('aria-hidden')).toBeNull();
+    expect(strip.getAttribute('role')).toBe('img');
+    expect(strip.getAttribute('aria-label')).toBe(
+      'last 2 runs: 1 passed, 1 failed',
+    );
+  });
+
+  // Review findings (ship gate): a card or summary line must never print a
+  // confident count over a run that measured nothing, or a part of a suite.
+  it('prints no 0/0 for a run that counted no tests', () => {
+    const run = runRecord({ totals: { passed: 0, total: 0 } });
+    const li = mount(
+      PipelineHealth,
+      siteFeed({ suites: declared('ts-engine'), runs: [run] }),
+    ).querySelector('li')!;
+    expect(li.textContent).not.toContain('0/0');
+    expect(li.textContent).toContain('— (no tests counted)');
+  });
+
+  it('prints no n/n for a run missing shards (#1200)', () => {
+    const shard = runRecord({
+      id: 'r-s1of2',
+      shard: { index: 1, total: 2 },
+      totals: { passed: 40, total: 40 },
+    });
+    const li = mount(
+      PipelineHealth,
+      siteFeed({ suites: declared('ts-engine'), runs: [shard] }),
+    ).querySelector('li')!;
+    expect(li.textContent).not.toContain('40/40');
+    expect(li.textContent).toContain('— (1 of 2 shards reported)');
+  });
+
+  it.each([
+    ['null', null],
+    ['empty', []],
+  ])(
+    'with suites %s, shows no "n of n passing" line: it has no declared denominator (D12)',
+    (_, suites) => {
+      const root = mount(
+        PipelineHealth,
+        siteFeed({ suites, runs: [runRecord()] }),
+      );
+      expect(root.querySelector('.summary')).toBeNull();
+    },
+  );
+
+  it('colours suites nobody measured recently grey, not failure red', () => {
+    const root = mount(
+      PipelineHealth,
+      siteFeed({
+        suites: declared('ts-engine'),
+        runs: [runRecord({ finished: iso(NOW - 30 * DAY) })],
+      }),
+    );
+    expect(root.querySelector('.summary')!.getAttribute('data-state')).toBe(
+      'dark',
+    );
+  });
 });

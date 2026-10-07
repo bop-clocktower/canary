@@ -41,7 +41,7 @@
     {
       "rule": "coupling",
       "path": "/agents/skills/lib/site-kit/canary-site.js",
-      "why": "browser entry: registers the six panels; imported by no module, only by a page"
+      "why": "browser entry: registers the seven panels; imported by no module, only by a page"
     },
     {
       "rule": "coupling",

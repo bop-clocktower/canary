@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ABSENT,
   ageDays,
+  ago,
   DARK_AFTER_DAYS,
   formatMeasure,
   isDark,
@@ -145,5 +146,23 @@ describe('site-kit model (#1151 phase 3)', () => {
     const v = validateDocument(doc);
     expect(v.errors).toEqual([]);
     expect(v.valid).toBe(true);
+  });
+});
+
+describe('ago', () => {
+  it('reads hours under two days, then days', () => {
+    expect(ago(NOW - 20 * 60_000, NOW)).toBe('just now');
+    expect(ago(NOW - 14 * 3_600_000, NOW)).toBe('14h ago');
+    expect(ago(NOW - 3 * DAY, NOW)).toBe('3d ago');
+  });
+
+  it('says a time inside the skew allowance is ahead of the clock, not "just now"', () => {
+    expect(ago(NOW + 23 * 3_600_000, NOW)).toBe('ahead of this clock');
+    expect(ago(NOW + 30_000, NOW)).toBe('just now');
+  });
+
+  it('will not age a time it cannot trust', () => {
+    expect(ago(Number.NaN, NOW)).toBe(ABSENT);
+    expect(ago(NOW + 2 * DAY, NOW)).toBe(ABSENT);
   });
 });
