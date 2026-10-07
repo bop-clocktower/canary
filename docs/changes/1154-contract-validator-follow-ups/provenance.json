@@ -1,0 +1,28 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "roadmap-fleet-2026-10-07",
+  "issues": [1154],
+  "route": "feature",
+  "stages": [
+    "harness:brainstorming/explore",
+    "harness:brainstorming/evaluate",
+    "harness:brainstorming/prioritize",
+    "harness:brainstorming/validate",
+    "harness:autopilot/plan",
+    "harness:autopilot/execute",
+    "harness:autopilot/verify",
+    "harness:autopilot/review"
+  ],
+  "planArtifact": "docs/changes/1154-contract-validator-follow-ups/plans/2026-10-07-validator-tightenings-plan.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Autonomous run: spec decisions D1-D6 taken with the recommended default, no human sign-off round.",
+    "All five items are validator-only tightenings; the three *.v1.schema.json files are byte-identical, so ADR 0035 / ADR 0030's additive rule is respected and nothing parked.",
+    "S2: real-dates range-checks the timestamp's own fields (month, day-in-month with leap years, hour<=23, minute/second<=59, offset<=23:59). A leap second (:60) is refused. Date.parse is no longer the judge because it rolls 02-30 over to 03-02.",
+    "S3: new rule repo-relative on results[]/collected[]/flaky[]/register[] file. Refuses a first segment starting with ~ (so a root file literally named '~x' is also refused), a leading backslash, and any path whose .. segments climb above the root; / and \\ both separate. 'a/../b' and '..foo/x' stay legal.",
+    "S4: implemented in the interpreter (minLength >= 1 also refuses a whitespace-only string, message 'must not be blank'), documented as rule non-blank. This is stricter than stock JSON Schema minLength; chosen over a ~30-path field list that would drift.",
+    "S4 side effect: a blank not-assessed reason now reports two errors at reason (non-blank and status-shape); pinned by a test and documented.",
+    "S7: strip one leading U+FEFF in validateText (the issue's preferred option; no ADR or contract doc says refuse).",
+    "S8: site checked = 1 + runs + assessments + flaky + register; scopes[] and suites[] are keys, not records, and stay uncounted."
+  ]
+}
