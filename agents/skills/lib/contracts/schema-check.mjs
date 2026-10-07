@@ -5,7 +5,9 @@
 // contract (see ../parse-args.mjs), so the validator runs wherever node runs
 // with nothing installed. Why interpret the schemas at all instead of
 // hand-coding checks: the .schema.json files are what other teams' producers
-// read, so the validator must enforce exactly those files. A keyword this
+// read, so the validator must enforce exactly those files. One deliberate
+// refinement: `minLength` >= 1 also refuses a whitespace-only string (rule
+// `non-blank`, #1154), which stock JSON Schema would accept. A keyword this
 // file does not implement is REFUSED at load by schemaProblems() in
 // schema-problems.mjs; otherwise a schema edit using it would read as
 // enforced and enforce nothing.

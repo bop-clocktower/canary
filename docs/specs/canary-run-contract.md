@@ -162,9 +162,10 @@ Every field is **required**. "Nullable" means the key must be present and may be
   between `results[]`, `collected[]` and other canary records, so every `file`
   is a path `git ls-files` could print. The schema pattern refuses a leading `/`
   or drive letter. The validator also refuses a path whose first segment is `~`
-  or `~user`, a path that starts with `\`, and a path whose `..` segments climb
-  above the repository root. `/` and `\` both separate segments.
-  `a/../b.spec.ts` does not escape, so it is accepted.
+  or starts with `~` (so a root file named `~x.spec.ts` is refused too), a path
+  that starts with `\`, and a path whose `..` segments climb above the
+  repository root. `/` and `\` both separate segments. `a/../b.spec.ts` does not
+  escape, so it is accepted.
 - **Rule `non-blank`.** A string field the schema gives `minLength: 1` must also
   hold a non-whitespace character: `"  "` is refused with `must not be blank`.
   This is stricter than stock JSON Schema `minLength`, so a producer validating

@@ -60,9 +60,9 @@ Approaches considered for S4 (the only item with a real fork):
 - `rules.mjs`
   - `realDates` keeps its signature and paths. Its predicate becomes
     `isRealInstant(value)`: the timestamp pattern is captured, and each field is
-    range-checked; the day is checked against
-    `new Date(Date.UTC(y, m, 0)).getUTCDate()`. A string that does not match the
-    pattern is left to the schema's `pattern` error, as before.
+    range-checked; the day is checked against `setUTCFullYear(y, m, 0)` (not
+    `Date.UTC`, which maps years 0–99 to 1900–1999). A string that does not
+    match the pattern is left to the schema's `pattern` error, as before.
   - New `repoRelative(...paths)` rule factory, added to the run rules for
     `results[i].file` and `collected[i].file`, and to the site rules for
     `flaky[i].file` and `register[i].file`. It skips non-strings, so a
@@ -73,7 +73,7 @@ Approaches considered for S4 (the only item with a real fork):
 - `schema-check.mjs` — `checkMinLength` reports `must not be blank` when
   `min >= 1`, the length is satisfied and `value.trim() === ''`.
 - `document.mjs`
-  - `validateText` strips a single leading `﻿`.
+  - `validateText` strips a single leading U+FEFF.
   - `countRecords` adds `flaky` and `register` lengths.
 
 ## Integration points
