@@ -1239,6 +1239,23 @@ export class MigrationReport {
     ).abstained;
   }
 
+  /**
+   * The abstention block, or nothing. Printed whether or not follow-ups exist
+   * (#1207): an unknown framework always has follow-ups, and that is exactly
+   * the repo where a silent zero-skill apply hid.
+   */
+  private abstentionLines(): string[] {
+    if (!this.abstained) return [];
+    return [
+      '## Status',
+      '',
+      ...zeroSkillAbstention(
+        this.shapes,
+        'this apply deployed zero overlay skills',
+      ),
+    ];
+  }
+
   /** 0 applied (or dry run), 3 abstained -- the reserved code (ADR 0009). */
   exit_code(): number {
     return this.abstained ? EXIT_ABSTAINED : 0;
@@ -1470,19 +1487,7 @@ export class MigrationReport {
 
     lines.push(...workflowMarkdown(this.installed_workflows, this.dry_run));
 
-    // #1207: the abstention prints whether or not follow-ups exist -- an
-    // unknown framework always has follow-ups, and that is exactly the repo
-    // where a silent zero-skill apply hid.
-    if (this.abstained) {
-      lines.push(
-        '## Status',
-        '',
-        ...zeroSkillAbstention(
-          this.shapes,
-          'this apply deployed zero overlay skills',
-        ),
-      );
-    }
+    lines.push(...this.abstentionLines());
 
     if (this.manual_followups.length > 0) {
       lines.push('## Manual Follow-ups Required', '');

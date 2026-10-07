@@ -598,7 +598,20 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
     throw new CliExitError(1);
   }
 
-  if (opts.json) {
+  emitMigrateReport(report, opts.json ?? false, dryRun, deps);
+}
+
+/**
+ * Print the migrate report in the caller's mode, then exit with its verdict:
+ * 3 when an apply from an overlay deployed zero skills (#1207), else 0.
+ */
+function emitMigrateReport(
+  report: ReturnType<ReturnType<MainDeps['makeMigrator']>['migrate']>,
+  json: boolean,
+  dryRun: boolean,
+  deps: MainDeps,
+): void {
+  if (json) {
     deps.out(
       jsonIndent2({
         framework: report.framework,
@@ -630,18 +643,16 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
         abstained: report.abstained,
       }),
     );
-    if (report.exit_code() !== 0) throw new CliExitError(report.exit_code());
-    return;
+  } else {
+    deps.out(report.to_markdown());
+    if (dryRun && report.would_create.length) {
+      deps.out(
+        `\n${pc.dim(`Re-run with ${pc.bold('--apply')} to write these files.`)}`,
+      );
+    }
   }
-
-  deps.out(report.to_markdown());
-  if (report.exit_code() !== 0) throw new CliExitError(report.exit_code());
-
-  if (dryRun && report.would_create.length) {
-    deps.out(
-      `\n${pc.dim(`Re-run with ${pc.bold('--apply')} to write these files.`)}`,
-    );
-  }
+  const code = report.exit_code();
+  if (code !== 0) throw new CliExitError(code);
 }
 
 // --- review-test / flake-check -----------------------------------------------
