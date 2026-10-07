@@ -100,6 +100,10 @@ refused (rule `verified-derived`).
   because key presence is the assertion.
 - **Rule `real-dates`.** `observed_at` and `verified_at`, when strings, name a
   real instant (see the run contract).
+- **Rule `non-blank`.** `unit`, `reason`, `verified_by` and every other string
+  the schema gives `minLength: 1` must hold a non-whitespace character (see the
+  run contract). A blank `reason` on `not-assessed` is reported twice, by
+  `non-blank` and by `status-shape`.
 - **Rule `verification-pair`** (criterion 17). `verified_by` and `verified_at`
   are both set or both `null`. A record that sets only one is refused, and the
   error names the half that is missing.

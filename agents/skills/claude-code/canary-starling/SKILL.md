@@ -96,8 +96,11 @@ declared" (`suites: null`); an empty list declares zero suites.
   shard, or a shard that never uploaded) measured part of the suite. It is left
   out of the feed and the flaky window and named on stderr, so it never stands
   in as the suite's newest run (#1200).
-- **Dark ledger**: the default ledger path missing is named on stderr; ledger
-  rows with no date, commit or reason are left out and named.
+- **Dark ledger**: the default ledger path missing is named on stderr and
+  carried in the feed as a `not-assessed` assessment (`source: canary.katana`,
+  `metric: register`) with that reason, so `register: []` beside it reads as
+  unread, not empty (#1199). A ledger that was read and is empty gets no marker.
+  Ledger rows with no date, commit or reason are left out and named.
 - **Not-assessed metrics**: with no `--ci-ready`, a report with no `observed_at`
   (treated as absent, and named on stderr), or a check that skipped or measured
   nothing, each metric is a `not-assessed` assessment whose `reason` names the

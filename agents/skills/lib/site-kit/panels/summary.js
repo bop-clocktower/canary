@@ -7,7 +7,7 @@
 // as the panel it summarizes: "—" plus the reason, never a 0 nothing measured.
 
 import { CanaryPanel, el } from '../panel.js';
-import { ABSENT, logicalRuns, rateProblem } from '../model.js';
+import { ABSENT, logicalRuns, rateProblem, registerUnread } from '../model.js';
 import { stateOf, suitesPassing, suiteRows } from './pipeline-health.js';
 
 /** Suite keys to count: declared ones plus any that reported anyway. */
@@ -63,13 +63,13 @@ function flaky(doc) {
 }
 
 function register(doc) {
-  // An empty register is ambiguous until #1199: no debt, or no ledger read.
-  if (doc.register.length === 0)
-    return {
-      value: ABSENT,
-      why: 'The register is empty, which this feed cannot tell from unread.',
-    };
-  return { value: String(doc.register.length), state: 'degraded' };
+  const n = doc.register.length;
+  // An empty register beside starling's not-assessed marker was never read
+  // (#1199); without the marker, 0 is a real count.
+  const unread = n === 0 ? registerUnread(doc) : null;
+  if (unread)
+    return { value: ABSENT, why: `Register not assessed: ${unread}.` };
+  return { value: String(n), state: n ? 'degraded' : 'passing' };
 }
 
 const TILES = [

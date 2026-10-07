@@ -5,7 +5,9 @@
 // contract (see ../parse-args.mjs), so the validator runs wherever node runs
 // with nothing installed. Why interpret the schemas at all instead of
 // hand-coding checks: the .schema.json files are what other teams' producers
-// read, so the validator must enforce exactly those files. A keyword this
+// read, so the validator must enforce exactly those files. One deliberate
+// refinement: `minLength` >= 1 also refuses a whitespace-only string (rule
+// `non-blank`, #1154), which stock JSON Schema would accept. A keyword this
 // file does not implement is REFUSED at load by schemaProblems() in
 // schema-problems.mjs; otherwise a schema edit using it would read as
 // enforced and enforce nothing.
@@ -110,9 +112,19 @@ function checkMinimum(min, value, path, ctx) {
   report(ctx, path, `must be >= ${min}`);
 }
 
+/**
+ * Rule `non-blank` (#1154 S4): unlike stock JSON Schema, a minimum of 1 or
+ * more also refuses a whitespace-only string, so `"  "` is not "non-empty".
+ */
+function minLengthProblem(min, value) {
+  if ([...value].length < min) return `must be at least ${min} character(s)`;
+  return min >= 1 && value.trim() === '' ? 'must not be blank' : null;
+}
+
 function checkMinLength(min, value, path, ctx) {
-  if (typeof value !== 'string' || [...value].length >= min) return;
-  report(ctx, path, `must be at least ${min} character(s)`);
+  if (typeof value !== 'string') return;
+  const problem = minLengthProblem(min, value);
+  if (problem) report(ctx, path, problem);
 }
 
 /** RFC 6901: `~1` is `/` and `~0` is `~`, decoded in that order. */

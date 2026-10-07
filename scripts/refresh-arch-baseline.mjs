@@ -190,7 +190,9 @@ function planUpdate(regression, metrics) {
         'a refresh must never invent the number it writes',
     );
   }
-  const recorded = metrics[category];
+  // Own keys only (#1197): an inherited `constructor`/`__proto__` is no metric.
+  const own = Object.hasOwn(metrics, category);
+  const recorded = own ? metrics[category] : undefined;
   if (recorded === undefined) {
     return abstain(`the baseline records no metric "${category}"`);
   }
