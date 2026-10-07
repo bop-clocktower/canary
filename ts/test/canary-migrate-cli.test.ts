@@ -846,3 +846,209 @@ describe('#1065 migrate --check: no overlay is an abstention, not a pass', () =>
     }
   });
 });
+
+// --- #1207: --apply abstains on the same tree --check abstains on -----------
+
+/**
+ * An overlay whose only skill targets a shape the project does not have, so
+ * nothing in it can ever deploy here.
+ */
+function offShapeOverlay(base: string, shape = 'api'): string {
+  const overlay = join(base, 'off-shape-overlay');
+  const skillDir = join(overlay, '.canary', 'skills', `${shape}-only`);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(
+    join(skillDir, 'SKILL.md'),
+    `---\nname: ${shape}-only\ndeploy_to: [${shape}]\n---\n\n# ${shape}-only\n`,
+    'utf-8',
+  );
+  return overlay;
+}
+
+/**
+ * #1207: #503 made `--check` exit 3 when it verifies zero overlay skills, but
+ * `--apply` on the SAME tree still exited 0 -- so the adoption path an adopter
+ * is told to run (`overlay add` -> `migrate --apply`) read as a success that
+ * deployed nothing. `--apply` now uses `--check`'s denominator (overlay skills
+ * matching the resolved shapes) and its exit code.
+ */
+describe('#1207 migrate --apply: zero deployed skills is an abstention', () => {
+  it('exits 3 with the abstained line where --check also exits 3', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      // The issue's shape: framework not detected, shape set explicitly.
+      fakeHarnessProject(project, '{"canary_shape": "mobile"}');
+      const overlay = offShapeOverlay(base);
+
+      const check = await run(project, home, '--from', overlay, '--check');
+      expect(check.code).toBe(EXIT_ABSTAINED);
+
+      const apply = await run(project, home, '--from', overlay, '--apply');
+      expect(apply.code).toBe(EXIT_ABSTAINED);
+      expect(apply.stdout).toContain('**Abstained**');
+      expect(apply.stdout).toContain('not a pass');
+      expect(apply.stdout).toContain('`mobile`');
+      expect(apply.stdout).not.toContain('Migration complete');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('abstains with a detected framework too -- the rule is skills, not framework', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = offShapeOverlay(base, 'mobile');
+
+      const res = await run(project, home, '--from', overlay, '--apply');
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(res.stdout).toContain('**Abstained**');
+      expect(res.stdout).not.toContain('Migration complete');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('exits 3 under --json and flags abstained in the payload', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"canary_shape": "mobile"}');
+      const overlay = offShapeOverlay(base);
+
+      const res = await run(
+        project,
+        home,
+        '--from',
+        overlay,
+        '--apply',
+        '--json',
+      );
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      const payload = migrateJson(res.stdout);
+      expect(payload['abstained']).toBe(true);
+      expect(payload['deployed_skills']).toEqual([]);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('exits 0 when at least one overlay skill deploys', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = overlaySkill(base);
+
+      const res = await run(project, home, '--from', overlay, '--apply');
+      expect(res.code).toBe(0);
+      expect(res.stdout).not.toContain('Abstained');
+      expect(res.stdout).toContain('Migration complete');
+      expect(
+        existsSync(join(project, '.canary', 'skills', 'demo', 'SKILL.md')),
+      ).toBe(true);
+
+      const json = await run(
+        project,
+        home,
+        '--from',
+        overlay,
+        '--apply',
+        '--json',
+      );
+      expect(json.code).toBe(0);
+      expect(migrateJson(json.stdout)['abstained']).toBe(false);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('exits 0 with an unknown framework when a skill still deploys', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"canary_shape": "mobile"}');
+      const overlay = overlaySkill(base); // deploy_to: [all]
+
+      const res = await run(project, home, '--from', overlay, '--apply');
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain('**Framework:** unknown');
+      expect(res.stdout).not.toContain('Abstained');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('counts an already-current skill: a re-apply is not an abstention', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = overlaySkill(base);
+
+      expect(
+        (await run(project, home, '--from', overlay, '--apply')).code,
+      ).toBe(0);
+      const again = await run(project, home, '--from', overlay, '--apply');
+      expect(again.code).toBe(0);
+      expect(again.stdout).toContain('already current');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('leaves --apply with no overlay unchanged (scaffold-only, exit 0)', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+
+      const res = await run(project, home, '--apply');
+      expect(res.code).toBe(0);
+      expect(res.stdout).not.toContain('Abstained');
+      expect(res.stdout).toContain('Migration complete');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('leaves the dry run advisory: zero skills there still exits 0', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"canary_shape": "mobile"}');
+      const overlay = offShapeOverlay(base);
+
+      const res = await run(project, home, '--from', overlay);
+      expect(res.code).toBe(0);
+    } finally {
+      rmTmp(base);
+    }
+  });
+});

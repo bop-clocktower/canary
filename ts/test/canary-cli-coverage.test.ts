@@ -971,6 +971,8 @@ describe('migrate: injected migrator failures', () => {
       const migrate = vi.fn(() => ({
         would_create: ['tests/acme.test.ts'],
         to_markdown: () => '## plan',
+        // #1207: the CLI exits with the report's verdict; a dry run is 0.
+        exit_code: () => 0,
       }));
       const res = await invokeCanary(['migrate', '--path', dir], {
         deps: {

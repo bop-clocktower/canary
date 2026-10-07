@@ -132,8 +132,12 @@ manifests are caught mechanically instead of at a consumer's first run. It
 checks, per skill under `<overlay>/.canary/skills/<name>/SKILL.md`:
 
 1. **Frontmatter floor** — `name` and a non-empty `description` are present.
-2. **`deploy_to` targets** — every value is a known migration target (`api`,
-   `e2e_ui`, `frontend_unit`, `load`, `performance`, or the `all` sentinel).
+2. **`deploy_to` targets** — every value is a shape canary itself can emit (the
+   list in `ts/src/core/test-shapes.ts`: `api`, `e2e_ui`, `frontend_unit`,
+   `load`, `performance`, `mobile`, `accessibility`, `visual`, `contract`,
+   `mutation`, `integration`, `synthetic_data`, and the rest) or the `all`
+   sentinel. Any other value is a **warning**, not an error: it is fine when it
+   matches a consuming repo's custom `canary_shape`, and a typo otherwise.
 3. **`cli:` paths** — the script exists and resolves _inside_ the skill
    directory (a path that escapes is rejected).
 
@@ -291,6 +295,25 @@ canary migrate --from example-org-example-overlay --check --json   # machine-rea
 for, so `--check` can never report in sync about skills it never examined. The
 scalar `shape` is unchanged and keeps its meaning; `shapes` is purely additive,
 so an existing consumer of this payload is unaffected.
+
+### `migrate --apply` abstains on the same tree
+
+`--apply` uses the same denominator as `--check`: the overlay skills whose
+`deploy_to` covers the resolved shape set. When an overlay is given (`--from`,
+or the single tracked overlay) and that denominator is zero, the apply deployed
+nothing, so it prints the same **Abstained** block, with the same shape
+remediation, and exits `3` instead of `0` (#1207). `--json` carries
+`abstained: true`.
+
+| Exit | Meaning                                                                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Applied: at least one overlay skill matched (copied, refreshed, or already current), or no overlay was given and only config was scaffolded. |
+| `1`  | Error: no harness project, unresolvable overlay, or a workflow collision.                                                                    |
+| `3`  | **Abstained**: an overlay was given and zero of its skills match this project's shapes.                                                      |
+
+An unknown framework is not part of the rule, because `--check` does not consult
+it and skills deploy either way. A dry run without `--apply` keeps its advisory
+zero and exits `0`.
 
 ### One-way ownership (the safety guarantee)
 

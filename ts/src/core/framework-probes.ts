@@ -10,9 +10,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { globFiles, readTextOrNull } from './fs-glob.js';
+import type { TestShape } from './test-shapes.js';
 
 // (config_file, framework, shape, confidence)
-export const CONFIG_PROBES: Array<[string, string, string, string]> = [
+export const CONFIG_PROBES: Array<[string, string, TestShape, string]> = [
   ['playwright.config.ts', 'playwright', 'e2e_ui', 'config'],
   ['playwright.config.js', 'playwright', 'e2e_ui', 'config'],
   ['cypress.config.ts', 'playwright', 'e2e_ui', 'config'],
@@ -40,13 +41,13 @@ export const CONFIG_PROBES: Array<[string, string, string, string]> = [
 ];
 
 // pyproject.toml section markers
-const _PYPROJECT_MARKERS: Array<[string, string, string]> = [
+const _PYPROJECT_MARKERS: Array<[string, string, TestShape]> = [
   ['[tool.pytest.ini_options]', 'pytest', 'api'],
   ['[tool.coverage', 'pytest', 'api'],
 ];
 
 // package.json test script -> (framework, shape)
-const _PACKAGE_SCRIPT_PATTERNS: Array<[RegExp, string, string]> = [
+const _PACKAGE_SCRIPT_PATTERNS: Array<[RegExp, string, TestShape]> = [
   [/\bplaywright\b/, 'playwright', 'e2e_ui'],
   [/\bcypress\b/, 'playwright', 'e2e_ui'],
   [/\bvitest\b/, 'vitest', 'frontend_unit'],
@@ -60,7 +61,7 @@ const _PACKAGE_SCRIPT_PATTERNS: Array<[RegExp, string, string]> = [
 // package.json dependency -> (framework, shape) (#1205): exact names, registry
 // frameworks only, same vocabulary as the tables above. `@playwright/test` is
 // refined by `inferPlaywrightTestType`, as the config tier does.
-const _JS_DEP_PACKAGES: Array<[string, string, string]> = [
+const _JS_DEP_PACKAGES: Array<[string, string, TestShape]> = [
   ['@playwright/test', 'playwright', 'e2e_ui'],
   ['vitest', 'vitest', 'frontend_unit'],
   ['k6', 'k6', 'performance'],
@@ -71,7 +72,7 @@ const _JS_DEP_PACKAGES: Array<[string, string, string]> = [
 const _JS_DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'];
 
 // Python dependency -> (framework, shape). MULTILINE `^` anchored on `\n` only.
-const _PYTHON_DEP_PATTERNS: Array<[RegExp, string, string]> = [
+const _PYTHON_DEP_PATTERNS: Array<[RegExp, string, TestShape]> = [
   [/(?:^|(?<=\n))pytest\b/i, 'pytest', 'api'],
   [/(?:^|(?<=\n))locust\b/i, 'locust', 'load'],
   [/(?:^|(?<=\n))pact\b/i, 'pact', 'contract'],
@@ -81,7 +82,7 @@ const _PYTHON_DEP_PATTERNS: Array<[RegExp, string, string]> = [
 ];
 
 // Language -> (framework, shape) fallbacks from harness.config.json
-const _LANGUAGE_FALLBACKS: Record<string, [string, string]> = {
+const _LANGUAGE_FALLBACKS: Record<string, [string, TestShape]> = {
   python: ['pytest', 'api'],
   typescript: ['playwright', 'e2e_ui'],
   javascript: ['playwright', 'e2e_ui'],
@@ -104,7 +105,7 @@ export type ProbeResult = [
  * Return 'api' when no playwright spec file uses page/browser fixtures, else
  * 'e2e_ui' (the default when any UI signal is found or no spec files exist).
  */
-export function inferPlaywrightTestType(root: string): string {
+export function inferPlaywrightTestType(root: string): TestShape {
   const specGlobs = [
     'tests/**/*.spec.ts',
     'tests/**/*.spec.js',

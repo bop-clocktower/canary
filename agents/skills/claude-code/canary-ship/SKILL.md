@@ -44,6 +44,10 @@ gate. If the change isn't on a branch yet, make the branch first (see
   can't confirm that, stop and run them — the gate reviews a _finished_ change.
 - `git fetch origin` first, then know your diff base (`origin/main...`). Other
   sessions may be active on this repo; trust the remote, not stale local state.
+- The two reviewer agents (`harness-code-reviewer`,
+  `harness-adversarial-reviewer`) come from the harness-claude plugin or from
+  `harness generate-agent-definitions --global`, not from the canary plugin,
+  which registers only its own `agents/*.md` (#1204).
 
 ## The pipeline
 

@@ -11,7 +11,7 @@
  *      (modeled on harness's `skill validate`), plus any frontmatter parse
  *      diagnostic (e.g. an unterminated flow list) reported as an error —
  *      a declared list must never silently read as empty (#501);
- *   2. `deploy_to` values that are not bundled migration targets are a
+ *   2. `deploy_to` values that are not shapes canary emits (or `all`) are a
  *      WARNING, not an error — shapes are extensible and `migrate` matches
  *      `deploy_to` against the consuming repo's resolved `canary_shape` by
  *      plain string comparison, so a custom shape is legitimate (#501);
@@ -30,19 +30,20 @@ import {
   parseFrontmatter,
   scalarField,
 } from './skill-frontmatter.js';
+import { TEST_SHAPES, type TestShape } from './test-shapes.js';
 
 /**
- * The BUNDLED migration target shapes, plus the `all` sentinel. Not a closed
- * set: `migrate` matches `deploy_to` against the consuming repo's resolved
- * `canary_shape` by plain string comparison, so downstream overlays may use
- * custom shapes. Lint warns (never errors) on a value outside this set (#501).
+ * The shapes canary itself can emit, plus the `all` sentinel. Derived from
+ * `TEST_SHAPES` — the engine's single shape list, which the classifier and
+ * probes are typed against — so a shape canary emits can never be reported as
+ * a typo here (#1206: this used to be a hand-kept five-name copy that called
+ * `mobile` a typo). Not a closed set: `migrate` matches `deploy_to` against
+ * the consuming repo's resolved `canary_shape` by plain string comparison, so
+ * downstream overlays may use custom shapes. Lint warns (never errors) on a
+ * value outside this set (#501).
  */
-const VALID_DEPLOY_TARGETS: ReadonlySet<string> = new Set([
-  'api',
-  'e2e_ui',
-  'frontend_unit',
-  'load',
-  'performance',
+const VALID_DEPLOY_TARGETS: ReadonlySet<string> = new Set<TestShape | 'all'>([
+  ...TEST_SHAPES,
   'all',
 ]);
 
@@ -116,7 +117,7 @@ function frontmatterFindings(
       findings.push({
         skill,
         level: 'warning',
-        message: `deploy_to value "${target}" is not a bundled target (${[...VALID_DEPLOY_TARGETS].join(', ')}); fine if it matches a consuming repo's custom canary_shape, otherwise a typo`,
+        message: `deploy_to value "${target}" is not a shape canary emits (${[...VALID_DEPLOY_TARGETS].join(', ')}); fine if it matches a consuming repo's custom canary_shape, otherwise a typo`,
       });
     }
   }
