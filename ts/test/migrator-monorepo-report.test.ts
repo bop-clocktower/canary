@@ -112,6 +112,12 @@ function monorepo(root: string, opts: MonorepoOptions = {}): void {
   writeJson(join(core, 'package.json'), { name: 'core' });
 }
 
+/** The unresolved-framework reason when no probe tier matched (#1205). */
+const NOTHING_MATCHED =
+  'no root-level config file, package.json script or dependency, ' +
+  'Python dependency, or harness.config.json language matched a known ' +
+  'framework';
+
 function report(root: string, framework?: string): MigrationReport {
   return new HarnessMigrator(HOME).migrate(root, {
     dryRun: true,
@@ -162,6 +168,7 @@ describe('monorepo detection reports what it walked (#504 part 1)', () => {
       expect(md).not.toContain(
         'no config file, dependency, or language marker matched',
       );
+      expect(md).not.toContain(NOTHING_MATCHED);
       expect(md).toContain(
         "this workspace's packages declare 2 different framework/shape " +
           'combinations across 2 packages ' +
@@ -299,5 +306,111 @@ describe('dry-run status copy (#504 part 4)', () => {
       expect(md).not.toContain('Migration complete');
       expect(md).toContain('would migrate zero item(s)');
       expect(md).toContain('already exists in `apps/web-e2e/`');
+    }));
+});
+
+/** A single-package harness project with no test config of its own. */
+function harnessPackage(root: string): void {
+  writeJson(join(root, 'harness.config.json'), {
+    version: 1,
+    name: 'pkg',
+    template: { version: 1, level: 'intermediate' },
+    layers: [],
+  });
+  write(join(root, '.harness', '.gitignore'), '*\n');
+}
+
+describe('JS package evidence beside a workspace (#1205)', () => {
+  it('says only what it probed when nothing matched', () =>
+    withTmp((root) => {
+      harnessPackage(root);
+      writeJson(join(root, 'package.json'), {
+        name: 'bare',
+        scripts: { build: 'tsc -p .' },
+        dependencies: { lodash: '*' },
+      });
+      const md = report(root).to_markdown();
+
+      expect(md).toContain(`Reason: ${NOTHING_MATCHED}.`);
+    }));
+
+  it('detects a package from its test:* scripts and dependencies', () =>
+    withTmp((root) => {
+      harnessPackage(root);
+      writeJson(join(root, 'package.json'), {
+        name: 'mobile-suite',
+        scripts: {
+          'test:wdio:android':
+            'wdio run ./Mobile/android/android-app/wdio.conf.ts',
+        },
+        devDependencies: { '@wdio/cli': '^9.0.0' },
+      });
+      write(
+        join(root, 'Mobile', 'android', 'android-app', 'wdio.conf.ts'),
+        'export const config = {};\n',
+      );
+      const r = report(root);
+
+      expect(r.framework).toBe('wdio');
+      expect(r.shape).toBe('mobile');
+      expect(r.detection_source).toBe(
+        'package.json (scripts.test:wdio:android)',
+      );
+    }));
+
+  it('never lets a root devDependency mask the workspace packages', () =>
+    withTmp((root) => {
+      monorepo(root);
+      // Shared root tooling, not a suite: before the dependency tier existed
+      // this root matched nothing and fell through to the packages.
+      writeJson(join(root, 'package.json'), {
+        name: 'mono',
+        private: true,
+        scripts: { test: 'turbo test' },
+        devDependencies: { vitest: '*', turbo: '*' },
+      });
+      const r = report(root);
+
+      expect(r.detection_source).toBe('workspace (mixed)');
+      expect(r.to_markdown()).toContain(
+        "this workspace's packages declare 2 different framework/shape",
+      );
+    }));
+
+  it('never lets a delegating root script mask the workspace packages', () =>
+    withTmp((root) => {
+      monorepo(root);
+      // Root scripts that fan out to one package are not a root suite. Only
+      // `scripts.test` is read at a root whose packages carry findings.
+      writeJson(join(root, 'package.json'), {
+        name: 'mono',
+        private: true,
+        scripts: {
+          test: 'turbo test',
+          e2e: 'pnpm -F web-e2e playwright test',
+          'test:unit': 'turbo run vitest',
+        },
+      });
+      const r = report(root);
+
+      expect(r.detection_source).toBe('workspace (mixed)');
+      expect(r.to_markdown()).toContain(
+        "this workspace's packages declare 2 different framework/shape",
+      );
+    }));
+
+  it('finds a workspace package from its dependencies alone', () =>
+    withTmp((root) => {
+      monorepo(root, { vitestPackage: false });
+      writeJson(join(root, 'packages', 'core', 'package.json'), {
+        name: 'core',
+        devDependencies: { '@wdio/cli': '*' },
+      });
+      const ws = new HarnessMigrator(HOME).detect(root).workspace;
+
+      expect(ws!.findings.map((f) => [f.dir, f.framework, f.source])).toEqual([
+        ['apps/web-e2e', 'playwright', 'playwright.config.ts'],
+        ['packages/core', 'wdio', 'package.json (devDependencies: @wdio/cli)'],
+      ]);
     }));
 });
