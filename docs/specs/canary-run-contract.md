@@ -153,10 +153,23 @@ Every field is **required**. "Nullable" means the key must be present and may be
   integer is not the number the producer wrote once parsed, so `totals-sum`
   could not check it honestly.
 - **Rule `real-dates`.** `run.started_at` and `run.finished_at` name a real
-  instant. The timestamp pattern admits month 13 or hour 25, which a reader
-  parses as NaN and then sorts as the newest run; such a record is refused.
-- **`file` is repo-relative** (ADR 0029). `title` plus `file` is the join key
-  between `results[]`, `collected[]` and other canary records.
+  instant: month 1–12, a day that exists in that month (leap years included),
+  hour ≤ 23, minute and second ≤ 59 (no leap second), and an offset of at most
+  `±23:59`. The pattern admits `2026-02-30` or `T24:00:00`, which a date parser
+  silently rolls over to another day; such a record is refused. A string the
+  pattern itself refuses gets only the pattern error.
+- **Rule `repo-relative`** (ADR 0029). `title` plus `file` is the join key
+  between `results[]`, `collected[]` and other canary records, so every `file`
+  is a path `git ls-files` could print. The schema pattern refuses a leading `/`
+  or drive letter. The validator also refuses a path whose first segment is `~`
+  or `~user`, a path that starts with `\`, and a path whose `..` segments climb
+  above the repository root. `/` and `\` both separate segments.
+  `a/../b.spec.ts` does not escape, so it is accepted.
+- **Rule `non-blank`.** A string field the schema gives `minLength: 1` must also
+  hold a non-whitespace character: `"  "` is refused with `must not be blank`.
+  This is stricter than stock JSON Schema `minLength`, so a producer validating
+  with another library can pass a value canary refuses. A nullable field that is
+  `null` is unaffected.
 
 ## Status vocabulary
 
@@ -210,12 +223,14 @@ of any other layer is refused.
 | `1`  | Refused: the document is invalid, or the input is not parseable JSON.             |
 | `2`  | Usage error (unknown flag, bad `--layer`, two files) or unreadable file or stdin. |
 
-Unparseable or empty input is a refusal (exit 1), never a pass. Each error is
-`{path, message}`. `path` is dotted with bracketed indexes (`scope.env`,
-`results[0].file`) and the document root is `$`. Text output prints one
-`path: message` line per error on stderr. `--json` prints
-`{valid, contract, checked, errors}` on stdout, where `checked` is the number of
-records validated: 1 for a run document, and 0 when the input did not parse.
+Unparseable or empty input is a refusal (exit 1), never a pass. One leading
+UTF-8 byte-order mark (U+FEFF) is ignored, whether the input is a file or stdin;
+a second one is a parse error. Each error is `{path, message}`. `path` is dotted
+with bracketed indexes (`scope.env`, `results[0].file`) and the document root is
+`$`. Text output prints one `path: message` line per error on stderr. `--json`
+prints `{valid, contract, checked, errors}` on stdout, where `checked` is the
+number of records validated: 1 for a run document, and 0 when the input did not
+parse.
 
 ## Consumers
 
