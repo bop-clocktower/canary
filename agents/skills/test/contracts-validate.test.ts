@@ -380,3 +380,34 @@ describe('#1154 S4: rule non-blank', () => {
     ).toEqual([]);
   });
 });
+
+describe('#1154 S3: rule repo-relative (ADR 0029)', () => {
+  it('refuses a run file that escapes the repo root, naming results[0].file', () => {
+    const doc = valid('run');
+    doc.results[0].file = '../outside.spec.ts';
+    expect(validateDocument(doc).errors).toEqual([
+      {
+        path: 'results[0].file',
+        message: 'escapes the repository root (ADR 0029)',
+      },
+    ]);
+  });
+
+  it('refuses home-relative and backslash-rooted files in flaky[] and register[]', () => {
+    const doc = valid('site');
+    doc.flaky[0].file = '~/x.spec.ts';
+    doc.register[0].file = '\\x.spec.ts';
+    expect(refusedPaths(doc)).toEqual(['flaky[0].file', 'register[0].file']);
+  });
+
+  it("a leading / stays the schema pattern's one error, not two", () => {
+    const doc = valid('run');
+    doc.collected[0].file = '/abs.spec.ts';
+    expect(validateDocument(doc).errors).toEqual([
+      {
+        path: 'collected[0].file',
+        message: expect.stringMatching(/does not match the pattern/),
+      },
+    ]);
+  });
+});

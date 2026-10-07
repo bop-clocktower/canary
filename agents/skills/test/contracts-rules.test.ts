@@ -277,3 +277,63 @@ describe('real-dates (#1151 phase 3 review)', () => {
     ).toEqual([]);
   });
 });
+
+describe('repo-relative (#1154 S3, ADR 0029)', () => {
+  const ESCAPES = 'escapes the repository root (ADR 0029)';
+  const HOME = 'is home-relative (~), not repo-relative (ADR 0029)';
+  const ROOTED = 'is absolute (\\), not repo-relative (ADR 0029)';
+  const runWith = (file: unknown) => ({
+    totals: totals(),
+    results: [{ file, duration_ms: 1, retries: 0 }],
+    collected: [{ title: 't', file }],
+  });
+
+  it.each([
+    ['../x.spec.ts', ESCAPES],
+    ['a/../../x.spec.ts', ESCAPES],
+    ['..\\x.spec.ts', ESCAPES],
+    ['./../x.spec.ts', ESCAPES],
+    ['~/x.spec.ts', HOME],
+    ['~', HOME],
+    ['~bob/x.spec.ts', HOME],
+    ['\\x.spec.ts', ROOTED],
+    ['\\\\server\\share\\x.spec.ts', ROOTED],
+  ])('refuses %j in results[] and collected[]', (file, message) => {
+    expect(crossFieldErrors('run', runWith(file))).toEqual([
+      { path: 'results[0].file', message },
+      { path: 'collected[0].file', message },
+    ]);
+  });
+
+  it.each([
+    'a/../b.spec.ts',
+    '..foo/x.spec.ts',
+    './x.spec.ts',
+    'a/b~/c.spec.ts',
+    'tests/x.spec.ts',
+  ])('accepts %j (control)', (file) => {
+    expect(crossFieldErrors('run', runWith(file))).toEqual([]);
+  });
+
+  it('leaves a non-string file, a null row and a non-array list to the schema', () => {
+    const run = {
+      totals: totals({ passed: 2, total: 2 }),
+      results: [{ file: 7, duration_ms: 1, retries: 0 }, null],
+      collected: 'x',
+    };
+    expect(crossFieldErrors('run', run)).toEqual([]);
+  });
+
+  it('checks runs[], flaky[] and register[] in a site feed, with paths', () => {
+    const errs = crossFieldErrors('site', {
+      runs: [{ ...runWith('../x.spec.ts'), collected: null }],
+      flaky: [{ file: '~/x.spec.ts' }],
+      register: [{ file: '\\x.spec.ts' }],
+    });
+    expect(paths(errs)).toEqual([
+      'runs[0].results[0].file',
+      'flaky[0].file',
+      'register[0].file',
+    ]);
+  });
+});

@@ -214,11 +214,49 @@ const realDates =
       ];
     });
 
+const HOME = 'is home-relative (~), not repo-relative (ADR 0029)';
+const ROOTED = 'is absolute (\\), not repo-relative (ADR 0029)';
+const ESCAPES = 'escapes the repository root (ADR 0029)';
+
+/** +1 per directory entered, -1 per `..`; `.` and empty segments stay put. */
+const depthStep = (seg) =>
+  seg === '..' ? -1 : Number(seg !== '' && seg !== '.');
+
+/** Why `file` is not a path `git ls-files` could print, or null (ADR 0029). */
+function notRepoRelative(file) {
+  const segments = file.split(/[\\/]/);
+  if (segments[0].startsWith('~')) return HOME;
+  if (file.startsWith('\\')) return ROOTED;
+  let depth = 0;
+  const climbs = segments.some((seg) => (depth += depthStep(seg)) < 0);
+  return climbs ? ESCAPES : null;
+}
+
+/**
+ * Rule `repo-relative` on one row's `file` (#1154 S3); the schema pattern
+ * already refuses `/` and a drive letter. A non-string is the schema's error.
+ */
+function fileRepoRelative(row, prefix) {
+  const file = isPlainObject(row) ? row.file : undefined;
+  const message = typeof file === 'string' ? notRepoRelative(file) : null;
+  return message ? [{ path: at(prefix, 'file'), message }] : [];
+}
+
+const repoRelative =
+  (...keys) =>
+  (record, prefix) =>
+    keys.flatMap((key) =>
+      (Array.isArray(record[key]) ? record[key] : []).flatMap((row, i) =>
+        fileRepoRelative(row, at(prefix, `${key}[${i}]`)),
+      ),
+    );
+
 const RUN_RULES = [
   countsSafe,
   totalsMatchResults,
   totalsSum,
   realDates(['run', 'started_at'], ['run', 'finished_at']),
+  repoRelative('results', 'collected'),
 ];
 const ASSESSMENT_RULES = [
   verifiedSupplied,
@@ -226,7 +264,12 @@ const ASSESSMENT_RULES = [
   statusShape,
   realDates(['observed_at'], ['verified_at']),
 ];
-const REGISTER_RULES = [authorExcluded, realDates(['recorded_at'])];
+const FLAKY_RULES = [fileRepoRelative];
+const REGISTER_RULES = [
+  authorExcluded,
+  realDates(['recorded_at']),
+  fileRepoRelative,
+];
 
 function applyRules(rules, record, prefix) {
   if (!isPlainObject(record)) return [];
@@ -246,6 +289,7 @@ export function crossFieldErrors(layer, doc) {
     ...applyRules([realDates(['generated_at'])], doc, ''),
     ...nested(doc, 'runs', RUN_RULES),
     ...nested(doc, 'assessments', ASSESSMENT_RULES),
+    ...nested(doc, 'flaky', FLAKY_RULES),
     ...nested(doc, 'register', REGISTER_RULES),
   ];
 }
