@@ -82,6 +82,43 @@ describe('<canary-pass-rate> (criterion 9)', () => {
     ).toEqual(['50.0%']);
   });
 
+  it('draws each rate as a bar and heads the suite with its latest rate', () => {
+    const run = runRecord({
+      status: 'failed',
+      totals: totals({ passed: 996, failed: 4, total: 1000 }),
+    });
+    const root = mount(PassRate, siteFeed({ runs: [run] }));
+    const bar = root.querySelector('li .bar')!;
+    expect(bar.getAttribute('data-state')).toBe('passing');
+    expect((bar.firstChild as HTMLElement).style.width).toBe('99.6%');
+    expect(root.querySelector('.big')!.textContent).toBe('99.6%');
+  });
+
+  it.each([
+    [950, 'passing'],
+    [949, 'degraded'],
+    [800, 'degraded'],
+    [799, 'failing'],
+  ])('tones a %i/1000 bar %s', (passed, tone) => {
+    const run = runRecord({
+      status: 'failed',
+      totals: totals({ passed, failed: 1000 - passed, total: 1000 }),
+    });
+    const bar = mount(PassRate, siteFeed({ runs: [run] })).querySelector(
+      'li .bar',
+    )!;
+    expect(bar.getAttribute('data-state')).toBe(tone);
+  });
+
+  it('draws an absent rate as an empty track, never a 0% bar', () => {
+    const run = runRecord({ totals: totals({ skipped: 2, total: 2 }) });
+    const bar = mount(PassRate, siteFeed({ runs: [run] })).querySelector(
+      'li .bar',
+    )!;
+    expect(bar.hasAttribute('data-state')).toBe(false);
+    expect((bar.firstChild as HTMLElement).style.width).toBe('');
+  });
+
   it('abstains with no runs', () => {
     const root = mount(PassRate, siteFeed());
     expect(root.querySelector('ol')).toBeNull();

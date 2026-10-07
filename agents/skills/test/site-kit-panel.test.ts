@@ -73,4 +73,30 @@ describe('CanaryPanel (#1151 phase 3)', () => {
     expect(a.adoptedStyleSheets[0]).toBe(b.adoptedStyleSheets[0]);
     expect(a.querySelector('style')).toBeNull();
   });
+
+  it('never takes the live region out of the accessibility tree when empty', () => {
+    // display:none on an empty status region means a later abstention
+    // un-hides and fills it in one step, which several screen readers do not
+    // announce. Collapsing it is fine; removing it is not.
+    const sheet = mount(Probe, siteFeed()).adoptedStyleSheets[0];
+    const rules = [...sheet.cssRules].map((r) => r.cssText);
+    const hides = rules.filter(
+      (r) =>
+        /\.abstain/.test(r) && /display:\s*none|visibility:\s*hidden/.test(r),
+    );
+    expect(rules.length).toBeGreaterThan(0);
+    expect(hides).toEqual([]);
+  });
+
+  it('wraps the body in a card unless the panel lays out its own cards', () => {
+    const plain = class extends Probe {
+      get bodyClass() {
+        return '';
+      }
+    };
+    const body = (root: ShadowRoot) =>
+      root.querySelector('[part="body"]')!.getAttribute('class');
+    expect(body(mount(Probe, siteFeed()))).toBe('card');
+    expect(body(mount(plain, siteFeed()))).toBe('');
+  });
 });

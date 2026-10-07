@@ -215,14 +215,15 @@ feed: a `who` or `author` key on a register row is refused.
 
 ### Panels (v1)
 
-| Element                     | Shows                                                                                    | Reads            |
-| --------------------------- | ---------------------------------------------------------------------------------------- | ---------------- |
-| `<canary-pipeline-health>`  | Per suite: green / red / **dark** (no run within `DARK_AFTER_DAYS`) / **never reported** | `runs`, `suites` |
-| `<canary-pass-rate>`        | Trend; empty denominator renders "—", never 0; never rounds up to 100%                   | `runs`           |
-| `<canary-failures-by-area>` | Failures by area; not-run and quarantined separated                                      | latest results   |
-| `<canary-flaky>`            | Distinct flaky tests (not occurrences), with flaky runs / window runs                    | `flaky`          |
-| `<canary-pillars>`          | ci-ready checks with evidence tier; abstaining pillars state their reason                | `assessments`    |
-| `<canary-register>`         | Skipped/deleted tests as visible debt: reason, age                                       | `register`       |
+| Element                     | Shows                                                                                                                                                                                             | Reads                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `<canary-summary>`          | Count tiles: suites passing, failed tests, flaky tests, skipped/removed. Counts only, no rate (D6); each tile abstains on the terms of the panel it summarizes. Added after phase 3 (visual pass) | `runs`, `suites`, `flaky`, `register` |
+| `<canary-pipeline-health>`  | Per suite: green / red / **dark** (no run within `DARK_AFTER_DAYS`) / **never reported**                                                                                                          | `runs`, `suites`                      |
+| `<canary-pass-rate>`        | Trend; empty denominator renders "—", never 0; never rounds up to 100%                                                                                                                            | `runs`                                |
+| `<canary-failures-by-area>` | Failures by area; not-run and quarantined separated                                                                                                                                               | latest results                        |
+| `<canary-flaky>`            | Distinct flaky tests (not occurrences), with flaky runs / window runs                                                                                                                             | `flaky`                               |
+| `<canary-pillars>`          | ci-ready checks with evidence tier; abstaining pillars state their reason                                                                                                                         | `assessments`                         |
+| `<canary-register>`         | Skipped/deleted tests as visible debt: reason, age                                                                                                                                                | `register`                            |
 
 Every abstention renders as text **and** is announced through a live region.
 `DARK_AFTER_DAYS` is defined once and imported by every panel that needs it.
@@ -378,7 +379,7 @@ The feed is built from canary's own suites only.
 20. When a assessment is `not-assessed`, `<canary-pillars>` shall render its
     `reason` as text; no panel shall render a composite score (D6).
 21. When `canary-barda` runs over a `site.json` that passes validation, the
-    output directory shall contain a static page that renders each of the six v1
+    output directory shall contain a static page that renders each of the v1
     panels.
 22. When `site-deploy.yml` builds the dogfood feed, every `scopes[].id` in the
     deployed `site.json` shall be canary's own (Goal 3).

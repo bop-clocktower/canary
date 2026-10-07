@@ -7,6 +7,7 @@ import { define, loadFeed } from '../lib/site-kit/canary-site.js';
 import { live } from './site-kit-helpers.js';
 
 const TAGS = [
+  'canary-summary',
   'canary-pipeline-health',
   'canary-pass-rate',
   'canary-failures-by-area',
@@ -31,7 +32,7 @@ beforeEach(() => {
 });
 
 describe('canary-site.js (#1151 phase 3)', () => {
-  it('registers the six panels, and registering twice is harmless', () => {
+  it('registers the seven panels, and registering twice is harmless', () => {
     expect(() => define()).not.toThrow();
     for (const t of TAGS) expect(customElements.get(t)).toBeDefined();
   });

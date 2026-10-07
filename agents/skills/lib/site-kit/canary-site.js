@@ -1,4 +1,4 @@
-// canary-site -- registers the six QA site panels and loads the feed (#1151
+// canary-site -- registers the seven QA site panels and loads the feed (#1151
 // phase 3). The kit's one entry point.
 //
 // A page opts in with <meta name="canary-feed" content="site.json">; every
@@ -14,10 +14,12 @@ import { FailuresByArea } from './panels/failures-by-area.js';
 import { Flaky } from './panels/flaky.js';
 import { Pillars } from './panels/pillars.js';
 import { Register } from './panels/register.js';
+import { Summary } from './panels/summary.js';
 import { pageFeed } from './panel.js';
 
 const CONTRACT = 'canary.site/1';
 const PANELS = {
+  'canary-summary': Summary,
   'canary-pipeline-health': PipelineHealth,
   'canary-pass-rate': PassRate,
   'canary-failures-by-area': FailuresByArea,

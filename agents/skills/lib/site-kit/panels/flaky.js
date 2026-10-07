@@ -38,7 +38,7 @@ export class Flaky extends CanaryPanel {
       return {
         nodes: [
           el('p', { class: 'muted' }, `${rows.length} distinct flaky test(s)`),
-          el('ul', {}, ...rows.map(row)),
+          el('ul', { class: 'rows' }, ...rows.map(row)),
         ],
         abstentions: [],
       };

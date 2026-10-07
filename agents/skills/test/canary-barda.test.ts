@@ -14,8 +14,8 @@ import { siteFeed } from './site-kit-helpers.js';
 describe('canary-barda page', () => {
   const html = page({ title: 'QA' });
 
-  it('places each of the six panels once', () => {
-    expect(PANEL_TAGS).toHaveLength(6);
+  it('places each of the seven panels once', () => {
+    expect(PANEL_TAGS).toHaveLength(7);
     for (const tag of PANEL_TAGS)
       expect(html.match(new RegExp(`<${tag}>`, 'g'))).toHaveLength(1);
   });
@@ -44,6 +44,11 @@ describe('canary-barda page', () => {
     expect(html).toContain(
       '<script type="module" src="kit/canary-site.js"></script>',
     );
+  });
+
+  it('brands the page with the canary mark from its own kit', () => {
+    // Decorative: the wordmark beside it already says "canary".
+    expect(html).toContain('<img src="kit/mark.svg" alt=""');
   });
 
   it('declares the feed for the kit', () => {
@@ -152,14 +157,16 @@ describe('canary-barda build', () => {
       'panel.js',
       'tokens.css',
       'page.css',
+      'mark.svg',
     ];
     for (const f of ['index.html', 'site.json', ...kit.map((k) => `kit/${k}`)])
       expect(fs.existsSync(path.join(out, f)), f).toBe(true);
-    expect(fs.readdirSync(path.join(out, 'kit/panels'))).toHaveLength(6);
+    expect(fs.readdirSync(path.join(out, 'kit/panels'))).toHaveLength(7);
     expect(
       JSON.parse(fs.readFileSync(path.join(out, 'site.json'), 'utf8')),
     ).toEqual(doc);
-    expect(count).toBe(2 + 9 + 2);
+    // index.html + site.json, six kit files, seven panels.
+    expect(count).toBe(2 + 6 + 7);
   });
 });
 
@@ -189,7 +196,7 @@ describe('canary-barda cli', () => {
       'Canary QA',
     ]);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/built .*: 13 file\(s\), 6 panels, 2 run\(s\)/);
+    expect(r.stdout).toMatch(/built .*: 15 file\(s\), 7 panels, 2 run\(s\)/);
     expect(fs.readFileSync(path.join(out, 'index.html'), 'utf8')).toContain(
       '<title>Canary QA</title>',
     );
@@ -231,7 +238,7 @@ describe('canary-barda cli', () => {
     const soft = run(['--feed', feed, '--out', path.join(tmp(), 'a')]);
     expect(soft.code).toBe(0);
     expect(soft.stdout).toContain('ABSTAINED');
-    expect(soft.stdout).not.toContain('6 panels,');
+    expect(soft.stdout).not.toContain('7 panels,');
     expect(
       run(['--feed', feed, '--out', path.join(tmp(), 'b'), '--strict']).code,
     ).toBe(3);

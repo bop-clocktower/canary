@@ -6,6 +6,7 @@
 
 /** Must match the tags lib/site-kit/canary-site.js registers (tested). */
 export const PANEL_TAGS = [
+  'canary-summary',
   'canary-pipeline-health',
   'canary-pass-rate',
   'canary-failures-by-area',
@@ -37,8 +38,17 @@ export function page({ title }) {
     <script type="module" src="kit/canary-site.js"></script>
   </head>
   <body>
+    <header class="brand">
+      <div class="brand-inner">
+        <img src="kit/mark.svg" alt="" width="32" height="32">
+        <span>canary</span>
+      </div>
+    </header>
     <main>
-      <h1>${t}</h1>
+      <div class="page-head">
+        <h1>${t}</h1>
+        <p>Test health across every declared suite, from the canary.site/1 feed.</p>
+      </div>
 ${PANEL_TAGS.map((tag) => `      <${tag}>${FALLBACK}</${tag}>`).join('\n')}
     </main>
   </body>

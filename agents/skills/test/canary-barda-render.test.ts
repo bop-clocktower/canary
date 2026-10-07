@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Criterion 21 end to end: the kit as COPIED into a site built by the real
-// CLI (not the source tree) renders each of the six panels from the built
+// CLI (not the source tree) renders each of the seven panels from the built
 // site.json.
 //
 // Two happy-dom constraints shape this (soundness review, must-fix 3):
