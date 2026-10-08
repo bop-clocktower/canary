@@ -13,9 +13,9 @@ import { join, relative, sep } from 'node:path';
 import {
   CONFIG_PROBES,
   inferPlaywrightTestType,
-  probeFramework,
   ProbeResult,
-} from './framework-probes.js';
+} from './config-probes.js';
+import { probeFramework } from './framework-probes.js';
 import {
   comparePathParts,
   globDirs,

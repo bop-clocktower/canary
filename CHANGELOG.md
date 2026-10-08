@@ -14,6 +14,18 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary migrate` finds test configs below the root.** In a repo that
+  declares no workspace, the config tier now also looks up to 3 directories
+  down. It skips `node_modules`, `.git`, and build and tool output. A package
+  whose only test evidence is, for example,
+  `Mobile/android/android-app/wdio.conf.ts` now detects as wdio/mobile, and the
+  evidence names that path. If nested configs declare different frameworks,
+  detection abstains and lists them instead of picking one by walk order. A
+  workspace root is never walked: its packages are probed one by one, as before
+  (#1212).
+
 ### Fixed
 
 - **canary-cassandra sees typed helper declarations** (#1179). A same-file
