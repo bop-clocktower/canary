@@ -1283,6 +1283,18 @@ Its `circular-deps`, `layer-violations` and `forbidden-imports` series are flat
 zeros under harness 12.10.1 because nothing is measured (#1164); read them as
 missing data, not as a clean trend.
 
+**A missed cron run turns red.** A schedule that stops firing produces no failed
+run, so it makes no sound. `arch-snapshot.yml` and the weekly leg of
+`harness-architecture.yml` were dark from 2026-09-14 for four Mondays while both
+reported `active`. The `:00` slots are the first ones GitHub drops under load,
+so every cron here sits off the top of the hour.
+[`scripts/schedule-staleness.mjs`](scripts/schedule-staleness.mjs) fails when a
+workflow's last `schedule` run is older than its window. It abstains (exit 3)
+when there is no run on record, or when the API fails. It runs from
+`schedule-watchdog.yml` on push to `main`, which does not go through the
+scheduler. A new cron must be added to that workflow's list;
+`ts/test/schedule-staleness.test.ts` fails if one is missing.
+
 **Ledger updates land on a standing branch, never on `main` directly (#548).**
 Both workflows above commit to a fixed branch (`chore/arch-timeline`,
 `chore/security-ledger`), force-update it each run, and write a compare link to

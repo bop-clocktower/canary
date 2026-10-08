@@ -1,0 +1,62 @@
+{
+  "item": "weekly-cron-staleness",
+  "fleet": "cicd-fleet",
+  "option": "F1-A",
+  "scope": [
+    "diagnose why the :00 Monday crons went dark while the :23 cron survived (hypothesis + evidence)",
+    "move harness-architecture.yml and arch-snapshot.yml off :00, keep snapshot after validation",
+    "staleness watchdog that turns a missing weekly run red and abstains on zero runs / API error",
+    "fix the stale refresh-arch-baseline 06:00 comment in arch-snapshot.yml"
+  ],
+  "evidenceRuns": {
+    "harness-architecture.yml lastSchedule": 34116676696,
+    "arch-snapshot.yml lastSchedule": 34125362300,
+    "guardian-precision.yml control": 37329147871
+  },
+  "phase": "VERIFY",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Re-measure SELECT evidence; harness-workflow-audit over the schedule-bearing workflows",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "title": "Write failing tests: ts/test/schedule-staleness.test.ts (stale, fresh, no-runs, API-error, wiring)",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "title": "scripts/schedule-staleness.mjs (exit 0/1/2/3) + entry-guard CASE + entropy/perf entryPoints",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "title": ".github/workflows/schedule-watchdog.yml on push:main + daily backup leg + dispatch",
+      "status": "done"
+    },
+    {
+      "id": 5,
+      "title": "Crons to '37 6 * * 1' / '43 7 * * 1'; stale comment fixed",
+      "status": "done"
+    },
+    {
+      "id": 6,
+      "title": "Local gates from ts/: build, typecheck, format:check, test; skills gates; markdownlint; actionlint; harness checks",
+      "status": "done"
+    },
+    { "id": 7, "title": "Push, open PR, watch CI", "status": "in_progress" }
+  ],
+  "assumptions": [
+    "root cause is a hypothesis: scheduler load-shedding at :00; stale registration not excludable",
+    "new minutes :37 / :43 chosen by the agent",
+    "8-day threshold chosen from the observed max start delay of 8h36m",
+    "watchdog hosted on push-to-main, not on a cron, so it cannot go dark with what it watches",
+    "watchdog expected red on main from merge until the 2026-10-12 slots fire"
+  ],
+  "outOfScope": [
+    "missing top-level permissions block on harness-architecture.yml (pre-existing M2 warning)",
+    "5 pre-existing actionlint shellcheck info findings in dogfood.yml and harness-quality.yml"
+  ],
+  "verdict": "local gates green; awaiting CI and human review (not merged)"
+}
