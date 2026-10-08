@@ -38,8 +38,14 @@ on:
   push:
     branches:
       - main
+  # Weekly drift sweep, Mondays 06:37 UTC. It was '0 6 * * 1' until that slot
+  # stopped firing after 2026-09-07 (last run 34116676696) while the workflow
+  # still reported `active`. Top-of-hour schedules are the ones GitHub drops
+  # first under load, and editing this file re-registers the schedule. Keep it
+  # off :00 and before arch-snapshot.yml's 07:43. `schedule-watchdog.yml`
+  # turns a missed week red.
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: '37 6 * * 1'
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:

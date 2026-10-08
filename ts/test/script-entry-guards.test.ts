@@ -129,6 +129,7 @@ const CASES: Record<string, Case> = {
     status: 3,
     output: /0 fired of \d+ expected/,
   },
+  'scripts/schedule-staleness.mjs': usage,
   'scripts/source-visibility.mjs': {
     args: ['--print-skip-dirs'],
     status: 0,

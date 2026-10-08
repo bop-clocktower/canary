@@ -7,9 +7,17 @@ name: Arch Timeline Snapshot
 # `harness snapshot trends` had no history to draw on. Runs weekly and on manual
 # dispatch, and commits the appended timeline to main.
 
+# Mondays 07:43 UTC, about an hour after the weekly `Dependency & project
+# validation` sweep (`harness-architecture.yml`, 06:37). An earlier comment said
+# "after refresh-arch-baseline's 06:00", but `refresh-arch-baseline.yml` has no
+# schedule. The order is nominal: GitHub has started these runs hours late,
+# and this job reads nothing the validation run writes. It was '0 7 * * 1'
+# until that slot stopped firing after 2026-09-07 (last run 34125362300).
+# Top-of-hour schedules are the ones GitHub drops first, and editing this file
+# re-registers the schedule. `schedule-watchdog.yml` turns a missed week red.
 on:
   schedule:
-    - cron: '0 7 * * 1' # Mondays 07:00 UTC (after refresh-arch-baseline's 06:00)
+    - cron: '43 7 * * 1'
   workflow_dispatch:
 
 concurrency:

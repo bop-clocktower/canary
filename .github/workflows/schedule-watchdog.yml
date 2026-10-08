@@ -1,0 +1,71 @@
+name: Schedule watchdog
+
+# A cron that stops firing produces no failed run, only an absence, so nothing
+# goes red. `harness-architecture.yml` and `arch-snapshot.yml` last fired on
+# 2026-09-07 (runs 34116676696, 34125362300) and then missed four Mondays while
+# both reported `state: active`. This job turns that absence into a red X:
+# `scripts/schedule-staleness.mjs` fails when a watched workflow's last
+# `schedule`-event run is older than the window, and abstains (exit 3, also
+# red) when it cannot see a run at all. No run on record is not a pass.
+#
+# WHY IT CANNOT GO DARK WITH WHAT IT WATCHES: the primary trigger is a push to
+# `main`, which is delivered as a webhook event and never touches the cron
+# scheduler that dropped the Monday runs. The daily schedule is a second,
+# independent leg for weeks with no merges. If the scheduler drops that leg
+# too, the next merge still reports. There is deliberately no `pull_request`
+# trigger: a scheduler fault must not block unrelated PRs and teach people to
+# bypass the check. It is not a required check (see .github/required-checks.json,
+# which lists PR checks only).
+#
+# The window is 8 days: one weekly period plus a day for GitHub's start delay,
+# which has reached 8h36m on this repo. Add every new cron to the list below;
+# ts/test/schedule-staleness.test.ts fails if a workflow declaring a schedule
+# is missing from it.
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '19 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: schedule-watchdog
+  cancel-in-progress: true
+
+jobs:
+  staleness:
+    name: Weekly crons fired on time
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Check every weekly schedule fired within 8 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The exit code is captured, not swallowed: the summary is written on a
+        # red run too (that is when it matters), then the step exits with the
+        # script's own code, so 1 (stale) and 3 (abstained) both fail the job.
+        run: |
+          set -uo pipefail
+          node scripts/schedule-staleness.mjs \
+            --repo "$GITHUB_REPOSITORY" --max-age-days 8 \
+            harness-architecture.yml arch-snapshot.yml guardian-precision.yml \
+            > report.txt 2>&1
+          code=$?
+          cat report.txt
+          {
+            echo '## Schedule watchdog'
+            echo
+            echo '```text'
+            cat report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
