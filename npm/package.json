@@ -1,6 +1,6 @@
 {
   "name": "canary-test-cli",
-  "version": "9.0.0",
+  "version": "9.1.0",
   "description": "Canary \u2014 AI-powered test automation agent",
   "license": "MIT",
   "repository": {

@@ -40,13 +40,18 @@ jobs:
           npm --prefix npm ci
           npm --prefix npm run build
 
-      - name: Create GitHub Release (changelog only)
-        uses: softprops/action-gh-release@v3
-        with:
-          generate_release_notes: true
-          # A tag containing a hyphen (e.g. v6.0.0-rc.1) is a pre-release.
-          prerelease: ${{ contains(github.ref_name, '-') }}
+      # #1185: npm authenticates by trusted publishing (OIDC via the
+      # `id-token: write` permission above), configured on npmjs.com for
+      # bop-clocktower/canary + release.yml. There is no stored token to
+      # expire: v9.0.0 failed with an opaque E404 because the stored one had.
+      # Trusted publishing needs npm >= 11.5.1; Node 22 bundles npm 10.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11.5.1
 
+      # Publish BEFORE the GitHub Release (#1185). npm is the distribution
+      # channel; the release is the announcement. The old order created the
+      # v9.0.0 release, then failed to publish, leaving a version nobody
+      # could install.
       - name: Publish npm package
         working-directory: npm
         # Pre-release tags (v*-rc.N etc.) publish under the `next` dist-tag so
@@ -55,7 +60,6 @@ jobs:
         # through env (never interpolated into the shell) to avoid tag-name
         # command injection.
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           if [[ "$REF_NAME" == *-* ]]; then
@@ -63,8 +67,23 @@ jobs:
           else
             DIST_TAG=latest
           fi
-          echo "publishing under dist-tag: $DIST_TAG"
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          # Re-run safety: npm refuses to republish a version (E403), so a
+          # re-run after the release step failed would otherwise fail here.
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::$NAME@$VERSION is already on npm; skipping publish"
+            exit 0
+          fi
+          echo "publishing $NAME@$VERSION under dist-tag: $DIST_TAG"
           npm publish --access public --provenance --tag "$DIST_TAG"
+
+      - name: Create GitHub Release (changelog only)
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          # A tag containing a hyphen (e.g. v6.0.0-rc.1) is a pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
   advance-latest:
     name: Advance latest → ${{ github.ref_name }}

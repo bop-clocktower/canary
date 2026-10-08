@@ -14,6 +14,14 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [9.1.0] - 2026-10-07
+
+**Upgrading from npm 8.0.0? Read the 9.0.0 breaking changes first.** v9.0.0 was
+tagged and has a GitHub Release, but its npm publish failed (#1185), so on npm
+this release follows 8.0.0 directly. Everything in 9.0.0 ships here, including
+its [breaking changes](#900---2026-10-05) to exit codes, stream routing and two
+`--json` shapes.
+
 ### Added
 
 - **The ingest reporter exports `toRunRecord` and `runFilePath`** from
@@ -68,6 +76,12 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Releases publish to npm before announcing, and no longer depend on a stored
+  token** (#1185). v9.0.0 created its GitHub Release, then failed to publish
+  because the stored npm token had expired, leaving a release nobody could
+  install. The release workflow now publishes first and uses npm trusted
+  publishing (OIDC, npm ≥ 11.5.1), so there is no secret to expire. A re-run
+  skips a version npm already has instead of failing.
 - **`canary-blackhawk` and `canary-savant` no longer read a quote in a comment
   or regex literal as a string delimiter** (#1192). In a JS/TS test file,
   `run(/* it's */ label('Date.now()'))` or
@@ -4324,7 +4338,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.0.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.1.0...HEAD
+[9.1.0]: https://github.com/bop-clocktower/canary/compare/v9.0.0...v9.1.0
 [9.0.0]: https://github.com/bop-clocktower/canary/compare/v8.0.0...v9.0.0
 [8.0.0]: https://github.com/bop-clocktower/canary/compare/v7.2.0...v8.0.0
 [7.2.0]: https://github.com/bop-clocktower/canary/compare/v7.1.0...v7.2.0
