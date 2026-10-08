@@ -1,0 +1,16 @@
+{
+  "issues": [1221],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": ["agents/skills/test/engine-precondition.test.ts"],
+  "closingKeyword": "Closes",
+  "closingReason": "The agents/skills suite now fails once, before any test file runs, with 'ts/dist missing — run `npm run build` in ts/' when the built engine is absent, instead of 16 unrelated-looking cassandra/gate-conformance assertion failures; a stale ts/dist (older than ts/src) is warned about.",
+  "assumptions": [
+    "Human-answered default: a vitest globalSetup precondition, not switching the suite to run against ts/src.",
+    "The guard reuses canary-cassandra's own engineCandidates/resolveEngineDir, so it checks exactly the dependency the 16 tests have (CANARY_ENGINE_DIR, ts/dist, dist/engine; core/vacuity-scanner.js, core/test-files.js, core/gate-result.js) and cannot drift from it.",
+    "Staleness is WARN-only: newest ts/src/**/*.ts mtime newer than newest ts/dist/**/*.js mtime. ts/tsconfig.json is not incremental, so a build rewrites every output; mtimes still move on checkout/touch, so it must not block. It only runs when the resolved engine is the checkout's ts/dist (not CANARY_ENGINE_DIR or a packaged dist/engine).",
+    "The guard is suite-wide: running a single unrelated skills test file with ts/ unbuilt also fails until ts/ is built. Accepted: building ts/ is one command, and a per-file opt-out would reintroduce a silent skip.",
+    "CI is unaffected: the Skills (JS) job in harness-quality.yml already builds ts/ before npm test.",
+    "Updated the stale canary-cassandra.test.ts header that claimed CI does not build ts/dist (it does), since it describes this exact dependency."
+  ]
+}

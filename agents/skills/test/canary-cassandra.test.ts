@@ -9,10 +9,11 @@
 // envelope, that its exit codes match the family, and that it fails loudly
 // rather than reporting a clean scan when it cannot reach the engine.
 //
-// Engine resolution needs `ts/dist`, which the CI job for this project does not
-// build. Rather than skip (a skipped suite is a zero denominator wearing a
-// tick), the engine-dependent cases assert against a resolution result the test
-// computes itself, and say which case they took.
+// Engine resolution needs `ts/dist`. The Skills (JS) CI job builds it first, and
+// locally the suite's globalSetup (test/engine-precondition.ts, #1221) fails the
+// run once with "ts/dist missing" before any case here can report it as 14
+// unrelated assertions. Rather than skip (a skipped suite is a zero denominator
+// wearing a tick), the engine-dependent cases still assert the dependency.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
