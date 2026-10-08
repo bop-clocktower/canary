@@ -224,20 +224,34 @@ function requireFloor(head, { floor, maxHeadroom }, path) {
   return true;
 }
 
-function main() {
-  const headPath = arg('--report');
-  if (!headPath) usage('--report <file> is required.');
-  const baselinePath = arg('--baseline') ?? DEFAULT_BASELINE;
-  const baseline = readBaseline(baselinePath);
-
-  // Zero-denominator rule: a report that checked nothing abstains. It is never
-  // a pass and never a 0% failure, because nothing was verified either way.
+/**
+ * Read the head report, or abstain. Zero-denominator rule: a report that
+ * checked nothing is never a pass and never a 0% failure, because nothing was
+ * verified either way.
+ */
+function readHead(headPath) {
   const head = readReport(headPath);
   if (!head)
     abstain(`head report ${headPath} is missing or not check-docs JSON`);
   if (head.scannedNothing || total(head) === 0) {
     abstain('head report measured zero source files');
   }
+  return head;
+}
+
+/** Rule 1 when there is a merge base; a push to main has none. */
+function identityRule(head, basePath) {
+  if (basePath) return requireNoLostLinks(head, basePath);
+  console.log(`docs-ratchet: ${summary(head)} at head; no merge base.`);
+  return true;
+}
+
+function main() {
+  const headPath = arg('--report');
+  if (!headPath) usage('--report <file> is required.');
+  const baselinePath = arg('--baseline') ?? DEFAULT_BASELINE;
+  const baseline = readBaseline(baselinePath);
+  const head = readHead(headPath);
 
   requireMatchingInstrument(
     baseline.baselineCli,
@@ -245,12 +259,10 @@ function main() {
     baselinePath,
   );
 
-  const basePath = arg('--base-report');
-  let ok = true;
-  if (basePath) ok = requireNoLostLinks(head, basePath) && ok;
-  else console.log(`docs-ratchet: ${summary(head)} at head; no merge base.`);
-  ok = requireFloor(head, baseline, baselinePath) && ok;
-  process.exit(ok ? 0 : 1);
+  // Both rules always run, so a red build names every reason at once.
+  const identityOk = identityRule(head, arg('--base-report'));
+  const floorOk = requireFloor(head, baseline, baselinePath);
+  process.exit(identityOk && floorOk ? 0 : 1);
 }
 
 main();
