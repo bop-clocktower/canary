@@ -12,6 +12,13 @@
  * documented at the base is still present and no longer documented. Adding an
  * undocumented file is free; deleting a documented one is free. A report that
  * cannot be read, or that measured nothing, is an abstention (exit 3).
+ *
+ * #1241 adds the absolute FLOOR the identity rule cannot see: a long run of
+ * PRs that each add only undocumented files is green under the identity rule
+ * forever, while coverage walks down. The floor lives in
+ * `.harness/docs-coverage-baseline.json` with deliberate headroom below the
+ * measurement, the same shape as the entropy and perf ceilings, so a single
+ * undocumented file does not replay #864.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -35,15 +42,24 @@ function report(documented: string[], undocumented: string[]): string {
   );
 }
 
+/** `n` file names, for building reports with a chosen ratio. */
+const files = (prefix: string, n: number): string[] =>
+  Array.from({ length: n }, (_, i) => `${prefix}${i}.ts`);
+
 describe('docs-ratchet', () => {
   let dir: string;
   let head: string;
   let base: string;
+  let baseline: string;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'docs-ratchet-'));
     head = join(dir, 'head.json');
     base = join(dir, 'base.json');
+    baseline = join(dir, 'baseline.json');
+    // A floor of zero and no instrument: the identity-rule cases below are
+    // about the merge base, not the floor, so the floor must not decide them.
+    writeFileSync(baseline, JSON.stringify({ minCoveragePercent: 0 }));
   });
 
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -51,7 +67,7 @@ describe('docs-ratchet', () => {
   function run(extra: string[] = []): { status: number; out: string } {
     const r = spawnSync(
       process.execPath,
-      [SCRIPT, '--report', head, ...extra],
+      [SCRIPT, '--report', head, '--baseline', baseline, ...extra],
       {
         encoding: 'utf8',
       },
@@ -138,6 +154,273 @@ describe('docs-ratchet', () => {
       expect(run(withBase()).status).toBe(3);
     });
   });
+
+  describe('coverage floor (#1241)', () => {
+    /** A floor of 50% with 5 points of headroom unless a test says otherwise. */
+    function writeBaseline(body: Record<string, unknown> = {}): void {
+      writeFileSync(
+        baseline,
+        JSON.stringify({ minCoveragePercent: 50, maxHeadroom: 5, ...body }),
+      );
+    }
+
+    /** A head report at `documented` out of 100 files. */
+    const at = (documented: number): string =>
+      report(files('d', documented), files('u', 100 - documented));
+
+    it('fails when coverage drops below the floor', () => {
+      writeBaseline();
+      writeFileSync(head, at(49));
+      const r = run();
+      expect(r.status).toBe(1);
+      expect(r.out).toMatch(/FAILED/);
+      expect(r.out).toContain('49.00%');
+      expect(r.out).toContain('50.00%');
+    });
+
+    it('passes when coverage sits exactly at the floor', () => {
+      writeBaseline();
+      writeFileSync(head, at(50));
+      const r = run();
+      expect(r.status).toBe(0);
+      expect(r.out).not.toMatch(/restamp/i);
+    });
+
+    it('passes when coverage sits above the floor, inside the headroom', () => {
+      writeBaseline();
+      writeFileSync(head, at(54));
+      const r = run();
+      expect(r.status).toBe(0);
+      expect(r.out).not.toMatch(/restamp/i);
+    });
+
+    // Never auto-tightens: raising the floor is a reviewed baseline edit, the
+    // same as lowering an entropy ceiling. The nudge says what to write.
+    it('nudges a restamp, without failing, when coverage outgrows the headroom', () => {
+      writeBaseline();
+      writeFileSync(head, at(60));
+      const r = run();
+      expect(r.status).toBe(0);
+      expect(r.out).toMatch(/restamp/i);
+      expect(r.out).toContain('"minCoveragePercent": 55');
+    });
+
+    // harness prints Math.round(documented / total * 100), so 49.6% reads as
+    // "50" and would clear a 50 floor. The ratchet derives the ratio from the
+    // file lists itself.
+    it('judges the exact ratio, not the rounded coveragePercent', () => {
+      writeBaseline();
+      writeFileSync(head, report(files('d', 124), files('u', 126)));
+      expect(JSON.parse(readFileSync(head, 'utf8')).coveragePercent).toBe(50);
+      expect(run().status).toBe(1);
+    });
+
+    // The floor is the backstop the identity rule cannot be: every file here
+    // is a NEW undocumented one, so no documented file lost its link.
+    it('fires even when the merge-base identity rule is clean', () => {
+      writeBaseline();
+      writeFileSync(base, at(50));
+      writeFileSync(head, report(files('d', 50), files('u', 60)));
+      const r = run(withBase());
+      expect(r.status).toBe(1);
+      expect(r.out).toMatch(/no documented file lost its link/);
+    });
+
+    it('runs on a push to main, where there is no merge base', () => {
+      writeBaseline();
+      writeFileSync(head, at(40));
+      expect(run().status).toBe(1);
+    });
+
+    describe('abstains (exit 3), never passes, when it cannot verify', () => {
+      it('on a report that checked zero files', () => {
+        writeBaseline();
+        writeFileSync(head, report([], []));
+        const r = run();
+        expect(r.status).toBe(3);
+        expect(r.out).toMatch(/ABSTAINED/);
+      });
+
+      it('on a report that says scannedNothing', () => {
+        writeBaseline();
+        writeFileSync(
+          head,
+          JSON.stringify({
+            valid: false,
+            coveragePercent: 0,
+            documented: [],
+            undocumented: [],
+            scanned: 0,
+            scannedNothing: true,
+          }),
+        );
+        expect(run().status).toBe(3);
+      });
+
+      it('on output that is not check-docs JSON', () => {
+        writeBaseline();
+        writeFileSync(head, 'x Documentation coverage: 18.0%\n');
+        expect(run().status).toBe(3);
+      });
+
+      it('on JSON whose lists are missing', () => {
+        writeBaseline();
+        writeFileSync(head, JSON.stringify({ coveragePercent: 99 }));
+        expect(run().status).toBe(3);
+      });
+
+      it('on a missing report', () => {
+        writeBaseline();
+        expect(run().status).toBe(3);
+      });
+    });
+
+    describe('instrument identity, as the entropy and perf ratchets do', () => {
+      it('passes when the running CLI matches the baseline', () => {
+        writeBaseline({ harnessCli: '12.10.1' });
+        writeFileSync(head, at(50));
+        expect(run(['--cli-version', '12.10.1']).status).toBe(0);
+      });
+
+      it('ABSTAINS when the CLI moved under the baseline', () => {
+        writeBaseline({ harnessCli: '12.10.1' });
+        writeFileSync(head, at(10));
+        const r = run(['--cli-version', '12.11.0']);
+        expect(r.status).toBe(3);
+        expect(r.out).toContain('12.10.1');
+        expect(r.out).toContain('12.11.0');
+      });
+
+      it('ABSTAINS when the baseline names a CLI and the caller does not', () => {
+        writeBaseline({ harnessCli: '12.10.1' });
+        writeFileSync(head, at(50));
+        const r = run();
+        expect(r.status).toBe(3);
+        expect(r.out).toMatch(/--cli-version/);
+      });
+    });
+
+    describe('usage errors exit 2 (ADR 0009)', () => {
+      it('when --report is not given', () => {
+        const r = spawnSync(
+          process.execPath,
+          [SCRIPT, '--baseline', baseline],
+          {
+            encoding: 'utf8',
+          },
+        );
+        expect(r.status).toBe(2);
+      });
+
+      it('when the baseline file is missing', () => {
+        rmSync(baseline);
+        writeFileSync(head, at(50));
+        expect(run().status).toBe(2);
+      });
+
+      it('when the baseline carries no numeric floor', () => {
+        writeFileSync(baseline, JSON.stringify({ minCoveragePercent: '50' }));
+        writeFileSync(head, at(50));
+        expect(run().status).toBe(2);
+      });
+    });
+  });
+});
+
+/**
+ * The checked-in floor. Offline structural guards on the JSON, the twin of
+ * "the checked-in entropy baseline": they catch a HUMAN EDIT (a lowered floor,
+ * a floor moved without re-measuring, a missing instrument), not the live
+ * tree. Only the ratchet's runtime line sees the live tree.
+ */
+describe('the checked-in docs coverage baseline (#1241)', () => {
+  const BASELINE_REL = '.harness/docs-coverage-baseline.json';
+  const BASELINE_PATH = join(REPO_ROOT, BASELINE_REL);
+
+  type Baseline = {
+    minCoveragePercent: number;
+    maxHeadroom: number;
+    measuredDocumented: number;
+    measuredScanned: number;
+    measuredPercent: number;
+    harnessCli: string;
+  };
+
+  function baselineNumbers(): Baseline {
+    const raw = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+    for (const key of [
+      'minCoveragePercent',
+      'maxHeadroom',
+      'measuredDocumented',
+      'measuredScanned',
+      'measuredPercent',
+    ]) {
+      expect(typeof raw[key], `${BASELINE_REL} needs a numeric "${key}"`).toBe(
+        'number',
+      );
+    }
+    return raw as Baseline;
+  }
+
+  // THE ratchet invariant: git holds the only offline ground truth for the
+  // value before this edit, so a floor and measurement lowered together
+  // cannot pass by agreeing with each other.
+  it('never lowers the floor below its last committed value', () => {
+    const prev = spawnSync('git', ['show', `HEAD:${BASELINE_REL}`], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
+    // A brand-new file has nothing to ratchet against; every other guard runs.
+    if (prev.status !== 0) return;
+    const before = JSON.parse(prev.stdout).minCoveragePercent as number;
+    expect(
+      baselineNumbers().minCoveragePercent,
+      `${BASELINE_REL}: the docs floor FELL ${before} -> ` +
+        `${baselineNumbers().minCoveragePercent}. A ratchet turns one way; ` +
+        'link the new files from docs/ instead of lowering the floor.',
+    ).toBeGreaterThanOrEqual(before);
+  });
+
+  it('records a measurement that agrees with its own counts', () => {
+    const b = baselineNumbers();
+    expect(b.measuredScanned).toBeGreaterThan(0);
+    expect(b.measuredPercent).toBeCloseTo(
+      (b.measuredDocumented / b.measuredScanned) * 100,
+      2,
+    );
+  });
+
+  it('never sets the floor above the coverage it last measured', () => {
+    const b = baselineNumbers();
+    expect(b.minCoveragePercent).toBeLessThanOrEqual(b.measuredPercent);
+  });
+
+  it('keeps the floor within the headroom it declares', () => {
+    const b = baselineNumbers();
+    expect(
+      b.measuredPercent - b.minCoveragePercent,
+      `${BASELINE_REL}: the floor sits more than "maxHeadroom" below the ` +
+        'measurement, so it is not ratcheting. Restamp it.',
+    ).toBeLessThanOrEqual(b.maxHeadroom + 1e-9);
+  });
+
+  it('records the exact CLI that measured it, on the pinned major', () => {
+    const { harnessCli } = baselineNumbers();
+    expect(harnessCli).toMatch(/^\d+\.\d+\.\d+$/);
+    const yml = readFileSync(
+      join(REPO_ROOT, '.github', 'workflows', 'harness-quality.yml'),
+      'utf8',
+    );
+    const pins = [
+      ...yml.matchAll(/^\s*HARNESS_CLI:\s*'@harness-engineering\/cli@(\d+)'/gm),
+    ].map((m) => m[1]);
+    expect(pins).toHaveLength(1);
+    expect(harnessCli.split('.')[0]).toBe(pins[0]);
+  });
+
+  it('is the single source of the headroom the ratchet uses', () => {
+    expect(readFileSync(SCRIPT, 'utf8')).toContain('parsed.maxHeadroom');
+  });
 });
 
 describe('the docs merge-base ratchet is wired (#865)', () => {
@@ -180,5 +463,45 @@ describe('the docs merge-base ratchet is wired (#865)', () => {
       /Harness Docs Coverage \(merge base\)[\s\S]{0,200}?if:\s*github\.event_name == 'pull_request'/,
     );
     expect(yaml()).toMatch(/docs-ratchet\.mjs[\s\S]{0,200}?\$DOCS_BASE_FLAG/);
+  });
+
+  // #1241: the floor is only armed if CI names the analyzer that measured the
+  // head. Without `--cli-version` the ratchet abstains on every run.
+  it('hands the resolved CLI version to the ratchet', () => {
+    expect(yaml()).toMatch(
+      /docs-ratchet\.mjs[\s\S]{0,200}?--cli-version\s+"\$\{\{ steps\.harness-cli\.outputs\.version \}\}"/,
+    );
+  });
+
+  it('resolves that version before the ratchet step reads it', () => {
+    const resolve = yaml().indexOf('id: harness-cli');
+    const ratchet = yaml().indexOf('node scripts/docs-ratchet.mjs');
+    expect(resolve).toBeGreaterThan(-1);
+    expect(ratchet).toBeGreaterThan(resolve);
+  });
+
+  it('runs in the required `validate` job, without continue-on-error', () => {
+    const y = yaml();
+    const step = y.slice(y.indexOf('- name: Docs coverage ratchet (blocking)'));
+    const body = step.slice(0, step.indexOf('\n      - '));
+    expect(body).not.toMatch(/continue-on-error/);
+    expect(y.indexOf('\n  validate:\n')).toBeGreaterThan(-1);
+    expect(y.indexOf('\n  validate:\n')).toBeLessThan(
+      y.indexOf('Docs coverage ratchet (blocking)'),
+    );
+  });
+
+  it('keeps the floor in the baseline the ratchet reads by default', () => {
+    expect(readFileSync(SCRIPT, 'utf8')).toContain(
+      "'docs-coverage-baseline.json'",
+    );
+    const parsed = JSON.parse(
+      readFileSync(
+        join(REPO_ROOT, '.harness', 'docs-coverage-baseline.json'),
+        'utf8',
+      ),
+    );
+    expect(typeof parsed.minCoveragePercent).toBe('number');
+    expect(typeof parsed.harnessCli).toBe('string');
   });
 });

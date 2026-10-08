@@ -14,6 +14,17 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **Docs coverage has a floor that only moves up** (#1241).
+  `scripts/docs-ratchet.mjs` now also fails when coverage falls below
+  `minCoveragePercent` in `.harness/docs-coverage-baseline.json` (16.95%,
+  measured at 17.95% = 70/390 on CLI 12.10.1). Before this, PRs that only added
+  undocumented files passed the #865 identity rule while coverage fell. The
+  floor has one point of headroom and is raised by a reviewed restamp. A report
+  with zero files or one that cannot be read abstains with exit 3, and so does a
+  report from a CLI other than the one that measured the floor.
+
 ### Fixed
 
 - **canary-starling no longer writes a feed `canary contract validate` refuses**

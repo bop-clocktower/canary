@@ -79,6 +79,7 @@ function stripComments(source: string): string {
 const NOT_ENTRY_GUARDED: Record<string, string> = {
   'scripts/bump-version.mjs': 'runs unconditionally; import.meta finds root',
   'scripts/check_doc_links.mjs': 'runs unconditionally; import.meta finds root',
+  'scripts/docs-ratchet.mjs': 'runs unconditionally; import.meta finds root',
   'scripts/entropy-ratchet.mjs': 'runs unconditionally; import.meta finds root',
   'scripts/perf-ratchet.mjs': 'runs unconditionally; import.meta finds root',
   'scripts/roadmap-denominator-check.mjs':
