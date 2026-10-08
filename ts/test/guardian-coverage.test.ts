@@ -64,14 +64,22 @@ describe('shapes', () => {
     expect(Fidelity.Heuristic).toBe('heuristic');
   });
 
-  it('changed unit fields', () => {
+  // The Python original asserted a dataclass's fields; ported literally it
+  // read back the object literal it had just built, which no implementation can
+  // fail (cassandra VAC-002, #1179). The field contract worth pinning is that a
+  // resolver hands the unit back intact -- symbol-less stays symbol-less.
+  it('changed unit fields survive resolution unchanged', () => {
     const unit: ChangedUnit = {
       path: 'agent/core/foo.py',
       added_ranges: [[12, 28]],
     };
-    expect(unit.path).toBe('agent/core/foo.py');
-    expect(unit.added_ranges).toEqual([[12, 28]]);
-    expect(unit.symbol).toBeUndefined();
+    const [result] = resolveFromHeuristic([unit], dir);
+    expect(result!.unit).toEqual({
+      path: 'agent/core/foo.py',
+      added_ranges: [[12, 28]],
+    });
+    expect(result!.unit.symbol).toBeUndefined();
+    expect(result!.covered).toBe(false);
   });
 
   it('coverage result fields', () => {

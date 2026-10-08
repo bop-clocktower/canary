@@ -378,6 +378,9 @@ describe('knowledge.domainBlocklist blocks real, foreign paths (#564)', () => {
         // Reached only when at least one entry resolved, which proves this
         // checkout is one where these directories materialise — so an absent
         // entry here is a dead entry, not an artefact of the environment.
+        // Restated in-test so the absence below cannot pass over nothing
+        // if the skip guard is ever loosened (#1179).
+        expect(VERIFIABLE.length).toBeGreaterThan(0);
         expect(UNVERIFIABLE).toEqual([]);
       });
     },

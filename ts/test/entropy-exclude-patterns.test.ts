@@ -231,6 +231,10 @@ describe('entropy.excludePatterns repo-rooted entries', () => {
   // written *inside* an untracked artifact directory by the tool that owns it
   // does not exist in `actions/checkout`, so it proves nothing about CI.
   it('keeps every one invisible to CI (git-ignored at the repo level)', () => {
+    // An empty list, or a probe that calls everything ignored, would leave
+    // `visibleToCi` empty for the wrong reason (#1179). Pin both.
+    expect(repoRootedExcludes.length).toBeGreaterThan(0);
+    expect(isGitIgnored('ts/src/probe')).toBe(false);
     const visibleToCi = repoRootedExcludes
       .map((p) => p.slice(0, -'/**'.length))
       .filter((dir) => !isGitIgnored(`${dir}/probe`));
