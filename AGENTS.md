@@ -1607,7 +1607,11 @@ There is **no `lint` gate** and no linter to run one: the repo uses no ESLint by
 decision, and the `protect-config` hook blocks AI-authored linter configs.
 Prettier is the formatting gate; markdown is gated separately by `docs-lint.yml`
 via `markdownlint-cli`. `agents/skills/` carries its own `test` / `typecheck` /
-`format:check` for the skill bundles.
+`format:check` for the skill bundles. Its `test` needs a built engine — run
+`npm run build` in `ts/` first: canary-cassandra delegates to `ts/dist`, and a
+vitest `globalSetup` (`agents/skills/test/engine-precondition.ts`, #1221) fails
+the run once with `ts/dist missing` when it is absent, and warns when `ts/dist`
+is older than `ts/src`.
 
 **The repo root is not a gate surface.** There is no root `package.json` in this
 repository — `/package.json` and `/package-lock.json` are gitignored as
