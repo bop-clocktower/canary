@@ -21,6 +21,7 @@
 
 import {
   chmodSync,
+  copyFileSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -111,44 +112,41 @@ afterEach(() => {
   }
 });
 
+const GH_STUB = join(
+  REPO_ROOT,
+  'ts',
+  'test',
+  'fixtures',
+  'schedule-staleness',
+  'gh-stub.cjs',
+);
+
 /**
- * Writes an executable `gh` into a fresh temp dir that answers `gh api <path>`
- * from `table`, and returns that dir. This exercises the real spawn seam in
- * `ghApi` and `main()` end to end, without the network. The stub is a node
- * script with a shebang, so these tests are POSIX-only.
+ * Copies the stub `gh` (test/fixtures/schedule-staleness/gh-stub.cjs) into a
+ * fresh temp dir next to a `table.json` it answers from, and returns that dir.
+ * This exercises the real spawn seam in `ghApi` and `main()` end to end,
+ * without the network. The stub runs through its shebang, so these tests are
+ * POSIX-only.
  */
 function stubGh(table: StubTable): string {
   const dir = mkdtempSync(join(tmpdir(), 'schedule-staleness-gh-'));
   tempDirs.push(dir);
-  const tablePath = join(dir, 'table.json');
-  writeFileSync(tablePath, JSON.stringify(table));
+  writeFileSync(join(dir, 'table.json'), JSON.stringify(table));
   const bin = join(dir, 'gh');
-  writeFileSync(
-    bin,
-    `#!/usr/bin/env node
-const table = JSON.parse(require('node:fs').readFileSync(${JSON.stringify(tablePath)}, 'utf8'));
-const path = process.argv[3] ?? '';
-const m = /actions\\/workflows\\/([^/?]+)(\\/runs)?/.exec(path);
-const entry = m ? table[m[1]] : undefined;
-if (entry === undefined) {
-  process.stderr.write('gh: Not Found (HTTP 404) ' + path + '\\n');
-  process.exit(1);
-}
-if (typeof entry.raw === 'string') {
-  process.stdout.write(entry.raw);
-} else if (m[2]) {
-  const runs = entry.runs ?? [];
-  process.stdout.write(JSON.stringify({ total_count: runs.length, workflow_runs: runs }));
-} else {
-  process.stdout.write(JSON.stringify('workflow' in entry ? entry.workflow : { state: 'active' }));
-}
-`,
-  );
+  copyFileSync(GH_STUB, bin);
   chmodSync(bin, 0o755);
   return dir;
 }
 
 const POSIX = process.platform !== 'win32';
+
+/**
+ * A timestamp from the same clock `main()` reads. The CLI runs in a child
+ * process, so its clock cannot be frozen or injected; this run is 0 days old
+ * against an 8-day window, so midnight, DST or a leap day cannot flip it.
+ */
+// blackhawk-ignore BH001 -- the CLI subprocess reads the real clock; see above
+const justNow = () => new Date().toISOString();
 
 describe('assessSchedule', () => {
   const base = { workflow: 'w.yml', state: 'active', now: NOW, maxAgeDays: 8 };
@@ -442,7 +440,7 @@ describe.skipIf(!POSIX)('CLI exit codes', () => {
     );
 
   it('exits 0 when every schedule fired inside the window', () => {
-    const fresh = new Date().toISOString();
+    const fresh = justNow();
     const r = check({ 'a.yml': runAt(fresh), 'b.yml': runAt(fresh) });
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(
@@ -498,7 +496,7 @@ describe.skipIf(!POSIX)('CLI exit codes', () => {
 
     it('reports abstained:false when everything is fresh', () => {
       const { status, body } = json({
-        'a.yml': runAt(new Date().toISOString()),
+        'a.yml': runAt(justNow()),
       });
       expect(status).toBe(0);
       expect(body).toMatchObject({ checked: 1, abstained: false });
