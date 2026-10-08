@@ -119,7 +119,7 @@ describe('engine precondition (#1221)', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('is wired as the suite globalSetup, so it runs before any test file', () => {
+  it('is registered as the suite globalSetup in vitest.config.ts', () => {
     const setup = config.test?.globalSetup;
     const entries = Array.isArray(setup) ? setup : [setup];
     expect(entries).toContain('test/engine-precondition.ts');
