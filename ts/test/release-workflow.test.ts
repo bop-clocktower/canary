@@ -14,7 +14,7 @@
  *    bundled npm 10 is not.
  *
  * Plus re-run safety: once npm has a version, publishing it again is E403, so
- * a re-run after a later step failed must skip the publish rather than fail.
+ * re-running the workflow must skip that publish rather than fail on it.
  *
  * Offline: reads workflow YAML. Executes nothing.
  */
