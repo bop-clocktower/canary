@@ -13,16 +13,25 @@
  *   3 = ABSTAINED — no schedule run on record, the API was unreachable, or
  *       nothing was checked. Never reported as fresh.
  *
- * The GitHub API is injected, so no test reaches the network. The API-error
- * path is also exercised with a binary that does not exist, so the real
- * `gh`-spawning seam is covered and not only the stub.
+ * No test reaches the network. The pure functions take an injected API. The
+ * real `gh`-spawning seam in `ghApi` and the CLI's exit codes are driven
+ * through a stub `gh` placed first on PATH, plus a binary that does not exist,
+ * so the stub is not the only thing under test.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import {
+  chmodSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { runCapture } from './subprocess-testkit.js';
 
@@ -35,6 +44,7 @@ interface Result {
   verdict: Verdict;
   reason: string;
   lastRunAt?: string;
+  lastRunUrl?: string;
 }
 type Api = (path: string) => unknown;
 interface Module {
@@ -83,6 +93,62 @@ function fakeApi(
     return { state: entry.state ?? 'active' };
   };
 }
+
+/**
+ * One canned answer per workflow file for the stub `gh`. `workflow` replaces
+ * the workflow payload (default `{state: 'active'}`), `raw` is printed verbatim
+ * for both endpoints, and a file missing from the table answers like a 404.
+ */
+type StubTable = Record<
+  string,
+  { workflow?: unknown; runs?: unknown[]; raw?: string }
+>;
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Writes an executable `gh` into a fresh temp dir that answers `gh api <path>`
+ * from `table`, and returns that dir. This exercises the real spawn seam in
+ * `ghApi` and `main()` end to end, without the network. The stub is a node
+ * script with a shebang, so these tests are POSIX-only.
+ */
+function stubGh(table: StubTable): string {
+  const dir = mkdtempSync(join(tmpdir(), 'schedule-staleness-gh-'));
+  tempDirs.push(dir);
+  const tablePath = join(dir, 'table.json');
+  writeFileSync(tablePath, JSON.stringify(table));
+  const bin = join(dir, 'gh');
+  writeFileSync(
+    bin,
+    `#!/usr/bin/env node
+const table = JSON.parse(require('node:fs').readFileSync(${JSON.stringify(tablePath)}, 'utf8'));
+const path = process.argv[3] ?? '';
+const m = /actions\\/workflows\\/([^/?]+)(\\/runs)?/.exec(path);
+const entry = m ? table[m[1]] : undefined;
+if (entry === undefined) {
+  process.stderr.write('gh: Not Found (HTTP 404) ' + path + '\\n');
+  process.exit(1);
+}
+if (typeof entry.raw === 'string') {
+  process.stdout.write(entry.raw);
+} else if (m[2]) {
+  const runs = entry.runs ?? [];
+  process.stdout.write(JSON.stringify({ total_count: runs.length, workflow_runs: runs }));
+} else {
+  process.stdout.write(JSON.stringify('workflow' in entry ? entry.workflow : { state: 'active' }));
+}
+`,
+  );
+  chmodSync(bin, 0o755);
+  return dir;
+}
+
+const POSIX = process.platform !== 'win32';
 
 describe('assessSchedule', () => {
   const base = { workflow: 'w.yml', state: 'active', now: NOW, maxAgeDays: 8 };
@@ -145,6 +211,24 @@ describe('assessSchedule', () => {
     expect(r.verdict).toBe('stale');
     expect(r.reason).toMatch(/disabled_inactivity/);
   });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['a number', 1],
+  ])(
+    'abstains, not stale, when the workflow state is %s (an unreadable payload)',
+    (_label, state) => {
+      const r = mod.assessSchedule({
+        ...base,
+        state,
+        runs: [run('2026-10-07T09:00:00Z')],
+      });
+      expect(r.verdict).toBe('abstain');
+      expect(r.reason).toMatch(/unreadable workflow payload: no string state/);
+      expect(r.reason).not.toMatch(/disabled/);
+    },
+  );
 });
 
 describe('checkSchedules', () => {
@@ -198,7 +282,64 @@ describe('checkSchedules', () => {
       api: (path) => mod.ghApi(path, 'canary-no-such-gh-binary'),
     });
     expect(r!.verdict).toBe('abstain');
-    expect(r!.reason).toMatch(/GitHub API/);
+    expect(r!.reason).toMatch(
+      /GitHub API unreachable or refused: GitHub API call failed for repos\/acme\/widgets\/actions\/workflows\/w\.yml: spawnSync canary-no-such-gh-binary /,
+    );
+  });
+
+  it.each([
+    ['an empty object', {}],
+    ['null', null],
+    ['a redirect notice', { message: 'Moved Permanently' }],
+  ])(
+    'abstains, not stale, when the workflow payload is %s',
+    (_label, payload) => {
+      const [r] = mod.checkSchedules({
+        ...args,
+        workflows: ['w.yml'],
+        api: (path) =>
+          path.includes('/runs?')
+            ? { workflow_runs: [run('2026-10-07T09:00:00Z')] }
+            : payload,
+      });
+      expect(r!.verdict).toBe('abstain');
+      expect(r!.reason).toMatch(/unreadable workflow payload: no string state/);
+    },
+  );
+});
+
+describe.skipIf(!POSIX)('ghApi against a stub gh', () => {
+  const PATH = 'repos/acme/widgets/actions/workflows/w.yml';
+
+  it('returns the parsed payload on success', () => {
+    const bin = join(stubGh({ 'w.yml': {} }), 'gh');
+    expect(mod.ghApi(PATH, bin)).toEqual({ state: 'active' });
+  });
+
+  it('names the path and the API failure on a nonzero exit', () => {
+    const bin = join(stubGh({}), 'gh');
+    expect(() => mod.ghApi(PATH, bin)).toThrow(
+      /GitHub API call failed for repos\/acme\/widgets\/actions\/workflows\/w\.yml: gh: Not Found \(HTTP 404\)/,
+    );
+  });
+
+  it('abstains with an unreadable-payload label, not "unreachable", on non-JSON output', () => {
+    const bin = join(
+      stubGh({ 'w.yml': { raw: '<html>rate limited</html>' } }),
+      'gh',
+    );
+    const [r] = mod.checkSchedules({
+      repo: REPO,
+      maxAgeDays: 8,
+      now: NOW,
+      workflows: ['w.yml'],
+      api: (path) => mod.ghApi(path, bin),
+    });
+    expect(r!.verdict).toBe('abstain');
+    expect(r!.reason).toMatch(
+      /^unreadable payload for repos\/acme\/widgets\/actions\/workflows\/w\.yml: /,
+    );
+    expect(r!.reason).not.toMatch(/unreachable/);
   });
 });
 
@@ -247,9 +388,125 @@ describe('render', () => {
     expect(out).toMatch(/ABSTAINED/);
     expect(out).toMatch(/Fix:/);
   });
+
+  it('labels a fresh run FRESH with its run URL, and gives no fix step', () => {
+    const url = `https://github.com/${REPO}/actions/runs/42`;
+    const out = mod.render(
+      [{ workflow: 'a.yml', verdict: 'fresh', reason: 'ok', lastRunUrl: url }],
+      8,
+    );
+    expect(out).toMatch(/FRESH\s+a\.yml: ok/);
+    expect(out).toContain(url);
+    expect(out).not.toMatch(/Fix:/);
+  });
+
+  it('gives no abstention fix step when the only finding is stale', () => {
+    const out = mod.render(
+      [{ workflow: 'b.yml', verdict: 'stale', reason: 'old' }],
+      8,
+    );
+    expect(out).toMatch(/STALE\s+b\.yml: old/);
+    expect(out).not.toMatch(/Fix:/);
+  });
 });
 
-describe('CLI', () => {
+/**
+ * Runs the CLI with a stub `gh` first on PATH and GITHUB_REPOSITORY unset.
+ * Every CLI test goes through this, so even a regression that skips argument
+ * validation reaches the stub rather than the real GitHub API.
+ */
+function cli(args: string[], table: StubTable = {}) {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: `${stubGh(table)}${delimiter}${process.env['PATH'] ?? ''}`,
+  };
+  delete env['GITHUB_REPOSITORY'];
+  return runCapture(process.execPath, [SCRIPT, ...args], { env });
+}
+
+/** The CLI's exit code, end to end through main() and a stub `gh`. */
+describe.skipIf(!POSIX)('CLI exit codes', () => {
+  const runAt = (created_at: string) => ({
+    runs: [
+      {
+        id: 7,
+        created_at,
+        html_url: `https://github.com/${REPO}/actions/runs/7`,
+      },
+    ],
+  });
+  const check = (table: StubTable, extra: string[] = []) =>
+    cli(
+      ['--repo', REPO, '--max-age-days', '8', ...extra, ...Object.keys(table)],
+      table,
+    );
+
+  it('exits 0 when every schedule fired inside the window', () => {
+    const fresh = new Date().toISOString();
+    const r = check({ 'a.yml': runAt(fresh), 'b.yml': runAt(fresh) });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(
+      /checked 2 workflow\(s\).*2 fresh, 0 stale, 0 abstained/,
+    );
+  });
+
+  it('exits 1 when the last schedule run is years old', () => {
+    const r = check({ 'a.yml': runAt('2000-01-01T00:00:00Z') });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toMatch(
+      /STALE\s+a\.yml: last schedule run 2000-01-01T00:00:00Z/,
+    );
+  });
+
+  it('exits 3, not 0, when there is no schedule run on record', () => {
+    const r = check({ 'a.yml': { runs: [] } });
+    expect(r.status).toBe(3);
+    expect(r.stdout).toMatch(/ABSTAINED\s+a\.yml: no schedule-event run/);
+  });
+
+  it('exits 3 for a workflow the API does not know (a 404)', () => {
+    const r = cli(['--repo', REPO, '--max-age-days', '8', 'nope.yml']);
+    expect(r.status).toBe(3);
+    expect(r.stdout).toMatch(
+      /ABSTAINED\s+nope\.yml: GitHub API unreachable or refused: .*HTTP 404/,
+    );
+  });
+
+  describe('--json', () => {
+    const json = (table: StubTable) => {
+      const r = check(table, ['--json']);
+      return {
+        status: r.status,
+        body: JSON.parse(r.stdout) as { checked: number; abstained: boolean },
+      };
+    };
+
+    it('reports abstained:true and the denominator on an abstention', () => {
+      const { status, body } = json({
+        'a.yml': { runs: [] },
+        'b.yml': { runs: [] },
+      });
+      expect(status).toBe(3);
+      expect(body).toMatchObject({ checked: 2, abstained: true });
+    });
+
+    it('reports abstained:false on a stale finding', () => {
+      const { status, body } = json({ 'a.yml': runAt('2000-01-01T00:00:00Z') });
+      expect(status).toBe(1);
+      expect(body).toMatchObject({ checked: 1, abstained: false });
+    });
+
+    it('reports abstained:false when everything is fresh', () => {
+      const { status, body } = json({
+        'a.yml': runAt(new Date().toISOString()),
+      });
+      expect(status).toBe(0);
+      expect(body).toMatchObject({ checked: 1, abstained: false });
+    });
+  });
+});
+
+describe('CLI usage errors', () => {
   it('exits 2 with usage when no workflow is named', () => {
     const r = runCapture(process.execPath, [SCRIPT, '--repo', REPO]);
     expect(r.status).toBe(2);
@@ -269,13 +526,39 @@ describe('CLI', () => {
     expect(r.output).toMatch(/usage:/);
   });
 
-  it('exits 2 when no repo is given and GITHUB_REPOSITORY is unset', () => {
-    const env = { ...process.env };
-    delete env['GITHUB_REPOSITORY'];
-    const r = runCapture(process.execPath, [SCRIPT, 'w.yml'], { env });
+  // Every other argument is valid, so only the repo check can produce exit 2.
+  // `cli()` unsets GITHUB_REPOSITORY and fronts PATH with a stub `gh`.
+  it.skipIf(!POSIX)(
+    'exits 2 when no repo is given and GITHUB_REPOSITORY is unset',
+    () => {
+      const r = cli(['--max-age-days', '8', 'w.yml']);
+      expect(r.status).toBe(2);
+      expect(r.output).toMatch(/repo \(OWNER\/NAME\) is required/);
+    },
+  );
+
+  it.skipIf(!POSIX)('exits 2 on a malformed --repo', () => {
+    const r = cli(['--repo', 'not-a-repo', '--max-age-days', '8', 'w.yml']);
     expect(r.status).toBe(2);
+    expect(r.output).toMatch(/repo \(OWNER\/NAME\) is required/);
   });
 });
+
+/**
+ * Whether a cron minute field can fire at minute 0, the slot GitHub's
+ * scheduler drops first under load. Each comma-separated part is `*`, `n`,
+ * `a-b`, or any of those with `/step`. Steps count up from the start of the
+ * range, so a part reaches 0 exactly when it starts at 0 or is `*`. Anything
+ * unparseable counts as reaching 0, so an odd field fails loudly, not quietly.
+ */
+function canMatchMinuteZero(field: string): boolean {
+  return field.split(',').some((part) => {
+    const range = part.split('/')[0] ?? '';
+    if (range === '*') return true;
+    const start = range.split('-')[0] ?? '';
+    return !/^\d+$/.test(start) || Number(start) === 0;
+  });
+}
 
 /**
  * The watchdog is only worth having if it cannot go dark with what it watches.
@@ -328,14 +611,99 @@ describe('schedule-watchdog.yml wiring', () => {
     expect(watched.map((s) => s.file)).toEqual(
       expect.arrayContaining(['harness-architecture.yml', 'arch-snapshot.yml']),
     );
-    for (const { file } of watched) expect(command).toContain(file);
+    // Exact tokens, not substrings: `snapshot.yml` must not pass for
+    // `arch-snapshot.yml`.
+    const tokens = (command ?? '').split(/\s+/);
+    for (const { file } of watched) expect(tokens).toContain(file);
   });
 
-  it('keeps every schedule in the repo off the top of the hour', () => {
-    const crons = scheduled.flatMap((s) => s.crons);
-    expect(crons.length).toBeGreaterThan(watched.length - 1);
-    for (const cron of crons) expect(cron.split(/\s+/)[0]).not.toBe('0');
+  // The watchdog applies one 8-day window to every file it watches. That is
+  // only right for a schedule that fires at least weekly; a monthly cron would
+  // read as stale for three weeks of every four.
+  it('watches only crons that fire weekly or more often', () => {
+    const tooRare = watched.flatMap(({ file, crons }) =>
+      crons
+        .filter((cron) => {
+          const [, , dom, month, dow] = cron.split(/\s+/);
+          return (
+            dom !== '*' || month !== '*' || !/^(\*|[0-7])$/.test(dow ?? '')
+          );
+        })
+        .map((cron) => `${file}: '${cron}'`),
+    );
+    expect(
+      tooRare,
+      'a watched cron fires less often than weekly; the single --max-age-days 8 ' +
+        'window would call it stale between runs, so per-workflow windows are needed first',
+    ).toEqual([]);
   });
+
+  describe('off the top of the hour', () => {
+    it.each([
+      ['0', true],
+      ['00', true],
+      ['*', true],
+      ['*/15', true],
+      ['5,0', true],
+      ['0-10', true],
+      ['0/20', true],
+      ['x', true],
+      ['30', false],
+      ['5-10', false],
+      ['17/20', false],
+      ['19,43', false],
+    ])('minute field %s can match :00 -> %s', (field, expected) => {
+      expect(canMatchMinuteZero(field)).toBe(expected);
+    });
+
+    it('keeps every schedule in the repo, the watchdog included, off :00', () => {
+      const crons = scheduled.flatMap((s) => s.crons);
+      // Every watched cron plus the watchdog's own daily one.
+      expect(scheduled.map((s) => s.file)).toContain(WATCHDOG);
+      expect(crons.length).toBeGreaterThanOrEqual(watched.length + 1);
+      const onTheHour = crons.filter((c) =>
+        canMatchMinuteZero(c.split(/\s+/)[0] ?? ''),
+      );
+      expect(onTheHour).toEqual([]);
+    });
+  });
+
+  // GitHub runs a `run:` step with no `shell:` as `bash -e`. Without `set +e`,
+  // a red script exit kills the step before the report and the summary are
+  // written: the one time the summary matters. This runs the real step body
+  // under that shell with `node` stubbed to fail.
+  it.skipIf(!POSIX).each([1, 3])(
+    'still prints the report and writes the summary when the script exits %i',
+    (exitWith) => {
+      const dir = mkdtempSync(join(tmpdir(), 'schedule-watchdog-step-'));
+      tempDirs.push(dir);
+      const node = join(dir, 'node');
+      writeFileSync(
+        node,
+        `#!/bin/sh\necho "STUB REPORT $*"\nexit ${exitWith}\n`,
+      );
+      chmodSync(node, 0o755);
+      const summary = join(dir, 'summary.md');
+      const r = runCapture(
+        'bash',
+        ['--noprofile', '--norc', '-e', '-c', command ?? 'exit 99'],
+        {
+          cwd: dir,
+          env: {
+            ...process.env,
+            PATH: `${dir}${delimiter}${process.env['PATH'] ?? ''}`,
+            GITHUB_REPOSITORY: REPO,
+            GITHUB_STEP_SUMMARY: summary,
+          },
+        },
+      );
+      expect(r.status).toBe(exitWith);
+      expect(r.stdout).toMatch(/STUB REPORT .*schedule-staleness\.mjs/);
+      const written = readFileSync(summary, 'utf8');
+      expect(written).toMatch(/## Schedule watchdog/);
+      expect(written).toMatch(/STUB REPORT/);
+    },
+  );
 
   it('keeps the arch snapshot after the validation run', () => {
     const at = (file: string) => {

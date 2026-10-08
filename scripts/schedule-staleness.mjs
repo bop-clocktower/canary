@@ -50,8 +50,16 @@ const FIX_STEP =
   'to re-register the schedule, then confirm a run appears.';
 
 /**
+ * Thrown when `gh` answered but the body is not JSON (an HTML error page, a
+ * truncated response). The API was reachable, so the abstention must not say
+ * it was not; that would send the reader to check the token instead.
+ */
+export class UnreadablePayloadError extends Error {}
+
+/**
  * Calls `gh api <path>` and parses the JSON. Throws on any failure, including
- * a missing binary. The caller turns the throw into an abstention.
+ * a missing binary and a non-JSON body. The caller turns the throw into an
+ * abstention.
  *
  * @param {string} path API path without a leading slash
  * @param {string} [bin] the gh binary; overridable so the spawn-failure path is testable
@@ -68,7 +76,13 @@ export function ghApi(path, bin = 'gh') {
     const detail = String(error.stderr ?? '').trim() || error.message;
     throw new Error(`GitHub API call failed for ${path}: ${detail}`);
   }
-  return JSON.parse(out);
+  try {
+    return JSON.parse(out);
+  } catch (error) {
+    throw new UnreadablePayloadError(
+      `unreadable payload for ${path}: ${error.message}`,
+    );
+  }
 }
 
 /**
@@ -78,6 +92,16 @@ export function ghApi(path, bin = 'gh') {
  * @returns {{workflow: string, verdict: 'fresh'|'stale'|'abstain', reason: string, lastRunAt?: string, lastRunUrl?: string}}
  */
 export function assessSchedule({ workflow, state, runs, now, maxAgeDays }) {
+  // Only an explicit state string is evidence about the workflow. `{}`, `null`
+  // or `{"message": "Moved"}` says nothing about whether it is disabled, so
+  // calling it stale would invent a finding.
+  if (typeof state !== 'string') {
+    return {
+      workflow,
+      verdict: 'abstain',
+      reason: `unreadable workflow payload: no string state (got ${JSON.stringify(state) ?? 'nothing'})`,
+    };
+  }
   if (state !== 'active') {
     return {
       workflow,
@@ -134,7 +158,10 @@ export function checkSchedules({
       return {
         workflow,
         verdict: 'abstain',
-        reason: `GitHub API unreachable or refused: ${error.message}`,
+        reason:
+          error instanceof UnreadablePayloadError
+            ? error.message
+            : `GitHub API unreachable or refused: ${error.message}`,
       };
     }
     return assessSchedule({ workflow, state, runs, now, maxAgeDays });
