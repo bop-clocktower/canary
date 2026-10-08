@@ -1,0 +1,8 @@
+{
+  "reason": "Nested test-config detection (#1212): module-size 52167->52317 (+150 non-blank lines), measured with harness check-arch --json (CLI 12.10.1) in a clean worktree (no ts/dist) at origin/main ccf6af09 and at the branch rebased onto it. main's 52167 was measured by planting a 600-line probe file (52767 - 600), and it already sits above the 51697 recorded floor but passes inside the ratchet's tolerance. This branch's +150 crosses that tolerance. newViolations is 0, and module-size is the only regression. The growth is the feature: ts/src/core/config-probes.ts (+183) holds the bounded nested walk (depth 3, explicit skip list, code-point order, no symlink following) and the agree/disagree verdict. It also absorbs CONFIG_PROBES, inferPlaywrightTestType and probeConfig, which moved out of framework-probes.ts (273->214) so that file stays well under the 300-LOC perf ceiling and no import cycle forms. migrator.ts adds +26: the workspace guard on the new tier and the unresolved-framework reason that now states what the config tier probed. No paydown was taken: the only movable lines are the feature's own doc comments, which explain the #504 interaction the walk must respect.",
+  "categories": {
+    "module-size": 52317
+  },
+  "violationIds": [],
+  "createdFrom": "ccf6af09"
+}
