@@ -6,9 +6,12 @@
 // time is a lie the contract cannot detect (#1151 phase 2, P3).
 
 import { loadRuns } from '../../canary-signal/scripts/sources.mjs';
+import {
+  isRepoPath,
+  isTimestamp,
+  TIMESTAMP_RE,
+} from '../../../lib/contracts/field-checks.mjs';
 
-const TIMESTAMP =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const SHA = /^[0-9a-f]{7,64}$/;
 /** The only per-test statuses the history readers write. */
 const STATUSES = ['passed', 'failed', 'flaky', 'skipped'];
@@ -47,18 +50,20 @@ function results(row) {
   const problem = countsProblem(row);
   if (problem) return { error: problem };
   if (!Array.isArray(row.tests)) return { list: null };
-  // An absolute or drive-lettered test_file (vitest rows can hold one) would
-  // make the whole feed invalid, so its row is left out like any other.
   const bad = row.tests.find(
-    (t) =>
-      !STATUSES.includes(t.status) ||
-      !t.test_file ||
-      !t.test_name ||
-      /^(\/|[A-Za-z]:[\\/])/.test(t.test_file),
+    (t) => !STATUSES.includes(t.status) || !t.test_file || !t.test_name,
   );
   if (bad)
     return {
       error: `a test with status ${JSON.stringify(bad.status)} or no file/name`,
+    };
+  // A test_file the validator refuses (absolute, drive-lettered, `~`, `..`
+  // above the root: vitest rows can hold one) would make the whole feed
+  // invalid, so its row is left out like any other (#1225).
+  const stray = row.tests.find((t) => !isRepoPath(t.test_file));
+  if (stray)
+    return {
+      error: `test_file ${JSON.stringify(stray.test_file)} is not repo-relative`,
     };
   return { list: row.tests.map(toResult) };
 }
@@ -84,11 +89,11 @@ export function historyToRun(row, scope) {
     run: null,
     skipped: `history run ${row.run_id}: ${reason}`,
   });
-  if (typeof row.timestamp !== 'string' || !TIMESTAMP.test(row.timestamp))
+  if (typeof row.timestamp !== 'string' || !TIMESTAMP_RE.test(row.timestamp))
     return why('no ISO timestamp');
-  // ISO-shaped is not a date: month 13 or hour 25 would throw at toISOString.
-  if (!Number.isFinite(Date.parse(row.timestamp)))
-    return why('unparseable timestamp');
+  // ISO-shaped is not a date: month 13 throws at toISOString, and 02-30 is
+  // what Date.parse silently rolls over to 03-02 (#1225).
+  if (!isTimestamp(row.timestamp)) return why('unparseable timestamp');
   if (!(typeof row.duration_ms === 'number' && row.duration_ms > 0))
     return why('no duration_ms, so no start time');
   const res = results(row);

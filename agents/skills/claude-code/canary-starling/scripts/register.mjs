@@ -9,15 +9,19 @@ import {
   loadLedger,
   DEFAULT_LEDGER,
 } from '../../canary-signal/scripts/sources.mjs';
+import {
+  isRepoPath,
+  isTimestamp,
+} from '../../../lib/contracts/field-checks.mjs';
 
-const TIMESTAMP =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const REQUIRED = ['test', 'file', 'kind', 'reason', 'commit'];
 
 /** The provenance fields a ledger row lacks; [] when it can be a register row. */
 function missingFields(r) {
   const missing = REQUIRED.filter((f) => !r[f]);
-  if (!TIMESTAMP.test(r.date ?? '')) missing.push('date');
+  // The validator's own checks: a feed with one refused row is refused whole.
+  if (r.file && !isRepoPath(r.file)) missing.push('repo-relative file');
+  if (!isTimestamp(r.date)) missing.push('date');
   return missing;
 }
 
