@@ -12,8 +12,9 @@
 // a parsed document always has a denominator of at least 1 (fork N).
 
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import process from 'node:process';
 
+import { isMain } from '../is-main.mjs';
 import { createParser, EXIT_USAGE, formatUsageError } from '../parse-args.mjs';
 import { LAYERS, validateDocument, validateText } from './document.mjs';
 
@@ -98,9 +99,6 @@ export function main(argv = process.argv.slice(2), io = {}) {
 
 // `process.exitCode`, not `process.exit()`: exit tears the process down
 // mid-write and truncates a large piped --json payload (#791).
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   process.exitCode = main();
 }

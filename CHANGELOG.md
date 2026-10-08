@@ -16,6 +16,16 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Vendored `agents/skills/lib` no longer fails a consumer's lint.**
+  `is-main.mjs` (new in 9.1.0) and `contracts/validate.mjs` read the bare
+  `process` global, which is `no-undef` under any flat config without node
+  globals for that path. A repo vendoring the lib beside `.canary/skills/`
+  could not commit it without editing upstream code. Both now
+  `import process from 'node:process'`, and a test fails any lib module that
+  reads `process` without importing it. `contracts/validate.mjs` also moves to
+  the shared `isMain` guard: it was the one entry point #1182 missed, so run
+  through a symlink it validated nothing and exited 0.
+
 - **canary-starling no longer writes a feed `canary contract validate` refuses**
   (#1225). Starling judged timestamps with `Date.parse`, which rolls
   `2026-02-30` over to `03-02`, so a history row, a ci-ready report or a katana
