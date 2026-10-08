@@ -87,10 +87,13 @@ declared" (`suites: null`); an empty list declares zero suites.
 
 ## Honest degradation
 
-- **Left-out history rows**: a row with no parseable ISO timestamp, no
-  `duration_ms`, a malformed count, neither `tests` nor any count, or a test
-  outside passed/failed/flaky/skipped (or with an absolute path) is left out and
-  named on stderr, never given an invented value.
+- **Left-out history rows**: a row with no real ISO timestamp (`2026-02-30` is
+  refused, not rolled over to March), no `duration_ms`, a malformed count,
+  neither `tests` nor any count, a test outside passed/failed/flaky/skipped, or
+  a `test_file` the contract's `repo-relative` rule refuses is left out and
+  named on stderr, never given an invented value. Starling uses the validator's
+  own timestamp and path checks, so it never writes a feed the validator
+  refuses.
 - **Left-out partial runs**: a sharded logical run with fewer distinct shard
   indices than its `shard.total` (a "re-run failed jobs" attempt that reran one
   shard, or a shard that never uploaded) measured part of the suite. It is left
@@ -100,11 +103,12 @@ declared" (`suites: null`); an empty list declares zero suites.
   carried in the feed as a `not-assessed` assessment (`source: canary.katana`,
   `metric: register`) with that reason, so `register: []` beside it reads as
   unread, not empty (#1199). A ledger that was read and is empty gets no marker.
-  Ledger rows with no date, commit or reason are left out and named.
-- **Not-assessed metrics**: with no `--ci-ready`, a report with no `observed_at`
-  (treated as absent, and named on stderr), or a check that skipped or measured
-  nothing, each metric is a `not-assessed` assessment whose `reason` names the
-  missing input.
+  Ledger rows with no real date, commit or reason, or with a file that is not
+  repo-relative, are left out and named.
+- **Not-assessed metrics**: with no `--ci-ready`, a report with no valid
+  `observed_at` (treated as absent, and named on stderr), or a check that
+  skipped or measured nothing, each metric is a `not-assessed` assessment whose
+  `reason` names the missing input.
 - **Zero runs**: `ABSTAINED` on stdout; the feed is still written, and exits 3
   under `--strict`.
 - **Invalid input**: a RECORD file that is not a valid run or assessment record,

@@ -1,0 +1,21 @@
+{
+  "fleet": "roadmap-fleet",
+  "issues": [1225],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "agents/skills/test/contracts-producer-parity.test.ts",
+    "agents/skills/test/contracts-rules.test.ts"
+  ],
+  "closingKeyword": "Closes",
+  "closingReason": "All four items fixed. The drive-relative C:x refusal passes the ADR 0030 additive-rule check as ADR 0035 / #1154 D6 apply it: no schema file changes, no new field, no field changes meaning, and the value refused is one the run contract already documents as invalid ('never a drive letter'; 'a path git ls-files could print'). The same check covers '.'.",
+  "assumptions": [
+    "Paydown: the timestamp and repo-relative checks moved out of rules.mjs (295 -> 258 lines) into one new module, lib/contracts/field-checks.mjs, which both the validator and canary-starling import. It is imported, not an entry point, so neither entropy.entryPoints array changes.",
+    "Item 2 is closed by derivation plus a test: TIMESTAMP_RE is built from run.v1.schema.json's $defs.timestamp.pattern, and the test pins its source to that pattern and to the assessment schema's own copies (its $defs.timestamp and verified_at), whose drift the derivation alone would not catch.",
+    "Item 1 scope widened to every starling timestamp producer site, not only runs.mjs/assess.mjs: register.mjs (katana ledger dates) had the same weaker copy and is fixed the same way.",
+    "Starling's test_file / ledger file check now uses the validator's repo-relative check too. Without it, the new '.' and 'C:x' refusals (and #1224's ~ and .. refusals) would recreate item 1's mismatch for paths: one such row made starling write a feed the validator refuses whole.",
+    "'.' is generalised to any path that resolves to the repository root ('.', './', 'a/..', '.\\\\.'): each names no file, so none is a path git ls-files prints.",
+    "Drive-relative means a letter, a colon, and no separator after it ('C:x', 'c:'). 'C:/x' and 'C:\\\\x' stay the schema pattern's single error; the rule does not report them a second time.",
+    "A ci-ready report whose observed_at is not a real instant is treated like an undated one (metrics not-assessed at now, named on stderr); the note now says 'no valid observed_at'."
+  ]
+}

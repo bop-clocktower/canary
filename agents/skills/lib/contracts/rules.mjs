@@ -8,6 +8,7 @@
 // a second error here.
 
 import { isPlainObject } from './schema-check.mjs';
+import { TIMESTAMP_RE, isTimestamp, notRepoRelative } from './field-checks.mjs';
 
 const COUNT_KEYS = [
   'passed',
@@ -169,29 +170,6 @@ function authorExcluded(row, prefix) {
   }));
 }
 
-const TIMESTAMP_RE =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
-/** Hour, minute, second, offset hour, offset minute. A leap second is refused. */
-const CLOCK_MAX = [23, 59, 59, 23, 59];
-
-/** setUTCFullYear, not Date.UTC: Date.UTC reads years 0-99 as 1900-1999. */
-const daysInMonth = (year, month) =>
-  new Date(new Date(0).setUTCFullYear(year, month, 0)).getUTCDate();
-
-const isRealDay = (y, mo, d) =>
-  mo >= 1 && mo <= 12 && d >= 1 && d <= daysInMonth(y, mo);
-
-/**
- * Range-checks the timestamp's own fields; `Date.parse` rolls 02-30 over to
- * 03-02 (#1154 S2). A string the pattern refuses is the schema's error.
- */
-function isRealInstant(value) {
-  const m = TIMESTAMP_RE.exec(value);
-  if (m === null) return true;
-  const [y, mo, d, ...clock] = m.slice(1).map((g) => Number(g ?? 0));
-  return isRealDay(y, mo, d) && clock.every((v, i) => v <= CLOCK_MAX[i]);
-}
-
 /**
  * Rule `real-dates`: a timestamp names an instant. The pattern admits month 13
  * or February 30, which a reader sorts or dates wrongly (#1151 phase 3 review,
@@ -205,7 +183,9 @@ const realDates =
         (o, key) => (isPlainObject(o) ? o[key] : undefined),
         record,
       );
-      if (typeof value !== 'string' || isRealInstant(value)) return [];
+      // A string the pattern refuses is the schema's error, not a second one.
+      if (typeof value !== 'string' || !TIMESTAMP_RE.test(value)) return [];
+      if (isTimestamp(value)) return [];
       return [
         {
           path: at(prefix, path.join('.')),
@@ -214,27 +194,10 @@ const realDates =
       ];
     });
 
-const HOME = 'is home-relative (~), not repo-relative (ADR 0029)';
-const ROOTED = 'is absolute (\\), not repo-relative (ADR 0029)';
-const ESCAPES = 'escapes the repository root (ADR 0029)';
-
-/** +1 per directory entered, -1 per `..`; `.` and empty segments stay put. */
-const depthStep = (seg) =>
-  seg === '..' ? -1 : Number(seg !== '' && seg !== '.');
-
-/** Why `file` is not a path `git ls-files` could print, or null (ADR 0029). */
-function notRepoRelative(file) {
-  const segments = file.split(/[\\/]/);
-  if (segments[0].startsWith('~')) return HOME;
-  if (file.startsWith('\\')) return ROOTED;
-  let depth = 0;
-  const climbs = segments.some((seg) => (depth += depthStep(seg)) < 0);
-  return climbs ? ESCAPES : null;
-}
-
 /**
- * Rule `repo-relative` on one row's `file` (#1154 S3); the schema pattern
- * already refuses `/` and a drive letter. A non-string is the schema's error.
+ * Rule `repo-relative` on one row's `file` (#1154 S3, #1225); the schema
+ * pattern already refuses `/`, `C:/` and `C:\`. A non-string is the schema's
+ * error.
  */
 function fileRepoRelative(row, prefix) {
   const file = isPlainObject(row) ? row.file : undefined;

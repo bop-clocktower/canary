@@ -14,6 +14,21 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **canary-starling no longer writes a feed `canary contract validate` refuses**
+  (#1225). Starling judged timestamps with `Date.parse`, which rolls
+  `2026-02-30` over to `03-02`, so a history row, a ci-ready report or a katana
+  ledger row dated that way reached the feed and the validator's `real-dates`
+  rule refused the whole document. Starling now uses the validator's own
+  timestamp and `repo-relative` checks (`lib/contracts/field-checks.mjs`) and
+  leaves such a row out, naming it. The validator's timestamp pattern is now
+  read from `run.v1.schema.json` instead of copied.
+- **Contract rule `repo-relative` refuses `.` and drive-relative `C:x`**
+  (#1225). A `file` that names the repository root (`.`, `./`, `a/..`) or a
+  drive-relative path passed as repo-relative; the run contract already said
+  `file` is "never a drive letter" and a path `git ls-files` could print.
+
 ## [9.1.0] - 2026-10-07
 
 **Upgrading from npm 8.0.0? Read the 9.0.0 breaking changes first.** v9.0.0 was
