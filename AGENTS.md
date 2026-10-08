@@ -396,10 +396,12 @@ host Claude Code session via `/canary-write-test` — no API key required.
 - **QA data contract:** `agents/skills/lib/contracts/` — `canary.run/1`,
   `canary.assessment/1` and `canary.site/1` as JSON Schemas plus a
   zero-dependency validator, `validate.mjs <file> [--layer L] [--json]` (exit 0
-  valid, 1 refused, 2 usage; its API lives in `document.mjs`). The ingest
-  reporter writes a `canary.run/1` file when `runFile` is set, and
-  `canary ci-ready --json` checks carry `measure` for assessments. Specs in
-  `docs/specs/canary-*-contract.md`; [ADR 0035][adr-0035].
+  valid, 1 refused, 2 usage; its API lives in `document.mjs`). A producer
+  imports `field-checks.mjs` for the validator's own timestamp and repo-relative
+  checks rather than a weaker copy (#1225). The ingest reporter writes a
+  `canary.run/1` file when `runFile` is set, and `canary ci-ready --json` checks
+  carry `measure` for assessments. Specs in `docs/specs/canary-*-contract.md`;
+  [ADR 0035][adr-0035].
 
 ### Generated Artifacts
 

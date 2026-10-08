@@ -6,6 +6,8 @@
 // structural zero passes; neither is a measurement). Every metric is
 // emitted, present or not: an absent input is never an omitted row (crit 8).
 
+import { isTimestamp } from '../../../lib/contracts/field-checks.mjs';
+
 export const CI_READY_METRICS = [
   'coverage-depth',
   'flakiness',
@@ -55,14 +57,11 @@ function fromCheck(c, scope, observedAt, sources) {
 
 const NO_REPORT = 'no ci-ready report supplied (run `canary ci-ready --json`)';
 
-const isInstant = (v) =>
-  typeof v === 'string' && Number.isFinite(Date.parse(v));
-
 /** Every metric as an abstention: the report was absent or cannot be dated. */
 function allAbsent(scope, now, source, note) {
   const sources = source ? [source] : [];
   const reason = note
-    ? `the ci-ready report ${source} has no observed_at, so its checks are treated as absent`
+    ? `the ci-ready report ${source} has no valid observed_at, so its checks are treated as absent`
     : NO_REPORT;
   return {
     real: [],
@@ -85,12 +84,13 @@ function allAbsent(scope, now, source, note) {
 export function ciReadyAssessments(report, scope, { now, source }) {
   if (!report) return allAbsent(scope, now, source, null);
   const observedAt = report.observed_at;
-  if (!isInstant(observedAt))
+  // The validator's real-dates check, not Date.parse: 02-30 is no instant (#1225).
+  if (!isTimestamp(observedAt))
     return allAbsent(
       scope,
       now,
       source,
-      `ci-ready report ${source} has no observed_at; treated as absent, its metrics not-assessed`,
+      `ci-ready report ${source} has no valid observed_at; treated as absent, its metrics not-assessed`,
     );
   const sources = source ? [source] : [];
   const checks = Array.isArray(report.checks) ? report.checks : [];

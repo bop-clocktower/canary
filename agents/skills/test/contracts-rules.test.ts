@@ -315,6 +315,38 @@ describe('repo-relative (#1154 S3, ADR 0029)', () => {
     expect(crossFieldErrors('run', runWith(file))).toEqual([]);
   });
 
+  const ROOT = 'names the repository root, not a file (ADR 0029)';
+  const DRIVE = 'is drive-relative (C:), not repo-relative (ADR 0029)';
+
+  it.each([
+    ['.', ROOT],
+    ['./', ROOT],
+    ['a/..', ROOT],
+    ['.\\.', ROOT],
+    ['C:x.spec.ts', DRIVE],
+    ['c:', DRIVE],
+    ['Z:..\\x.spec.ts', DRIVE],
+  ])('refuses %j (#1225)', (file, message) => {
+    expect(crossFieldErrors('run', runWith(file))).toEqual([
+      { path: 'results[0].file', message },
+      { path: 'collected[0].file', message },
+    ]);
+  });
+
+  it.each(['C:/x.spec.ts', 'C:\\x.spec.ts', ''])(
+    'leaves %j to the schema pattern, not a second error (#1225)',
+    (file) => {
+      expect(crossFieldErrors('run', runWith(file))).toEqual([]);
+    },
+  );
+
+  it.each(['.hidden/x.spec.ts', 'CC:x.spec.ts', 'a/C:x.spec.ts', '1:x'])(
+    'accepts %j (#1225 control)',
+    (file) => {
+      expect(crossFieldErrors('run', runWith(file))).toEqual([]);
+    },
+  );
+
   it('leaves a non-string file, a null row and a non-array list to the schema', () => {
     const run = {
       totals: totals({ passed: 2, total: 2 }),
