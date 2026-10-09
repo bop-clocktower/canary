@@ -198,3 +198,28 @@ describe('guardian mutation disclosure', () => {
     expect(written.verdict).toBe('all-killed');
   });
 });
+
+// bug-fleet A5: a report whose file entry has no `mutants` array threw a
+// raw TypeError (exit 1 = "survivors" under ADR 0009) instead of abstaining
+// like the missing-`files` case does.
+describe('bug-fleet A5: malformed stryker file entry', () => {
+  it.each([
+    ['no mutants list', { 'src/a.ts': {} }],
+    ['a mutant without a location', { 'src/a.ts': { mutants: [{ id: '1' }] } }],
+  ])('abstains (exit 3) on %s instead of crashing', async (_label, files) => {
+    const root = mkdtempSync(join(tmpdir(), 'bf-a5-mut-'));
+    const p = join(root, 'r.json');
+    writeFileSync(p, JSON.stringify({ files }));
+    const outcome = await invokeGuardian([
+      'mutation',
+      '--report',
+      p,
+      '--repo-root',
+      root,
+    ]).then(
+      (r) => r.code,
+      (e: unknown) => `threw: ${String(e)}`,
+    );
+    expect(outcome).toBe(3);
+  });
+});
