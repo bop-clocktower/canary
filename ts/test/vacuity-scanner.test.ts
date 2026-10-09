@@ -857,6 +857,61 @@ describe('VAC-002 — the target reached through a same-file helper (#1170)', ()
     expect(r.helperAbstained ?? 0).toBe(0);
   });
 
+  // #1179 -- a type annotation between the name and the `=` hid the helper
+  // from the declaration pattern entirely, so a test calling the target through
+  // it read as never invoking anything.
+  it.each([
+    [
+      'the issue repro (a named function type)',
+      `type Parser = (...a: string[]) => { name: string };\n` +
+        `const parse: Parser = (...a) => parseArgv(a);\n`,
+    ],
+    [
+      'an inline function type, whose own `=>` precedes the `=`',
+      `const parse: (...a: string[]) => { name: string } = (...a) =>\n  parseArgv(a);\n`,
+    ],
+    [
+      'a generic type annotation',
+      `const parse: Fn<string[], { name: string }> = (...a) => parseArgv(a);\n`,
+    ],
+    [
+      'a typed `let` bound to a function expression',
+      `let parse: Parser = function (...a: string[]) {\n  return parseArgv(a);\n};\n`,
+    ],
+    [
+      'an exported typed const',
+      `export const parse: Parser = (...a) => parseArgv(a);\n`,
+    ],
+  ])(
+    'counts a typed helper declaration (%s) as invoking the target',
+    (_label, helper) => {
+      const r = scan('a.test.ts', HEAD + helper + '\n' + TEST);
+      expect(vac002(r)).toEqual([]);
+      expect(r.helperAbstained ?? 0).toBe(0);
+    },
+  );
+
+  it('still reports a test whose typed helper never references the target', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD + `const parse: Parser = (...a) => ({ name: a[1] });\n\n` + TEST,
+    );
+    expect(vac002(r)).toHaveLength(1);
+    expect(r.helperAbstained ?? 0).toBe(0);
+  });
+
+  it('abstains, counted, when a typed helper reaches the target two helpers deep', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `const raw: Raw = (argv) => parseArgv(argv);\n` +
+        `const parse: Parser = (...argv) => raw(["node", ...argv]);\n\n` +
+        TEST,
+    );
+    expect(vac002(r)).toEqual([]);
+    expect(r.helperAbstained).toBe(1);
+  });
+
   // The real positive must keep firing: a same-file helper that does NOT reach
   // the target, and a test that never calls the target itself.
   it('still reports a test whose helper never references the target', () => {
@@ -979,6 +1034,21 @@ describe('VAC-002 — the target reached through a same-file helper (#1170)', ()
       IMPORTS +
         `it('writes nothing', () => {\n` +
         `  const ledger = '/tmp/x';\n` +
+        `  save(1);\n` +
+        `  expect(exists(ledger)).toBe(false);\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-003');
+  });
+
+  // The typed form must keep #871's boundary too: now that a typed declaration
+  // IS a declaration, it owns only its own statement.
+  it('still ends a one-line typed bystander declaration at its own line', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('writes nothing', () => {\n` +
+        `  const ledger: string = '/tmp/x';\n` +
         `  save(1);\n` +
         `  expect(exists(ledger)).toBe(false);\n` +
         `});\n`,

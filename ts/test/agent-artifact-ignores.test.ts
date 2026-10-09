@@ -201,6 +201,9 @@ describe('agent-tooling artifacts stay out of the repo', () => {
       // this repo belongs there and should be trackable. The install/authored
       // split is enforced by receipt below, not by a blanket path rule.
     ];
+    // The probe must be able to see tracked files at all, or an empty
+    // `leaked` is what a broken `git ls-files` returns too (#1179).
+    expect(trackedUnder('.github/workflows').length).toBeGreaterThan(0);
     expect(leaked).toEqual([]);
   });
 

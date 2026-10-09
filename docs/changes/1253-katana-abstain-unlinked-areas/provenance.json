@@ -1,0 +1,15 @@
+{
+  "issues": [1253, 1250],
+  "route": "bug",
+  "stages": ["harness-debugging"],
+  "reproducingTest": "agents/skills/test/canary-katana-proximity.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Settled in CONFIRM: abstain loudly. An area katana cannot decide for this diff is reported not-assessed (reason 'unlinked', at stake) and --strict exits 3. No transitive import inference (test -> server module -> service).",
+    "'Related' deletion = near the area (existing isNear) or sharing a significant (non-generic) directory with it, e.g. the package dir packages/<pkg>/. This is the relation dirGrade already used.",
+    "A root tests/ deletion with no shared significant directory does not make an assessable area 'unlinked', keeping the #1246 finding-4 rule (proximity alone under a root tests/ never puts an area at stake). Consequence: in a single-package repo whose areas sit under src/<dir>/ and tests under a root test/, the #1253 shape still exits 0.",
+    "A deleted test that imports the area's module directly is tied to it whatever its title says (it used to need the symbol in its title), so it alarms instead of being silently skipped.",
+    "'unlinked' is suppressed when the area already has a finding in this run: the alarm outranks the abstention (ADR 0009).",
+    "#1250: the NUL delimiter becomes the \\u0000 escape, matching ledger.mjs (the issue's '\\^@' rendering is the same escape). Behaviour identical."
+  ]
+}

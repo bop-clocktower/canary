@@ -8,7 +8,7 @@
 //
 // Advisory by default (always exit 0). `--strict` exits 1 only on a real alarm,
 // and 3 (abstained, ADR 0009) on an empty diff or when the diff touched a
-// critical area katana cannot alarm on (#1242). A degraded run (no
+// critical area katana cannot assess (#1242, #1253). A degraded run (no
 // critical-area data) stays exit 0 even under `--strict` -- a gate that fails
 // on missing data gets muted, and a muted gate is worse than none.
 //
@@ -47,7 +47,7 @@ const USAGE =
   '  --critical-areas PATH  critical-areas.json used to raise alarms\n' +
   '  --json                 emit machine-readable output instead of human text\n' +
   '  --strict               exit 1 on a real alarm, 3 when abstained (empty diff,\n' +
-  '                         or a touched area katana cannot alarm on); degraded\n' +
+  '                         or a touched area katana cannot assess); degraded\n' +
   '                         runs stay 0\n' +
   '  --no-write             do not append to the ledger (read-only run)';
 

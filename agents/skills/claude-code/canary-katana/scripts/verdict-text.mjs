@@ -20,7 +20,7 @@ const ABSTAINED_LINE =
 
 const notAssessedLine = (n) =>
   `\u{26A0} Abstained on ${n} critical area(s) this diff put at risk \u{2014} ` +
-  'katana cannot alarm on them, so 0 alarms is not a pass.';
+  'katana cannot tell whether they lost coverage, so 0 alarms is not a pass.';
 
 const zeroAreasLine = (n) =>
   `${ABSTAINED_LINE} The critical-areas file lists 0 areas, so none of ` +
@@ -50,7 +50,7 @@ export const abstains = (run) =>
  */
 function renderAreas({ total, notAssessed }) {
   if (!notAssessed.length) return [];
-  const head = `${notAssessed.length} of ${total} critical area(s) not assessed (katana cannot alarm on them):`;
+  const head = `${notAssessed.length} of ${total} critical area(s) not assessed (katana cannot alarm on them, or cannot tell):`;
   const stake = (n) => (n.atStake ? ' [at stake in this diff]' : '');
   return [
     head,
