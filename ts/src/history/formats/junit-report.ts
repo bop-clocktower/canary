@@ -72,13 +72,15 @@ export function isJunitReport(parsed: unknown): boolean {
   return typeof parsed === 'string' && ROOT_RE.test(parsed);
 }
 
+/** A reference past U+10FFFF names no character: kept as written, not thrown. */
+const charOr = (cp: number, raw: string): string =>
+  cp <= 0x10ffff ? String.fromCodePoint(cp) : raw;
+
 function decodeEntities(text: string): string {
   return text.replace(/&(#x[0-9A-Fa-f]+|#[0-9]+|[A-Za-z]+);/g, (m, ref) => {
     const r = String(ref);
-    if (r.startsWith('#x'))
-      return String.fromCodePoint(parseInt(r.slice(2), 16));
-    if (r.startsWith('#'))
-      return String.fromCodePoint(parseInt(r.slice(1), 10));
+    if (r.startsWith('#x')) return charOr(parseInt(r.slice(2), 16), m);
+    if (r.startsWith('#')) return charOr(parseInt(r.slice(1), 10), m);
     return ENTITIES[r] ?? m;
   });
 }
