@@ -820,3 +820,32 @@ it('has a label', () => {
     expect(flake).toEqual(viaLint);
   });
 });
+
+// bug-fleet A6 repros (base b0e258bd).
+describe('test declarations the enumerator must not skip', () => {
+  // A skipped declaration does not just go unscanned: the test above it
+  // absorbs its body, so the earlier test borrows its assertions.
+  it('a template-literal title still ends the previous test', () => {
+    const code =
+      "it('a', () => {\n  doThing();\n});\nit(`b`, () => {\n  expect(1).toBe(1);\n});\n";
+    expect(
+      lint('tpl.spec.ts', code).filter((f) => f.rule === 'LINT-006'),
+    ).toMatchObject([{ line: 1 }]);
+  });
+
+  it('a .only modifier still ends the previous test', () => {
+    const code =
+      "it('a', () => {\n  doThing();\n});\nit.only('b', () => {\n  expect(1).toBe(1);\n});\n";
+    expect(
+      lint('only.spec.ts', code).filter((f) => f.rule === 'LINT-006'),
+    ).toMatchObject([{ line: 1 }]);
+  });
+
+  it('a python async def test still ends the previous test', () => {
+    const code =
+      'def test_a():\n    do()\n\nasync def test_b():\n    assert await f()\n';
+    expect(
+      lint('test_async.py', code).filter((f) => f.rule === 'LINT-006'),
+    ).toMatchObject([{ line: 1 }]);
+  });
+});
