@@ -81,7 +81,7 @@ function decodeEntities(text: string): string {
     const r = String(ref);
     if (r.startsWith('#x')) return charOr(parseInt(r.slice(2), 16), m);
     if (r.startsWith('#')) return charOr(parseInt(r.slice(1), 10), m);
-    return ENTITIES[r] ?? m;
+    return Object.hasOwn(ENTITIES, r) ? ENTITIES[r]! : m;
   });
 }
 
