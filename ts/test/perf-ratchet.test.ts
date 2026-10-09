@@ -829,12 +829,14 @@ describe('the perf merge-base delta gate is wired (#812)', () => {
     );
   });
 
-  it('measures the base with the same floating pin as the head scan', () => {
-    // Not a hardcoded version, and not a second pin: the same `$HARNESS_CLI`
+  it('measures the base with the same resolved pin as the head scan (#1248)', () => {
+    // Not a hardcoded version, and not a re-resolution: the `$HARNESS_CLI_EXACT`
     // the resolve step reported. Two analyzers produce a delta that is pure
     // instrument drift.
     const scans = [
-      ...yaml().matchAll(/npx --yes -p "\$HARNESS_CLI" harness check-perf/g),
+      ...yaml().matchAll(
+        /npx --yes -p "\$HARNESS_CLI_EXACT" harness check-perf/g,
+      ),
     ];
     expect(scans.length).toBe(2);
   });

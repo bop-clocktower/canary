@@ -768,7 +768,7 @@ describe('the entropy ratchet CI wiring (#744)', () => {
     expect(yaml).toMatch(/entropy-ratchet\.mjs[\s\S]{0,200}?--cli-version/);
   });
 
-  it('resolves that version from the same floating pin the scan uses', () => {
+  it('resolves that version once, from the floating pin, for the scans to reuse', () => {
     const yaml = readFileSync(WORKFLOW, 'utf8');
     expect(yaml).toContain('harness --version');
     expect(yaml).toMatch(/id:\s*harness-cli/);
@@ -779,9 +779,9 @@ describe('the entropy ratchet CI wiring (#744)', () => {
     );
   });
 
-  it('fails the resolve step rather than passing an empty version through', () => {
+  it('fails the resolve step rather than passing an empty or malformed version through', () => {
     const yaml = readFileSync(WORKFLOW, 'utf8');
-    expect(yaml).toMatch(/if \[ -z "\$resolved" \]/);
+    expect(yaml).toMatch(/if ! printf .%s. "\$resolved" \| grep -Eq/);
   });
 
   it('keeps harnessCli in the real baseline, which is what arms the check', () => {
@@ -826,13 +826,13 @@ describe('the merge-base delta gate is wired', () => {
     );
   });
 
-  it('measures the base with the same floating pin as the head scan', () => {
-    // Not a hardcoded version, and not a second pin: the same `$HARNESS_CLI`
+  it('measures the base with the same resolved pin as the head scan (#1248)', () => {
+    // Not a hardcoded version, and not a re-resolution: the `$HARNESS_CLI_EXACT`
     // the resolve step reported. Two analyzers produce a delta that is pure
     // instrument drift.
     const scans = [
       ...yaml().matchAll(
-        /npx --yes -p "\$HARNESS_CLI" harness cleanup --findings-json/g,
+        /npx --yes -p "\$HARNESS_CLI_EXACT" harness cleanup --findings-json/g,
       ),
     ];
     expect(scans.length).toBe(2);

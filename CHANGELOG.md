@@ -54,6 +54,19 @@ under the project's former name) are documented in the
   - A new advisory `actionlint` job (`workflow-lint.yml`) runs actionlint on
     every PR.
 
+- **Gemini CLI commands match their skills again, and CI keeps them that way.**
+  The generated `agents/commands/gemini-cli/harness/*.toml` files inline each
+  skill's `SKILL.md`. They had not been regenerated since 2026-07-19, so Gemini
+  users got months-old instructions, and six skills (judomaster, manhunter,
+  mission-briefing, rewind, ship, shiva) had no Gemini command at all. All 12
+  are now regenerated with `@harness-engineering/cli@12`. The six rewritten
+  files changed only in their inlined `SKILL.md` text, not in the generator
+  template. The new `scripts/gemini-commands-drift.mjs` regenerates into a temp
+  dir and fails on any changed, missing or stale file. Its failure message gives
+  the fix: `node scripts/gemini-commands-drift.mjs --write`. If the generator is
+  unavailable or emits nothing, it abstains with exit 3 instead of passing. It
+  runs as a blocking step in the Quality & Integrity `validate` job (#1249).
+
 - **canary-cassandra reads `@covers` on every test in a file** (#1232). In a
   JS/TS file only the first test's annotation was read; every later one was
   dropped and the test fell back to import inference, so a wrong `@covers` claim
@@ -70,7 +83,18 @@ under the project's former name) are documented in the
   `harness-quality.yml` passes the merge base's copy. A higher ceiling exits 1.
   A base copy that is missing or unreadable exits 3. This mirrors the entropy
   fix (#1247).
-
+- **The quality ratchets' scans run the CLI version they report** (#1248).
+  `harness-quality.yml` resolved the floating `@harness-engineering/cli@12` once
+  for `--cli-version`, but each of the six scans (docs, entropy and perf, at
+  head and at merge base) resolved `@12` again in its own `npx` call. A 12.x
+  published mid-run, or a runner cache serving a different 12.x, could hand a
+  ratchet a report from an analyzer other than the one it certified, and head
+  and base could disagree. The resolve step now exports
+  `HARNESS_CLI_EXACT=<package>@<resolved>` and every scan uses it. The
+  workflow-level pin still floats by design. It just stops floating inside a
+  run. A malformed resolved version now fails the resolve step. A
+  workflow-parsing test fails on any scan that floats or runs before the resolve
+  step.
 - **canary-cassandra sees typed helper declarations** (#1179). A same-file
   helper declared with a type annotation
   (`const parse: Parser = (...a) => parseArgv(a)`) was invisible to the

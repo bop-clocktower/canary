@@ -638,10 +638,10 @@ describe('the docs merge-base ratchet is wired (#865, #1241)', () => {
     }
   });
 
-  it('measures head and base with the same floating pin, as JSON', () => {
+  it('measures head and base with the same resolved pin, as JSON (#1248)', () => {
     const scans = [
       ...yaml().matchAll(
-        /npx --yes -p "\$HARNESS_CLI" harness check-docs --json/g,
+        /npx --yes -p "\$HARNESS_CLI_EXACT" harness check-docs --json/g,
       ),
     ];
     expect(scans.length).toBe(2);

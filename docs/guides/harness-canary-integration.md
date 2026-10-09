@@ -48,6 +48,12 @@ they are two doors into one room.
 > `skill.yaml` and regenerate. A stale generation is what left the five surfaced
 > skills advertised as the placeholder "Test intelligence skill"; the fix was to
 > populate `skill.yaml` descriptions and regenerate (#308).
+>
+> The Gemini CLI copies under `agents/commands/gemini-cli/harness/` inline each
+> skill's whole `SKILL.md`, so they go stale on any skill edit, not only a
+> metadata change. CI fails when they differ from a fresh generation (#1249). To
+> bring them back in line, run `node scripts/gemini-commands-drift.mjs --write`
+> and commit the result. Run the script without `--write` to check them.
 
 ### Canonical capability names
 

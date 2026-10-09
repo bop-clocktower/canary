@@ -123,6 +123,11 @@ const CASES: Record<string, Case> = {
     status: 3,
     output: /ABSTAINED/,
   },
+  'scripts/gemini-commands-drift.mjs': {
+    args: ['--bogus'],
+    status: 2,
+    output: /usage:/,
+  },
   'scripts/install-siren.mjs': usage,
   'scripts/refresh-arch-baseline.mjs': usage,
   'scripts/rehearse.mjs': {
