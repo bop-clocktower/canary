@@ -45,7 +45,10 @@ export function abstainedReport(
 }
 
 /** Stryker's status vocabulary, mapped onto guardian's. */
-function toStatus(strykerStatus: string, coveredBy: string[]): MutationStatus {
+function toStatus(
+  strykerStatus: string,
+  coveredBy: readonly string[] | undefined,
+): MutationStatus {
   switch (strykerStatus) {
     case 'Killed':
       return 'killed';
@@ -54,8 +57,11 @@ function toStatus(strykerStatus: string, coveredBy: string[]): MutationStatus {
     case 'Survived':
       // SC-2: a survivor with nothing covering it is a coverage gap, which
       // guardian's coverage tier already reports. Calling it a weak assertion
-      // would double-count it and dilute the false-survivor rate (D5).
-      return coveredBy.length > 0 ? 'survived' : 'no-coverage';
+      // would double-count it and dilute the false-survivor rate (D5). Only an
+      // EXPLICIT empty list says that: Stryker omits `coveredBy` entirely unless
+      // coverageAnalysis is perTest, and a survivor it ran the suite against
+      // without recording per-test coverage is still a survivor.
+      return coveredBy?.length === 0 ? 'no-coverage' : 'survived';
     default:
       return 'no-coverage';
   }
@@ -129,7 +135,7 @@ export function mapStrykerReport(
         line: mutant.location.start.line,
         mutator: mutant.mutatorName,
         replacement: mutant.replacement ?? '',
-        status: toStatus(mutant.status, coveredBy),
+        status: toStatus(mutant.status, mutant.coveredBy),
         coveredBy,
       });
     }
