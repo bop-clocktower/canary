@@ -1,0 +1,15 @@
+{
+  "issues": [1252],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "npm/scripts/__tests__/package-manifest.test.js",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Root cause is the leading './' in npm/package.json bin paths, confirmed in npm's own source: @npmcli/package-json normalize.js (binRefs, run by `npm publish` via PackageJson.fix) pushes '\"bin[x]\" script name <normalized> was invalid and removed' whenever the normalized target differs from the declared string, then keeps the normalized entry. The bins were renamed, never removed.",
+    "bin/canary-mcp.js being git mode 644 is NOT part of the warning (npm's normalizer never inspects file modes). It is made 755 anyway, as the issue asks, for consistency with bin/canary.js.",
+    "repository.url is also changed to the 'git+https://' form, because npm 11 reported that normalization under the same 'auto-corrected' banner. Without that change the banner would still print on every release. Same URL, no behaviour change.",
+    "The reproducing test calls the npm bundled with the running Node (located via `npm root -g`) and runs PackageJson.fix offline, the exact call `npm publish` makes. If that npm cannot be located, the test is skipped with a named reason rather than passed; the static invariants still run. npm 10 (bundled with Node 22, used by CI) reports the bin rewrite as 'script name was cleaned', and npm 11 reports it as 'invalid and removed'. Both fail the test.",
+    "The release-workflow gate (item 3 of the issue) reads the bins back with `npm view <name>@<version> bin --json` piped into node, which satisfies the #588 false-green invariant. It retries visibility 6x10s, then exits 3 with ::error:: to abstain. It runs after the publish and before the GitHub Release, so a release that lost its bins is never announced.",
+    "`npm pkg fix` has no real dry-run: `npm pkg fix --dry-run` rewrote package.json in the worktree during the investigation. Its only change after the fix was re-serializing the description's \\u2014 escape, which was reverted. No repo doc told anyone to run `npm pkg fix` or to ignore the warning, so there was no doc to correct."
+  ]
+}
