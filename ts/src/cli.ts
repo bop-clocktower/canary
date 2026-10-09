@@ -205,9 +205,13 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .argument('<path>', 'Test file or directory to lint.')
     .option('--static', 'Run static-only analysis (no LLM).')
     .option('--no-static', 'Disable static-only analysis.')
-    .option(
-      '-f, --framework <framework>',
-      'Force framework: pytest, playwright, vitest, k6.',
+    // The linter only tells `pytest` from everything else, so an unchecked
+    // value silently linted with the JS rules and could report a false clean.
+    .addOption(
+      new Option(
+        '-f, --framework <framework>',
+        'Force the framework instead of detecting it.',
+      ).choices(['pytest', 'playwright', 'vitest', 'k6']),
     )
     .option('--json', 'Output findings as JSON.')
     .action(
