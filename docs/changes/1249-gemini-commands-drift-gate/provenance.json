@@ -1,0 +1,15 @@
+{
+  "issues": [1249],
+  "route": "bug",
+  "stages": ["debugging"],
+  "assumptions": [
+    "The generator decides the gemini-cli set. It emits 12 commands, one per skill with a skill.yaml, not the 6 the issue counted. The other 6 (judomaster, manhunter, mission-briefing, rewind, ship, shiva) were missing, which is the same drift, so they are added. That includes canary-ship, which the plugin keeps internal. agents/commands is not registered in the plugin manifest, so it ships nowhere new.",
+    "The generator is the CLI CI already uses: @harness-engineering/cli@12, resolved through npx. 12.10.1 locally, and 12.7.0 also produced byte-identical output. A future @12 minor that changes the template will red the gate with no repo change. Every gate message names the generator version for that reason.",
+    "The regeneration only changed inlined SKILL.md text. To check this, each file's SKILL.md at its last-touch commit was regenerated with the current CLI: 4 of 6 were byte-identical, and the remaining 2 differed only inside the SKILL.md section, never the template.",
+    "Only the gemini-cli half is in scope. The claude-code commands have their own drift: 5 missing, and mission-briefing hand-edited. That is filed as a follow-up and not touched here.",
+    "The generator output holds no absolute or machine-specific paths. SKILL.md paths are repo-relative because it runs in a scratch tree shaped like the repo, so nothing needs normalising.",
+    "The real-repo test case needs the harness CLI on PATH, so it runs locally only (describe.runIf). CI enforcement is the blocking step in harness-quality.yml validate, which abstains (exit 3, step fails) when the generator is unavailable."
+  ],
+  "closingKeyword": "Closes",
+  "reproducingTest": "ts/test/gemini-commands-drift.test.ts"
+}

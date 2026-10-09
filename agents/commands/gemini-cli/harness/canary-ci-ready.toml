@@ -29,12 +29,20 @@ this before promoting a suite to CI, or as the convergence gate in
 
 **Deterministic scorer:** run `canary ci-ready [--root <dir>] [--json]` first.
 It scores every check that has a real input and reports `skip`, naming the
-missing input, for every check that does not. A skip is never a pass. Run
-`canary inventory` first so coverage depth, assertion quality and critical paths
-have their input. Suite runtime still skips, because the history store records
-no durations. The verdict is `ready` (all five passed), `incomplete`
-(nothing failed, something skipped), `not-ready` (exit 1) or `abstained`
-(nothing scored, exit 3).
+missing input, for every check that does not. An input that exists but cannot be
+read (a directory at the path, a 0-perm file) is a `skip` naming the path and
+errno code, such as
+`test-results/reports/history-v2.jsonl could not be read (EISDIR)`; it is never
+read as absent. A run-history store whose content is unusable is the same kind
+of `skip` on flakiness and suite runtime, naming the line:
+`<path> could not be parsed (line 4: invalid JSON)` (or `not a JSON object`), or
+`<path> has unsupported schema 9 (line 4; supported: 2, 3)`. One bad line skips
+the whole store; the readable lines are never scored without it. A skip is never
+a pass. Run `canary inventory` first so coverage depth, assertion quality and
+critical paths have their input; flakiness and suite runtime read the
+run-history store that `canary history record` writes. The verdict is `ready`
+(all five passed), `incomplete` (nothing failed, something skipped), `not-ready`
+(exit 1) or `abstained` (nothing scored, exit 3).
 
 ## When to Use
 
@@ -76,7 +84,24 @@ Read `test-results/quarantine-ledger.json` (or the path in
 No tool writes a quarantine ledger yet, so `canary ci-ready` scores flakiness
 from the run-history store instead: the last 30 runs in
 `test-results/reports/history-v2.jsonl`. Any test flaking in 10% or more of its
-runs fails the check, any lower flake rate warns, and no flakes passes.
+runs fails the check, and any lower flake rate warns.
+
+Since #604 Phase 2 the threshold is applied to **`max(flake_rate, flip_rate)`**,
+not the flake rate alone. The flip rate is cross-run pass/fail alternation — the
+axis the flake rate is structurally blind to, because `flaky` is a within-run
+retry the vitest reader never writes. A test that goes passed, failed, passed,
+failed across runs has a flake rate of 0 and a flip rate of 100%, and now fails
+the check. The reason line names which axis produced the worst score. A single
+step change (one flip) is not alternation; that is
+`canary analyze regression-candidates`' subject.
+
+A clean result is only a `pass` when the window is big enough to mean something
+(#604). Below **10 runs** the check `warn`s with
+`insufficient history: N of 10 runs` — zero findings out of two runs is an
+abstention, not a clean suite. Zero runs still `skip`s. The reason line always
+states the window, and when every run in it came from the vitest reader (which
+has no `flaky` status) it adds `retry flakes not measurable` so a structural
+zero is never read as a measured one.
 
 A quarantined test is acceptable only when it has a linked open issue (Jira or
 GitHub). Check issue state:
@@ -114,10 +139,13 @@ Cross-reference the top 5 risk-scored areas from `critical-areas.json` against
 
 ### 5. Suite runtime
 
-Run history lives in `test-results/reports/history-v2.jsonl`. The store does not
-record run or test durations today, so there is no p95 to compute and
-`canary ci-ready` reports this check as `skip`. The scoring below applies once
-durations are recorded.
+Run history lives in `test-results/reports/history-v2.jsonl`.
+`canary history record` writes run and test `duration_ms` for vitest JSON,
+Playwright JSON and JUnit XML reports (pytest, jest-junit, surefire, Gradle).
+The deterministic `canary ci-ready` CLI scores the p95 of run durations over the
+last 30 runs that carry one, using the absolute thresholds in the fallback below
+("vs. absolute threshold"). It reports `skip` when no stored run carries a
+duration, such as a store of legacy records.
 
 **With harness MCP available:** score the p95 against trend history rather than
 an absolute clock. Call `get_perf_baselines` and compare this run's p95 to the
@@ -150,12 +178,44 @@ merely "under the clock".
 
 ## User Catalog Investigation
 
-When a test fails with an auth, permission, or configuration error:
+When a test fails with an auth, permission, or configuration error, ask the
+**existence** question before the substitution question. "Do the accounts this
+repo is configured with still exist?" is what actually resolves this failure
+mode; "which user could I try instead?" quietly implies the configured ones are
+fine, which is the opposite of what is true when accounts have been
+decommissioned upstream.
 
-1. Read `user_catalog_skill` from `.canary/company.json`
-2. If present: invoke `canary skills run <user_catalog_skill>` with the required
-   attributes from the error context; surface any matching user as a suggestion
-3. If absent, or no matching user found: present constructively —
+### Step A — verify the configured accounts still exist
+
+1. Read `user_catalog_skill` from `.canary/company.json` (a first-class field of
+   `CompanyKnowledge`, so `canary company-knowledge show` reports it and the
+   `.canary/company.<env>.json` cascade applies).
+2. Resolve the accounts the repo is already configured with from the failure
+   context and the suite's fixtures or environment.
+3. If a catalog skill is declared, invoke
+   `canary skills run <user_catalog_skill>` to list the accounts the catalog
+   knows.
+4. Pass both lists plus the declared slug to `verifyConfiguredAccounts` from
+   `ts/src/core/company-knowledge.ts`, and report its `headline`:
+
+   | Status          | How to report it                                                                                                                                 |
+   | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+   | `all-missing`   | A near-certain diagnosis. State it as an account provisioning problem, not a test defect, and stop investigating the suite until it is resolved. |
+   | `some-missing`  | Name each missing account; tests depending on them fail for an account reason.                                                                   |
+   | `all-present`   | Accounts are not the cause. Continue to step B.                                                                                                  |
+   | `cannot-verify` | An abstention, never a pass. Report the verdict's `reason` verbatim.                                                                             |
+
+**Never report "accounts fine" from a check that did not run.** A
+`cannot-verify` verdict means zero accounts were compared, and zero checked is
+not a clean result.
+
+### Step B — suggest an alternative user
+
+Only once step A returned `all-present` or `cannot-verify`:
+
+1. If a catalog skill is declared: invoke it with the required attributes from
+   the error context; surface any matching user as a suggestion.
+2. If absent, or no matching user found: present constructively —
 
    > "This failure may be a test user or test data configuration issue. Check
    > your user catalog if you have one, or set up the required test data before

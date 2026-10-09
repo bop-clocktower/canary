@@ -43,6 +43,19 @@ under the project's former name) are documented in the
   - A new advisory `actionlint` job (`workflow-lint.yml`) runs actionlint on
     every PR.
 
+- **Gemini CLI commands match their skills again, and CI keeps them that way.**
+  The generated `agents/commands/gemini-cli/harness/*.toml` files inline each
+  skill's `SKILL.md`. They had not been regenerated since 2026-07-19, so Gemini
+  users got months-old instructions, and six skills (judomaster, manhunter,
+  mission-briefing, rewind, ship, shiva) had no Gemini command at all. All 12
+  are now regenerated with `@harness-engineering/cli@12`. The six rewritten
+  files changed only in their inlined `SKILL.md` text, not in the generator
+  template. The new `scripts/gemini-commands-drift.mjs` regenerates into a temp
+  dir and fails on any changed, missing or stale file. Its failure message gives
+  the fix: `node scripts/gemini-commands-drift.mjs --write`. If the generator is
+  unavailable or emits nothing, it abstains with exit 3 instead of passing. It
+  runs as a blocking step in the Quality & Integrity `validate` job (#1249).
+
 - **canary-cassandra reads `@covers` on every test in a file** (#1232). In a
   JS/TS file only the first test's annotation was read; every later one was
   dropped and the test fell back to import inference, so a wrong `@covers` claim
