@@ -7,7 +7,7 @@
 // says so; a gate that manufactures failures on missing data gets muted, and a
 // muted gate is worse than no gate.
 //
-// Both ends are tied to the area by proximity (#1242, nearby.mjs, imports.mjs):
+// Both ends are tied to the area by proximity (#1242, ties.mjs, nearby.mjs):
 // the deleted test must have belonged to it, and "still covered" means a test
 // near the area, or importing it, remains. An area the gate still cannot alarm
 // on -- or, for this diff, cannot decide (#1253: a deleted test it cannot tie
@@ -23,14 +23,9 @@ import {
   nameCovers,
 } from './areas.mjs';
 import { importKind } from './imports.mjs';
-import {
-  dirsOf,
-  isNear,
-  isStronglyNear,
-  ownsTest,
-  significantDirs,
-} from './nearby.mjs';
+import { dirsOf, isNear, ownsTest, significantDirs } from './nearby.mjs';
 import { repoTestFiles, scopeOf } from './testindex.mjs';
+import { covers, related, tiedDeletion, tiedToArea } from './ties.mjs';
 
 // Imported then re-exported (not `export ... from`): the entropy scanner's
 // reachability model drops a module that is both imported and re-exported.
@@ -105,23 +100,6 @@ export function notAssessedToDict(n) {
   };
 }
 
-/**
- * Is this indexed test file still coverage of the area? It is when it has a
- * test and either imports the area's module, or is near the area and named for
- * it -- whatever its titles say -- or, failing both, is near (or imports the
- * area's directory) and a title names the area's symbol.
- */
-function covers(e, ctx) {
-  if (!e.names.length) return false;
-  const kind = importKind(e.imports, ctx);
-  if (kind === 'direct') return true;
-  const near = isNear(e.rel, ctx);
-  if (near && ownsTest(e.rel, ctx)) return true;
-  return (
-    (near || kind === 'barrel') && e.names.some((n) => nameCovers(n, ctx.syms))
-  );
-}
-
 function dirCoverageRemains(index, areaDirs) {
   return index.some(
     (e) => dirsOf(e.rel).some((d) => areaDirs.has(d)) && e.names.length > 0,
@@ -144,31 +122,6 @@ function dirGrade(deletion, ctx, scope) {
   if (dirCoverageRemains(scope.index(), areaDirs)) return null;
   return { fidelity: Fidelity.HEURISTIC, severity: Severity.MEDIUM };
 }
-
-/**
- * Did the deleted test belong to the area? Its name alone is not enough
- * (#1242 review): the file must be near the area, be named for it, or have
- * imported it.
- */
-const belongs = (deletion, ctx, scope) =>
-  isNear(deletion.file, ctx) ||
-  ownsTest(deletion.file, ctx) ||
-  importKind(scope.importsOf(deletion.file), ctx) !== null;
-
-/**
- * Is the deleted test tied to the area for certain? Named for the symbol and
- * belonging to it, or importing its module directly -- a behaviour title
- * ("creates a link ...") over a direct import is still the area's test (#1253).
- */
-const tiedDeletion = (deletion, ctx, scope) =>
-  ctx.syms.size > 0 &&
-  ((nameCovers(deletion.name, ctx.syms) && belongs(deletion, ctx, scope)) ||
-    importKind(scope.importsOf(deletion.file), ctx) === 'direct');
-
-/** Shares a significant directory with the area, or is near it. */
-const related = (deletion, ctx) =>
-  isNear(deletion.file, ctx) ||
-  dirsOf(deletion.file).some((d) => significantDirs(ctx.path).has(d));
 
 function candidateFor(deletion, ctx, scope) {
   if (ctx.problems) return null; // invalid: reported as not assessed instead
@@ -211,15 +164,6 @@ function findingsFor(deletions, contexts, scope) {
       a.test.localeCompare(b.test),
   );
 }
-
-/**
- * Tied to the area for certain: imports its module, or is named for it and sits
- * in its own directory, its own test directory, or an exact mirror. A file
- * merely named for it elsewhere (`apps/web/.../engine-signal.test.tsx`) is not.
- */
-const tiedToArea = (e, ctx) =>
-  importKind(e.imports, ctx) === 'direct' ||
-  (ownsTest(e.rel, ctx) && isStronglyNear(e.rel, ctx));
 
 /** The first near test that names the symbol without being tied to the area. */
 function saturation(index, ctx) {
