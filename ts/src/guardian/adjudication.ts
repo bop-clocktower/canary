@@ -180,7 +180,13 @@ function tallyPr(pr: PrEvidence, report: AdjudicationReport): void {
     last,
     lastVouches: vouchesForAbsence(pr.revisions.at(-1)!),
     suppressions: suppressionsByPath(pr.files),
-    mergedPaths: new Set(pr.files.map((f) => f.filename)),
+    // A file whose patch GitHub omitted (too large, binary) cannot show an
+    // added `fp:` suppression, so it cannot vouch for a true positive.
+    mergedPaths: new Set(
+      pr.files
+        .filter((f) => typeof f.patch === 'string')
+        .map((f) => f.filename),
+    ),
   };
   for (const finding of first) report.counts[classifyFinding(finding, ctx)]++;
 }
