@@ -74,6 +74,21 @@ Three consequences follow, and they are the load-bearing part:
   `gateOutcome` is untouched: the test lives in `isCoverageAbstention`, at the
   one surface that has a fidelity ladder to read.
 
+  Qualified again by #1242, for **partial** abstention. A gate can check most of
+  its denominator and still be blind on part of it. `canary-katana` reads every
+  critical area, but cannot alarm on an area whose symbol unrelated nearby tests
+  already name, or that has no symbol at all. When a diff touched such an area
+  and nothing alarmed, `--strict` exits 3. Silence there means "could not tell",
+  not "still covered", even though the other areas were checked. The precedence
+  above still holds: a real finding on any area exits 1, because it proves a
+  check ran and is more useful than "part was dark". An unassessable area the
+  diff never touched does not abstain the run, since no deletion could have
+  reached it. The precedent is `canary-strix` (#800). When its file half scans
+  but its commit half cannot run, `--strict` exits 3 with zero findings and 1
+  with any, for the same reason: zero findings over a half that never ran is not
+  a pass. Neither surface touches `gateOutcome`; each decides at the one place
+  that knows which part of its denominator was dark.
+
 - **Unknown is not zero.** A surface that _cannot_ determine its denominator
   (the remote Supabase history backend; a precision sample with no
   adjudications) reports unknown and does not abstain. Inventing an abstention

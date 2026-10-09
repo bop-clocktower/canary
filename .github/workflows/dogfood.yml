@@ -540,7 +540,7 @@ jobs:
           case "$rc" in
             0) echo "katana: no deleted tests in this PR." ;;
             1) echo "::warning title=Deleted tests (advisory)::canary-katana captured removed test coverage in this PR. Non-blocking - see the step log." ;;
-            3) echo "::notice title=Katana abstained::the PR diff was empty for katana, so nothing was examined. Not a clean run, but nothing to report." ;;
+            3) echo "::notice title=Katana abstained::katana could not give a verdict: the PR diff was empty, the critical-areas file lists no areas, or the diff touched a critical area katana cannot assess (see the step log for which). Not a clean run." ;;
             *) echo "::error title=Katana failed::unexpected exit $rc"; exit "$rc" ;;
           esac
 
