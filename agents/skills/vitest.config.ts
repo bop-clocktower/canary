@@ -6,7 +6,10 @@ export default defineConfig({
     // #1221: canary-cassandra (and its gate-conformance rows) load the built
     // engine. Fail the run ONCE with "ts/dist missing — run npm run build in
     // ts/" instead of 16 unrelated-looking assertion failures; warn if stale.
-    globalSetup: ['test/engine-precondition.ts'],
+    // #1239: the canary-savant pytest-integration tests need a python3 with
+    // pytest. Missing locally -> one loud "skipped N" warning and a real skip;
+    // missing under CI or CANARY_REQUIRE_PYTEST=1 -> the run fails.
+    globalSetup: ['test/engine-precondition.ts', 'test/pytest-precondition.ts'],
     // #760, second half. `ts/vitest.config.ts` raised this to 30s for the same
     // reason; this project was left on the 5s default even though the issue's
     // own follow-up comment recorded seven failures here, not in `ts/`

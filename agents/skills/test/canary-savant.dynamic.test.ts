@@ -7,7 +7,7 @@
 // deterministic in-process; the real spawn/parse wiring is covered by one
 // integration test needing only an in-order baseline (no shuffle plugin).
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, inject } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -258,24 +258,33 @@ describe('cli --confirm', () => {
   });
 });
 
-describe('real pytest baseline (integration, no plugin needed)', () => {
-  it('spawns pytest and parses the JUnit report', () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'savant-dyn-'));
-    try {
-      const suite = path.join(tmp, 'test_demo.py');
-      fs.writeFileSync(
-        suite,
-        'def test_pass():\n    assert True\ndef test_fail():\n    assert False\n',
-      );
-      const junit = path.join(tmp, 'j.xml');
-      const outcomes = runner.runPytestSuite(
-        runner.buildBaselineCmd([suite], junit, null),
-        junit,
-      );
-      expect(outcomes['test_demo::test_pass']).toBe('passed');
-      expect(outcomes['test_demo::test_fail']).toBe('failed');
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-});
+// Spawns a real pytest. Without one it skips LOUDLY locally and fails under CI
+// (test/pytest-precondition.ts, #1239) rather than failing as if broken.
+// `=== false`, not `!`: an unwired globalSetup (undefined) must run and fail,
+// never skip silently.
+const NO_PYTEST = inject('pytestAvailable') === false;
+
+describe.skipIf(NO_PYTEST)(
+  'real pytest baseline (integration, no plugin needed)',
+  () => {
+    it('spawns pytest and parses the JUnit report', () => {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'savant-dyn-'));
+      try {
+        const suite = path.join(tmp, 'test_demo.py');
+        fs.writeFileSync(
+          suite,
+          'def test_pass():\n    assert True\ndef test_fail():\n    assert False\n',
+        );
+        const junit = path.join(tmp, 'j.xml');
+        const outcomes = runner.runPytestSuite(
+          runner.buildBaselineCmd([suite], junit, null),
+          junit,
+        );
+        expect(outcomes['test_demo::test_pass']).toBe('passed');
+        expect(outcomes['test_demo::test_fail']).toBe('failed');
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  },
+);

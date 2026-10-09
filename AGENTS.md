@@ -1635,6 +1635,22 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 - Re-runs `python3 scripts/security_ledger.py` whenever non-ledger files are
   staged — keeps the security ledger fresh without a manual step.
 
+Then install the Python test dependency (pytest) into the `python3` on your
+`PATH` — the same interpreter the tests spawn:
+
+```bash
+python3 -m pip install -r requirements-dev.txt   # or: mise run setup:python
+```
+
+Canary ships no Python, but some tests execute a real `python3 -m pytest`: the
+canary-savant pytest-integration tests in `agents/skills/` and
+`ts/test/order-pytest-conftest.test.ts` (#1030). CI installs from the same
+`requirements-dev.txt`. Without pytest, `agents/skills` prints
+`pytest not installed — skipped 3 integration tests` and skips them — they did
+not pass, they did not run. Under `CI` (or `CANARY_REQUIRE_PYTEST=1`) the same
+gap **fails** the run instead, so an abstention can never turn the required
+"Skills (JS)" check green (#1239, `agents/skills/test/pytest-precondition.ts`).
+
 ### Quality gates
 
 **The gates run from `ts/`, and there are four of them.** Run each separately —

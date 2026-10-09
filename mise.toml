@@ -9,3 +9,10 @@ idiomatic_version_file_enable_tools = ["node"]
 gh = "latest"
 "npm:@harness-engineering/cli" = "latest"
 "npm:canary-test-cli" = { version = "latest", npm_args = "--ignore-scripts=false" }
+
+# #1239: pytest for the tests that execute a real `python3 -m pytest`. Uses the
+# python3 on PATH -- the same interpreter the tests spawn -- so mise does not
+# pin a Python here; CI installs from the same requirements-dev.txt.
+[tasks."setup:python"]
+description = "Install Python test deps (pytest) into the python3 on PATH"
+run = "python3 -m pip install -r requirements-dev.txt"

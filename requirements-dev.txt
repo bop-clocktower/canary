@@ -1,0 +1,12 @@
+# Python test dependencies for canary's own test suites (#1239).
+#
+# Canary ships no Python. These are needed only because some JS/TS tests
+# EXECUTE a real `python3 -m pytest`:
+#   - agents/skills: canary-savant's pytest-integration tests
+#     (gated by agents/skills/test/pytest-precondition.ts)
+#   - ts: test/order-pytest-conftest.test.ts (#1030)
+#
+# Install once per python3:  python3 -m pip install -r requirements-dev.txt
+# (or `mise run setup:python`). CI installs from this same file, so the local
+# toolchain and the "Skills (JS)" / "TS engine (pilot)" jobs cannot drift.
+pytest>=8

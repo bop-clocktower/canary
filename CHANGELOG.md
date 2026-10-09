@@ -28,6 +28,17 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **canary-savant's pytest-integration tests no longer fail as if broken when
+  `python3` has no pytest.** They used to report three assertion failures
+  (`expected undefined to be 'passed'`) on a dev machine without pytest. A
+  vitest `globalSetup` in `agents/skills` now probes `python3 -m pytest` once.
+  Locally a missing pytest prints
+  `pytest not installed — skipped 3 integration tests` and skips them. Under
+  `CI` or `CANARY_REQUIRE_PYTEST=1` it fails the run, so the required "Skills
+  (JS)" check cannot go green on an abstention. pytest is now declared in a root
+  `requirements-dev.txt` (`mise run setup:python`), which both CI jobs that need
+  it install from (#1239).
+
 - **Workflow hygiene: least privilege, format gate, actionlint** (#1236, #1237,
   #1238).
   - `harness-architecture.yml` now declares `permissions: contents: read`.
