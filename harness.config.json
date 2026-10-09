@@ -313,6 +313,7 @@
       "ts/test/batwoman-testkit.ts",
       "agents/skills/test/site-kit-helpers.ts",
       "ts/test/doc-links-testkit.ts",
+      "ts/test/git-fixture-testkit.ts",
       "ts/test/required-checks-testkit.ts",
       "ts/test/fixtures/schedule-staleness/gh-stub.cjs",
       "ts/vitest.config.ts"
@@ -465,6 +466,7 @@
       "ts/test/batwoman-testkit.ts",
       "agents/skills/test/site-kit-helpers.ts",
       "ts/test/doc-links-testkit.ts",
+      "ts/test/git-fixture-testkit.ts",
       "ts/test/required-checks-testkit.ts",
       "ts/test/fixtures/schedule-staleness/gh-stub.cjs",
       "ts/vitest.config.ts"
