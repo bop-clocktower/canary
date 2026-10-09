@@ -1,0 +1,6 @@
+{
+  "id": "docs-coverage-regression",
+  "target": "docs-ratchet",
+  "plantedDefect": "a head that unlinks a file documented at the merge base (#865) and falls under the coverage floor (#1241)",
+  "expect": { "exitCode": 1 }
+}

@@ -652,6 +652,26 @@ working dir, #700) and update `measuredCount`, `measuredAt`, `harnessCli` and
 good news — establish whether the tree got cleaner or the detector went quiet
 before lowering a ceiling to match it.
 
+**The docs-coverage floor is the third baseline (#1241).**
+`scripts/docs-ratchet.mjs` fails a PR that unlinks a documented file (#865) and,
+on every run, fails when coverage falls below `minCoveragePercent` in
+`.harness/docs-coverage-baseline.json`. Coverage is the exact ratio of
+`check-docs --json`'s file lists. harness's `coveragePercent` is rounded, so its
+"18.0%" is 17.86%. The floor sits `maxHeadroom` (1 point, 23 files at 392
+scanned) below the measurement, so one new undocumented file does not replay
+issue #864. That headroom is a shared, absolute budget: once it is spent, the
+next PR adding an undocumented file fails, and the fix is a docs link, not a
+lower floor. It never auto-tightens. When coverage outgrows the headroom, the
+ratchet prints the values to write. Commit them as a `chore(ratchet): restamp`
+PR with `harnessCli`, as for the other two. A PR that lowers the floor fails
+against the merge base's copy (`--base-baseline`). A report with zero files,
+zero documented files, unparseable output or a missing report exits **3**,
+never 0. Bare `harness check-docs` still exits 1 at its default
+`--min-coverage 80`, and that is expected. The gate is the ratchet. Only a
+markdown link in a `.md` file under `docs/` counts as documentation, matched by
+path or basename. A link from `AGENTS.md` or `README.md` does not count, because
+both files sit outside `docsDir`.
+
 **Measuring the entropy ratchet locally — use a worktree, never your working
 directory (#700).** The ratchet is a blocking gate, so it has to be runnable
 before you push. It is, but only from a clean tree:

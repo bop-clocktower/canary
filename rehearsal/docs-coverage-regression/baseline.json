@@ -1,0 +1,5 @@
+{
+  "$comment": "REHEARSAL FIXTURE (#1241, ADR 0018). Synthetic floor, not the repo baseline. No harnessCli, so no --cli-version is needed.",
+  "minCoveragePercent": 50,
+  "maxHeadroom": 5
+}
