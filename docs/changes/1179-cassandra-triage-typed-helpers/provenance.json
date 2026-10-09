@@ -1,0 +1,16 @@
+{
+  "issues": [1179],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot", "resume-rebase"],
+  "plan": "docs/changes/1179-cassandra-triage-typed-helpers/plans/2026-10-08-typed-helpers-and-triage-plan.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "No live human was available; the fleet's settled defaults answered the open questions (proposal.md, Decisions made).",
+    "A vacuous finding is fixed by making the test exercise its target; an absence-only test with no in-test precondition is fixed by pinning the denominator in that test.",
+    "A false positive is recorded, not suppressed: cassandra has no suppression mechanism and none is invented. The false-positive shapes are filed once, in #1231.",
+    "The 'newly exposed' set is re-measured as findings under this branch's engine that disappear when only the #1175 function-body boundary is reverted (`return sibling;`), on the current tree. #1179's count of 16 was taken at #1175's merge, and tests have been added since.",
+    "Approach A (an optional one-line annotation in JS_LOCAL_DECL) is chosen over stripping types or an AST parse. It misses multi-line annotations and object types with ';' members, which is the safe direction: a missed declaration leaves a finding standing and never silences one.",
+    "The @covers bug found during triage (#1232) is filed, not fixed here, so @covers was not used as a remedy.",
+    "Resume: rebased onto origin/main c2cf4db3 (v9.2.0). The CHANGELOG entry moved to a new [Unreleased] Fixed section. Five exposed findings from tests that landed in v9.2.0 (docs-ratchet x4, schedule-staleness x1) were triaged in this pass: all Shape A false positives (added to #1231), and the schedule-staleness test also gained an in-test denominator."
+  ]
+}
