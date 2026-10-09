@@ -846,7 +846,7 @@ function scanBlock(
   }
   return [
     ...tautologies(lines, block, file, python),
-    ...targetNeverInvoked(block, file, invoked, annotated),
+    ...targetNeverInvoked(block, lines, file, invoked, annotated),
     ...absenceOnly(lines, block, file, python, targets, skipped),
     ...presenceOnBystander(lines, block, file, python, targets),
   ];
@@ -944,15 +944,24 @@ function tautologies(
     );
 }
 
-/** VAC-002 -- the target is never referenced anywhere in the body. */
+/**
+ * VAC-002 -- the target is never referenced anywhere in the body.
+ *
+ * An annotated target must be referenced by CODE (`lines` is comment-free). A
+ * JS body runs to the next declaration, so it carries the NEXT test's
+ * `// @covers` comment; read as a reference, the same annotation repeated above
+ * consecutive tests cleared every one of them but the last (#1232).
+ */
 function targetNeverInvoked(
   block: TestBlock,
+  lines: BodyLine[],
   file: string,
   invoked: HelperVerdict,
   annotated: string | null,
 ): VacuityFinding[] {
   if (annotated !== null) {
-    if (mentionsAny(block.body, new Set([annotated]))) return [];
+    const code = lines.map((l) => l.text).join('\n');
+    if (mentionsAny(code, new Set([annotated]))) return [];
     return [
       mk(
         file,
@@ -1277,27 +1286,75 @@ interface TargetInference {
 /**
  * The `@covers` symbol declared above `block`, or `null`.
  *
- * Two bugs lived in the naive version, and both produced a FALSE BLOCK, which is
- * the worst outcome available here: `annotated` is the one vacuity fidelity
- * allowed to block a promotion, so a stray annotation failed a correct test.
+ * The annotation is read from the run of comment lines ATTACHED to the
+ * declaration -- the lines directly above it that are comments, blanks, or (in
+ * Python) decorators -- plus the declaration line itself up to the name. The
+ * run stops at the first line of code, which is how a previous test's
+ * annotation is kept out: its declaration, or at least its closing line, sits
+ * between the two.
  *
- * - The window was a blind 400-character look-back, so it reached over the
- *   PREVIOUS test and its annotation. It is now floored at `floor` -- the end of
- *   the previous test's body -- so only text genuinely between the two
- *   declarations can be read.
+ * Three bugs lived in earlier versions:
+ *
+ * - A blind 400-character look-back reached over the PREVIOUS test and its
+ *   annotation -- a FALSE BLOCK, since `annotated` is the one vacuity fidelity
+ *   allowed to block a promotion.
+ * - The fix for that floored the window at the end of the previous test's body.
+ *   But a body runs to the NEXT declaration, so the comment above this test was
+ *   inside the previous body and never read: every annotation after a file's
+ *   first was dropped (#1232) -- a FALSE GREEN, because a wrong `@covers` went
+ *   unchecked. Body boundaries are shared with LINT-006 and the test inventory,
+ *   so the window changed rather than the boundary.
  * - `exec` returns the match nearest the START of the window, i.e. the FARTHEST
- *   annotation above the declaration. It now takes the last, which is the
- *   nearest.
+ *   annotation above the declaration. It takes the last, which is the nearest.
+ *
+ * A multi-line decorator (`@pytest.mark.parametrize(` over several lines) ends
+ * the run early, so an annotation above one is not read: the test falls back to
+ * import inference, which is the pre-annotation behaviour, not a false block.
  */
 function annotationFor(
   code: string,
   block: TestBlock,
-  floor: number,
+  python: boolean,
 ): string | null {
-  const from = Math.max(floor, block.bodyStart - 400);
+  const decl = python ? block.bodyStart : jsDeclarationStart(code, block);
+  let from = code.lastIndexOf('\n', decl - 1) + 1;
+  while (from > 0) {
+    const above = code.lastIndexOf('\n', from - 2) + 1;
+    if (!attachesToDeclaration(code.slice(above, from - 1), python)) break;
+    from = above;
+  }
   const window = code.slice(from, block.bodyStart);
   const matches = [...window.matchAll(COVERS_PRAGMA)];
   return matches.at(-1)?.[1] ?? null;
+}
+
+/**
+ * Offset of the `it`/`test` keyword opening a JS declaration, or of the body
+ * start when it cannot be found. Python needs none of this: `def test_x(` is
+ * matched on one line, so its body always starts on the declaration's line.
+ *
+ * A title wrapped onto its own line (`it(\n  'name',`) puts `bodyStart` a line
+ * below the keyword, and the walk in {@link annotationFor} must begin at the
+ * keyword's line or it stops at `it(` as code. The name holds no quote, so the
+ * character before `bodyStart` is the closing quote and the previous one of the
+ * same kind opens it; the search before that is bounded so a file of many
+ * tests stays linear.
+ */
+function jsDeclarationStart(code: string, block: TestBlock): number {
+  const quote = code[block.bodyStart - 1]!;
+  if (quote !== "'" && quote !== '"') return block.bodyStart;
+  const open = code.lastIndexOf(quote, block.bodyStart - 2);
+  if (open < 0) return block.bodyStart;
+  const from = Math.max(0, open - 80);
+  const kw = code.slice(from, open).search(/\b(?:it|test)\s*\(\s*$/);
+  return kw < 0 ? block.bodyStart : from + kw;
+}
+
+/** Can `line` sit between a test's annotation and its declaration? */
+function attachesToDeclaration(line: string, python: boolean): boolean {
+  const s = line.trim();
+  if (s === '' || s.startsWith('/*') || isComment(s)) return true;
+  return python && s.startsWith('@');
 }
 
 /**
@@ -1399,13 +1456,8 @@ function scanAllBlocks(
   skipped: SkipEntry[],
 ): VacuityFinding[] {
   const findings: VacuityFinding[] = [];
-  for (let i = 0; i < blocks.length; i += 1) {
-    const block = blocks[i]!;
-    // An annotation may only be read from the gap between the previous test's
-    // end and this declaration -- see `annotationFor`.
-    const prev = blocks[i - 1];
-    const floor = prev ? prev.bodyStart + prev.body.length : 0;
-    const annotated = annotationFor(ctx.code, block, floor);
+  for (const block of blocks) {
+    const annotated = annotationFor(ctx.code, block, ctx.python);
     const outOfBand =
       !ctx.python &&
       annotated === null &&
