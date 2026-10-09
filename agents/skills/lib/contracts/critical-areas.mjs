@@ -10,6 +10,7 @@
 // Zero dependencies, and vendorable: nothing here touches a Node global.
 
 import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
 
 import { auditedValidator } from './schema-problems.mjs';
 
