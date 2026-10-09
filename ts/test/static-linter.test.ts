@@ -820,3 +820,12 @@ it('has a label', () => {
     expect(flake).toEqual(viaLint);
   });
 });
+
+// bug-fleet A6 repro (base b0e258bd).
+describe('unittest-style assertions', () => {
+  it('a self.assertEqual test is not LINT-006', () => {
+    const code =
+      'import unittest\n\nclass TestAdd(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(1, 2), 3)\n';
+    expect(rules(lint('test_add.py', code))).not.toContain('LINT-006');
+  });
+});

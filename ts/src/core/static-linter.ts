@@ -62,6 +62,12 @@ const TEST_FN_PY = /^([ \t]*)def (test_\w+)\s*\(/gm;
 // still address the untouched text (#590).
 const TEST_FN_JS = /(?:^|\s)(?:it|test)\s*\(\s*['"]([^'"]*)['"]/dgm;
 export const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
+// What makes a Python test NON-vacuous for LINT-006: `assert`/`pytest.raises`,
+// plus unittest's `self.assertEqual(...)` family -- `\bassert\b` has no word
+// boundary inside `assertEqual`, so a TestCase suite read as assertion-free.
+// Kept apart from ASSERT_PY, which also gates the per-line soundness rules.
+// The vacuity scanner builds the same union (PY_ASSERTION).
+const PY_TEST_ASSERTS = new RegExp(`${ASSERT_PY.source}|\\bself\\.assert\\w+`);
 // Assertion styles a JS/TS test may use. `expect()` (jest/vitest/playwright)
 // was the only one recognized until canary was pointed at its own suites and
 // reported 216 assertion-free tests of which 13 were real -- the other 200 were
@@ -741,7 +747,7 @@ export function enumerateTests(
 function scanAssertionFreePy(code: string, file: string): LintFinding[] {
   const out: LintFinding[] = [];
   for (const t of enumerateTests(code, code, true)) {
-    if (!ASSERT_PY.test(t.body)) {
+    if (!PY_TEST_ASSERTS.test(t.body)) {
       out.push(
         mk(
           file,
