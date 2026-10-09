@@ -2141,13 +2141,17 @@ describe('packaging', () => {
     expect(res.stdout).toContain('usage:');
   });
 
-  it('scripts are ascii-only (no emoji)', () => {
+  // Printable ASCII plus tab/LF/CR only. The old class [\x00-\x7F] let a raw
+  // NUL through, and one NUL makes git, GitHub and grep treat the whole file
+  // as binary (#1250). A delimiter byte belongs in the source as an escape.
+  it('scripts are printable ascii-only (no emoji, no raw control bytes)', () => {
+    const offenders: string[] = [];
     for (const name of fs.readdirSync(SCRIPTS)) {
       if (!name.endsWith('.mjs')) continue;
       const text = fs.readFileSync(path.join(SCRIPTS, name), 'utf8');
-      // eslint-disable-next-line no-control-regex
-      expect(/^[\x00-\x7F]*$/.test(text)).toBe(true);
+      if (!/^[\x09\x0A\x0D\x20-\x7E]*$/.test(text)) offenders.push(name);
     }
+    expect(offenders).toEqual([]);
   });
 
   it('is self-contained: no engine (agent/) imports', () => {
