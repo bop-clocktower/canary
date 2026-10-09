@@ -27,9 +27,9 @@
  *     {@link CanaryTestExecutor} (spawnSync, maxBuffer:Infinity).
  *   - **pathlib -> node:path/fs.** `Path(...).suffix` semantics are reproduced
  *     by {@link fileExtension} (empty for a trailing dot or dotfile).
- *   - **Python truthiness.** `target_dir or _WORKING_DIR` uses `||`; the env
- *     default for `_WORKING_DIR` uses `??` to mirror `os.environ.get(k, cwd)`
- *     (an explicitly-empty env var stays `""`).
+ *   - **Python truthiness.** `target_dir or _WORKING_DIR` uses `||`. The served
+ *     root itself deliberately diverges from Python - see
+ *     {@link resolveServedRoot}.
  *   - **ensure_ascii.** Hand-built JSON returned to the MCP host is escaped via
  *     the shared {@link ensureAscii} (`util/ensure-ascii.ts`) so non-ASCII units
  *     emit `\uXXXX` (ASCII-safe JSON).
@@ -84,11 +84,36 @@ const SERVER_NAME = 'canary';
 const SERVER_VERSION = '0.1.0';
 
 /**
- * Python: `_WORKING_DIR = os.environ.get("CLAUDE_PLUGIN_ROOT", os.getcwd())`.
- * `??` (not `||`) mirrors `dict.get(key, default)`: an env var set to `""`
- * keeps `""`; only an unset var falls back to the cwd.
+ * The directory the server serves: every path argument is contained to it.
+ *
+ * Resolution order is `CANARY_PROJECT_ROOT` (explicit override), then
+ * `CLAUDE_PROJECT_DIR` (the user's project, set by Claude Code), then `cwd`.
+ * An empty-string variable counts as unset. The result is an absolute realpath
+ * (falling back to the lexical absolute path when it does not exist yet).
+ *
+ * Deliberate divergence from the Python reference, which used
+ * `os.environ.get("CLAUDE_PLUGIN_ROOT", os.getcwd())`: Claude Code sets
+ * `CLAUDE_PLUGIN_ROOT` to the plugin's INSTALL directory, and a plugin-launched
+ * server inherits it. Rooting there confines every tool to the plugin cache and
+ * refuses every path in the user's project, so it is never consulted.
+ *
+ * Pure in its inputs (env object + cwd) so tests do not depend on load order.
  */
-const WORKING_DIR = process.env['CLAUDE_PLUGIN_ROOT'] ?? process.cwd();
+export function resolveServedRoot(
+  env: Readonly<Record<string, string | undefined>>,
+  cwd: string,
+): string {
+  const chosen = env['CANARY_PROJECT_ROOT'] || env['CLAUDE_PROJECT_DIR'] || cwd;
+  const absolute = resolve(cwd, chosen);
+  try {
+    return realpathSync(absolute);
+  } catch {
+    return absolute;
+  }
+}
+
+/** The served root, resolved once at startup. */
+const WORKING_DIR = resolveServedRoot(process.env, process.cwd());
 
 const CONFIG_FRAMEWORK_GLOBS: readonly (readonly [
   string,
