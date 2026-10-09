@@ -47,6 +47,9 @@ export const dirsOf = (p) => toPosix(p).split('/').filter(Boolean).slice(0, -1);
 
 const isGenericDir = (d) => GENERIC_DIRS.has(d);
 
+/** Under the repo's root `test/` or `tests/` (not a nested one). */
+export const inRootTestDir = (p) => ['test', 'tests'].includes(dirsOf(p)[0]);
+
 /** The significant (non-generic) directories of a path, in order. */
 export const sigPath = (p) => dirsOf(p).filter((d) => !isGenericDir(d));
 

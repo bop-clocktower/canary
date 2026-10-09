@@ -160,12 +160,12 @@ Some areas katana **cannot** alarm on, whatever the diff deletes, and some it
 cannot decide for this particular diff. Each one is reported with a reason, so
 "0 alarms" can be told apart from "unable to tell":
 
-| Reason             | Why the name-matched alarm cannot fire                                                                                                                                                                                                                                                                    | Fix                              |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `symbol-saturated` | a test near the area names its symbol but neither imports the area nor is its own test file (named for it and strongly near). For example, `validator.test.ts` saying "rules" beside `rules.ts`. So the area always reads as covered                                                                      | declare narrower `symbols`       |
-| `no-symbol`        | no `symbols` declared and the basename gives no symbol of 4+ letters or digits (`db.ts`, `utils.ts`)                                                                                                                                                                                                      | declare `symbols`                |
-| `invalid-area`     | the entry fails the critical-areas contract                                                                                                                                                                                                                                                               | fix the entry the evidence names |
-| `unlinked`         | this diff deleted a test beside the area (near it, or sharing a significant directory such as the package) that katana cannot tie to it, and no remaining test imports it or is its own test file. Typical: integration tests in a central `test/` that drive a service over HTTP through a server module | add a test that imports the area |
+| Reason             | Why the name-matched alarm cannot fire                                                                                                                                                                                                                                                                                                                                                 | Fix                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `symbol-saturated` | a test near the area names its symbol but neither imports the area nor is its own test file (named for it and strongly near). For example, `validator.test.ts` saying "rules" beside `rules.ts`. So the area always reads as covered                                                                                                                                                   | declare narrower `symbols`       |
+| `no-symbol`        | no `symbols` declared and the basename gives no symbol of 4+ letters or digits (`db.ts`, `utils.ts`)                                                                                                                                                                                                                                                                                   | declare `symbols`                |
+| `invalid-area`     | the entry fails the critical-areas contract                                                                                                                                                                                                                                                                                                                                            | fix the entry the evidence names |
+| `unlinked`         | this diff deleted a test related to the area (near it, sharing a significant directory such as the package, or — for an area with `risk_score` ≥ 0.7 — under the root `test/`/`tests/`) that katana cannot tie to it, and no remaining test imports it or is its own test file. Typical: integration tests in a central `test/` that drive a service over HTTP through a server module | add a test that imports the area |
 
 Saturation is read from the tree on disk, which is the tree before the diff
 minus what the diff deleted: a deleted test cannot keep anything covered.
@@ -182,11 +182,17 @@ the area either, the coverage may have gone with it, or may never have been
 there. katana cannot tell which, so it abstains instead of reading the silence
 as clean. An area with a remaining test that imports it stays assessed and
 quiet. A deletion in another package (no shared significant directory, not near)
-leaves the area alone. A deletion under a root `tests/` with no shared
-significant directory does not count either, for the reason above. The human
-output lists every not-assessed area and marks the at-stake ones. When the run
-found no alarm but an at-stake area was not assessed, it says so in an
-abstention line:
+leaves the area alone. A deletion under the root `test/` or `tests/` with no
+shared significant directory counts only for a **high-risk** area (`risk_score`
+≥ 0.7, the same line that makes an alarm `critical`) (#1255). In a
+single-package repo, `src/services/widgetService.ts` and
+`test/widget-links.integration.test.ts` share no significant directory, so
+without this rule deleting every integration test would exit `0`. Lower-risk
+areas keep the rule above: such a deletion leaves them alone, so the noise stays
+limited to the areas that matter. A nested `tools/test/` is not the root test
+directory. The human output lists every not-assessed area and marks the at-stake
+ones. When the run found no alarm but an at-stake area was not assessed, it says
+so in an abstention line:
 
 ```text
 ⚠ Abstained on 1 critical area(s) this diff put at risk — katana cannot tell whether they lost coverage, so 0 alarms is not a pass.
@@ -433,5 +439,12 @@ don't let it read as green:
   counts only when a title also names the symbol, since a barrel re-exports many
   modules. A re-export under another name or from another directory is not seen
   at all, so such a test must sit near the area to count.
+- **Root test directories are related by risk, not by reading.** katana does not
+  follow a test's imports through a server module, so an integration test under
+  the root `test/`/`tests/` can't be tied to the `src/` area it exercises. For
+  an area with `risk_score` ≥ 0.7, deleting such a test abstains (`unlinked`, at
+  stake, `--strict` exit `3`) until a remaining test imports the area. Below
+  0.7, the same deletion is not seen at all, so a lower-risk area covered only
+  by root integration tests can lose that coverage silently.
 - **Provenance needs git.** Fed a `--diff-file` outside a git repo, author and
   commit are recorded as `unknown` / empty rather than guessed.

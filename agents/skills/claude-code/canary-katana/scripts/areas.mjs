@@ -17,6 +17,11 @@ import { dirsOf, sigPath, stripCodeSuffix, toPosix } from './nearby.mjs';
 // anything. A DECLARED symbol is taken as given: someone chose it.
 export const MIN_DERIVED_SYMBOL = 4;
 
+// risk_score at or above this marks a high-risk area: a name-matched
+// last-coverage loss there is CRITICAL (not HIGH), and a deletion under a root
+// test(s)/ directory counts as related to it (#1255).
+export const CRITICAL_RISK = 0.7;
+
 /**
  * @typedef {{available: boolean, areas: Array<Record<string, any>>,
  *            reason: string, problems?: Map<number, string[]>}} CriticalAreas

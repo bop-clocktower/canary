@@ -755,3 +755,88 @@ describe('a deletion that cannot be tied to the area abstains (#1253)', () => {
     expect(v.notAssessed.map((n) => n.reason)).toEqual(['unlinked']);
   });
 });
+
+// --- #1255: single-package repo, integration tests in a root test(s)/ ---------
+//
+// src/services/widgetService.ts and test/widget-links.integration.test.ts share
+// no significant directory and are not near, so #1253's "related" missed them
+// and deleting every such test exited 0. Decided (2026-10-09, option 2): a
+// root test(s)/ deletion is related to an area only when its risk_score is at
+// or above 0.7; lower-risk areas keep #1246's rule, so the noise stays bounded.
+
+describe('a root test(s)/ deletion abstains for high-risk areas (#1255)', () => {
+  const WIDGET = 'src/services/widgetService.ts';
+  const SERVER = "import { app } from '../src/api/httpServer.js';";
+  const REMAINING = {
+    'test/health.integration.test.ts': `${SERVER}\nit('responds to health checks', () => {});\n`,
+  };
+  const rootDeletion = (dir: string) =>
+    delFile(`${dir}/widget-links.integration.test.ts`, [
+      SERVER,
+      "it('creates a link whose page is the run report', () => {});",
+    ]);
+  const risk = (r: number) => AREA(WIDGET, { risk_score: r });
+
+  it('lists a high-risk area as unlinked and at stake', () => {
+    const v = verdict(REMAINING, risk(0.9), rootDeletion('test'));
+    expect(summary(v)).toEqual({
+      findings: [],
+      notAssessed: [`${WIDGET} unlinked atStake=true`],
+    });
+  });
+
+  it('--strict exits 3 for the issue layout', () => {
+    const { code, text } = cli(REMAINING, risk(0.9), rootDeletion('test'), [
+      '--strict',
+    ]);
+    expect(code).toBe(3);
+    expect(text).toContain(`[unlinked] ${WIDGET} [at stake in this diff]`);
+    expect(text).toContain('Abstained on 1 critical area(s)');
+    expect(text).toContain(
+      `from the root test directory, and ${WIDGET} is high-risk`,
+    );
+  });
+
+  it('a root tests/ (plural) deletion counts the same', () => {
+    const v = verdict({}, risk(0.9), rootDeletion('tests'));
+    expect(summary(v).notAssessed).toEqual([`${WIDGET} unlinked atStake=true`]);
+  });
+
+  it('exactly 0.7 is high-risk: the boundary abstains', () => {
+    const { code } = cli(REMAINING, risk(0.7), rootDeletion('test'), [
+      '--strict',
+    ]);
+    expect(code).toBe(3);
+  });
+
+  it('below 0.7 keeps the #1246 rule: unlisted, --strict exits 0', () => {
+    const v = verdict(REMAINING, risk(0.69), rootDeletion('test'));
+    expect(summary(v)).toEqual({ findings: [], notAssessed: [] });
+    const { code, text } = cli(REMAINING, risk(0.69), rootDeletion('test'), [
+      '--strict',
+    ]);
+    expect(code).toBe(0);
+    expect(text).not.toContain('[at stake in this diff]');
+  });
+
+  it('a remaining test importing the area keeps it clean (exit 0)', () => {
+    const files = {
+      ...REMAINING,
+      'test/widget.unit.test.ts':
+        "import { slug } from '../src/services/widgetService.js';\nit('formats a slug', () => {});\n",
+    };
+    expect(summary(verdict(files, risk(0.9), rootDeletion('test')))).toEqual({
+      findings: [],
+      notAssessed: [],
+    });
+  });
+
+  it('a nested test/ dir is not a root test dir', () => {
+    const v = verdict(
+      {},
+      risk(0.9),
+      delFile('tools/test/lint.test.ts', ["it('lints', () => {});"]),
+    );
+    expect(summary(v)).toEqual({ findings: [], notAssessed: [] });
+  });
+});

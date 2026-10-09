@@ -1,0 +1,14 @@
+{
+  "issues": [1255],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "agents/skills/test/canary-katana-proximity.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Settled in CONFIRM (maintainer, 2026-10-09): option 2. A root test/ or tests/ deletion is related to an area only when risk_score >= 0.7; lower-risk areas keep the #1246 rule.",
+    "'Root test dir' = the deleted file's first path segment is exactly 'test' or 'tests'. A nested test dir (tools/test/) is not one. The rule is not gated on detecting a single-package repo: a monorepo's root test(s)/ is equally unable to share a significant dir with packages/<pkg>/src/, so the same reasoning applies.",
+    "The threshold is the existing CRITICAL_RISK (0.7, inclusive), now single-sourced in areas.mjs and shared by the severity grade and the relation, so 'high-risk' means one thing.",
+    "Only the unlinked relation (ties.related) widens. at-stake for not-assessed reasons (no-symbol, symbol-saturated, invalid-area) is unchanged: proximity under a root tests/ still never puts those at stake.",
+    "The unlinked evidence line names the root-test-dir relation instead of saying 'beside' when the deletion is not near the area."
+  ]
+}

@@ -45,6 +45,15 @@ under the project's former name) are documented in the
   fixed five tests that were vacuous or absence-only with no precondition in the
   test; the remaining false-positive shapes are tracked in #1231, and a
   `@covers` bug found along the way in #1232.
+- **`canary-katana`'s `unlinked` abstention now covers single-package repos with
+  a root `test/` or `tests/`** (#1255). `src/services/widgetService.ts` and
+  `test/widget-links.integration.test.ts` share no significant directory, so
+  deleting every such integration test still exited 0. A deletion under the root
+  `test/`/`tests/` now counts as related to an area with `risk_score` ≥ 0.7.
+  When no remaining test imports that area, it is reported `unlinked`, at stake,
+  and `--strict` exits 3. Lower-risk areas keep the #1246 rule: such a deletion
+  leaves them alone. **Upgrade note:** strict consumers with this layout may see
+  exit 3 for high-risk areas. Adding a test that imports the area clears it.
 - **`canary-katana --strict` no longer exits 0 when it cannot tie a deleted test
   to a critical area** (#1253). Integration tests in a central `test/` directory
   often reach a service through a server module, over HTTP, with titles that
