@@ -13,6 +13,8 @@
  * honest response was to split the file rather than to allowance it.
  */
 
+import { readFileSync } from 'node:fs';
+
 import {
   KNOWN_RULES,
   allowanceFor,
@@ -189,5 +191,65 @@ export function requireNoDelta(baseReport, violations, maxViolations, opts) {
     `perf-ratchet: delta OK — ${added.length} new finding(s) against the ` +
       `merge base, ${added.length - blocking.length} allowed, 0 blocking ` +
       `(${violations} here, ${base} at the base).`,
+  );
+}
+
+function abstainOnBase(path, why) {
+  fail(
+    3,
+    `perf-ratchet: ABSTAINED — merge base baseline ${path} ${why}, so a ` +
+      'raised ceiling cannot be ruled out. "Cannot verify" is not a pass.',
+  );
+}
+
+/**
+ * The merge base's `maxViolations`, or exit 3. `path` is
+ * `<base tree>/.harness/perf-baseline.json`. No bootstrap exemption: main has
+ * carried this file since #717, so a missing copy means the base worktree or
+ * the path is wrong.
+ */
+function readBaseCeiling(path) {
+  let text;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (err) {
+    abstainOnBase(path, `cannot be read (${err.code ?? err.message})`);
+  }
+  let ceiling;
+  try {
+    ceiling = JSON.parse(text).maxViolations;
+  } catch {
+    abstainOnBase(path, 'is not JSON');
+  }
+  if (!Number.isInteger(ceiling)) {
+    abstainOnBase(path, 'has no integer "maxViolations"');
+  }
+  return ceiling;
+}
+
+/**
+ * The ceiling only falls (#1257, the perf twin of #1247). Compared against the
+ * MERGE BASE's baseline, the one copy a PR cannot rewrite: the delta rule
+ * compares two reports and the backstop compares the report with the head's
+ * own file, so a raise with `measuredCount` moved to match passed both.
+ * `basePath` is the base's copy, `path` the head's.
+ */
+export function requireCeilingNotRaised(maxViolations, basePath, path) {
+  const baseCeiling = readBaseCeiling(basePath);
+  if (maxViolations > baseCeiling) {
+    fail(
+      1,
+      `perf-ratchet: FAILED — the ceiling was RAISED from ${baseCeiling} ` +
+        `at the merge base to ${maxViolations} in ${path}.\n` +
+        'A ratchet turns one way (#717): raising "maxViolations" is the one ' +
+        'move that is never right. Fix the new violations or split the file ' +
+        'that grew. A structural finding the delta rule should not charge ' +
+        'belongs in "deltaAllowances" with a "why" — which never moves the ' +
+        'ceiling.',
+    );
+  }
+  console.log(
+    `perf-ratchet: ceiling OK — ${maxViolations} here, ${baseCeiling} at ` +
+      'the merge base.',
   );
 }

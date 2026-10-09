@@ -37,6 +37,14 @@ under the project's former name) are documented in the
   test's `// @covers` comment no longer counts as a reference, which had cleared
   every test but the last when one annotation was repeated above consecutive
   tests.
+- **A PR can no longer raise the perf ceiling (#1257).** Nothing compared
+  `maxViolations` in `.harness/perf-baseline.json` with an earlier copy, so a
+  raise with `measuredCount` moved to match passed every rule.
+  `scripts/perf-ratchet.mjs` now takes `--base-baseline`, and on pull requests
+  `harness-quality.yml` passes the merge base's copy. A higher ceiling exits 1.
+  A base copy that is missing or unreadable exits 3. This mirrors the entropy
+  fix (#1247).
+
 - **canary-cassandra sees typed helper declarations** (#1179). A same-file
   helper declared with a type annotation
   (`const parse: Parser = (...a) => parseArgv(a)`) was invisible to the

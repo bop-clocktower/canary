@@ -573,9 +573,11 @@ rises" rule does (#1241):
   since #544.
 
 The offline block keeps its self-consistency guards and now states that they
-cannot see a raise. The perf ceiling (`maxViolations`) has no equivalent rule.
-No test there claimed one, so nothing was vacuous, but it is the same gap
-(#1257).
+cannot see a raise. The perf ceiling (`maxViolations`) had no equivalent rule.
+No test there claimed one, so nothing was vacuous, but it was the same gap
+(#1257). It now has the same rule: `perf-ratchet.mjs --base-baseline`, fed the
+`perf-base` worktree's `.harness/perf-baseline.json`, implemented in
+[`perf-delta.mjs`](../../../scripts/lib/perf-delta.mjs).
 
 ## Consequences
 

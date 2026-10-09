@@ -278,10 +278,13 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           # Empty on a push to `main`, where there is no merge base to compare
-          # against and the absolute ceiling is the only rule that applies.
+          # against and the absolute ceiling is the only rule that applies. On
+          # a PR, the base worktree's baseline is how a RAISED ceiling is
+          # caught (#1257): the merge base is the one copy the PR cannot rewrite.
           PERF_BASE_FLAG:
-            ${{ github.event_name == 'pull_request' && '--base-report
-            perf-base-report.txt' || '' }}
+            ${{ github.event_name == 'pull_request' && format('--base-report
+            perf-base-report.txt --base-baseline
+            {0}/perf-base/.harness/perf-baseline.json', runner.temp) || '' }}
         run:
           node scripts/perf-ratchet.mjs --report perf-report.txt --cli-version
           "${{ steps.harness-cli.outputs.version }}" --report-root
