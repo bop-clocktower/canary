@@ -73,9 +73,14 @@ function indentWidth(line: string): number {
   return line.length - line.trimStart().length;
 }
 
-// Strings and comments are blanked before delimiter counting.
+// Strings, comments and regex literals are blanked before delimiter counting:
+// an unbalanced bracket inside any of them (`/\(/`) would otherwise leave the
+// depth off by one, so a test block ran on into the next test (bug-fleet A5).
+// A `/` only opens a regex after punctuation or `return`, never after an
+// operand, so `a / b / c` stays division. `]` is excluded: it closes an
+// operand (`a[i] / (b / c)`), while `[` may open one (`[/x/]`).
 const JS_STRING_OR_COMMENT =
-  /(['"`])(?:\\.|(?!\1).)*?\1|\/\/.*$|\/\*[\s\S]*?\*\//g;
+  /(['"`])(?:\\.|(?!\1).)*?\1|\/\/.*$|\/\*[\s\S]*?\*\/|(?<=(?:^|[=(,:;!&|?{}[]|\breturn)\s*)\/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\[\n])+\/[a-z]*/g;
 
 /** New-side lines, the ADDED line numbers, and `eof` when the whole file is known. */
 interface VisibleFile {
