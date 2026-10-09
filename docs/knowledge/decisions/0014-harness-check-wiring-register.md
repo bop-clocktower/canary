@@ -83,7 +83,7 @@ with no entry in this table is a finding, not a default.
 | Command                                                             | Where                 | How it blocks                                                                                                                                                                                                           |
 | ------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `check-perf`                                                        | `harness-quality.yml` | Ratcheted against `.harness/perf-baseline.json` (`maxViolations` 233 against a measured 225, CLI 11.3.0) via `scripts/perf-ratchet.mjs`, which abstains when the running CLI is not the one that set the ceiling (#744) |
-| `check-docs`                                                        | `harness-quality.yml` | Blocking merge-base ratchet via `scripts/docs-ratchet.mjs` (#865): fails only when a file documented at the base loses its link (was a `--min-coverage 3` floor)                                                        |
+| `check-docs`                                                        | `harness-quality.yml` | Blocking ratchet via `scripts/docs-ratchet.mjs`: fails when a file documented at the merge base loses its link (#865), or when coverage falls below the floor in `.harness/docs-coverage-baseline.json` (#1241)         |
 | `check-deps`, `check-security`, `check-arch`, `cleanup`, `validate` | pre-existing          | See ADR 0011 / ADR 0012                                                                                                                                                                                                 |
 
 `check-perf` is ratcheted rather than strict for the reason ADR 0012 gives: 237
@@ -111,6 +111,23 @@ against the merge base and fails only when a file documented at the base is
 still present and has lost its `[..](path)` link. Adding files is free; the
 property above, that coverage cannot silently fall back, now holds per file
 rather than per percentage point.
+
+**Amended by #1241: a floor returns as a backstop, with headroom.** The identity
+rule cannot see dilution. PRs that only add undocumented files are green under
+it while coverage walks down, which is how main reached 18% with every PR green.
+The ratchet now also fails below `minCoveragePercent` in
+`.harness/docs-coverage-baseline.json`. Unlike the `--min-coverage 3` floor it
+replaces, it has deliberate headroom (`maxHeadroom`, 1 point: 23 undocumented
+files at 70 of 392 scanned), it uses the exact ratio rather than harness's
+rounded integer, and it abstains when the CLI differs from `harnessCli`. These
+are the same three properties the entropy and perf ceilings carry. The headroom
+is a shared, absolute budget: once concurrent PRs have spent it, the next PR
+that adds an undocumented file fails, and that PR links a file rather than
+lowering the floor. Raising the floor is a reviewed restamp. Lowering it is
+refused at runtime: on a pull request CI passes the merge base's baseline as
+`--base-baseline`, and the ratchet exits 1 when the floor fell and 3 when the
+base copy cannot be read. Only a base that predates the floor entirely (no
+baseline file and no floor in its ratchet) is a declared, logged bootstrap.
 
 ### Declined
 

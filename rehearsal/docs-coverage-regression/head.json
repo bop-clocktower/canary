@@ -1,0 +1,8 @@
+{
+  "valid": true,
+  "coveragePercent": 40,
+  "documented": ["src/a.ts", "src/b.ts"],
+  "undocumented": ["src/c.ts", "src/d.ts", "src/e.ts"],
+  "scanned": 5,
+  "scannedNothing": false
+}

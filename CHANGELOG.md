@@ -22,6 +22,18 @@ under the project's former name) are documented in the
   The file now has a contract, `lib/contracts/critical-areas.v1.schema.json`,
   checked by `lib/contracts/critical-areas.mjs`. A bad entry is reported, not
   guessed at.
+- **Docs coverage has a floor that only moves up** (#1241).
+  `scripts/docs-ratchet.mjs` now also fails when coverage falls below
+  `minCoveragePercent` in `.harness/docs-coverage-baseline.json` (16.86%,
+  measured at 17.86% = 70/392 on CLI 12.10.1). Before this, PRs that only added
+  undocumented files passed the #865 identity rule while coverage fell. The
+  floor has one point of headroom (23 undocumented files at 392 scanned), a
+  shared budget: once it is spent, the next PR adding an undocumented file
+  fails. It is raised by a reviewed restamp, and a pull request that lowers it
+  fails against the merge base's copy. A report with zero files, zero documented
+  files, or one that cannot be read abstains with exit 3, and so does a report
+  from a CLI other than the one that measured the floor. A rehearsal fixture
+  proves both docs rules still fire (ADR 0018).
 
 ### Changed
 

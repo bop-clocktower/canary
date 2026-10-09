@@ -33,7 +33,7 @@ import { compare } from './test-duration-ratchet.mjs';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_ROOT = join(REPO_ROOT, 'rehearsal');
 
-/** ADR 0018 table plus #834 F6: four detectors and three ratchets. */
+/** ADR 0018 table plus #834 F6 and #1241: four detectors, four ratchets. */
 export const REQUIRED_TARGETS = Object.freeze([
   'canary-savant',
   'canary-blackhawk',
@@ -42,6 +42,7 @@ export const REQUIRED_TARGETS = Object.freeze([
   'entropy-ratchet',
   'perf-ratchet',
   'duration-ratchet',
+  'docs-ratchet',
 ]);
 
 /** Every `rehearsal/<id>/rehearsal.json`, with its directory attached. */
@@ -170,6 +171,22 @@ function ratchetProbe(script, measuredRe) {
   };
 }
 
+/** docs: ONE run must show BOTH rules (#865 lost link, #1241 floor) firing. */
+function probeDocs(manifest) {
+  const at = (f) => join(manifest.dir, f);
+  const run = runNode([
+    join(REPO_ROOT, 'scripts', 'docs-ratchet.mjs'),
+    ...['--report', at('head.json'), '--base-report', at('base.json')],
+    ...['--baseline', at('baseline.json')],
+  ]);
+  const text = `${run.stdout}${run.stderr}`;
+  const examined = Number(/\(\d+\/(\d+) documented\)/.exec(text)?.[1] ?? 0);
+  const both = /no longer documented[\s\S]*FAILED \(floor\)/.test(text);
+  const detail = `exit ${run.status}, both rules: ${both}`;
+  const fired = both && run.status === manifest.expect.exitCode;
+  return outcome(manifest, examined, fired, detail);
+}
+
 /** duration: `compare()` over a fixture baseline must name the slow test. */
 function probeDuration(manifest) {
   const data = JSON.parse(
@@ -200,6 +217,7 @@ const PROBES = {
     /(\d+) performance violations/,
   ),
   'duration-ratchet': probeDuration,
+  'docs-ratchet': probeDocs,
 };
 
 /** Run one manifest's probe. An unknown target or a thrown error is silent. */
