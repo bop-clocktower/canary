@@ -121,6 +121,14 @@ When `--save` flag is passed (or when invoked by `/canary-test-pipeline`), write
 }
 ```
 
+An area may also carry an optional `symbols` list, for example
+`"symbols": ["pricingEngine", "quoteTotal"]`. These are the names a test title
+must contain to count as covering the area, and `canary-katana` matches them in
+place of the path basename. A generic basename such as `engine.ts` or `rules.ts`
+is otherwise matched by unrelated tests (#1242). Do not invent symbols. When
+rewriting an existing file, keep any `symbols` an area already declares. The
+file's contract is `agents/skills/lib/contracts/critical-areas.v1.schema.json`.
+
 This file is consumed as opt-in context by `/canary-edge-cases` and
 `/canary-failure-impact`, and by `canary history record`, which maps each
 recorded test file to an area in it (#1125).

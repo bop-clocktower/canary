@@ -784,10 +784,14 @@ describe('alarm last-coverage detection', () => {
   });
 
   it('does not alarm when other tests still cover the symbol', () => {
+    // The remaining test sits in tests/loyalty/, mirroring src/loyalty/. Since
+    // #1242 a name match only counts NEAR the area; one at the repo root with
+    // no import of the area is the far-away match that used to mute the alarm.
     const tmp = mkTmp();
     const repo = repoWith(tmp, {
       'tests/test_points.py': 'x = 1\n',
-      'tests/test_points_api.py': 'def test_points_service_api():\n    pass\n',
+      'tests/loyalty/test_points_api.py':
+        'def test_points_service_api():\n    pass\n',
     });
     const areas = alarm.loadCriticalAreas(
       areasFile(tmp, [
@@ -982,6 +986,402 @@ describe('alarm last-coverage detection', () => {
   });
 });
 
+// --- alarm: a generic basename is not covered from across the repo (#1242) --
+
+// The issue's exact repro: deleting the whole of src/__tests__/engine.test.ts.
+// The file is gone from disk, as it is after the commit that deletes it.
+const ENGINE_REMOVAL = `diff --git a/src/__tests__/engine.test.ts b/src/__tests__/engine.test.ts
+deleted file mode 100644
+--- a/src/__tests__/engine.test.ts
++++ /dev/null
+@@ -1,3 +0,0 @@
+-describe('engine', () => {
+-  it('engine awards points', () => {});
+-});
+`;
+
+const ENGINE_AREA = [{ path: 'src/engine.ts', risk_score: 0.9 }];
+
+describe('alarm proximity (#1242)', () => {
+  it('fires CRITICAL when only an unrelated far-away test name matches', () => {
+    // Before #1242: `it('engine signal')` in other/ counted as coverage of
+    // src/engine.ts, so the alarm could never fire -- 0 findings.
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'src/engine.ts': 'export const earn = () => 1;\n',
+      'other/__tests__/x.test.ts': "it('engine signal', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(areasFile(tmp, ENGINE_AREA));
+    const findings = alarm.buildFindings(
+      diffscan.findDeletions(ENGINE_REMOVAL),
+      areas,
+      repo,
+    );
+    expect(findings.map((f) => [f.test, f.area, f.severity])).toEqual([
+      ['engine', 'src/engine.ts', alarm.Severity.CRITICAL],
+      ['engine awards points', 'src/engine.ts', alarm.Severity.CRITICAL],
+    ]);
+  });
+
+  it('does not report the far-away match as saturating the area', () => {
+    // Far away is not near, so it neither covers the area nor blinds the gate.
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'other/__tests__/x.test.ts': "it('engine signal', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(areasFile(tmp, ENGINE_AREA));
+    const verdict = alarm.assess(
+      diffscan.findDeletions(ENGINE_REMOVAL),
+      areas,
+      repo,
+    );
+    expect(verdict.total).toBe(1);
+    expect(verdict.notAssessed).toEqual([]);
+  });
+
+  it('a nearby test of the area still covers it: no alarm, assessed', () => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'src/__tests__/engine.refunds.test.ts':
+        "it('engine reverses a refund', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(areasFile(tmp, ENGINE_AREA));
+    const verdict = alarm.assess(
+      diffscan.findDeletions(ENGINE_REMOVAL),
+      areas,
+      repo,
+    );
+    expect(verdict.findings).toEqual([]);
+    expect(verdict.notAssessed).toEqual([]);
+  });
+
+  it.each([
+    ['a relative import', "import { earn } from '../../src/engine';"],
+    ['a require', "const { earn } = require('../../src/engine.ts');"],
+    ['an aliased import', "import { earn } from '@/engine';"],
+    [
+      'a two-segment package path',
+      "import { earn } from '@acme/app/src/engine';",
+    ],
+  ])('a far test that imports the area still covers it (%s)', (_, line) => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'other/__tests__/x.test.ts': `${line}\nit('engine signal', () => {});\n`,
+    });
+    const areas = alarm.loadCriticalAreas(areasFile(tmp, ENGINE_AREA));
+    expect(
+      alarm.buildFindings(diffscan.findDeletions(ENGINE_REMOVAL), areas, repo),
+    ).toEqual([]);
+  });
+
+  it('a python test importing the module still covers it', () => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'tests/test_points.py': 'x = 1\n',
+      'tests/test_api.py':
+        'from loyalty.points_service import earn\n\n' +
+        'def test_points_service_api():\n    pass\n',
+    });
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [
+        { path: 'src/loyalty/points_service.py', risk_score: 0.92 },
+      ]),
+    );
+    const removal = POINTS_REMOVAL; // removes test_points_service_earns
+    expect(
+      alarm.buildFindings(diffscan.findDeletions(removal), areas, repo),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['a plain python import', 'import loyalty.points_service\n'],
+    ['an import list', 'import os, loyalty.points_service\n'],
+  ])('%s of the module still covers it', (_, line) => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'tests/test_points.py': 'x = 1\n',
+      'tests/test_api.py': `${line}\ndef test_points_service_api():\n    pass\n`,
+    });
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [
+        { path: 'src/loyalty/points_service.py', risk_score: 0.92 },
+      ]),
+    );
+    expect(
+      alarm.buildFindings(diffscan.findDeletions(POINTS_REMOVAL), areas, repo),
+    ).toEqual([]);
+  });
+
+  it('a relative import that climbs out of the repo matches nothing', () => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'other/__tests__/x.test.ts':
+        "import e from '../../../../src/engine';\nit('engine signal', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(areasFile(tmp, ENGINE_AREA));
+    expect(
+      alarm.buildFindings(diffscan.findDeletions(ENGINE_REMOVAL), areas, repo),
+    ).toHaveLength(2);
+  });
+
+  it('a far python test with a relative import still covers it', () => {
+    // pkg/tests/ is not near pkg/core/ (anchor `core`), but `..core.engine`
+    // resolves from pkg/tests/ to pkg/core/engine.
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'pkg/tests/test_x.py':
+        'from ..core.engine import earn\n\ndef test_engine_signal():\n    pass\n',
+    });
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [{ path: 'pkg/core/engine.py', risk_score: 0.9 }]),
+    );
+    const diff = `diff --git a/pkg/core/tests/test_engine.py b/pkg/core/tests/test_engine.py
+deleted file mode 100644
+--- a/pkg/core/tests/test_engine.py
++++ /dev/null
+@@ -1,2 +0,0 @@
+-def test_engine_awards():
+-    pass
+`;
+    expect(
+      alarm.buildFindings(diffscan.findDeletions(diff), areas, repo),
+    ).toEqual([]);
+    // Control: without the import the same far test does not cover it.
+    fs.writeFileSync(
+      path.join(tmp, 'pkg/tests/test_x.py'),
+      'def test_engine_signal():\n    pass\n',
+    );
+    expect(
+      alarm.buildFindings(diffscan.findDeletions(diff), areas, repo),
+    ).toHaveLength(1);
+  });
+
+  it('a bare one-segment import is a package, not the area', () => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'other/__tests__/x.test.ts':
+        "import engine from 'engine';\nit('engine signal', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(areasFile(tmp, ENGINE_AREA));
+    expect(
+      alarm.buildFindings(diffscan.findDeletions(ENGINE_REMOVAL), areas, repo),
+    ).toHaveLength(2);
+  });
+});
+
+describe('alarm declared symbols (#1242)', () => {
+  const removal = (
+    title: string,
+  ) => `diff --git a/src/__tests__/engine.test.ts b/src/__tests__/engine.test.ts
+--- a/src/__tests__/engine.test.ts
++++ b/src/__tests__/engine.test.ts
+@@ -1,2 +1,1 @@
+-it('${title}', () => {});
+ const x = 1;
+`;
+  const declared = [
+    { path: 'src/engine.ts', risk_score: 0.9, symbols: ['pricingEngine'] },
+  ];
+
+  it('matches a declared symbol in place of the basename', () => {
+    // signal.test.ts names "engine" but not "pricingEngine": with the symbol
+    // declared it neither covers nor saturates the area.
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'src/__tests__/engine.test.ts': 'const x = 1;\n',
+      'src/__tests__/signal.test.ts': "it('engine signal', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(areasFile(tmp, declared));
+    const verdict = alarm.assess(
+      diffscan.findDeletions(removal('pricing engine quotes a total')),
+      areas,
+      repo,
+    );
+    expect(verdict.findings.map((f) => [f.test, f.severity])).toEqual([
+      ['pricing engine quotes a total', alarm.Severity.CRITICAL],
+    ]);
+    expect(verdict.notAssessed).toEqual([]);
+  });
+
+  it('no longer matches on the basename once symbols are declared', () => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'src/__tests__/engine.test.ts': 'const x = 1;\n',
+    });
+    const areas = alarm.loadCriticalAreas(areasFile(tmp, declared));
+    expect(
+      alarm.buildFindings(
+        diffscan.findDeletions(removal('engine boots')),
+        areas,
+        repo,
+      ),
+    ).toEqual([]);
+  });
+
+  it('an invalid symbols list is not assessed, never guessed at', () => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'src/__tests__/engine.test.ts': 'const x = 1;\n',
+    });
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [{ path: 'src/engine.ts', risk_score: 0.9, symbols: [] }]),
+    );
+    expect(areas.available).toBe(true);
+    const verdict = alarm.assess(
+      diffscan.findDeletions(removal('engine boots')),
+      areas,
+      repo,
+    );
+    expect(verdict.findings).toEqual([]);
+    expect(verdict.notAssessed).toMatchObject([
+      { area: 'src/engine.ts', reason: 'invalid-area', atStake: true },
+    ]);
+    expect(verdict.notAssessed[0].evidence).toContain('areas[0].symbols');
+  });
+});
+
+describe('alarm not-assessed denominator (#1242)', () => {
+  const RULES_REMOVAL = `diff --git a/src/__tests__/rules.test.ts b/src/__tests__/rules.test.ts
+deleted file mode 100644
+--- a/src/__tests__/rules.test.ts
++++ /dev/null
+@@ -1,1 +0,0 @@
+-it('rules evaluate a tier', () => {});
+`;
+
+  it('a near unrelated test that names the symbol saturates the area', () => {
+    // validator.test.ts sits beside the area's tests, says "rules", and does
+    // not import src/rules.ts. Deleting every real rules test leaves it, so the
+    // alarm can never fire: that must be visible, not a silent 0.
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'src/__tests__/validator.test.ts':
+        "import { v } from '../validator';\nit('validation rules apply', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [{ path: 'src/rules.ts', risk_score: 0.9 }]),
+    );
+    const verdict = alarm.assess(
+      diffscan.findDeletions(RULES_REMOVAL),
+      areas,
+      repo,
+    );
+    expect(verdict.findings).toEqual([]);
+    expect(verdict.notAssessed).toMatchObject([
+      { area: 'src/rules.ts', reason: 'symbol-saturated', atStake: true },
+    ]);
+    expect(verdict.notAssessed[0].evidence).toContain(
+      'src/__tests__/validator.test.ts',
+    );
+  });
+
+  it('a near test that imports the area does not saturate it', () => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'src/__tests__/validator.test.ts':
+        "import { r } from '../rules';\nit('validation rules apply', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [{ path: 'src/rules.ts', risk_score: 0.9 }]),
+    );
+    const verdict = alarm.assess([], areas, repo);
+    expect(verdict.notAssessed).toEqual([]);
+  });
+
+  it('a basename too short to match on is not assessed', () => {
+    const tmp = mkTmp();
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [
+        { path: 'src/io.ts', risk_score: 0.9 },
+        { path: 'src/loyalty/points.service.ts', risk_score: 0.9 },
+        { path: 'src/db.ts', risk_score: 0.9 },
+      ]),
+    );
+    const verdict = alarm.assess(
+      diffscan.findDeletions(RULES_REMOVAL),
+      areas,
+      repoWith(tmp, {}),
+    );
+    expect(verdict.total).toBe(3);
+    expect(verdict.notAssessed).toMatchObject([
+      { area: 'src/db.ts', reason: 'no-symbol' },
+      { area: 'src/io.ts', reason: 'no-symbol' },
+    ]);
+  });
+
+  it('an entry without a path is not assessed, and the rest still are', () => {
+    const tmp = mkTmp();
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [{ risk_score: 0.9 }, ...ENGINE_AREA]),
+    );
+    expect(areas.available).toBe(true);
+    const verdict = alarm.assess(
+      diffscan.findDeletions(ENGINE_REMOVAL),
+      areas,
+      repoWith(tmp, {}),
+    );
+    expect(verdict.findings.map((f) => f.area)).toEqual([
+      'src/engine.ts',
+      'src/engine.ts',
+    ]);
+    expect(verdict.notAssessed).toMatchObject([
+      { area: '', reason: 'invalid-area' },
+    ]);
+    expect(verdict.notAssessed[0].evidence).toContain('areas[0].path');
+  });
+
+  it('marks an area no deletion relates to as not at stake', () => {
+    const tmp = mkTmp();
+    const repo = repoWith(tmp, {
+      'src/__tests__/validator.test.ts':
+        "it('validation rules apply', () => {});\n",
+    });
+    const areas = alarm.loadCriticalAreas(
+      areasFile(tmp, [{ path: 'src/rules.ts', risk_score: 0.9 }]),
+    );
+    // other/ is neither src/, a test dir inside or beside it, nor named rules.
+    const unrelated = `diff --git a/other/__tests__/y.test.ts b/other/__tests__/y.test.ts
+--- a/other/__tests__/y.test.ts
++++ b/other/__tests__/y.test.ts
+@@ -1,2 +1,1 @@
+-it('checkout totals a cart', () => {});
+ const x = 1;
+`;
+    const verdict = alarm.assess(
+      diffscan.findDeletions(unrelated),
+      areas,
+      repo,
+    );
+    expect(verdict.notAssessed).toMatchObject([
+      { area: 'src/rules.ts', reason: 'symbol-saturated', atStake: false },
+    ]);
+  });
+
+  it('notAssessedToDict is the JSON shape', () => {
+    expect(
+      alarm.notAssessedToDict({
+        area: 'a',
+        reason: 'no-symbol',
+        evidence: 'e',
+        atStake: true,
+      }),
+    ).toEqual({
+      area: 'a',
+      reason: 'no-symbol',
+      evidence: 'e',
+      at_stake: true,
+    });
+  });
+
+  it('a file without an areas list is degraded, not an empty pass', () => {
+    const p = path.join(mkTmp(), 'critical-areas.json');
+    fs.writeFileSync(p, JSON.stringify({ generated: 'x' }));
+    const r = alarm.loadCriticalAreas(p);
+    expect(r.available).toBe(false);
+    expect(r.reason).toContain('areas: missing required field');
+  });
+});
+
 // --- git plumbing (real fixture repo) --------------------------------------
 
 const git = (repo: string, ...args: string[]) => {
@@ -1148,6 +1548,115 @@ const captureLog = () => {
   });
   return { out, err };
 };
+
+describe('cli not-assessed denominator (#1242)', () => {
+  const RULES_GONE = `diff --git a/src/__tests__/rules.test.ts b/src/__tests__/rules.test.ts
+deleted file mode 100644
+--- a/src/__tests__/rules.test.ts
++++ /dev/null
+@@ -1,1 +0,0 @@
+-it('rules evaluate a tier', () => {});
+`;
+  // validator.test.ts names "rules" beside the area and does not import it.
+  const saturatedRepo = (tmp: string) =>
+    repoWith(tmp, {
+      'src/__tests__/validator.test.ts':
+        "it('validation rules apply', () => {});\n",
+    });
+  const argsFor = (tmp: string, diff: string, areas: object[]) => [
+    '--repo',
+    tmp,
+    '--diff-file',
+    diffFile(tmp, diff),
+    '--no-write',
+    '--critical-areas',
+    areasFile(tmp, areas),
+  ];
+  const RULES = [{ path: 'src/rules.ts', risk_score: 0.9 }];
+
+  it('the issue repro alarms CRITICAL end to end and --strict exits 1', () => {
+    const tmp = mkTmp();
+    repoWith(tmp, {
+      'src/engine.ts': 'export const earn = () => 1;\n',
+      'other/__tests__/x.test.ts': "it('engine signal', () => {});\n",
+    });
+    const args = argsFor(tmp, ENGINE_REMOVAL, ENGINE_AREA);
+    const { out } = captureLog();
+    expect(main([...args, '--strict'])).toBe(1);
+    expect(out.join('\n')).toContain(
+      '[critical] src/__tests__/engine.test.ts::engine awards points',
+    );
+  });
+
+  it('0 alarms over an at-stake not-assessed area is loud, not a pass', () => {
+    const tmp = mkTmp();
+    saturatedRepo(tmp);
+    const args = argsFor(tmp, RULES_GONE, RULES);
+    const { out } = captureLog();
+    expect(main(args)).toBe(0); // advisory by default
+    const text = out.join('\n');
+    expect(text).toContain('1 of 1 critical area(s) not assessed');
+    expect(text).toContain(
+      '[symbol-saturated] src/rules.ts [at stake in this diff]',
+    );
+    expect(text.toLowerCase()).toContain('abstained');
+    expect(text).toContain('0 alarms is not a pass');
+  });
+
+  it('--strict exits 3 (abstained) when the diff touched a not-assessed area', () => {
+    const tmp = mkTmp();
+    saturatedRepo(tmp);
+    captureLog();
+    expect(main([...argsFor(tmp, RULES_GONE, RULES), '--strict'])).toBe(3);
+  });
+
+  it('json carries the area denominator and abstained: true', () => {
+    const tmp = mkTmp();
+    saturatedRepo(tmp);
+    const { out } = captureLog();
+    main([...argsFor(tmp, RULES_GONE, RULES), '--json']);
+    const payload = JSON.parse(out.join('\n'));
+    expect(payload.findings).toEqual([]);
+    expect(payload.abstained).toBe(true);
+    expect(payload.areas.total).toBe(1);
+    expect(payload.areas.assessed).toBe(0);
+    expect(payload.areas.not_assessed).toMatchObject([
+      { area: 'src/rules.ts', reason: 'symbol-saturated', at_stake: true },
+    ]);
+  });
+
+  it('a real finding outranks the abstention: --strict exits 1', () => {
+    const tmp = mkTmp();
+    saturatedRepo(tmp);
+    const { out } = captureLog();
+    const code = main([
+      ...argsFor(tmp, ENGINE_REMOVAL + RULES_GONE, [...ENGINE_AREA, ...RULES]),
+      '--strict',
+    ]);
+    expect(code).toBe(1);
+    expect(out.join('\n')).not.toContain('0 alarms is not a pass');
+  });
+
+  it('a not-assessed area the diff never touched is listed but does not abstain', () => {
+    const tmp = mkTmp();
+    saturatedRepo(tmp);
+    const { out } = captureLog();
+    // other/ is neither src/, a test dir inside or beside it, nor named rules.
+    const elsewhere = `diff --git a/other/__tests__/y.test.ts b/other/__tests__/y.test.ts
+--- a/other/__tests__/y.test.ts
++++ b/other/__tests__/y.test.ts
+@@ -1,2 +1,1 @@
+-it('checkout totals a cart', () => {});
+ const x = 1;
+`;
+    const code = main([...argsFor(tmp, elsewhere, RULES), '--strict']);
+    expect(code).toBe(0);
+    const text = out.join('\n');
+    expect(text).toContain('[symbol-saturated] src/rules.ts:');
+    expect(text).not.toContain('at stake');
+    expect(text.toLowerCase()).not.toContain('abstained');
+  });
+});
 
 describe('cli', () => {
   it('records deletions and exits zero', () => {

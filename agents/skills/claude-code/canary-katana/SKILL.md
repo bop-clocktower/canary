@@ -52,11 +52,94 @@ worse than no gate. Katana is **silent by default** and alarms only when a
 removed test was the **last coverage** of a symbol listed in
 `critical-areas.json` (produced by `canary-critical-areas`).
 
-- **name-matched** — the removed test's name matches an area symbol and no other
-  test still covers it. Severity `critical` when the area's `risk_score` is high
-  (≥ 0.7), otherwise `high`.
+- **name-matched** — the removed test's name matches an area symbol and no test
+  **near the area** still names it. Severity `critical` when the area's
+  `risk_score` is high (≥ 0.7), otherwise `high`.
 - **heuristic** — only the test's _directory_ maps to the area (no name match).
   Always severity `medium`, and flagged as lower fidelity.
+
+### "Still covered" means covered nearby (#1242)
+
+A remaining test keeps an area covered only when its name matches the area's
+symbol **and** it sits near the area:
+
+- **Same significant directory.** The test's path contains the area's deepest
+  non-generic directory, wherever it appears. For
+  `src/loyalty/points.service.ts` that is `loyalty`, so `src/loyalty/…` and the
+  mirrored `tests/loyalty/…` both count.
+- **Its test-dir sibling.** When every directory of the area is generic
+  (`src/engine.ts`), the area's own directory counts, plus a `__tests__`,
+  `test`, `tests`, `spec` or `e2e` directory inside it or beside it
+  (`src/__tests__/`, `tests/`). The rest of the tree does not.
+- **Or it imports the area.** A test file anywhere that imports the area's
+  module counts. Relative imports (`../../src/engine`) resolve exactly. Aliased
+  or package paths are matched on their last two segments
+  (`@app/pricing/engine`) or one segment off an alias root (`@/engine`). A bare
+  single segment (`'engine'`) is a package name, not the area, and a
+  `vi.mock`/`jest.mock` of the module is not an import.
+
+A name match anywhere else in the repo no longer counts. It used to, and an area
+named for a common word (`engine.ts`, `rules.ts`, `auth.ts`) was then "covered"
+by every unrelated test that said that word. Its alarm could never fire. In one
+consuming repo, deleting all 234 tests of its highest-risk area produced 0
+findings and exit 0 under `--strict`, because a UI test elsewhere was named
+`engine signal`.
+
+### Declared `symbols`
+
+An area may declare the names a test title must contain, in place of its
+basename:
+
+```json
+{
+  "path": "src/pricing/engine.ts",
+  "risk_score": 0.95,
+  "symbols": ["pricingEngine", "quoteTotal"]
+}
+```
+
+Symbols are compared case-insensitively on letters and digits, so
+`pricingEngine` matches a test titled `pricing engine quotes a total`. Once
+declared, the basename is not matched at all. The field is optional, so a file
+without it reads exactly as before. `symbols` is part of the critical-areas
+contract (`lib/contracts/critical-areas.v1.schema.json`, checked by
+`lib/contracts/critical-areas.mjs`). An empty list, a non-string item, or a
+symbol with no letters or digits fails it, and that area is reported as not
+assessed (`invalid-area`) instead of being matched on a guess.
+
+### Not assessed: the denominator
+
+Some areas katana **cannot** alarm on, whatever the diff deletes. Each one is
+reported with a reason, so "0 alarms" can be told apart from "unable to alarm":
+
+| Reason             | Why the name-matched alarm cannot fire                                                                                                                                       | Fix                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `symbol-saturated` | a test near the area names its symbol without importing the area or being named for it (`validator.test.ts` saying "rules" beside `rules.ts`), so it always reads as covered | declare narrower `symbols`       |
+| `no-symbol`        | no `symbols` declared and the basename has under 4 letters or digits (`db.ts`)                                                                                               | declare `symbols`                |
+| `invalid-area`     | the entry fails the critical-areas contract                                                                                                                                  | fix the entry the evidence names |
+
+Saturation is read from the tree on disk, which is the tree before the diff
+minus what the diff deleted: a deleted test cannot keep anything covered.
+
+An area is **at stake** when a deletion in this diff relates to it: its name
+matches the area's symbol, or its file is near the area or shares its directory.
+The human output lists every not-assessed area and marks the at-stake ones. When
+the run found no alarm but an at-stake area was not assessed, it says so in an
+abstention line:
+
+```text
+⚠ Abstained on 1 critical area(s) this diff put at risk — katana cannot alarm on them, so 0 alarms is not a pass.
+```
+
+**Under `--strict` that run exits `3` (abstained, ADR 0009), not `0`.** That is
+the loud option, chosen on purpose. For that area, `0` would claim the critical
+path is still covered when nobody could check, which is the false green #1242
+was filed about. `1` is kept for a real alarm, so CI can still tell "a test is
+missing" from "katana is blind here". A real alarm outranks the abstention: a
+finding proves a check ran, so a run with one exits `1`. A not-assessed area
+that nothing in the diff touches is listed but does not change the exit code. No
+deletion could have taken its coverage, and failing every PR on it would get the
+gate muted.
 
 ### Degradation is loud and safe
 
@@ -212,11 +295,28 @@ a usage request or a typo never mutates the working tree.
       "evidence": "…"
     }
   ],
-  "ledger": ".canary/quarantine.json"
+  "ledger": ".canary/quarantine.json",
+  "checked": 1,
+  "abstained": false,
+  "areas": {
+    "total": 2,
+    "assessed": 1,
+    "not_assessed": [
+      {
+        "area": "src/rules.ts",
+        "reason": "symbol-saturated",
+        "evidence": "…",
+        "at_stake": false
+      }
+    ]
+  }
 }
 ```
 
 A degraded run adds a top-level `"degraded_notice"` and an empty `findings`.
+`abstained` is `true` on an empty diff, or when `findings` is empty and an
+`at_stake` area is not assessed; `--strict` exits `3` exactly then. A
+critical-areas file with no `areas` list is degraded, not read as zero areas.
 
 ## CI wiring (GitHub Actions)
 
@@ -228,7 +328,8 @@ path every canary gate takes.
   run:
     canary skills run canary-katana -- --critical-areas
     .canary/critical-areas.json
-# Once trusted, add --strict so a last-coverage loss fails the PR:
+# Once trusted, add --strict so a last-coverage loss fails the PR (exit 1), and
+# a diff touching an area katana cannot assess abstains (exit 3):
 # run: canary skills run canary-katana -- --critical-areas .canary/critical-areas.json --strict
 ```
 
@@ -237,7 +338,12 @@ path every canary gate takes.
 - **Line-scoped diff parsing.** A declaration split across lines can be missed;
   katana errs toward recording the clear cases.
 - **Name/dir coverage is heuristic.** "Last coverage" is inferred from test
-  names and directory layout, not a real coverage run — treat `heuristic`
-  findings as prompts to look, not verdicts.
+  names, directory layout and imports, not a real coverage run. Treat
+  `heuristic` findings as prompts to look, not verdicts.
+- **Imports are read, not resolved.** Path aliases and package exports are
+  matched by their trailing segments, not through the consumer's
+  `tsconfig`/bundler config. A test reaching the area only through a re-export
+  under another name is not seen as importing it, so it must sit near the area
+  to count.
 - **Provenance needs git.** Fed a `--diff-file` outside a git repo, author and
   commit are recorded as `unknown` / empty rather than guessed.

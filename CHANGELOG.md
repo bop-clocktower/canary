@@ -14,7 +14,36 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`critical-areas.json` areas may declare `symbols`** (#1242), for example
+  `["pricingEngine", "quoteTotal"]`. `canary-katana` matches them in place of
+  the path basename. The field is optional, so existing files read as before.
+  The file now has a contract, `lib/contracts/critical-areas.v1.schema.json`,
+  checked by `lib/contracts/critical-areas.mjs`. A bad entry is reported, not
+  guessed at.
+
+### Changed
+
+- **`canary-katana --strict` exits 3 when the diff touched an area it cannot
+  assess** (#1242). Before, it exited 0. A real alarm still exits 1 and outranks
+  this. A not-assessed area the diff does not touch is listed but leaves the
+  exit code alone. A critical-areas file with no `areas` list now degrades to
+  recording-only instead of reading as zero areas.
+
 ### Fixed
+
+- **canary-katana's last-coverage alarm can fire for an area with a generic
+  name** (#1242). A test anywhere in the repo whose name contained the area's
+  basename counted as remaining coverage. So `engine.ts`, `rules.ts` or
+  `auth.ts` always read as covered, and their alarm could never fire. In one
+  consuming repo, deleting all 234 tests of its highest-risk area produced 0
+  findings and exit 0 under `--strict`. A remaining test now counts only near
+  the area (its significant directory, or a test directory inside or beside it)
+  or when it imports the area's module. Areas katana still cannot alarm on are
+  reported as **not assessed**, with a reason (`symbol-saturated`, `no-symbol`,
+  `invalid-area`), in the text output and in `--json` `areas`. So "0 alarms" no
+  longer reads as a clean pass when katana could not check.
 
 - **canary-starling no longer writes a feed `canary contract validate` refuses**
   (#1225). Starling judged timestamps with `Date.parse`, which rolls

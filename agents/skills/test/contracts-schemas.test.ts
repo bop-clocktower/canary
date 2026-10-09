@@ -16,6 +16,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = path.join(HERE, '..', 'lib', 'contracts');
 const FIXTURES = path.join(HERE, 'fixtures', 'contracts');
 const LAYERS = ['run', 'assessment', 'site'];
+/** Non-layer input files (#1242): critical-areas.json, validated by critical-areas.mjs. */
+const INPUT_SCHEMAS = ['critical-areas.v1.schema.json'];
 
 type Doc = Record<string, any>;
 const readJson = (p: string): Doc => JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -46,10 +48,20 @@ function errorsFor(layer: string, doc: unknown) {
 
 describe('contract schemas', () => {
   it('ships exactly one schema per layer (a zero denominator is not a pass)', () => {
+    // Plus the input files canary skills read that are not canary.* layers
+    // (no `contract` field to dispatch on), each with its own entry point.
     expect(Object.keys(REGISTRY).sort()).toEqual(
-      LAYERS.map((l) => `${l}.v1.schema.json`).sort(),
+      [...LAYERS.map((l) => `${l}.v1.schema.json`), ...INPUT_SCHEMAS].sort(),
     );
   });
+
+  it.each(INPUT_SCHEMAS)(
+    '%s: $id is its file name, no contract const',
+    (id) => {
+      expect(REGISTRY[id].$id).toBe(id);
+      expect(REGISTRY[id].properties.contract).toBeUndefined();
+    },
+  );
 
   it('uses only enforced keywords, and every $ref resolves', () => {
     expect(schemaProblems(REGISTRY)).toEqual([]);

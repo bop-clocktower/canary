@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "critical-areas.v1.schema.json",
+  "title": "critical-areas.json",
+  "description": "The high-risk areas canary-critical-areas writes to .canary/critical-areas.json and canary-katana alarms on. Not a canary.* layer: the file carries no contract field. Unknown fields are tolerated. Rules the subset cannot express (a non-empty symbols list, a symbol with something to match) live in critical-areas.mjs.",
+  "type": "object",
+  "required": ["areas"],
+  "properties": {
+    "areas": { "type": "array", "items": { "$ref": "#/$defs/area" } }
+  },
+  "$defs": {
+    "area": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "risk_score": { "type": "number", "minimum": 0 },
+        "symbols": {
+          "$comment": "Optional (#1242). The names a test title must contain to count as covering this area, matched case-insensitively on letters and digits. Replaces the path basename, which is too generic to match on for areas like engine.ts or rules.ts.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
