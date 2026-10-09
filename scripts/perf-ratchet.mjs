@@ -39,23 +39,38 @@
  * base worktree outside the checkout; `ts/test/perf-ratchet.test.ts` asserts
  * both against the YAML.
  *
+ * ## The ceiling only falls (#1257)
+ *
+ * With `--base-baseline` — the merge base's `.harness/perf-baseline.json`, the
+ * one copy a PR cannot rewrite — a `maxViolations` above the base's fails.
+ * Neither rule above can see a raise: the delta compares two reports, and the
+ * backstop compares the report with the head's own, possibly raised, file.
+ *
  * Usage:
  *   harness check-perf > report.txt 2>&1 || true
  *   node scripts/perf-ratchet.mjs --report report.txt \
- *     [--base-report base-report.txt] [--cli-version 12.6.0]
+ *     [--base-report base-report.txt] [--cli-version 12.6.0] \
+ *     [--base-baseline <base>/.harness/perf-baseline.json]
  *
  * Exit codes follow the repo's gate convention (#508):
  *   0 = verified — at or under the baseline, and at or under the merge base
- *   1 = the ratchet fired — violations grew past the baseline or the base
+ *   1 = the ratchet fired — violations grew past the baseline or the base,
+ *       or the ceiling was raised above the merge base's
  *   2 = error — the baseline file is missing or unreadable
  *   3 = ABSTENTION — nothing was measured on either side, or a zero is
  *       implausible. A base that could not be measured is not a base of zero.
+ *       So does a `--base-baseline` that is missing, not JSON, or has no
+ *       integer ceiling.
  */
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readAllowances, requireNoDelta } from './lib/perf-delta.mjs';
+import {
+  readAllowances,
+  requireCeilingNotRaised,
+  requireNoDelta,
+} from './lib/perf-delta.mjs';
 import { fail, readViolations } from './lib/perf-report.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -86,6 +101,7 @@ function parseArgs(argv) {
   const args = {
     report: null,
     baseReport: null,
+    baseBaseline: null,
     baseline: DEFAULT_BASELINE,
     cliVersion: null,
     reportRoot: null,
@@ -94,6 +110,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--report') args.report = argv[i + 1];
     else if (argv[i] === '--base-report') args.baseReport = argv[i + 1];
+    else if (argv[i] === '--base-baseline') args.baseBaseline = argv[i + 1];
     else if (argv[i] === '--baseline') args.baseline = argv[i + 1];
     else if (argv[i] === '--cli-version') args.cliVersion = argv[i + 1];
     else if (argv[i] === '--report-root') args.reportRoot = argv[i + 1];
@@ -194,6 +211,7 @@ function main() {
   const {
     report,
     baseReport,
+    baseBaseline,
     baseline,
     cliVersion,
     reportRoot,
@@ -202,6 +220,10 @@ function main() {
   if (!report) fail(2, 'perf-ratchet: --report <file> is required.');
 
   const { maxViolations, harnessCli, allowances } = readBaseline(baseline);
+  // First, because a raise is a property of two files, not of a measurement:
+  // no head scan, instrument or delta can excuse it (#1257).
+  if (baseBaseline)
+    requireCeilingNotRaised(maxViolations, baseBaseline, baseline);
   const violations = readViolations(report, maxViolations, 'head');
   requireMatchingInstrument(harnessCli, cliVersion, maxViolations);
   if (baseReport !== null)
