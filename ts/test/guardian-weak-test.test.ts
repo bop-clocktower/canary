@@ -197,4 +197,26 @@ new file mode 100644
     const findings = buildWeakTestFindings(testUnits(diff), diff);
     expect(findings.map((f) => f.added_ranges)).toEqual([[[1, 4]]]);
   });
+
+  // A `/` after `]` ends an operand, so it is division: blanking
+  // `/ (b /` as a regex leaves an unbalanced `)` (depth -1 per line), and
+  // two such lines close test "a" two lines early.
+  it('treats a slash after ] as division, not a regex literal', () => {
+    const diff = `diff --git a/src/x.test.ts b/src/x.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/x.test.ts
+@@ -0,0 +1,8 @@
++it('a', () => {
++  const r = a[i] / (b / c);
++  const s = a[j] / (b / c);
++  run(r, s);
++});
++it('b', () => {
++  expect(1).toBe(1);
++});
+`;
+    const findings = buildWeakTestFindings(testUnits(diff), diff);
+    expect(findings.map((f) => f.added_ranges)).toEqual([[[1, 5]]]);
+  });
 });

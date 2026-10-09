@@ -77,9 +77,10 @@ function indentWidth(line: string): number {
 // an unbalanced bracket inside any of them (`/\(/`) would otherwise leave the
 // depth off by one, so a test block ran on into the next test (bug-fleet A5).
 // A `/` only opens a regex after punctuation or `return`, never after an
-// operand, so `a / b / c` stays division.
+// operand, so `a / b / c` stays division. `]` is excluded: it closes an
+// operand (`a[i] / (b / c)`), while `[` may open one (`[/x/]`).
 const JS_STRING_OR_COMMENT =
-  /(['"`])(?:\\.|(?!\1).)*?\1|\/\/.*$|\/\*[\s\S]*?\*\/|(?<=(?:^|[=(,:;!&|?{}[\]]|\breturn)\s*)\/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\[\n])+\/[a-z]*/g;
+  /(['"`])(?:\\.|(?!\1).)*?\1|\/\/.*$|\/\*[\s\S]*?\*\/|(?<=(?:^|[=(,:;!&|?{}[]|\breturn)\s*)\/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\[\n])+\/[a-z]*/g;
 
 /** New-side lines, the ADDED line numbers, and `eof` when the whole file is known. */
 interface VisibleFile {
