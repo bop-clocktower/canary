@@ -547,6 +547,35 @@ last time a human ran the analyzer; nothing refreshes it on merge, and the
 mode one directory over. The delta rule removes the order-dependence, not the
 manual re-measure.
 
+## Amendment — 2026-10-09: the ceiling only falls (#1247)
+
+"`maxFindings` cannot be raised" was enforced by an offline test that compared
+`.harness/entropy-baseline.json` with `git show HEAD:` of the same path. On a
+PR's merge ref, and on any committed change, `HEAD:` **is** the working file, so
+the test could never fail: a committed raise from 145 to 200, with
+`measuredCount` moved to 195 to keep the headroom guards consistent, passed all
+68 tests in `ts/test/entropy-ratchet.test.ts`. A `git` that could not answer
+also returned early, which made "cannot verify" a pass.
+
+The rule now runs at runtime, the same way the docs-coverage floor's "only
+rises" rule does (#1241):
+
+- On a pull request, `harness-quality.yml` passes the merge base worktree's copy
+  of the baseline (`$RUNNER_TEMP/entropy-base/.harness/entropy-baseline.json`,
+  the worktree the merge-base scan already creates) as `--base-baseline`. That
+  copy is the one a PR cannot rewrite.
+- [`entropy-baseline.mjs`](../../../scripts/lib/entropy-baseline.mjs) exits
+  **1** when the head's `maxFindings` is above the base's. It checks this before
+  anything else, because a raise depends only on the two files. No measurement
+  can excuse it.
+- A base copy that is missing, not JSON, or has no integer `maxFindings` exits
+  **3**. There is no bootstrap exemption, because `main` has carried the file
+  since #544.
+
+The offline block keeps its self-consistency guards and now states that they
+cannot see a raise. The perf ceiling (`maxViolations`) has no equivalent rule.
+No test there claimed one, so nothing was vacuous, but it is the same gap.
+
 ## Consequences
 
 - A PR that adds unreachable code now fails `Quality & Integrity` instead of
