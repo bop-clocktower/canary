@@ -1,0 +1,15 @@
+{
+  "issues": [1239],
+  "route": "bug",
+  "stages": ["debugging"],
+  "assumptions": [
+    "DECIDED fork (human, CONFIRM): both halves - declare the Python test dependency AND make the savant pytest-integration tests abstain loudly locally while failing under CI.",
+    "ROOT CAUSE (reproduced): the 3 describes spawn a literal `python3 -m pytest` with no environment precondition; a missing pytest yields an empty JUnit map / node-id list, reported as `expected undefined to be 'passed'`. Reproduced with a stub python3 first on PATH: 3 failed / 53 passed.",
+    "ABSTENTION SIGNAL: required when CI is set to anything but '', '0', 'false', or when CANARY_REQUIRE_PYTEST=1 (the existing ts/ #1030 flag). The Skills (JS) step also sets CANARY_REQUIRE_PYTEST=1 so the contract does not depend on the runner's CI variable.",
+    "MECHANISM: a second vitest globalSetup (agents/skills/test/pytest-precondition.ts, sibling of engine-precondition.ts #1221) probes once and passes `pytestAvailable` via provide/inject; the 3 describes use describe.skipIf, so vitest reports '3 skipped', never 'passed'. A registry test pins the gated describes to the counted list.",
+    "DEPENDENCY DECLARATION: root requirements-dev.txt (`pytest>=8`, lower bound only, no dependabot pip entry added) + a mise task `setup:python` that installs into the python3 on PATH (mise does not pin a Python). Both CI jobs that need pytest (TS engine (pilot), Skills (JS)) now install from that file.",
+    "POSIX-ONLY: the stub-interpreter tests are skipped on win32 (shell-script stub); the Skills (JS) job runs on ubuntu only, so CI executes them."
+  ],
+  "closingKeyword": "Closes",
+  "reproducingTest": "agents/skills/test/pytest-precondition.test.ts"
+}

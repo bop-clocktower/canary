@@ -220,7 +220,9 @@ describe('confirm exposes shuffled order', () => {
 
 // Spawns a real pytest. Without one it skips LOUDLY locally and fails under CI
 // (test/pytest-precondition.ts, #1239) rather than failing as if broken.
-const NO_PYTEST = !inject('pytestAvailable');
+// `=== false`, not `!`: an unwired globalSetup (undefined) must run and fail,
+// never skip silently.
+const NO_PYTEST = inject('pytestAvailable') === false;
 
 describe.skipIf(NO_PYTEST)('realPolluterSeams (integration)', () => {
   it('runs a victim alone and detects reproduction via a real prefix run', () => {

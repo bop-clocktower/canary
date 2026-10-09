@@ -170,7 +170,9 @@ describe('buildNodeIdMap', () => {
 
 // Spawns a real pytest. Without one it skips LOUDLY locally and fails under CI
 // (test/pytest-precondition.ts, #1239) rather than failing as if broken.
-const NO_PYTEST = !inject('pytestAvailable');
+// `=== false`, not `!`: an unwired globalSetup (undefined) must run and fail,
+// never skip silently.
+const NO_PYTEST = inject('pytestAvailable') === false;
 
 describe.skipIf(NO_PYTEST)('collectPytestNodeIds (integration)', () => {
   it('returns authoritative node ids that round-trip to JUnit keys', () => {
