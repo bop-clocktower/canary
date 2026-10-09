@@ -247,9 +247,26 @@ export interface GuardianDeps {
   sleep(secs: number): Promise<void>;
 }
 
+/**
+ * Pin `git diff` header prefixes to the `a/`/`b/` the diff parser strips. A
+ * user's `diff.mnemonicPrefix` (`i/`/`w/`), `diff.noprefix` or
+ * `diff.srcPrefix`/`diff.dstPrefix` would otherwise leak into every scoped path
+ * and suppression lookup. Harmless for the non-diff commands spawnGit also runs.
+ */
+const GIT_DIFF_PREFIX_CONFIG = [
+  '-c',
+  'diff.mnemonicPrefix=false',
+  '-c',
+  'diff.noprefix=false',
+  '-c',
+  'diff.srcPrefix=a/',
+  '-c',
+  'diff.dstPrefix=b/',
+];
+
 /** Run `git`; `null` when the binary is missing (Python OSError fail-safe). */
 function spawnGit(args: string[], cwd?: string): GitResult | null {
-  const res = spawnSync('git', args, {
+  const res = spawnSync('git', [...GIT_DIFF_PREFIX_CONFIG, ...args], {
     encoding: 'utf-8',
     maxBuffer: Infinity,
     ...(cwd ? { cwd } : {}),
