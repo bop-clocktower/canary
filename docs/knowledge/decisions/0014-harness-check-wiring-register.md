@@ -117,11 +117,17 @@ rule cannot see dilution. PRs that only add undocumented files are green under
 it while coverage walks down, which is how main reached 18% with every PR green.
 The ratchet now also fails below `minCoveragePercent` in
 `.harness/docs-coverage-baseline.json`. Unlike the `--min-coverage 3` floor it
-replaces, it has deliberate headroom (`maxHeadroom`, 1 point, about 22 files),
-it uses the exact ratio rather than harness's rounded integer, and it abstains
-when the CLI differs from `harnessCli`. These are the same three properties the
-entropy and perf ceilings carry. Raising it is a reviewed restamp. Lowering it
-is refused by `ts/test/docs-ratchet.test.ts`, which compares it with git.
+replaces, it has deliberate headroom (`maxHeadroom`, 1 point: 23 undocumented
+files at 70 of 392 scanned), it uses the exact ratio rather than harness's
+rounded integer, and it abstains when the CLI differs from `harnessCli`. These
+are the same three properties the entropy and perf ceilings carry. The headroom
+is a shared, absolute budget: once concurrent PRs have spent it, the next PR
+that adds an undocumented file fails, and that PR links a file rather than
+lowering the floor. Raising the floor is a reviewed restamp. Lowering it is
+refused at runtime: on a pull request CI passes the merge base's baseline as
+`--base-baseline`, and the ratchet exits 1 when the floor fell and 3 when the
+base copy cannot be read. Only a base that predates the floor entirely (no
+baseline file and no floor in its ratchet) is a declared, logged bootstrap.
 
 ### Declined
 

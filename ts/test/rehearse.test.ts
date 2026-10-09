@@ -63,12 +63,13 @@ const OFFLINE_TARGETS: string[] = REQUIRED_TARGETS.filter(
 describe('rehearsal fixtures', () => {
   const manifests = loadManifests(FIXTURES);
 
-  it('covers all seven targets named by ADR 0018 and #834 F6', () => {
+  it('covers all eight targets named by ADR 0018, #834 F6 and #1241', () => {
     expect([...REQUIRED_TARGETS].sort()).toEqual([
       'canary-blackhawk',
       'canary-cassandra',
       'canary-katana',
       'canary-savant',
+      'docs-ratchet',
       'duration-ratchet',
       'entropy-ratchet',
       'perf-ratchet',
@@ -103,7 +104,7 @@ describe('tally', () => {
   it('passes only when every required target fired, and says n of n', () => {
     const out = tally(REQUIRED_TARGETS.map(fired));
     expect(out.exitCode).toBe(0);
-    expect(out.summary).toBe('7 fired of 7 expected');
+    expect(out.summary).toBe('8 fired of 8 expected');
   });
 
   it('fails when one detector goes silent', () => {
@@ -111,7 +112,7 @@ describe('tally', () => {
     results[0] = { ...results[0]!, fired: false };
     const out = tally(results);
     expect(out.exitCode).toBe(1);
-    expect(out.summary).toBe('6 fired of 7 expected');
+    expect(out.summary).toBe('7 fired of 8 expected');
   });
 
   it('fails a probe that examined zero items even if it claims to fire', () => {
@@ -125,7 +126,7 @@ describe('tally', () => {
   it('fails when a required target has no fixture, never shrinking n', () => {
     const out = tally(REQUIRED_TARGETS.slice(1).map(fired));
     expect(out.exitCode).toBe(1);
-    expect(out.summary).toBe('6 fired of 7 expected');
+    expect(out.summary).toBe('7 fired of 8 expected');
     expect(out.lines.join('\n')).toMatch(/no fixture/);
   });
 
@@ -228,6 +229,29 @@ describe('probes do not mistake an error for a firing', () => {
     expect(result.fired).toBe(false);
   });
 
+  // The docs fixture must prove BOTH rules (#865 identity, #1241 floor). A
+  // report that only trips the floor is not a firing: it would let the
+  // identity rule go dark behind a green rehearsal.
+  it('a docs fixture that trips only one rule does not count as a firing', () => {
+    const real = loadManifests(FIXTURES).find(
+      (x) => x.target === 'docs-ratchet',
+    )!;
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-docs-one-rule-'));
+    for (const f of ['baseline.json', 'head.json']) {
+      writeFileSync(join(dir, f), readFileSync(join(real.dir, f), 'utf8'));
+    }
+    // A base that documents only what the head still documents: no lost link.
+    const headJson = JSON.parse(
+      readFileSync(join(real.dir, 'head.json'), 'utf8'),
+    ) as { documented: string[] };
+    writeFileSync(
+      join(dir, 'base.json'),
+      JSON.stringify({ documented: headJson.documented, undocumented: [] }),
+    );
+    const result = runProbe({ ...real, dir });
+    expect(result.fired, result.detail).toBe(false);
+  });
+
   it('an unknown target is a failure, not a skip', () => {
     const result = runProbe({
       id: 'x',
@@ -246,7 +270,7 @@ describe('CLI', () => {
       encoding: 'utf8',
     });
     expect(r.status).toBe(3);
-    expect(r.stdout + r.stderr).toMatch(/0 fired of 7 expected/);
+    expect(r.stdout + r.stderr).toMatch(/0 fired of 8 expected/);
   });
 });
 

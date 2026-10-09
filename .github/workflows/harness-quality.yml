@@ -120,12 +120,20 @@ jobs:
             npx --yes -p "$HARNESS_CLI" harness check-docs --json --min-coverage 0) \
             > docs-base-report.json || true
 
+      # `!cancelled()` on all three ratchets (docs, entropy, perf): one red
+      # ratchet must not skip the others, so a red build names every reason.
       - name: Docs coverage ratchet (blocking)
+        if: ${{ !cancelled() }}
         env:
-          # Empty on a push to `main`: no merge base, so it reports only.
+          # Empty on a push to `main`: no merge base, so the floor rule runs
+          # alone. On a PR it also gets the base report (#865 identity rule)
+          # and the base's baseline, which is how a LOWERED floor is caught
+          # (#1241): the merge base is the one copy the PR cannot rewrite.
           DOCS_BASE_FLAG:
-            ${{ github.event_name == 'pull_request' && '--base-report
-            docs-base-report.json' || '' }}
+            ${{ github.event_name == 'pull_request' && format('--base-report
+            docs-base-report.json --base-baseline
+            {0}/docs-base/.harness/docs-coverage-baseline.json', runner.temp) ||
+            '' }}
         run:
           node scripts/docs-ratchet.mjs --report docs-report.json --cli-version
           "${{ steps.harness-cli.outputs.version }}" $DOCS_BASE_FLAG
@@ -198,6 +206,7 @@ jobs:
             > "$GITHUB_WORKSPACE/entropy-base-report.txt" || true
 
       - name: Entropy ratchet (blocking)
+        if: ${{ !cancelled() }}
         env:
           # Empty on a push to `main`, where there is no merge base to compare
           # against and the absolute ceiling is the only rule that applies.
@@ -262,6 +271,7 @@ jobs:
             > "$GITHUB_WORKSPACE/perf-base-report.txt" 2>&1 || true
 
       - name: Performance ratchet (blocking)
+        if: ${{ !cancelled() }}
         env:
           # Empty on a push to `main`, where there is no merge base to compare
           # against and the absolute ceiling is the only rule that applies.

@@ -27,13 +27,24 @@
  *    raising it is a reviewed edit to the baseline (a restamp), and this
  *    script prints the values to write once coverage outgrows the headroom.
  *
+ * 3. FLOOR ONLY RISES (#1241 review), on pull requests: with
+ *    `--base-baseline`, fail when `minCoveragePercent` is lower than the merge
+ *    base's. Abstain when that file is missing or unreadable, except the one
+ *    bootstrap case `readBaseFloor` describes.
+ *
+ *    The headroom is a SHARED, ABSOLUTE budget: no branch can see what the
+ *    others spend, and once it is spent the next PR that adds an undocumented
+ *    file fails, whoever wrote it. That PR links a file from docs/; nobody
+ *    lowers the floor.
+ *
  *    Coverage is the exact ratio of the two file lists. harness's own
  *    `coveragePercent` is `Math.round`ed to an integer, so 17.95% reads as
  *    "18" and 49.6% would clear a 50 floor.
  *
- * What counts as documented is harness's rule, not ours: a markdown link
- * `[..](path)` in a `.md` file UNDER `docsDir` (`./docs`) whose target matches
- * the file's repo-relative path or its basename. A backtick path does nothing,
+ * What counts as documented is harness's rule, not ours: a markdown link in a
+ * `.md` file UNDER `docsDir` (`./docs`) whose target, after stripping one
+ * leading `../` and then one leading `./`, equals the file's repo-relative
+ * path, or whose target's basename equals the file's basename. A backtick path does nothing,
  * and neither does a link from AGENTS.md or README.md at the repo root, because
  * those files are outside `docsDir`. Nothing in harness's own output says so,
  * so the failure messages do.
@@ -41,19 +52,29 @@
  * Usage:
  *   harness check-docs --json --min-coverage 0 > head.json || true
  *   node scripts/docs-ratchet.mjs --report head.json \
- *     [--base-report base.json] [--cli-version 12.10.1] [--baseline file]
+ *     [--base-report base.json] [--base-baseline <base>/.harness/...json] \
+ *     [--cli-version 12.10.1] [--baseline file]
  *
  * Exit codes follow the repo's gate convention (ADR 0009):
  *   0 = verified: at or above the floor, and no documented file lost its link
- *   1 = the ratchet fired: below the floor, or a documented file lost its link
+ *   1 = the ratchet fired: below the floor, the floor was lowered against the
+ *       merge base, or a documented file lost its link
  *   2 = usage: no --report, or the baseline is missing or has no numeric floor
- *   3 = ABSTENTION: a report is missing, unparseable, or measured nothing, or
- *       it came from a different harness CLI than the floor was measured with
+ *   3 = ABSTENTION: a report is missing, unparseable, measured nothing or
+ *       documented nothing; it came from a different harness CLI than the
+ *       floor; or the merge base baseline cannot be read
  */
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import {
+  abstain,
+  readBaseFloor,
+  readReport,
+  requireFloorNotLowered,
+} from './lib/docs-coverage.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_BASELINE = join(
@@ -79,40 +100,6 @@ function arg(name) {
 function usage(why) {
   console.error(`docs-ratchet: ${why}`);
   process.exit(2);
-}
-
-function abstain(why) {
-  console.error(`docs-ratchet: ABSTAINED: ${why}`);
-  process.exit(3);
-}
-
-/**
- * Parse a report, tolerating anything npx prints ahead of the JSON body.
- * Returns null when there is no usable `documented`/`undocumented` pair.
- */
-function readReport(path) {
-  let text;
-  try {
-    text = readFileSync(path, 'utf8');
-  } catch {
-    return null;
-  }
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end < start) return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-  const { documented, undocumented, scannedNothing } = parsed ?? {};
-  if (!Array.isArray(documented) || !Array.isArray(undocumented)) return null;
-  return {
-    documented: new Set(documented),
-    undocumented: new Set(undocumented),
-    scannedNothing: scannedNothing === true,
-  };
 }
 
 const total = (r) => r.documented.size + r.undocumented.size;
@@ -169,12 +156,12 @@ function requireNoLostLinks(head, basePath) {
   const base = readReport(basePath);
   if (!base)
     abstain(`base report ${basePath} is missing or not check-docs JSON`);
-  // An empty documented set on either side is the signature of an instrument
-  // that stopped seeing links, not of a repo that deleted every doc link in one
-  // PR. With an empty base every loss is invisible, so the rule would be green
-  // over nothing; with an empty head every file would read as lost.
+  // An empty documented set is the signature of an instrument that stopped
+  // seeing links, not of a repo that deleted every doc link in one PR. With an
+  // empty base every loss is invisible, so the rule would be green over nothing.
+  // The head side of this check lives in `readHead`, so it holds on a push to
+  // main too.
   if (base.documented.size === 0) abstain('base report documents zero files');
-  if (head.documented.size === 0) abstain('head report documents zero files');
 
   const lost = [...base.documented].filter((f) => head.undocumented.has(f));
   const line = `${summary(head)} at head, ${summary(base)} at merge base`;
@@ -210,7 +197,9 @@ function requireFloor(head, { floor, maxHeadroom }, path) {
     `docs-ratchet: OK (floor): coverage ${fmt(pct)} (${summary(head)}), ` +
       `floor ${fmt(floor)}.`,
   );
-  if (pct - floor > maxHeadroom) {
+  // Compared at 6 decimals: 55/100*100 is 55.00000000000001 in floating point,
+  // and a gap of exactly `maxHeadroom` is what a restamp leaves, not staleness.
+  if (Number((pct - floor).toFixed(6)) > maxHeadroom) {
     // Rounded UP to 2 decimals so the restamped gap is within the headroom.
     const next = Math.ceil((pct - maxHeadroom) * 100) / 100;
     console.log(
@@ -236,6 +225,12 @@ function readHead(headPath) {
   if (head.scannedNothing || total(head) === 0) {
     abstain('head report measured zero source files');
   }
+  // Files scanned but none documented is an instrument that stopped seeing
+  // links (#865), not 0% coverage. Checked here, not only against the merge
+  // base, so the same fault abstains on a push to main as it does on a PR.
+  if (head.documented.size === 0) {
+    abstain('head report documents zero files: the link scan went dark');
+  }
   return head;
 }
 
@@ -259,10 +254,16 @@ function main() {
     baselinePath,
   );
 
-  // Both rules always run, so a red build names every reason at once.
-  const identityOk = identityRule(head, arg('--base-report'));
-  const floorOk = requireFloor(head, baseline, baselinePath);
-  process.exit(identityOk && floorOk ? 0 : 1);
+  const baseBaselinePath = arg('--base-baseline');
+  const baseFloor = baseBaselinePath ? readBaseFloor(baseBaselinePath) : null;
+
+  // Every rule always runs, so a red build names every reason at once.
+  const results = [
+    identityRule(head, arg('--base-report')),
+    requireFloor(head, baseline, baselinePath),
+    !baseBaselinePath || requireFloorNotLowered(baseline.floor, baseFloor),
+  ];
+  process.exit(results.every(Boolean) ? 0 : 1);
 }
 
 main();

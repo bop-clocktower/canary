@@ -59,14 +59,15 @@ catch.** One planted defect per fixture, with a ground-truth manifest naming the
 detector that must fire. One defect per fixture, not several, so a fixture that
 fails names a single detector rather than a set.
 
-| Fixture                 | Planted defect                                               | Detector that must fire  |
-| ----------------------- | ------------------------------------------------------------ | ------------------------ |
-| order-dependent pair    | test B passes only after test A                              | `canary-savant`          |
-| wall-clock dependency   | a real delay / local-timezone assertion                      | `canary-blackhawk`       |
-| vacuous assertion       | a self-comparison and a bystander-absence assertion          | `canary-cassandra`       |
-| last-coverage deletion  | a removed test that was the only cover of a high-risk symbol | `canary-katana`          |
-| planted entropy finding | a dead export the scan must count                            | entropy ratchet          |
-| planted slow test       | a test over the duration budget                              | perf / duration ratchets |
+| Fixture                  | Planted defect                                               | Detector that must fire   |
+| ------------------------ | ------------------------------------------------------------ | ------------------------- |
+| order-dependent pair     | test B passes only after test A                              | `canary-savant`           |
+| wall-clock dependency    | a real delay / local-timezone assertion                      | `canary-blackhawk`        |
+| vacuous assertion        | a self-comparison and a bystander-absence assertion          | `canary-cassandra`        |
+| last-coverage deletion   | a removed test that was the only cover of a high-risk symbol | `canary-katana`           |
+| planted entropy finding  | a dead export the scan must count                            | entropy ratchet           |
+| planted slow test        | a test over the duration budget                              | perf / duration ratchets  |
+| docs coverage regression | a lost doc link plus coverage under the floor (#1241)        | docs ratchet (both rules) |
 
 **2. The ratchets are in scope, not just the four detectors.** The receipted
 failure mode in this repository is a _count_ that fell for an unexamined reason.
