@@ -14,6 +14,8 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [9.2.0] - 2026-10-09
+
 ### Added
 
 - **`critical-areas.json` areas may declare `symbols`** (#1242), for example
@@ -55,6 +57,19 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Two weekly scheduled workflows stopped running, and nothing turned red**
+  (#1235). `harness-architecture.yml` and `arch-snapshot.yml` had not fired a
+  scheduled run since 2026-09-07, while a sibling at :23 past the hour kept
+  firing. Both are moved off the top of the hour. A new `schedule-watchdog.yml`
+  (on push to `main`, plus a daily backup run) fails when a watched weekly
+  schedule has not run within 8 days, abstains (exit 3) when it cannot read the
+  run history, and writes its report to the job summary even on a red run.
+- **An unbuilt engine failed the `agents/skills` suite once, by name** (#1221,
+  #1229). The suite depends on the built `ts/dist` engine. In an unbuilt
+  worktree it used to report 16 unrelated-looking assertion failures. A vitest
+  global setup now resolves the engine the same way the CLI does and fails the
+  run once with a message naming the missing build. It warns, without failing,
+  when `ts/src` is newer than `ts/dist`.
 - **canary-katana's last-coverage alarm can fire for an area with a generic
   name** (#1242). A test anywhere in the repo whose name contained the area's
   basename counted as remaining coverage. So `engine.ts`, `rules.ts` or
@@ -4423,7 +4438,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.1.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.2.0...HEAD
+[9.2.0]: https://github.com/bop-clocktower/canary/compare/v9.1.0...v9.2.0
 [9.1.0]: https://github.com/bop-clocktower/canary/compare/v9.0.0...v9.1.0
 [9.0.0]: https://github.com/bop-clocktower/canary/compare/v8.0.0...v9.0.0
 [8.0.0]: https://github.com/bop-clocktower/canary/compare/v7.2.0...v8.0.0
