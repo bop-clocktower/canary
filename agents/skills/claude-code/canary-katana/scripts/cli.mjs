@@ -24,6 +24,7 @@ import {
 } from '../../../lib/parse-args.mjs';
 import * as diffscan from './diffscan.mjs';
 import * as alarm from './alarm.mjs';
+import { assess, notAssessedToDict } from './alarm.mjs';
 import * as ledger from './ledger.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
 
@@ -210,7 +211,7 @@ function jsonPayload(deletions, verdict, scanned, degraded, ledgerPath) {
     areas: {
       total: verdict.total,
       assessed: verdict.total - verdict.notAssessed.length,
-      not_assessed: verdict.notAssessed.map(alarm.notAssessedToDict),
+      not_assessed: verdict.notAssessed.map(notAssessedToDict),
     },
   };
 }
@@ -270,7 +271,7 @@ export function main(argv = []) {
 
   const areas = alarm.loadCriticalAreas(args.criticalAreas);
   const degraded = !areas.available;
-  const verdict = alarm.assess(deletions, areas, repo);
+  const verdict = assess(deletions, areas, repo);
   const { findings } = verdict;
   const abstained = abstains(scanned, verdict);
 

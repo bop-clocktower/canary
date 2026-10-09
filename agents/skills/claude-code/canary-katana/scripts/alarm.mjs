@@ -13,7 +13,9 @@
 
 import {
   areaContext,
+  areaSymbols,
   coveringSymbol,
+  loadCriticalAreas,
   MIN_DERIVED_SYMBOL,
   nameCovers,
 } from './areas.mjs';
@@ -24,10 +26,11 @@ import {
   ownsTest,
   significantDirs,
 } from './nearby.mjs';
-import { testIndex } from './testindex.mjs';
+import { repoTestFiles, testIndex } from './testindex.mjs';
 
-export { areaSymbols, loadCriticalAreas } from './areas.mjs';
-export { repoTestFiles } from './testindex.mjs';
+// Imported then re-exported (not `export ... from`): the entropy scanner's
+// reachability model drops a module that is both imported and re-exported.
+export { areaSymbols, loadCriticalAreas, repoTestFiles };
 
 export const DEGRADED_NOTICE =
   'critical-area data unavailable, recording only, not alarming';
@@ -51,7 +54,7 @@ export const Severity = {
  * Why katana cannot alarm on an area. Each is a reason a name-matched
  * last-coverage alarm is impossible for it, whatever the diff deletes.
  */
-export const NotAssessed = {
+const NotAssessed = {
   // The critical-areas entry fails the contract (a bad path or symbols list).
   INVALID_AREA: 'invalid-area',
   // No declared symbols and a basename too short to match on.
