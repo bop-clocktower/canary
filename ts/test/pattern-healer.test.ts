@@ -180,3 +180,73 @@ describe('HEAL-003 on python', () => {
     expect(result.patched_content).not.toContain('await');
   });
 });
+
+// bug-fleet A6: the `(\s*)` indent group and the trailing `\s*` both cross
+// newlines, so a blank line above a healed call became its reported line and
+// blank lines below a healed wait were deleted from the patched file.
+describe('blank lines around a healed line', () => {
+  it('reports the line of the call, not a blank line above it', () => {
+    const result = healer.heal(
+      tsFile("test('x', async ({ page }) => {\n\n  page.click('#b');\n});\n"),
+    );
+    expect(result.changes.map((c) => [c.rule, c.line])).toEqual([
+      ['HEAL-003', 3],
+    ]);
+  });
+
+  it('keeps the blank lines that follow a healed wait', () => {
+    const source =
+      "test('x', async ({ page }) => {\n  await page.waitForTimeout(100);\n\n\n  expect(1).toBe(1);\n});\n";
+    const result = healer.heal(tsFile(source));
+    expect(result.patched_content.split('\n')).toHaveLength(
+      source.split('\n').length,
+    );
+  });
+  it('does not insert a blank line after a healed wait with none below it', () => {
+    const source =
+      "test('x', async ({ page }) => {\n  await page.waitForTimeout(100);\n  expect(1).toBe(1);\n});\n";
+    const result = healer.heal(tsFile(source));
+    expect(result.patched_content).toBe(
+      "test('x', async ({ page }) => {\n  // TODO(canary): replace with an event-based wait (e.g. await expect(locator).toBeVisible())\n  expect(1).toBe(1);\n});\n",
+    );
+  });
+
+  it("counts a later rule's line against the original file, not the rewritten one", () => {
+    // HEAL-002 runs before HEAL-003; if it shifts lines, the click's line drifts.
+    const source =
+      "test('x', async ({ page }) => {\n  await page.waitForTimeout(100);\n  page.click('#b');\n});\n";
+    const result = healer.heal(tsFile(source));
+    expect(result.changes.map((c) => [c.rule, c.line])).toEqual([
+      ['HEAL-002', 2],
+      ['HEAL-003', 3],
+    ]);
+    const lines = source.split('\n');
+    for (const c of result.changes) {
+      expect(lines[c.line - 1].startsWith(c.before)).toBe(true);
+    }
+  });
+
+  it('leaves a multi-line wait call alone rather than collapsing its lines', () => {
+    // Collapsing the call would shift every line below it (#1310).
+    const source =
+      "test('x', async ({ page }) => {\n  await page.waitForTimeout(\n    100,\n  );\n  page.click('#b');\n});\n";
+    const result = healer.heal(tsFile(source));
+    expect(result.changes.map((c) => [c.rule, c.line])).toEqual([
+      ['HEAL-003', 5],
+    ]);
+    expect(result.patched_content.split('\n')).toHaveLength(
+      source.split('\n').length,
+    );
+  });
+
+  it('keeps CRLF line endings and still heals the line', () => {
+    const source = 'import time\r\ntime.sleep(2)\r\nassert True\r\n';
+    const result = healer.heal(pyFile(source));
+    expect(result.changes.map((c) => [c.rule, c.line])).toEqual([
+      ['HEAL-001', 2],
+    ]);
+    expect(result.patched_content).toBe(
+      'import time\r\n# TODO(canary): replace with an event-based wait (e.g. waitFor, wait_for_selector)\r\nassert True\r\n',
+    );
+  });
+});
