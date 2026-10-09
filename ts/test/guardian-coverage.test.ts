@@ -17,6 +17,7 @@ import {
   coverageLimits,
   fidelityRank,
   resolveCoverage,
+  resolveCoverageWithInput,
   resolveFromGraph,
   resolveFromReport,
   resolveFromHeuristic,
@@ -1410,5 +1411,30 @@ describe('lcov records repeated for one file', () => {
     const results = resolveFromReport([unit], report);
     expect(results![0]!.covered).toBe(true);
     expect(results![0]!.uncovered_lines).toEqual([]);
+  });
+});
+
+describe('report entry suffix-matched across packages', () => {
+  it('a report rooted in one package never verifies a same-named file in another', () => {
+    // A report written under ts/ names `src/index.ts`. The PR changes
+    // web/src/index.ts, which that report never instrumented: binding the
+    // unit to ts/'s line hits manufactures a coverage-verified verdict.
+    mkdirSync(join(dir, 'ts', 'src'), { recursive: true });
+    mkdirSync(join(dir, 'web', 'src'), { recursive: true });
+    writeFileSync(join(dir, 'ts', 'src', 'index.ts'), 'x\n', 'utf-8');
+    writeFileSync(join(dir, 'web', 'src', 'index.ts'), 'y\n', 'utf-8');
+    mkdirSync(join(dir, 'ts', 'coverage'), { recursive: true });
+    const report = join(dir, 'ts', 'coverage', 'lcov.info');
+    writeFileSync(report, 'SF:src/index.ts\nDA:1,1\nend_of_record\n', 'utf-8');
+    const unit: ChangedUnit = {
+      path: 'web/src/index.ts',
+      added_ranges: [[1, 1]],
+    };
+    const { coverage } = resolveCoverageWithInput([unit], {
+      coveragePath: report,
+      graphPath: join(dir, 'no-graph.json'),
+      repoRoot: dir,
+    });
+    expect(coverage.unitsMatched).toBe(0);
   });
 });
