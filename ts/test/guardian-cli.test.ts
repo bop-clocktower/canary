@@ -1405,6 +1405,17 @@ new file mode 100644
     ]);
   });
 
+  // bug-fleet A5 repro: with no source unit checked, the advisory weak-test
+  // finding lifted the run past both abstain exits -- a worse test turned an
+  // abstention (3) into a pass (0) with checked: 0.
+  it('a weak-test-only diff still abstains under --gate hard', async () => {
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'json', '--gate', 'hard'],
+      { input: DIFF_WEAK_TEST_ONLY, cwd: tmp },
+    );
+    expect(res.code).toBe(3);
+  });
+
   it('weakTests: false drops that finding, so the run abstains', async () => {
     const cfg = writeConfig({ pr: { weakTests: false } });
     const res = await invokeGuardian(
