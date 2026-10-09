@@ -170,3 +170,13 @@ describe('HealResult properties', () => {
     expect(result.file).toBe(f);
   });
 });
+
+// bug-fleet A6 repro (base b0e258bd): sync Python Playwright has no await.
+describe('HEAL-003 on python', () => {
+  it('does not add await inside a sync python test', () => {
+    const result = healer.heal(
+      pyFile('def test_login(page):\n    page.click("#submit")\n'),
+    );
+    expect(result.patched_content).not.toContain('await');
+  });
+});
