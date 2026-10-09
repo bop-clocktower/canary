@@ -932,6 +932,26 @@ describe('resolveFromHeuristic', () => {
     expect(results.length).toBe(2);
     expect(results.every((r) => r.fidelity === Fidelity.Heuristic)).toBe(true);
   });
+
+  it("the default repoRoot '.' still scans a tests/ file not named test_*", () => {
+    // pr-check calls the ladder with no repoRoot, so '.' is the live default.
+    // `join('.', 'tests/x.py')` drops the './', so relativizing by slicing
+    // root.length chars off yields 'ests/x.py' and the tests/ net misses it.
+    const repo = buildRepo();
+    writeFileSync(
+      join(dir, 'tests', 'bar_test.py'),
+      'from pkg.bar import other\n\ndef test_other():\n    assert other() == 2\n',
+      'utf-8',
+    );
+    const bar: ChangedUnit = { path: 'pkg/bar.py', added_ranges: [[1, 2]] };
+    const cwd = process.cwd();
+    process.chdir(repo);
+    try {
+      expect(resolveFromHeuristic([bar], '.')[0]!.covered).toBe(true);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
