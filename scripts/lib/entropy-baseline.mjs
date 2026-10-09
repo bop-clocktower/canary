@@ -71,7 +71,7 @@ function abstainOnBase(path, why) {
  * No bootstrap exemption, unlike the docs floor: main has carried this file
  * since #544, so a missing copy means the base worktree or the path is wrong.
  */
-export function readBaseCeiling(path) {
+function readBaseCeiling(path) {
   let text;
   try {
     text = readFileSync(path, 'utf8');
@@ -94,9 +94,10 @@ export function readBaseCeiling(path) {
  * The ceiling only falls (#1247). Compared against the MERGE BASE's baseline,
  * the one copy a PR cannot rewrite. The guard this replaces compared the file
  * with `git show HEAD:`, which on a PR's merge ref is the same file, so a
- * committed raise passed it.
+ * committed raise passed it. `basePath` is the base's copy, `path` the head's.
  */
-export function requireCeilingNotRaised(maxFindings, baseCeiling, path) {
+export function requireCeilingNotRaised(maxFindings, basePath, path) {
+  const baseCeiling = readBaseCeiling(basePath);
   if (maxFindings > baseCeiling) {
     fail(
       1,

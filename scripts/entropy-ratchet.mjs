@@ -67,7 +67,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   fail,
-  readBaseCeiling,
   requireCeilingNotRaised,
   requireMatchingInstrument,
 } from './lib/entropy-baseline.mjs';
@@ -237,13 +236,8 @@ function main() {
 
   // First, because a raise is a property of two files, not of a measurement:
   // no head scan, instrument or delta can excuse it (#1247).
-  if (baseBaseline !== null) {
-    requireCeilingNotRaised(
-      maxFindings,
-      readBaseCeiling(baseBaseline),
-      baseline,
-    );
-  }
+  if (baseBaseline)
+    requireCeilingNotRaised(maxFindings, baseBaseline, baseline);
 
   const findings = readFindings(report, 'head');
 
