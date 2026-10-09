@@ -1,0 +1,12 @@
+{
+  "issues": [1257],
+  "route": "bug",
+  "stages": ["debugging"],
+  "assumptions": [
+    "The raise check runs before the report is read, the instrument check and the delta rule: a raise depends only on the two baseline files, so no measurement can excuse it (mirrors #1247).",
+    "A missing or unparseable merge-base baseline abstains (exit 3); no bootstrap exemption, because main has carried .harness/perf-baseline.json since #717.",
+    "The check lives in the existing scripts/lib/perf-delta.mjs (the merge-base module) rather than a new scripts/lib file, so no entropy entryPoints or docs-coverage changes are needed."
+  ],
+  "closingKeyword": "Closes",
+  "reproducingTest": "ts/test/perf-ratchet.test.ts"
+}

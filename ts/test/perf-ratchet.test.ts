@@ -50,9 +50,11 @@
  *
  * Exit codes follow the repo's gate convention (#508):
  *   0 = verified — violations are at or under the baseline
- *   1 = the ratchet fired — violations grew past the baseline
+ *   1 = the ratchet fired — violations grew past the baseline, or the ceiling
+ *       was raised above the merge base's (`--base-baseline`, #1257)
  *   2 = error — the baseline file is missing or unreadable
- *   3 = ABSTENTION — nothing was measured, or the zero is implausible
+ *   3 = ABSTENTION — nothing was measured, or the zero is implausible, or the
+ *       merge base's baseline cannot be read
  *
  * Offline: reads a report file and a baseline file, both supplied by the test.
  * Never runs `harness` and never touches the network.
@@ -63,6 +65,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { load as loadYaml } from 'js-yaml';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -243,6 +246,99 @@ describe('perf-ratchet', () => {
       ]);
       expect(status).toBe(3);
       expect(out).toMatch(/calibrated against harness CLI 12\.6\.0/);
+    });
+  });
+
+  /**
+   * The ceiling only falls (#1257), the perf twin of #1247.
+   *
+   * Raising `maxViolations` is the baseline's one forbidden move, and before
+   * this nothing could see it: the delta rule compares two REPORTS, the
+   * ceiling compares the report with the head's OWN baseline, and a raise
+   * with `measuredCount` moved to match agrees with itself. The only copy a PR
+   * cannot rewrite is the merge base's, so CI hands it over as
+   * `--base-baseline`. No bootstrap exemption: main has had the file since
+   * #717.
+   */
+  describe('the ceiling only falls against the merge base (#1257)', () => {
+    let baseBaseline: string;
+
+    beforeEach(() => {
+      baseBaseline = join(dir, 'base-baseline.json');
+      writeFileSync(report, failureHeader(219) + SAMPLE_BODY);
+    });
+
+    const withBase = (): string[] => ['--base-baseline', baseBaseline];
+    const writeBase = (maxViolations: unknown): void =>
+      writeFileSync(baseBaseline, JSON.stringify({ maxViolations }));
+
+    it('fails a ceiling raised above the merge base, naming both values', () => {
+      writeBase(220);
+      writeBaseline(300);
+      const { status, out } = run(withBase());
+      expect(status).toBe(1);
+      expect(out).toMatch(/RAISED/);
+      expect(out).toContain('220 at the merge base');
+      expect(out).toContain('300');
+    });
+
+    // The smallest raise must fire too: the comparison is `>`, not a margin.
+    it('fails a raise of one', () => {
+      writeBase(220);
+      writeBaseline(221);
+      expect(run(withBase()).status).toBe(1);
+    });
+
+    it('passes a ceiling equal to the merge base', () => {
+      writeBase(220);
+      writeBaseline(220);
+      const { status, out } = run(withBase());
+      expect(status).toBe(0);
+      expect(out).toMatch(/ceiling OK/);
+    });
+
+    it('passes a ceiling lowered below the merge base', () => {
+      writeBase(220);
+      writeBaseline(219);
+      expect(run(withBase()).status).toBe(0);
+    });
+
+    // "Cannot verify" is a finding, not a pass.
+    it('ABSTAINS when the merge base baseline is missing', () => {
+      writeBaseline(220);
+      const { status, out } = run(withBase());
+      expect(status).toBe(3);
+      expect(out).toMatch(/ABSTAINED/);
+      expect(out).toContain(baseBaseline);
+    });
+
+    it('ABSTAINS when the merge base baseline is not JSON', () => {
+      writeFileSync(baseBaseline, '{"maxViolations": 22');
+      writeBaseline(220);
+      const { status, out } = run(withBase());
+      expect(status).toBe(3);
+      expect(out).toMatch(/not JSON/);
+    });
+
+    it('ABSTAINS when the merge base baseline has no integer ceiling', () => {
+      writeBase('220');
+      writeBaseline(220);
+      const { status, out } = run(withBase());
+      expect(status).toBe(3);
+      expect(out).toMatch(/maxViolations/);
+    });
+
+    // A raise is a property of two files, not of the measurement, so a head
+    // scan that fits under the raised ceiling and a clean delta must not mask
+    // it.
+    it('fails the raise even when the delta and the count are clean', () => {
+      const baseReport = join(dir, 'base-report.txt');
+      writeFileSync(baseReport, failureHeader(219) + SAMPLE_BODY);
+      writeBase(220);
+      writeBaseline(240);
+      const r = run([...withBase(), '--base-report', baseReport]);
+      expect(r.status).toBe(1);
+      expect(r.out).toMatch(/RAISED/);
     });
   });
 
@@ -620,6 +716,90 @@ describe('the checked-in perf baseline (#744)', () => {
   it('hands the resolved CLI version to the ratchet in CI', () => {
     const yaml = readFileSync(WORKFLOW, 'utf8');
     expect(yaml).toMatch(/perf-ratchet\.mjs[\s\S]{0,200}?--cli-version/);
+  });
+
+  // Behavioural, not a source grep (#1257): with no `--baseline`, the merge
+  // base comparison must run against THIS file. A base copy one below the real
+  // ceiling is what this file would look like after a raise of one.
+  it('is the baseline the ratchet compares with the merge base by default', () => {
+    const { maxViolations, harnessCli } = baselineJson() as {
+      maxViolations: number;
+      harnessCli: string;
+    };
+    const tmp = mkdtempSync(join(tmpdir(), 'perf-ratchet-default-'));
+    try {
+      const head = join(tmp, 'report.txt');
+      const base = join(tmp, 'base-baseline.json');
+      writeFileSync(head, failureHeader(maxViolations) + SAMPLE_BODY);
+      writeFileSync(base, JSON.stringify({ maxViolations: maxViolations - 1 }));
+      const r = spawnSync(
+        process.execPath,
+        [
+          SCRIPT,
+          '--report',
+          head,
+          '--base-baseline',
+          base,
+          '--cli-version',
+          harnessCli,
+        ],
+        { encoding: 'utf8' },
+      );
+      const out = `${r.stdout}${r.stderr}`;
+      expect(r.status, out).toBe(1);
+      expect(out).toContain(join('.harness', 'perf-baseline.json'));
+      expect(out).toContain(`${maxViolations - 1} at the merge base`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The ceiling-only-falls rule is WIRED (#1257). Parsed, not grepped: the flag
+ * has to reach the ratchet step's own env on pull requests, and point into the
+ * base worktree the merge-base scan step creates — not into the checkout,
+ * where it would be the head's own file and the comparison vacuous.
+ */
+describe('the perf merge-base baseline is wired (#1257)', () => {
+  type Step = {
+    name?: string;
+    if?: string;
+    run?: string;
+    env?: Record<string, string>;
+  };
+  const steps = (): Step[] =>
+    (
+      loadYaml(
+        readFileSync(
+          join(REPO_ROOT, '.github', 'workflows', 'harness-quality.yml'),
+          'utf8',
+        ),
+      ) as { jobs: Record<string, { steps: Step[] }> }
+    ).jobs.validate!.steps;
+  const RATCHET = 'Performance ratchet (blocking)';
+  const BASE_SCAN = 'Harness Performance Check (merge base)';
+
+  it('hands the merge base baseline to the ratchet on pull requests', () => {
+    const ratchet = steps().find((s) => s.name === RATCHET);
+    expect(ratchet, `no step named ${RATCHET}`).toBeDefined();
+    const flag = ratchet!.env?.PERF_BASE_FLAG ?? '';
+    expect(flag).toMatch(/github\.event_name == 'pull_request'/);
+    expect(flag).toMatch(
+      /--base-baseline\s+\{0\}\/perf-base\/\.harness\/perf-baseline\.json',\s*runner\.temp\)/,
+    );
+    expect(ratchet!.run).toMatch(/perf-ratchet\.mjs[\s\S]*\$PERF_BASE_FLAG/);
+  });
+
+  it('points at the worktree the merge-base scan step creates, before it', () => {
+    const all = steps();
+    const scan = all.findIndex((s) => s.name === BASE_SCAN);
+    const ratchet = all.findIndex((s) => s.name === RATCHET);
+    expect(scan).toBeGreaterThan(-1);
+    expect(ratchet).toBeGreaterThan(scan);
+    expect(all[scan]!.run).toMatch(
+      /git worktree add --detach "\$RUNNER_TEMP\/perf-base" "\$BASE_SHA"/,
+    );
   });
 });
 
