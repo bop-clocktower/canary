@@ -1435,7 +1435,7 @@ export function renderFindings(
   // problem guardian had not detected would have hidden it exactly when needed.
   const provLine = gateMeta?.provenance
     ? `<sub>${provenanceLine(gateMeta.provenance)}</sub>`
-    : null;
+    : '';
 
   if (fmt === 'comment') {
     const fileCount = new Set(active.map((f) => f.path)).size;
@@ -1490,10 +1490,13 @@ export function renderFindings(
       const suppressedNote = suppressed.length
         ? `\n\n<sub>${suppressed.length} finding(s) suppressed as intentional and not counted above.</sub>`
         : '';
-      // Reserved so the tail always fits: footer, suppressed note, and a
-      // worst-case overflow line (the real one is shorter).
+      // Reserved so the tail always fits: footer, provenance line (#761, plus
+      // its blank-line separator), suppressed note, and a worst-case overflow
+      // line (the real one is shorter).
       const reserve =
         footerLine.length +
+        provLine.length +
+        2 +
         suppressedNote.length +
         overflowNote(active.length).length +
         4;
