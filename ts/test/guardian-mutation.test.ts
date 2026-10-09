@@ -382,3 +382,20 @@ describe('threadUnsafeTests', () => {
     ]);
   });
 });
+
+// bug-fleet A5 repro: Ignored / CompileError / RuntimeError mutants were never
+// tested at all; counting them as "no covering test" misstates the run.
+describe('bug-fleet A5: non-tested stryker statuses', () => {
+  it('does not count Ignored/CompileError/RuntimeError as no-coverage', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 10, status: 'Killed', coveredBy: ['t1'] },
+        { line: 11, status: 'Ignored' },
+        { line: 12, status: 'CompileError' },
+        { line: 13, status: 'RuntimeError' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.noCoverage).toBe(0);
+  });
+});
