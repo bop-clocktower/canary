@@ -820,3 +820,12 @@ it('has a label', () => {
     expect(flake).toEqual(viaLint);
   });
 });
+
+// bug-fleet A6 repro (base b0e258bd).
+describe('a backtick run inside a quoted string', () => {
+  it('does not blank the real code that follows it', () => {
+    const code =
+      "const fence = '```';\nit('x', async () => {\n  await page.waitForTimeout(5000);\n  expect(1).toBe(1);\n});\nconst s = `a\nb`;\n";
+    expect(rules(lint('fence.spec.ts', code))).toContain('LINT-005');
+  });
+});
