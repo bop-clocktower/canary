@@ -183,7 +183,11 @@ export class PatternHealer {
 
     code = fixPySleep(code, result.changes);
     code = fixPwWaitTimeout(code, result.changes);
-    code = fixMissingAwait(code, result.changes);
+    // Sync Python Playwright has no `await`: inside a plain `def` the added
+    // keyword is a SyntaxError written to disk. Whether a Python call sits in
+    // an `async def` needs scope this regex pass does not have, so the fix is
+    // not unambiguous there and is not applied.
+    if (!path.endsWith('.py')) code = fixMissingAwait(code, result.changes);
 
     result.patched_content = code;
 
