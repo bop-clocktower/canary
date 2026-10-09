@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bop-clocktower/canary.git"
+    "url": "git+https://github.com/bop-clocktower/canary.git"
   },
   "bin": {
-    "canary": "./bin/canary.js",
-    "canary-mcp": "./bin/canary-mcp.js"
+    "canary": "bin/canary.js",
+    "canary-mcp": "bin/canary-mcp.js"
   },
   "exports": {
     "./reporter": {

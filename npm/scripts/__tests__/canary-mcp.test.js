@@ -56,7 +56,7 @@ describe('main', () => {
 describe('packaging', () => {
   const pkg = require('../../package.json');
   it('declares the canary-mcp bin', () => {
-    assert.equal(pkg.bin['canary-mcp'], './bin/canary-mcp.js');
+    assert.equal(pkg.bin['canary-mcp'], 'bin/canary-mcp.js');
   });
   it('ships the bin in files', () => {
     assert.ok(pkg.files.includes('bin/canary-mcp.js'));
