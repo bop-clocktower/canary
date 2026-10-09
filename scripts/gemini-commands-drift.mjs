@@ -49,8 +49,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { isMain } from './lib/is-main.mjs';
 
@@ -134,7 +133,7 @@ function writeCommands(dir, generated) {
 }
 
 function parseArgs(argv) {
-  const opts = { root: join(dirname(fileURLToPath(import.meta.url)), '..') };
+  const opts = { root: join(import.meta.dirname, '..') };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--write') opts.write = true;
     else if (argv[i] === '--root' && argv[i + 1]) opts.root = argv[++i];
