@@ -17,8 +17,8 @@
  *      `<failure>` / `<error>`;
  *   2. surefire `<rerunFailure>` / `<rerunError>` with no final failure (with
  *      one, every rerun failed and the case stays failed);
- *   3. the same `classname::name` repeated in one report (pytest-rerunfailures
- *      and similar): collapsed into one row whose status is the LAST attempt's,
+ *   3. the same `classname::name` AND `file` repeated in one report (pytest-
+ *      rerunfailures and similar): one row whose status is the LAST attempt's,
  *      promoted to flaky when an earlier attempt failed; durations are summed.
  * Any other encoding (e.g. retries written to separate report files) is
  * recorded per attempt, as whatever each file says.
@@ -231,9 +231,11 @@ function collapseAttempts(rows: TestResultInput[]): TestResultInput[] {
   const byName = new Map<string, TestResultInput>();
   const out: TestResultInput[] = [];
   for (const row of rows) {
-    const prev = row.test_name ? byName.get(row.test_name) : undefined;
+    // Same name in two files is two tests, not one test retried.
+    const key = `${row.test_file}\u0000${row.test_name}`;
+    const prev = row.test_name ? byName.get(key) : undefined;
     if (prev === undefined) {
-      if (row.test_name) byName.set(row.test_name, row);
+      if (row.test_name) byName.set(key, row);
       out.push(row);
     } else {
       mergeAttempt(prev, row);
