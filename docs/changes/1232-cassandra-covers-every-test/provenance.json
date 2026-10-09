@@ -1,0 +1,14 @@
+{
+  "issues": [1232],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/test-signal-review-findings.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Body boundaries from enumerateTests were left alone: they also feed LINT-006 and the test inventory, so the look-back window changed instead (smaller blast radius).",
+    "An annotation attaches through a run of comment lines, blank lines, and (Python) single-line decorators directly above the declaration. A multi-line decorator ends the run, so an annotation above one is not read and the test falls back to import inference (pre-annotation behaviour, never a false block).",
+    "An annotation above a describe() no longer reaches the first test inside it. The skill docs only show the annotation directly above the it(), and no test in canary's own suite relies on the describe form.",
+    "Second root cause, fixed in the same PR because the issue's measured case needs it: an annotated target is checked against comment-free body lines, because a JS body carries the next test's // @covers comment and that comment counted as a reference.",
+    "Python had the same floor bug (the body runs to the next def, comment included); the new window fixes it too and a pytest case is pinned."
+  ]
+}
