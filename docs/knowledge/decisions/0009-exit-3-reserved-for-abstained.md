@@ -87,7 +87,11 @@ Three consequences follow, and they are the load-bearing part:
   but its commit half cannot run, `--strict` exits 3 with zero findings and 1
   with any, for the same reason: zero findings over a half that never ran is not
   a pass. Neither surface touches `gateOutcome`; each decides at the one place
-  that knows which part of its denominator was dark.
+  that knows which part of its denominator was dark. #1253 applies the same rule
+  to an area a diff leaves undecidable rather than one that is always dark:
+  katana deleted a test beside the area that it cannot tie to it (it reaches the
+  area indirectly, for example over HTTP), and no remaining test can be tied to
+  it either. That area is reported `unlinked`, at stake, and `--strict` exits 3.
 
 - **Unknown is not zero.** A surface that _cannot_ determine its denominator
   (the remote Supabase history backend; a precision sample with no

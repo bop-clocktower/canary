@@ -25,6 +25,24 @@ under the project's former name) are documented in the
   fixed five tests that were vacuous or absence-only with no precondition in the
   test; the remaining false-positive shapes are tracked in #1231, and a
   `@covers` bug found along the way in #1232.
+- **`canary-katana --strict` no longer exits 0 when it cannot tie a deleted test
+  to a critical area** (#1253). Integration tests in a central `test/` directory
+  often reach a service through a server module, over HTTP, with titles that
+  describe behaviour. Deleting every one of them used to give no finding, no
+  not-assessed entry and exit 0. Now, when a deleted test sits beside an area
+  (near it, or sharing a significant directory such as the package) but cannot
+  be tied to it, and no remaining test imports the area or is its own test file,
+  the area is reported as not assessed with the new reason `unlinked`, at stake,
+  and `--strict` exits 3. A deleted test that imports the area directly is now
+  tied to it whatever its title says, so it alarms instead of being skipped. An
+  area with a remaining test that imports it stays quiet. katana still does not
+  follow imports transitively. **Upgrade note:** strict consumers with this
+  layout may see exit 3 where they saw 0; adding a test that imports the area
+  clears it.
+- **`canary-katana`'s `diffscan.mjs` no longer contains a raw NUL byte**
+  (#1250), so git, GitHub and grep show it as text again. Behaviour is
+  unchanged. A new packaging test refuses raw control bytes in every `.mjs`
+  under `agents/skills`.
 
 ## [9.2.0] - 2026-10-09
 

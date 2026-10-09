@@ -52,9 +52,10 @@ worse than no gate. Katana is **silent by default** and alarms only when a
 removed test was the **last coverage** of a symbol listed in
 `critical-areas.json` (produced by `canary-critical-areas`).
 
-- **name-matched** — the removed test's name matches an area symbol, the test
-  **belonged to the area** (see below), and nothing near the area still covers
-  it. Severity `critical` when the area's `risk_score` is high (≥ 0.7),
+- **name-matched** — the removed test is **tied to the area**: its name matches
+  an area symbol and it **belonged to the area** (see below), or it imported the
+  area's module directly, whatever its title says. Nothing near the area still
+  covers it. Severity `critical` when the area's `risk_score` is high (≥ 0.7),
   otherwise `high`.
 - **heuristic** — only the test's _directory_ maps to the area (no name match).
   Always severity `medium`, and flagged as lower fidelity.
@@ -112,7 +113,9 @@ With those terms:
    area, is named for it, or imported it. Imports of a deleted file are read
    from the diff, since the file is gone from disk. Deleting an unrelated
    `engine signal` UI test is not a coverage loss for `src/engine.ts`, even
-   though the names match.
+   though the names match. A deleted test that imports the area directly is tied
+   to it even when its title only describes behaviour ("creates a link whose
+   page is the run report"), as integration tests usually do (#1253).
 2. **A remaining test file still covers the area** when it has at least one test
    and either imports the area, or is near it and named for it, whatever its
    titles say. Failing that, it still covers the area if it is near (or imports
@@ -153,27 +156,40 @@ being matched on a guess. `risk_score` may be a number, a numeric string
 
 ### Not assessed: the denominator
 
-Some areas katana **cannot** alarm on, whatever the diff deletes. Each one is
-reported with a reason, so "0 alarms" can be told apart from "unable to alarm":
+Some areas katana **cannot** alarm on, whatever the diff deletes, and some it
+cannot decide for this particular diff. Each one is reported with a reason, so
+"0 alarms" can be told apart from "unable to tell":
 
-| Reason             | Why the name-matched alarm cannot fire                                                                                                                                                                                               | Fix                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
-| `symbol-saturated` | a test near the area names its symbol but neither imports the area nor is its own test file (named for it and strongly near). For example, `validator.test.ts` saying "rules" beside `rules.ts`. So the area always reads as covered | declare narrower `symbols`       |
-| `no-symbol`        | no `symbols` declared and the basename gives no symbol of 4+ letters or digits (`db.ts`, `utils.ts`)                                                                                                                                 | declare `symbols`                |
-| `invalid-area`     | the entry fails the critical-areas contract                                                                                                                                                                                          | fix the entry the evidence names |
+| Reason             | Why the name-matched alarm cannot fire                                                                                                                                                                                                                                                                    | Fix                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `symbol-saturated` | a test near the area names its symbol but neither imports the area nor is its own test file (named for it and strongly near). For example, `validator.test.ts` saying "rules" beside `rules.ts`. So the area always reads as covered                                                                      | declare narrower `symbols`       |
+| `no-symbol`        | no `symbols` declared and the basename gives no symbol of 4+ letters or digits (`db.ts`, `utils.ts`)                                                                                                                                                                                                      | declare `symbols`                |
+| `invalid-area`     | the entry fails the critical-areas contract                                                                                                                                                                                                                                                               | fix the entry the evidence names |
+| `unlinked`         | this diff deleted a test beside the area (near it, or sharing a significant directory such as the package) that katana cannot tie to it, and no remaining test imports it or is its own test file. Typical: integration tests in a central `test/` that drive a service over HTTP through a server module | add a test that imports the area |
 
 Saturation is read from the tree on disk, which is the tree before the diff
 minus what the diff deleted: a deleted test cannot keep anything covered.
 
 A not-assessed area is **at stake** when a deleted test in this diff was named
 for it or imported it. Proximity alone does not count: if it did, any deletion
-under a root `tests/` would put every such area at stake on every diff. The
-human output lists every not-assessed area and marks the at-stake ones. When the
-run found no alarm but an at-stake area was not assessed, it says so in an
+under a root `tests/` would put every such area at stake on every diff.
+
+`unlinked` is the exception, and is **always** at stake: it is only reported
+because of this diff (#1253). katana does not follow imports transitively (test
+→ server module → service), so a test that reaches the area indirectly cannot be
+tied to it. When such a test is deleted and nothing left on disk can be tied to
+the area either, the coverage may have gone with it, or may never have been
+there. katana cannot tell which, so it abstains instead of reading the silence
+as clean. An area with a remaining test that imports it stays assessed and
+quiet. A deletion in another package (no shared significant directory, not near)
+leaves the area alone. A deletion under a root `tests/` with no shared
+significant directory does not count either, for the reason above. The human
+output lists every not-assessed area and marks the at-stake ones. When the run
+found no alarm but an at-stake area was not assessed, it says so in an
 abstention line:
 
 ```text
-⚠ Abstained on 1 critical area(s) this diff put at risk — katana cannot alarm on them, so 0 alarms is not a pass.
+⚠ Abstained on 1 critical area(s) this diff put at risk — katana cannot tell whether they lost coverage, so 0 alarms is not a pass.
 ```
 
 **Under `--strict` that run exits `3` (abstained, ADR 0009), not `0`.** That is
@@ -182,9 +198,10 @@ path is still covered when nobody could check, which is the false green #1242
 was filed about. `1` is kept for a real alarm, so CI can still tell "a test is
 missing" from "katana is blind here". A real alarm outranks the abstention: a
 finding proves a check ran, so a run with one exits `1`. A not-assessed area
-that nothing in the diff touches is listed but does not change the exit code. No
-deletion could have taken its coverage, and failing every PR on it would get the
-gate muted.
+that nothing in the diff touches is listed but does not change the exit code. An
+`unlinked` area is never in that position: it is listed only when the diff
+touched it. No deletion could have taken its coverage, and failing every PR on
+it would get the gate muted.
 
 ### Degradation is loud and safe
 
@@ -396,7 +413,7 @@ don't let it read as green:
     case "$rc" in
       0) echo "katana: no critical area lost its last coverage." ;;
       1) echo "::error title=Last coverage removed::see the step log"; exit 1 ;;
-      3) echo "::warning title=Katana abstained::empty diff, an empty areas list, or a touched area katana cannot assess (declare symbols)" ;;
+      3) echo "::warning title=Katana abstained::empty diff, an empty areas list, or a touched area katana cannot assess (see areas.not_assessed)" ;;
       *) echo "::error title=Katana failed::unexpected exit $rc"; exit "$rc" ;;
     esac
 ```
