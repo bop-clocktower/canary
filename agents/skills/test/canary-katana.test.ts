@@ -1623,7 +1623,7 @@ deleted file mode 100644
       '[symbol-saturated] src/rules.ts [at stake in this diff]',
     );
     expect(text).toContain(
-      '\u26A0 Abstained on 1 critical area(s) this diff put at risk \u2014 katana cannot alarm on them, so 0 alarms is not a pass.',
+      '\u26A0 Abstained on 1 critical area(s) this diff put at risk \u2014 katana cannot tell whether they lost coverage, so 0 alarms is not a pass.',
     );
   });
 

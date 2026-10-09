@@ -10,8 +10,9 @@
 // Both ends are tied to the area by proximity (#1242, nearby.mjs, imports.mjs):
 // the deleted test must have belonged to it, and "still covered" means a test
 // near the area, or importing it, remains. An area the gate still cannot alarm
-// on is reported as NOT ASSESSED, so "0 alarms" is never mistaken for "every
-// area checked".
+// on -- or, for this diff, cannot decide (#1253: a deleted test it cannot tie
+// to the area, and no remaining test it can) -- is reported as NOT ASSESSED, so
+// "0 alarms" is never mistaken for "every area checked".
 
 import {
   areaContext,
@@ -65,6 +66,11 @@ const NotAssessed = {
   // A test near the area names the symbol without importing the area or being
   // named for it, so deleting the area's real tests always leaves it "covered".
   SYMBOL_SATURATED: 'symbol-saturated',
+  // The diff deleted a test beside the area that katana cannot tie to it (no
+  // import of it, not named for it -- e.g. it drives the area over HTTP), and
+  // no remaining test can be tied to it either (#1253). Coverage may have
+  // gone with that test or never existed: katana cannot tell, so it says so.
+  UNLINKED: 'unlinked',
 };
 
 /**
@@ -149,13 +155,26 @@ const belongs = (deletion, ctx, scope) =>
   ownsTest(deletion.file, ctx) ||
   importKind(scope.importsOf(deletion.file), ctx) !== null;
 
+/**
+ * Is the deleted test tied to the area for certain? Named for the symbol and
+ * belonging to it, or importing its module directly -- a behaviour title
+ * ("creates a link ...") over a direct import is still the area's test (#1253).
+ */
+const tiedDeletion = (deletion, ctx, scope) =>
+  ctx.syms.size > 0 &&
+  ((nameCovers(deletion.name, ctx.syms) && belongs(deletion, ctx, scope)) ||
+    importKind(scope.importsOf(deletion.file), ctx) === 'direct');
+
+/** Shares a significant directory with the area, or is near it. */
+const related = (deletion, ctx) =>
+  isNear(deletion.file, ctx) ||
+  dirsOf(deletion.file).some((d) => significantDirs(ctx.path).has(d));
+
 function candidateFor(deletion, ctx, scope) {
   if (ctx.problems) return null; // invalid: reported as not assessed instead
-  const named =
-    ctx.syms.size &&
-    nameCovers(deletion.name, ctx.syms) &&
-    belongs(deletion, ctx, scope);
-  const grade = named ? nameGrade(ctx, scope) : dirGrade(deletion, ctx, scope);
+  const grade = tiedDeletion(deletion, ctx, scope)
+    ? nameGrade(ctx, scope)
+    : dirGrade(deletion, ctx, scope);
   if (grade === null) return null;
   return {
     kind: 'last-coverage-removed',
@@ -255,16 +274,42 @@ const atStake = (deletions, ctx, scope) =>
       importKind(scope.importsOf(d.file), ctx) !== null,
   );
 
-function notAssessedFor(deletions, contexts, scope) {
+/**
+ * An assessable area this diff left undecidable (#1253): a related test was
+ * deleted that katana cannot tie to the area, none was tied to it, and no
+ * remaining test can be. Always at stake -- it exists only because of the diff.
+ */
+function unlinked(deletions, ctx, scope) {
+  if (deletions.some((d) => tiedDeletion(d, ctx, scope))) return null;
+  const untied = deletions.find((d) => related(d, ctx));
+  if (untied === undefined) return null;
+  if (scope.index().some((e) => covers(e, ctx))) return null;
+  return {
+    reason: NotAssessed.UNLINKED,
+    evidence:
+      `${untied.file} was deleted beside ${ctx.path} but neither imports it ` +
+      'nor is named for it, and no remaining test imports it or is its own ' +
+      'test file, so katana cannot tell whether its coverage went too; add a ' +
+      'test that imports it',
+  };
+}
+
+function notAssessedFor(deletions, contexts, scope, findings) {
+  const alarmed = new Set(findings.map((f) => f.area));
   return contexts
     .map((ctx) => {
       const why = notAssessedReason(scope.index(), ctx);
-      if (!why) return null;
-      return {
-        area: ctx.path,
-        ...why,
-        atStake: atStake(deletions, ctx, scope),
-      };
+      if (why) {
+        return {
+          area: ctx.path,
+          ...why,
+          atStake: atStake(deletions, ctx, scope),
+        };
+      }
+      const gap = alarmed.has(ctx.path)
+        ? null
+        : unlinked(deletions, ctx, scope);
+      return gap && { area: ctx.path, ...gap, atStake: true };
     })
     .filter(Boolean)
     .sort((a, b) => a.area.localeCompare(b.area));
@@ -284,10 +329,11 @@ export function assess(deletions, areas, repo, diff = '') {
   const contexts = areas.areas.map((a, i) =>
     areaContext(a, areas.problems?.get(i) ?? null),
   );
+  const findings = findingsFor(deletions, contexts, scope);
   return {
-    findings: findingsFor(deletions, contexts, scope),
+    findings,
     total: contexts.length,
-    notAssessed: notAssessedFor(deletions, contexts, scope),
+    notAssessed: notAssessedFor(deletions, contexts, scope, findings),
   };
 }
 

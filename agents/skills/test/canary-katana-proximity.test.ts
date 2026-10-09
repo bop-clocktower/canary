@@ -625,3 +625,133 @@ describe('risk_score back-compat (finding 10)', () => {
     ]);
   });
 });
+
+// --- #1253: a deletion katana cannot tie to an area ---------------------------
+//
+// Monorepo shape: services under packages/<pkg>/src/services, integration tests
+// in a central packages/<pkg>/test/ that import a server module and drive the
+// service over HTTP, with behaviour titles. Deleting every such test used to
+// exit 0 with no finding and the area unlisted: "unable to tell" read as clean.
+
+describe('a deletion that cannot be tied to the area abstains (#1253)', () => {
+  const WIDGET = 'packages/core/src/services/widgetService.ts';
+  const SERVER = "import { app } from '../src/api/httpServer.js';";
+  const REMAINING = {
+    // Another integration test in the same central dir: proves nothing about
+    // the widget service, but used to count as "coverage remains".
+    'packages/core/test/health.integration.test.ts': `${SERVER}\nit('responds to health checks', () => {});\n`,
+  };
+  const httpDeletion = delFile(
+    'packages/core/test/widget-links.integration.test.ts',
+    [SERVER, "it('creates a link whose page is the run report', () => {});"],
+  );
+
+  it('lists the area as not assessed (unlinked) and at stake', () => {
+    const v = verdict(REMAINING, AREA(WIDGET), httpDeletion);
+    expect(summary(v)).toEqual({
+      findings: [],
+      notAssessed: [`${WIDGET} unlinked atStake=true`],
+    });
+  });
+
+  it('--strict exits 3 and names the area, never exit 0', () => {
+    const { code, text } = cli(REMAINING, AREA(WIDGET), httpDeletion, [
+      '--strict',
+    ]);
+    expect(code).toBe(3);
+    expect(text).toContain(`[unlinked] ${WIDGET} [at stake in this diff]`);
+    expect(text).toContain('Abstained on 1 critical area(s)');
+  });
+
+  it('--json reports the abstention and the area', () => {
+    const { code, text } = cli(REMAINING, AREA(WIDGET), httpDeletion, [
+      '--strict',
+      '--json',
+    ]);
+    const doc = JSON.parse(text);
+    expect(code).toBe(3);
+    expect(doc.abstained).toBe(true);
+    expect(doc.findings).toEqual([]);
+    expect(doc.areas.not_assessed).toEqual([
+      expect.objectContaining({
+        area: WIDGET,
+        reason: 'unlinked',
+        at_stake: true,
+      }),
+    ]);
+  });
+
+  it('a deleted test that imports the area still alarms, whatever its title', () => {
+    const v = verdict(
+      REMAINING,
+      AREA(WIDGET),
+      delFile('packages/core/test/widget-links.integration.test.ts', [
+        "import { createLink } from '../src/services/widgetService.js';",
+        "it('creates a link whose page is the run report', () => {});",
+      ]),
+    );
+    expect(summary(v)).toEqual({
+      findings: [
+        `critical creates a link whose page is the run report -> ${WIDGET}`,
+      ],
+      notAssessed: [],
+    });
+  });
+
+  it('a deleted test named for the symbol and importing the area alarms', () => {
+    const v = verdict(
+      REMAINING,
+      AREA(WIDGET),
+      delFile('packages/core/test/widget-links.integration.test.ts', [
+        "import { createLink } from '../src/services/widgetService.js';",
+        "it('widgetService creates a link', () => {});",
+      ]),
+    );
+    expect(summary(v).findings).toEqual([
+      `critical widgetService creates a link -> ${WIDGET}`,
+    ]);
+  });
+
+  it('a remaining test importing the area keeps it clean (exit 0)', () => {
+    const files = {
+      ...REMAINING,
+      'packages/core/test/widget.unit.test.ts':
+        "import { slug } from '../src/services/widgetService.js';\nit('formats a slug', () => {});\n",
+    };
+    expect(summary(verdict(files, AREA(WIDGET), httpDeletion))).toEqual({
+      findings: [],
+      notAssessed: [],
+    });
+    const { code } = cli(files, AREA(WIDGET), httpDeletion, ['--strict']);
+    expect(code).toBe(0);
+  });
+
+  it('a deletion in another package does not put the area at stake', () => {
+    const v = verdict(
+      REMAINING,
+      AREA(WIDGET),
+      delFile('packages/billing/test/invoices.integration.test.ts', [
+        SERVER,
+        "it('lists invoices', () => {});",
+      ]),
+    );
+    expect(summary(v)).toEqual({ findings: [], notAssessed: [] });
+  });
+
+  it('unlinked is reported only when a related test was deleted', () => {
+    const v = verdict(
+      REMAINING,
+      AREA(WIDGET),
+      delLine(
+        'packages/core/test/health.integration.test.ts',
+        "it('x', () => {});",
+      ),
+    );
+    // health.integration.test.ts sits in a shared dir and remains on disk; the
+    // deleted line is a test, so the area is at stake -- but a diff with no
+    // deletions at all must not list it.
+    const none = verdict(REMAINING, AREA(WIDGET), delLine('README.md', 'x'));
+    expect(none.notAssessed).toEqual([]);
+    expect(v.notAssessed.map((n) => n.reason)).toEqual(['unlinked']);
+  });
+});
