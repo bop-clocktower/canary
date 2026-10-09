@@ -16,6 +16,13 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`critical-areas.json` areas may declare `symbols`** (#1242), for example
+  `["pricingEngine", "quoteTotal"]`. `canary-katana` matches them in place of
+  the path basename. The field is optional. The file now has a contract,
+  `lib/contracts/critical-areas.v1.schema.json`, checked by
+  `lib/contracts/critical-areas.mjs`. A bad entry is reported, not guessed at.
+  `risk_score` may still be a number, a numeric string or `null`, as katana
+  always read it.
 - **Docs coverage has a floor that only moves up** (#1241).
   `scripts/docs-ratchet.mjs` now also fails when coverage falls below
   `minCoveragePercent` in `.harness/docs-coverage-baseline.json` (16.86%,
@@ -29,8 +36,40 @@ under the project's former name) are documented in the
   from a CLI other than the one that measured the floor. A rehearsal fixture
   proves both docs rules still fire (ADR 0018).
 
+### Changed
+
+- **`canary-katana --strict` exits 3 when the diff touched an area it cannot
+  assess** (#1242). Before, it exited 0. "Touched" means a deleted test was
+  named for the area or imported it. A real alarm still exits 1 and outranks
+  this. A not-assessed area the diff does not touch is listed but leaves the
+  exit code alone. It also exits 3 when deletions were captured but the
+  critical-areas file lists 0 areas. A file with no `areas` list at all now
+  degrades to recording-only instead of reading as zero areas.
+- **`critical-areas.json` entries are now validated** (#1242). An entry with no
+  `path`, a negative or non-numeric `risk_score`, or `symbols` that are empty or
+  under 3 letters or digits is reported as `invalid-area` instead of being read
+  on a guess.
+- **Derived symbols skip role words** (#1242). `invoice.service.ts` now matches
+  on `invoice.service` and `invoice`, no longer on `service`, which matched
+  every `XService` test.
+
 ### Fixed
 
+- **canary-katana's last-coverage alarm can fire for an area with a generic
+  name** (#1242). A test anywhere in the repo whose name contained the area's
+  basename counted as remaining coverage. So `engine.ts`, `rules.ts` or
+  `auth.ts` always read as covered, and their alarm could never fire. In one
+  consuming repo, deleting all 234 tests of its highest-risk area produced 0
+  findings and exit 0 under `--strict`. Both ends of the check are now tied to
+  the area. The deleted test must have been near it, named for it, or importing
+  it, so an unrelated test that merely shares the word is not a coverage loss. A
+  remaining test counts only near the area (the same significant directories as
+  a path suffix, or a test directory inside or beside it) or when it imports the
+  area's module. Python `import … as`, `from … import *`, package subpaths,
+  scoped aliases and barrel indexes are read. Areas katana still cannot alarm on
+  are reported as **not assessed**, with a reason (`symbol-saturated`,
+  `no-symbol`, `invalid-area`), in the text output and in `--json` `areas`. So
+  "0 alarms" no longer reads as a clean pass when katana could not check.
 - **Vendored `agents/skills/lib` no longer fails a consumer's lint** (#1234).
   `is-main.mjs` (new in 9.1.0) and `contracts/validate.mjs` read the bare
   `process` global, `contracts/validate.mjs` the bare `console`, and

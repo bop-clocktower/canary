@@ -6,10 +6,11 @@
 // the removed test was the last coverage of a symbol `critical-areas.json`
 // marks high-risk.
 //
-// Advisory by default (always exit 0). `--strict` exits 1 only on a real alarm;
-// a degraded run (no critical-area data) stays exit 0 even under `--strict` --
-// a gate that fails on missing data gets muted, and a muted gate is worse than
-// none.
+// Advisory by default (always exit 0). `--strict` exits 1 only on a real alarm,
+// and 3 (abstained, ADR 0009) on an empty diff or when the diff touched a
+// critical area katana cannot alarm on (#1242). A degraded run (no
+// critical-area data) stays exit 0 even under `--strict` -- a gate that fails
+// on missing data gets muted, and a muted gate is worse than none.
 //
 // Invoked via `canary skills run canary-katana -- [options]`.
 
@@ -23,20 +24,10 @@ import {
 } from '../../../lib/parse-args.mjs';
 import * as diffscan from './diffscan.mjs';
 import * as alarm from './alarm.mjs';
+import { assess, notAssessedToDict } from './alarm.mjs';
 import * as ledger from './ledger.mjs';
+import { abstains, renderText } from './verdict-text.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
-
-// --- no-silent-abstention (#508 D2, skill-CLI convention half) ---------------
-//
-// Skill CLIs are deliberately self-contained -- no engine import -- so they
-// cannot call `gateOutcome`. They honour the doctrine by CONVENTION, emitting
-// the same greppable line the engine helper does; the skill-layer conformance
-// registry (agents/skills/test/gate-conformance.test.ts) holds them to it.
-//
-// U+26A0 / U+2014 as escapes so this source stays ASCII, matching
-// ts/src/core/gate-result.ts.
-const ABSTAINED_LINE =
-  '\u{26A0} Abstained \u{2014} verified zero items; this is not a pass.';
 
 const PREFIX = 'canary-katana:';
 
@@ -55,7 +46,9 @@ const USAGE =
   '  --ledger PATH          ledger location (default: <repo>/.canary/quarantine.json)\n' +
   '  --critical-areas PATH  critical-areas.json used to raise alarms\n' +
   '  --json                 emit machine-readable output instead of human text\n' +
-  '  --strict               exit 1 on a real alarm (degraded runs stay 0)\n' +
+  '  --strict               exit 1 on a real alarm, 3 when abstained (empty diff,\n' +
+  '                         or a touched area katana cannot alarm on); degraded\n' +
+  '                         runs stay 0\n' +
   '  --no-write             do not append to the ledger (read-only run)';
 
 /**
@@ -136,26 +129,25 @@ function toEntries(repo, base, deletions) {
   });
 }
 
-function renderText(deletions, findings, degraded, scanned) {
-  // #508: katana's denominator is the DIFF it read, not the deletions it found.
-  // Zero deletions in a 500-line diff is a real result; zero deletions in an
-  // EMPTY diff means nothing was examined at all. `0 deletion(s) captured` reads
-  // identically in both cases, which is precisely the shape the doctrine bans.
-  if (!scanned) {
-    return (
-      `${ABSTAINED_LINE} The diff was empty, so no deleted test could be ` +
-      'captured. Check --repo/--diff-file, or that the range actually ' +
-      'contains changes.'
-    );
-  }
-  const lines = [`${deletions.length} deletion(s) captured.`];
-  if (degraded) lines.push(alarm.DEGRADED_NOTICE);
-  for (const f of findings) {
-    lines.push(
-      `  [${f.severity.value}] ${f.file}::${f.test} removed the last coverage of ${f.area}`,
-    );
-  }
-  return lines.join('\n');
+/** The --json document. Every field after `ledger` is additive. */
+function jsonPayload(run, ledgerPath) {
+  const { deletions, verdict } = run;
+  return {
+    schema_version: ledger.SCHEMA_VERSION,
+    captured: deletions.map(diffscan.deletionToDict),
+    findings: verdict.findings.map(alarm.findingToDict),
+    ledger: String(ledgerPath),
+    ...(run.degraded ? { degraded_notice: alarm.DEGRADED_NOTICE } : {}),
+    // #508: "no deletions" vs "nothing examined", without parsing prose.
+    checked: run.scanned ? 1 : 0,
+    abstained: abstains(run),
+    // #1242: the area denominator; `at_stake` marks areas this diff touched.
+    areas: {
+      total: verdict.total,
+      assessed: verdict.total - verdict.notAssessed.length,
+      not_assessed: verdict.notAssessed.map(notAssessedToDict),
+    },
+  };
 }
 
 export function main(argv = []) {
@@ -212,30 +204,20 @@ export function main(argv = []) {
   }
 
   const areas = alarm.loadCriticalAreas(args.criticalAreas);
-  const degraded = !areas.available;
-  const findings = alarm.buildFindings(deletions, areas, repo);
+  const verdict = assess(deletions, areas, repo, diff);
+  const run = { scanned, degraded: !areas.available, deletions, verdict };
 
   if (args.json) {
-    const payload = {
-      schema_version: ledger.SCHEMA_VERSION,
-      captured: deletions.map(diffscan.deletionToDict),
-      findings: findings.map(alarm.findingToDict),
-      ledger: String(ledgerPath),
-    };
-    if (degraded) payload.degraded_notice = alarm.DEGRADED_NOTICE;
-    // Additive (#508): a consumer can distinguish "no deletions" from "nothing
-    // examined" without parsing prose.
-    payload.checked = scanned ? 1 : 0;
-    payload.abstained = !scanned;
-    console.log(JSON.stringify(payload, null, 2));
+    console.log(JSON.stringify(jsonPayload(run, ledgerPath), null, 2));
   } else {
-    console.log(renderText(deletions, findings, degraded, scanned));
+    console.log(renderText(run));
   }
 
-  // Advisory by default (D3); --strict inherits EXIT_ABSTAINED (3) on an empty
-  // diff, distinct from 1 ("captured a real deletion").
-  if (args.strict && !scanned) return 3;
-  return args.strict && findings.length ? 1 : 0;
+  // Advisory by default (D3). --strict: 1 on a real alarm, else 3 when the run
+  // abstained (#508, #1242): a 0 would claim coverage nobody could check.
+  if (!args.strict) return 0;
+  if (verdict.findings.length) return 1;
+  return abstains(run) ? 3 : 0;
 }
 
 // Direct execution (the skill runner execs this file via its shebang).
