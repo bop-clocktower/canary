@@ -12,6 +12,7 @@
 // document root is `$`.
 
 import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
 
 import { auditedValidator } from './schema-problems.mjs';
 import { crossFieldErrors } from './rules.mjs';
