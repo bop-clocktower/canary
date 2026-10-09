@@ -72,7 +72,18 @@ under the project's former name) are documented in the
   `harness-quality.yml` passes the merge base's copy. A higher ceiling exits 1.
   A base copy that is missing or unreadable exits 3. This mirrors the entropy
   fix (#1247).
-
+- **The quality ratchets' scans run the CLI version they report** (#1248).
+  `harness-quality.yml` resolved the floating `@harness-engineering/cli@12` once
+  for `--cli-version`, but each of the six scans (docs, entropy and perf, at
+  head and at merge base) resolved `@12` again in its own `npx` call. A 12.x
+  published mid-run, or a runner cache serving a different 12.x, could hand a
+  ratchet a report from an analyzer other than the one it certified, and head
+  and base could disagree. The resolve step now exports
+  `HARNESS_CLI_EXACT=<package>@<resolved>` and every scan uses it. The
+  workflow-level pin still floats by design. It just stops floating inside a
+  run. A malformed resolved version now fails the resolve step. A
+  workflow-parsing test fails on any scan that floats or runs before the resolve
+  step.
 - **canary-cassandra sees typed helper declarations** (#1179). A same-file
   helper declared with a type annotation
   (`const parse: Parser = (...a) => parseArgv(a)`) was invisible to the

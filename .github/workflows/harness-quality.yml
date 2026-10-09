@@ -54,17 +54,28 @@ jobs:
       # this step rather than passing an empty string through: a ratchet told
       # nothing about its instrument abstains anyway, but failing here names the
       # real problem instead of blaming the baseline.
+      #
+      # #1248: resolve ONCE, then pin within the run. Every scan below runs
+      # `"$HARNESS_CLI_EXACT"` (package@<resolved>), never `"$HARNESS_CLI"`:
+      # a scan that re-resolved the floating major could get a 12.x other
+      # than the one `--cli-version` certifies (a release published mid-run,
+      # or a runner cache serving a different 12.x), and head and base scans
+      # could disagree. The float stays at the workflow level on purpose — CI
+      # tracks upstream — it just stops floating inside one run.
+      # `ts/test/harness-cli-exact-pin.test.ts` parses this file and fails on
+      # any scan that floats or runs before this step.
       - name: Resolve harness CLI version
         id: harness-cli
         run: |
           resolved="$(npx --yes -p "$HARNESS_CLI" harness --version 2>/dev/null \
             | tail -n 1 | tr -d '[:space:]')"
-          if [ -z "$resolved" ]; then
-            echo "Could not resolve a version from '$HARNESS_CLI'." >&2
+          if ! printf '%s' "$resolved" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "Could not resolve a version from '$HARNESS_CLI' (got '$resolved')." >&2
             exit 1
           fi
           echo "Resolved $HARNESS_CLI to $resolved"
           echo "version=$resolved" >> "$GITHUB_OUTPUT"
+          echo "HARNESS_CLI_EXACT=${HARNESS_CLI%@*}@$resolved" >> "$GITHUB_ENV"
 
       # #1249. `agents/commands/gemini-cli/harness/*.toml` are generated from
       # each skill's SKILL.md and headed "Do not edit", yet nothing regenerated
@@ -119,8 +130,8 @@ jobs:
       # floor measured by a different CLI abstains (exit 3).
       - name: Harness Docs Coverage
         run:
-          npx --yes -p "$HARNESS_CLI" harness check-docs --json --min-coverage 0
-          > docs-report.json || true
+          npx --yes -p "$HARNESS_CLI_EXACT" harness check-docs --json
+          --min-coverage 0 > docs-report.json || true
 
       - name: Harness Docs Coverage (merge base)
         if: github.event_name == 'pull_request'
@@ -129,7 +140,7 @@ jobs:
         run: |
           git worktree add --detach "$RUNNER_TEMP/docs-base" "$BASE_SHA"
           (cd "$RUNNER_TEMP/docs-base" &&
-            npx --yes -p "$HARNESS_CLI" harness check-docs --json --min-coverage 0) \
+            npx --yes -p "$HARNESS_CLI_EXACT" harness check-docs --json --min-coverage 0) \
             > docs-base-report.json || true
 
       # `!cancelled()` on all three ratchets (docs, entropy, perf): one red
@@ -179,7 +190,7 @@ jobs:
       # failure from going green again.
       - name: Harness Cleanup (Entropy Scan)
         run:
-          npx --yes -p "$HARNESS_CLI" harness cleanup --findings-json >
+          npx --yes -p "$HARNESS_CLI_EXACT" harness cleanup --findings-json >
           entropy-report.txt || true
 
       # The MERGE-BASE half of the ratchet (#703). The ceiling above is an
@@ -195,7 +206,7 @@ jobs:
       # check for itself:
       #
       #   1. SAME INSTRUMENT. The base scan runs the same resolved
-      #      `$HARNESS_CLI` in the same job as the head scan. A count is only
+      #      `$HARNESS_CLI_EXACT` in the same job as the head scan. A count is only
       #      comparable to another count from the same analyzer — this one
       #      moved 24 and then 110 findings across CLI minors with no code
       #      change at all (see $driftfix in the baseline).
@@ -214,7 +225,7 @@ jobs:
         run: |
           git worktree add --detach "$RUNNER_TEMP/entropy-base" "$BASE_SHA"
           cd "$RUNNER_TEMP/entropy-base"
-          npx --yes -p "$HARNESS_CLI" harness cleanup --findings-json \
+          npx --yes -p "$HARNESS_CLI_EXACT" harness cleanup --findings-json \
             > "$GITHUB_WORKSPACE/entropy-base-report.txt" || true
 
       - name: Entropy ratchet (blocking)
@@ -253,8 +264,8 @@ jobs:
       # stays flagless, and perf-ratchet.mjs abstains on an implausible zero.
       - name: Harness Performance Check
         run:
-          npx --yes -p "$HARNESS_CLI" harness check-perf > perf-report.txt 2>&1
-          || true
+          npx --yes -p "$HARNESS_CLI_EXACT" harness check-perf > perf-report.txt
+          2>&1 || true
 
       # The MERGE-BASE half of the perf ratchet (#812), the same two-rule shape
       # the entropy ratchet gained in #703 and for the same reason: the ceiling
@@ -263,7 +274,7 @@ jobs:
       # which point any PR adding a single function-length finding failed the
       # gate whatever its own diff did. Scanning the base tree makes each PR
       # answerable for its own delta. The two properties the entropy step
-      # documents apply verbatim — SAME INSTRUMENT (`$HARNESS_CLI`, same job)
+      # documents apply verbatim — SAME INSTRUMENT (`$HARNESS_CLI_EXACT`, same job)
       # and OUTSIDE THE WORKSPACE (`$RUNNER_TEMP`, or the head scan walks the
       # base tree and double-counts) — and `ts/test/perf-ratchet.test.ts`
       # asserts both. `2>&1 || true` matches the head scan; an empty base
@@ -283,7 +294,7 @@ jobs:
         run: |
           git worktree add --detach "$RUNNER_TEMP/perf-base" "$BASE_SHA"
           cd "$RUNNER_TEMP/perf-base"
-          npx --yes -p "$HARNESS_CLI" harness check-perf \
+          npx --yes -p "$HARNESS_CLI_EXACT" harness check-perf \
             > "$GITHUB_WORKSPACE/perf-base-report.txt" 2>&1 || true
 
       - name: Performance ratchet (blocking)

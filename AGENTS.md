@@ -652,6 +652,14 @@ working dir, #700) and update `measuredCount`, `measuredAt`, `harnessCli` and
 good news — establish whether the tree got cleaner or the detector went quiet
 before lowering a ceiling to match it.
 
+**The float stops at the resolve step (#1248).** `harness-quality.yml` resolves
+`HARNESS_CLI` once and exports `HARNESS_CLI_EXACT` (`<package>@<resolved>`).
+Every scan, at head and at merge base, runs `"$HARNESS_CLI_EXACT"`, so the
+version passed as `--cli-version` is the version that produced the report. A
+scan that re-resolved `@12` could land on a different 12.x mid-run.
+`ts/test/harness-cli-exact-pin.test.ts` parses the workflow and fails on any
+scan that floats or runs before the resolve step.
+
 **The entropy ceiling only falls, and only the merge base can prove it
 (#1247).** No offline test can see a raised `maxFindings`. On a PR's merge ref,
 `git show HEAD:` is the same file. On a pull request, `harness-quality.yml`
