@@ -9,6 +9,7 @@
 // findings". Comparing resolved real paths is immune to both.
 
 import { realpathSync } from 'node:fs';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 /**
