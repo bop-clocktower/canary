@@ -36,24 +36,40 @@
  * are in ADR 0012's 2026-09-04 amendment; `ts/test/entropy-ratchet.test.ts`
  * asserts both against the YAML.
  *
+ * ## The ceiling only falls (#1247)
+ *
+ * With `--base-baseline` — the merge base's `.harness/entropy-baseline.json`,
+ * the one copy a PR cannot rewrite — a `maxFindings` above the base's fails.
+ * No offline test can see a raise: on a PR's merge ref `git show HEAD:` is the
+ * same file, so the guard that tried passed a committed 145 -> 200.
+ *
  * Usage:
  *   harness cleanup --findings-json > report.txt || true
  *   node scripts/entropy-ratchet.mjs --report report.txt \
- *     [--base-report base-report.txt] [--cli-version 12.2.0]
+ *     [--base-report base-report.txt] [--cli-version 12.2.0] \
+ *     [--base-baseline <base>/.harness/entropy-baseline.json]
  *
  * Exit codes follow the repo's gate convention (#508):
  *   0 = verified — at or under the baseline, and at or under the merge base
- *   1 = the ratchet fired — findings grew past the baseline or the merge base
+ *   1 = the ratchet fired — findings grew past the baseline or the merge base,
+ *       or the ceiling was raised above the merge base's
  *   2 = error — the baseline file is missing or unreadable
  *   3 = ABSTENTION — no findings line in the input, so nothing was measured. A
  *       `--base-report` naming a report with no count abstains too: a base
  *       that could not be measured is not a base of zero, and degrading to the
- *       absolute rule would hide the delta gate going dark.
+ *       absolute rule would hide the delta gate going dark. So does a
+ *       `--base-baseline` that is missing, not JSON, or has no integer ceiling.
  */
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import {
+  fail,
+  requireCeilingNotRaised,
+  requireMatchingInstrument,
+} from './lib/entropy-baseline.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_BASELINE = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
@@ -82,12 +98,14 @@ function parseArgs(argv) {
   const args = {
     report: null,
     baseReport: null,
+    baseBaseline: null,
     baseline: DEFAULT_BASELINE,
     cliVersion: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--report') args.report = argv[i + 1];
     else if (argv[i] === '--base-report') args.baseReport = argv[i + 1];
+    else if (argv[i] === '--base-baseline') args.baseBaseline = argv[i + 1];
     else if (argv[i] === '--baseline') args.baseline = argv[i + 1];
     else if (argv[i] === '--cli-version') args.cliVersion = argv[i + 1];
   }
@@ -120,51 +138,6 @@ function contractFindings(line) {
   } catch {
     return null;
   }
-}
-
-function fail(code, message) {
-  console.error(message);
-  process.exit(code);
-}
-
-/**
- * Abstain unless the CLI that produced this report is the one the ceiling was
- * calibrated against (#744). Twin of the same function in `perf-ratchet.mjs`.
- *
- * The count is only meaningful next to the identity of the analyzer that
- * produced it, and the workflows pin a FLOATING
- * `@harness-engineering/cli@11`, so that analyzer changes with no commit here.
- * It moved twice: 11.1.1 -> 11.2.0 took the count 281 -> 257, and 11.2.0 ->
- * 11.3.0 took it 257 -> 147 while the ceiling stood at 267. Every offline guard
- * stayed green through both, because they compare the baseline against itself
- * and a floating minor clears a MAJOR check by construction.
- *
- * A disagreement is an ABSTENTION, never a pass and never a failure: the
- * measurement is not comparable to the ceiling, so there is nothing to compare.
- * Re-measure, and update the baseline in the same PR.
- */
-function requireMatchingInstrument(
-  baselineCli,
-  cliVersion,
-  maxFindings,
-  findings,
-) {
-  if (baselineCli === null || cliVersion === baselineCli) return;
-  fail(
-    3,
-    `entropy-ratchet: ABSTAINED — this baseline's ${maxFindings} ceiling was ` +
-      `calibrated against harness CLI ${baselineCli}, but ` +
-      (cliVersion === null
-        ? 'the caller did not say which version produced this report ' +
-          '(pass `--cli-version`).'
-        : `this report was produced by ${cliVersion}.`) +
-      `\nThe measured ${findings} is therefore not comparable to the ` +
-      'ceiling — an analyzer that changes its own false-positive model moves ' +
-      'this count with no change to the codebase, in either direction.\n' +
-      'Re-measure in a clean worktree and update "measuredCount" and ' +
-      '"harnessCli" in the baseline in the SAME PR. Do not silence this by ' +
-      'deleting "harnessCli".',
-  );
 }
 
 /**
@@ -253,13 +226,18 @@ function readBaseline(baseline) {
 }
 
 function main() {
-  const { report, baseReport, baseline, cliVersion } = parseArgs(
+  const { report, baseReport, baseBaseline, baseline, cliVersion } = parseArgs(
     process.argv.slice(2),
   );
 
   if (!report) fail(2, 'entropy-ratchet: --report <file> is required.');
 
   const { maxFindings, maxHeadroom, baselineCli } = readBaseline(baseline);
+
+  // First, because a raise is a property of two files, not of a measurement:
+  // no head scan, instrument or delta can excuse it (#1247).
+  if (baseBaseline)
+    requireCeilingNotRaised(maxFindings, baseBaseline, baseline);
 
   const findings = readFindings(report, 'head');
 
