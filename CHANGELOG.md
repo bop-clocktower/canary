@@ -18,12 +18,12 @@ under the project's former name) are documented in the
 
 - **`npm publish` no longer warns that both bins were "invalid and removed"**
   (#1252). The bins were never removed. npm rewrote the `./`-prefixed paths in
-  `npm/package.json` and reported the rewrite in that wording. The paths are
-  now declared in the form npm normalizes to, and so is `repository.url`, so a
+  `npm/package.json` and reported the rewrite in that wording. The paths are now
+  declared in the form npm normalizes to, and so is `repository.url`, so a
   release prints no "auto-corrected" banner. Do not run `npm pkg fix` on this
-  package. The release workflow now reads the published manifest back from
-  the registry. It fails if any declared bin is missing and abstains with
-  exit 3 if the version is not visible yet.
+  package. The release workflow now reads the published manifest back from the
+  registry. It fails if any declared bin is missing and abstains with exit 3 if
+  the version is not visible yet.
 
 ## [9.2.0] - 2026-10-09
 
