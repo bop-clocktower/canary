@@ -174,8 +174,8 @@ describe('the portability lint itself', () => {
     ],
     ['globalThis.process', 'export const p = globalThis.process.pid;\n'],
     [
-      'imported console and URL',
-      "import console from 'node:console';\nimport { URL } from 'node:url';\nconsole.log(new URL('./x', import.meta.url));\n",
+      'globalThis.console and an imported URL',
+      "import { URL } from 'node:url';\nglobalThis.console.log(new URL('./x', import.meta.url));\n",
     ],
   ];
 

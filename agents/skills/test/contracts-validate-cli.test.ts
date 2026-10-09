@@ -6,10 +6,6 @@
  * entry point (main guard, stdin, exitCode) with a child-level timeout.
  */
 import { spawnSync } from 'node:child_process';
-// validate.mjs imports its console from node:console (a vendored copy must
-// lint clean with no globals declared). Vitest swaps the GLOBAL console for its
-// own, so spying on that would miss every line; spy on the one it imports.
-import nodeConsole from 'node:console';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -35,10 +31,10 @@ afterEach(() => vi.restoreAllMocks());
 function call(argv: string[], stdin = '') {
   const out: string[] = [];
   const err: string[] = [];
-  vi.spyOn(nodeConsole, 'log').mockImplementation(
+  vi.spyOn(console, 'log').mockImplementation(
     (...a: unknown[]) => void out.push(a.join(' ')),
   );
-  vi.spyOn(nodeConsole, 'error').mockImplementation(
+  vi.spyOn(console, 'error').mockImplementation(
     (...a: unknown[]) => void err.push(a.join(' ')),
   );
   const code = main(argv, { readStdin: () => stdin });
@@ -118,7 +114,7 @@ describe('validate.mjs CLI (in-process)', () => {
 
   it('exits 2, not a crash, when stdin cannot be read (fork M)', () => {
     const err: string[] = [];
-    vi.spyOn(nodeConsole, 'error').mockImplementation(
+    vi.spyOn(console, 'error').mockImplementation(
       (...a: unknown[]) => void err.push(a.join(' ')),
     );
     const unreadable = () => {

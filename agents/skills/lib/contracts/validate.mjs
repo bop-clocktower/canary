@@ -11,7 +11,6 @@
 // failure is never a pass), 2 usage or unreadable input. There is no exit 3:
 // a parsed document always has a denominator of at least 1 (fork N).
 
-import console from 'node:console';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
@@ -20,6 +19,12 @@ import { createParser, EXIT_USAGE, formatUsageError } from '../parse-args.mjs';
 import { LAYERS, validateDocument, validateText } from './document.mjs';
 
 export { validateDocument, validateText };
+
+// Output goes through `globalThis.console`, not a bare `console`: this lib is
+// vendored into consumer repos whose lint declares no Node globals (#1234),
+// and `globalThis` is an ES builtin. Not imported from node:console either:
+// that adds a module edge (the perf coupling rule counts it) and bypasses a
+// test runner that swaps the global console.
 
 const PROG = 'canary-contracts-validate';
 
@@ -62,15 +67,16 @@ function readInput(file, readStdin) {
 
 function printVerdict(res, json) {
   if (json) {
-    console.log(JSON.stringify(res));
+    globalThis.console.log(JSON.stringify(res));
   } else if (res.valid) {
     const noun = res.checked === 1 ? 'record' : 'records';
-    console.log(
+    globalThis.console.log(
       `valid ${res.contract}: ${res.checked} ${noun} checked, 0 errors`,
     );
   } else {
-    for (const e of res.errors) console.error(`${e.path}: ${e.message}`);
-    console.error(`refused: ${res.errors.length} error(s)`);
+    for (const e of res.errors)
+      globalThis.console.error(`${e.path}: ${e.message}`);
+    globalThis.console.error(`refused: ${res.errors.length} error(s)`);
   }
 }
 
@@ -83,14 +89,14 @@ export function main(argv = process.argv.slice(2), io = {}) {
   const readStdin = io.readStdin ?? (() => readFileSync(0, 'utf8'));
   const parsed = parse(argv);
   if (parsed.help) {
-    console.log(HELP);
+    globalThis.console.log(HELP);
     return 0;
   }
   const problem = argsProblem(parsed);
   const input = problem ? null : readInput(parsed.positionals[0], readStdin);
   const usage = problem ?? input.error;
   if (usage) {
-    console.error(formatUsageError(PROG, usage));
+    globalThis.console.error(formatUsageError(PROG, usage));
     return EXIT_USAGE;
   }
   const res = validateText(input.text, { layer: parsed.opts.layer });
