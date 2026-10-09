@@ -170,3 +170,26 @@ describe('HealResult properties', () => {
     expect(result.file).toBe(f);
   });
 });
+
+// bug-fleet A6: the `(\s*)` indent group and the trailing `\s*` both cross
+// newlines, so a blank line above a healed call became its reported line and
+// blank lines below a healed wait were deleted from the patched file.
+describe('blank lines around a healed line', () => {
+  it('reports the line of the call, not a blank line above it', () => {
+    const result = healer.heal(
+      tsFile("test('x', async ({ page }) => {\n\n  page.click('#b');\n});\n"),
+    );
+    expect(result.changes.map((c) => [c.rule, c.line])).toEqual([
+      ['HEAL-003', 3],
+    ]);
+  });
+
+  it('keeps the blank lines that follow a healed wait', () => {
+    const source =
+      "test('x', async ({ page }) => {\n  await page.waitForTimeout(100);\n\n\n  expect(1).toBe(1);\n});\n";
+    const result = healer.heal(tsFile(source));
+    expect(result.patched_content.split('\n')).toHaveLength(
+      source.split('\n').length,
+    );
+  });
+});
