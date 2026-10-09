@@ -11,7 +11,7 @@
       "name": "canary",
       "source": ".",
       "description": "Canary plugin with eight agents (test-author, test-generator, test-reviewer, test-healer, flake-hunter, framework-advisor, initializer, migrator), the canary skills, slash commands, and the canary-mcp MCP server. Personal-source build maintained by Bri Stevenski.",
-      "version": "9.1.0",
+      "version": "9.2.0",
       "author": {
         "name": "Bri Stevenski",
         "url": "https://github.com/bri-stevenski"
