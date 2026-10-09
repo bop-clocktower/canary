@@ -91,7 +91,9 @@ export function suppressionsByPath(
   const out = new Map<string, SuppressionKind>();
   for (const file of files) {
     for (const line of (file.patch ?? '').split('\n')) {
-      if (!line.startsWith('+') || line.startsWith('+++')) continue;
+      // REST patches start at the first `@@` hunk with no `+++ ` file header,
+      // so every `+` line is an added line -- including `++count;`.
+      if (!line.startsWith('+')) continue;
       const reason = suppressionReason(line.slice(1));
       if (reason === null || out.get(file.filename) === 'false-positive')
         continue;
