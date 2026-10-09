@@ -10,7 +10,7 @@
 // nodeId -> classname::name is a deterministic transform, so a correct key->id
 // map replaces the fragile classname heuristic (fixes class-based re-runs).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, inject } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -168,7 +168,11 @@ describe('buildNodeIdMap', () => {
 
 // --- integration: collect real node ids (incl. class-based) ----------------
 
-describe('collectPytestNodeIds (integration)', () => {
+// Spawns a real pytest. Without one it skips LOUDLY locally and fails under CI
+// (test/pytest-precondition.ts, #1239) rather than failing as if broken.
+const NO_PYTEST = !inject('pytestAvailable');
+
+describe.skipIf(NO_PYTEST)('collectPytestNodeIds (integration)', () => {
   it('returns authoritative node ids that round-trip to JUnit keys', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'savant-p4-'));
     const cwd = process.cwd();

@@ -6,7 +6,7 @@
 // pure/injectable so they are deterministic in-process; the real subprocess
 // seams are covered by one integration test needing only in-order pytest runs.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, inject } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -218,7 +218,11 @@ describe('confirm exposes shuffled order', () => {
 
 // --- realPolluterSeams (integration, no shuffle plugin needed) -------------
 
-describe('realPolluterSeams (integration)', () => {
+// Spawns a real pytest. Without one it skips LOUDLY locally and fails under CI
+// (test/pytest-precondition.ts, #1239) rather than failing as if broken.
+const NO_PYTEST = !inject('pytestAvailable');
+
+describe.skipIf(NO_PYTEST)('realPolluterSeams (integration)', () => {
   it('runs a victim alone and detects reproduction via a real prefix run', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'savant-pol-'));
     const cwd = process.cwd();

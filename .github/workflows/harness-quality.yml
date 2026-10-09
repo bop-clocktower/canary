@@ -348,7 +348,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install pytest (the #1030 conftest snippet is executed, not just documented)
-        run: pip install pytest
+        run: pip install -r requirements-dev.txt
 
       - name: Install TS pilot deps
         working-directory: ts
@@ -422,8 +422,10 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Same file the local toolchain installs from (#1239), so CI and a dev
+      # machine cannot disagree about what "pytest installed" means.
       - name: Install pytest (for the Tier-2 spawn integration test)
-        run: pip install pytest
+        run: pip install -r requirements-dev.txt
 
       # canary-cassandra's CLI delegates to the engine's vacuity-scanner rather
       # than carrying a second copy of the rules (#605: a third half-enforcer
@@ -448,6 +450,12 @@ jobs:
 
       - name: Test + coverage gate (vitest)
         working-directory: agents/skills
+        # #1239: the savant pytest-integration tests abstain loudly when pytest
+        # is missing -- but only locally. GitHub sets CI=true, which already
+        # turns that abstention into a failure; this makes the contract
+        # explicit and independent of the runner's CI variable.
+        env:
+          CANARY_REQUIRE_PYTEST: '1'
         run:
           npm test -- --reporter=default --reporter=json
           --outputFile=/tmp/durations.json
