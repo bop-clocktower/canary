@@ -766,13 +766,24 @@ function loadSpec(path: string, deps: GuardianDeps): Record<string, unknown> {
   return (loadYaml(text) ?? {}) as Record<string, unknown>;
 }
 
+/**
+ * A row `mapImpact` can key: an object with a string `path` and `method`. Every
+ * other element is skipped, so one malformed row cannot crash `analyze`.
+ */
+function isKeyableCoverageRow(row: unknown): row is CoverageRow {
+  const r = row as Partial<CoverageRow> | null;
+  return typeof r?.path === 'string' && typeof r.method === 'string';
+}
+
 function loadCoverage(path: string): CoverageRow[] {
   if (!existsSync(path)) return [];
   try {
     const data = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
     if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
       const endpoints = (data as { endpoints?: unknown }).endpoints;
-      return Array.isArray(endpoints) ? (endpoints as CoverageRow[]) : [];
+      return Array.isArray(endpoints)
+        ? endpoints.filter(isKeyableCoverageRow)
+        : [];
     }
     return [];
   } catch {
