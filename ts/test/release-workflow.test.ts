@@ -109,6 +109,33 @@ describe('release.yml (#1185)', () => {
     expect(runOf(isNpmPublish, 'npm publish')).toMatch(/--provenance\b/);
   });
 
+  // #1252: "the CLI shipped" was inferred from a green publish step while npm
+  // printed "bin ... was invalid and removed" on every release. The registry's
+  // manifest is the only proof the bins shipped, so read it back.
+  describe('published-manifest bin check (#1252)', () => {
+    const isBinCheck = (s: Step) =>
+      /\bnpm view\b/.test(s.run ?? '') && /\bbin\b/.test(s.run ?? '');
+    const isCheckAfterPublish = (s: Step) => isBinCheck(s) && !isNpmPublish(s);
+
+    it('runs after npm publish and before the GitHub Release', () => {
+      const check = indexOf(isCheckAfterPublish, 'published-manifest bin');
+      expect(check).toBeGreaterThan(indexOf(isNpmPublish, 'npm publish'));
+      expect(check).toBeLessThan(indexOf(isGhRelease, 'GitHub Release'));
+    });
+
+    it('checks every bin the local manifest declares, not a hardcoded subset', () => {
+      const run = runOf(isCheckAfterPublish, 'published-manifest bin');
+      expect(run).toMatch(/require\(['"]\.\/package\.json['"]\)\.bin/);
+      expect(run).toMatch(/exit 1|process\.exit\(1\)/);
+    });
+
+    it('abstains with exit 3 (not a pass) when the version is not visible yet', () => {
+      const run = runOf(isCheckAfterPublish, 'published-manifest bin');
+      expect(run).toMatch(/\bexit 3\b/);
+      expect(run).toMatch(/::error::/);
+    });
+  });
+
   it('skips the publish on a re-run when npm already has the version', () => {
     const run = runOf(isNpmPublish, 'npm publish');
     expect(run).toMatch(/npm view\b/);

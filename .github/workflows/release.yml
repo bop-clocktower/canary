@@ -78,6 +78,45 @@ jobs:
           echo "publishing $NAME@$VERSION under dist-tag: $DIST_TAG"
           npm publish --access public --provenance --tag "$DIST_TAG"
 
+      # #1252: a green publish step is not proof the CLI shipped. npm used to
+      # print `"bin[canary]" ... was invalid and removed` on every release
+      # (noise from a `./`-prefixed bin path), so a release that really lost
+      # its bins would have looked like every other one. Read the registry's
+      # manifest back and require every bin the local package.json declares.
+      # Exit 3 = abstain: the version is not visible yet, so nothing was checked.
+      - name: Verify the published manifest ships every bin
+        working-directory: npm
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          VISIBLE=""
+          for attempt in 1 2 3 4 5 6; do
+            VISIBLE=$(npm view "$NAME@$VERSION" version 2>/dev/null || true)
+            [ "$VISIBLE" = "$VERSION" ] && break
+            echo "$NAME@$VERSION not visible on the registry yet (attempt $attempt/6)"
+            sleep 10
+          done
+          if [ "$VISIBLE" != "$VERSION" ]; then
+            echo "::error::$NAME@$VERSION is not visible on the registry; its bins were NOT verified (abstaining, exit 3)"
+            exit 3
+          fi
+          # Empty or unreadable output parses as {} and fails closed below.
+          npm view "$NAME@$VERSION" bin --json | node -e '
+            let raw = "";
+            process.stdin.on("data", (c) => (raw += c));
+            process.stdin.on("end", () => {
+              let got = {};
+              try { got = JSON.parse(raw || "{}") ?? {}; } catch {}
+              const want = Object.keys(require("./package.json").bin);
+              const missing = want.filter((b) => !got[b]);
+              if (missing.length) {
+                console.log(`::error::published manifest is missing bin(s): ${missing.join(", ")}`);
+                process.exit(1);
+              }
+              console.log(`published bins: ${JSON.stringify(got)}`);
+            });
+          '
+
       - name: Create GitHub Release (changelog only)
         uses: softprops/action-gh-release@v3
         with:
