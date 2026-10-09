@@ -145,7 +145,11 @@ The rule is per-**report**, because absence only means "not coverable" where the
 report says what it measured. lcov and Cobertura say so by construction. The
 `coverage.json` contract does not: a line absent from both of its fields is
 uncovered, and its `covered_lines` shorthand cannot express an unhit line at
-all, so absence there counts as a miss.
+all, so absence there counts as a miss. For the same reason the coverage delta
+(`--base-coverage`) cannot score a file whose entry declares no
+`instrumented_lines` and records no `line_hits` 0: every line it lists is
+covered, so its ratio is 100% on both sides whatever changed. Such a file is
+reported head-only, never as compared-and-clean.
 
 A coverage-json producer can opt in to the lcov rule per file by declaring
 `instrumented_lines` ([#657]) — the set of lines its tool actually measured.

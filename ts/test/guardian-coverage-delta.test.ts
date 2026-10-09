@@ -253,4 +253,29 @@ describe('resolveCoverageDelta', () => {
     expect(coverageDeltaStatus(state)).toBe('unavailable');
     expect(coverageDeltaNotice(state)).toContain('coverage delta unavailable');
   });
+
+  it('a covered_lines-only coverage-json never reads as compared-and-clean', () => {
+    // `covered_lines` cannot express an unhit line, so its recorded lines are
+    // all covered by construction: the ratio is 100% on both sides whatever
+    // happened. Base ran 8 lines, head ran 2 — a real drop the delta must
+    // either flag or loudly decline to judge, never pass as "compared".
+    const writeJson = (name: string, covered: number[]): string => {
+      const path = join(dir, name);
+      const doc = { files: { 'src/a.ts': { covered_lines: covered } } };
+      writeFileSync(path, JSON.stringify(doc), 'utf-8');
+      return path;
+    };
+    const base = writeJson('base.json', [1, 2, 3, 4, 5, 6, 7, 8]);
+    const head = writeJson('head.json', [1, 2]);
+
+    const { deltas, state } = resolveCoverageDelta([unit('src/a.ts')], {
+      baseCoveragePath: base,
+      headCoveragePath: head,
+    });
+
+    const silentlyClean =
+      coverageDeltaStatus(state) === 'compared' &&
+      deltas.every((d) => !d.regressed);
+    expect(silentlyClean).toBe(false);
+  });
 });
