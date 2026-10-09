@@ -9,7 +9,15 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import type { RunRecord } from '../src/history/record.js';
 import type { MainDeps } from '../src/main-deps.js';
@@ -20,6 +28,12 @@ import {
   type RewindOptions,
 } from '../src/rewind/rewind-cli.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
+import {
+  GIT_TEMPLATE_BUILD_TIMEOUT_MS,
+  buildGitTemplate,
+  copyGitTemplate,
+  removeGitFixture,
+} from './git-fixture-testkit.js';
 
 const HOST = { node: 'v22.23.2', os: 'linux', arch: 'x64' };
 
@@ -47,22 +61,38 @@ function write(path: string, body: string): void {
 let repo: string;
 let shas: string[];
 
-/** Three first-parent commits; node_modules present so no install runs. */
+let template: string;
+
+/**
+ * Three first-parent commits; node_modules present so no install runs. Built
+ * ONCE per file and copied per test (#1245): built per test it was ten
+ * `git` spawns in a `beforeEach`, which ran past vitest's 10 s hook timeout
+ * under load. The copy has the same objects, so `shas` holds for every test.
+ */
+beforeAll(() => {
+  template = buildGitTemplate('rewind-replay-tpl-', (dir) => {
+    git(dir, 'init', '-q', '-b', 'main');
+    shas = [];
+    for (const n of [1, 2, 3]) {
+      write(join(dir, 'test', 'a.test.ts'), `// v${n}\n`);
+      write(join(dir, 'package.json'), '{}');
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', `c${n}`);
+      shas.push(git(dir, 'rev-parse', 'HEAD'));
+    }
+  });
+}, GIT_TEMPLATE_BUILD_TIMEOUT_MS);
+
+afterAll(() => {
+  removeGitFixture(template);
+});
+
 beforeEach(() => {
-  repo = mkTmp();
-  git(repo, 'init', '-q', '-b', 'main');
-  shas = [];
-  for (const n of [1, 2, 3]) {
-    write(join(repo, 'test', 'a.test.ts'), `// v${n}\n`);
-    write(join(repo, 'package.json'), '{}');
-    git(repo, 'add', '-A');
-    git(repo, 'commit', '-q', '-m', `c${n}`);
-    shas.push(git(repo, 'rev-parse', 'HEAD'));
-  }
+  repo = copyGitTemplate(template, 'canary-cli-');
 });
 
 afterEach(() => {
-  rmTmp(repo);
+  removeGitFixture(repo);
 });
 
 function failingRun(over: Partial<RunRecord> = {}): RunRecord {

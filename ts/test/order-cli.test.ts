@@ -9,9 +9,23 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
-import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
+import { invokeCanary } from './canary-cli-testkit.js';
+import {
+  GIT_TEMPLATE_BUILD_TIMEOUT_MS,
+  buildGitTemplate,
+  copyGitTemplate,
+  removeGitFixture,
+} from './git-fixture-testkit.js';
 
 let repo: string;
 
@@ -40,17 +54,34 @@ function write(rel: string, body: string): string {
 
 const FILES = ['test/a.test.ts', 'test/b.test.ts', 'test/c.test.ts'];
 
+let template: string;
+
+/**
+ * One committed base, built ONCE per file and copied per test — the same fix as
+ * #1243/#1245 for the same shape (three `git` spawns per test in a hook). The
+ * helpers above write through `repo`, so it names the template while building.
+ */
+beforeAll(() => {
+  template = buildGitTemplate('order-cli-tpl-', (dir) => {
+    repo = dir;
+    git('init', '-q', '-b', 'main');
+    for (const f of FILES) write(f, '');
+    write('src/util.ts', 'export const x = 1;\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'base');
+  });
+}, GIT_TEMPLATE_BUILD_TIMEOUT_MS);
+
+afterAll(() => {
+  removeGitFixture(template);
+});
+
 beforeEach(() => {
-  repo = mkTmp();
-  git('init', '-q', '-b', 'main');
-  for (const f of FILES) write(f, '');
-  write('src/util.ts', 'export const x = 1;\n');
-  git('add', '-A');
-  git('commit', '-q', '-m', 'base');
+  repo = copyGitTemplate(template, 'canary-cli-');
 });
 
 afterEach(() => {
-  rmTmp(repo);
+  removeGitFixture(repo);
 });
 
 interface Plan {
