@@ -1,0 +1,22 @@
+{
+  "fleet": "roadmap-fleet",
+  "issues": [1212],
+  "route": "feature",
+  "routeSignal": "human-override",
+  "stages": ["brainstorming", "autopilot", "resume-rebase"],
+  "spec": "docs/changes/1212-nested-config-detection/proposal.md",
+  "plan": "docs/changes/1212-nested-config-detection/plans/2026-10-08-nested-config-detection-plan.md",
+  "closingKeyword": "Closes",
+  "closingReason": "Every acceptance box in #1212 is met by a named test. A nested wdio.conf.ts alone detects as wdio/mobile, and the evidence names the relative path. A workspace root never reports a package config as a root hit, which is a regression test on the #504 fixture, and removing the guard fails 2 tests. The depth bound and the skip list are explicit, pinned, and mutation-checked. Disagreeing nested configs produce an explicit abstention that names every config, whatever the walk order. The unresolved-framework reason states what the config tier probed.",
+  "assumptions": [
+    "Human-settled at CONFIRM: the nested walk runs only when no workspace is declared. A workspace that is declared but matched zero packages also counts as declared, so it is not walked.",
+    "Tier placement was decided in brainstorming, not by the human. Nested config ranks below the root's own evidence (root config, pyproject, requirements, scripts.test) and above other scripts, dependencies and the language fallback. As a result, the #1205 multi-target wdio fixture now reports 'nested config Mobile/android/android-app/wdio.conf.ts' instead of 'package.json (scripts.test:wdio:android)'. Framework and shape are unchanged.",
+    "A mixed nested result ends detection, so the scripts, dependency and language tiers do not run after it. A single-package repo with disagreeing nested configs that previously resolved through a dependency, or through language: typescript, now abstains. This is intended (no walk-order or inherited guess), and it is a behavior change.",
+    "Workspace package probes do not walk. The skip list extends the existing WORKSPACE_SKIP_DIRS (fs-glob.ts) with out, .nuxt, .cache and target, so the two lists cannot drift. Symlinked directories are not followed, and unreadable directories are skipped silently.",
+    "Autopilot was run as a single low-complexity phase at fast rigor. Planning and execution were done inline in this lane rather than through separate planner and executor subagents. Review was delegated to harness-code-reviewer.",
+    "Resumed 2026-10-09 by a new lane: rebased cleanly onto origin/main 858aa846. Every plan task (1-6) was re-verified against the code and tests on the branch; none needed further work. Task 4 tests live in ts/test/nested-config-walk.test.ts, not framework-probes.test.ts as the plan named.",
+    "The workspace-guard claim was re-verified by mutation: removing the ws === null guard on the nested-config tier in migrator.ts fails 2 tests in migrator-monorepo-report.test.ts.",
+    "Arch module-size, re-measured on the new merge base in clean worktrees: main 52175 (600-line planted probe), branch 52325, a +150 delta unchanged by the rebase. The old 52317 allowance was stale and was raised to 52325. That ceiling sits 628 above the 51697 floor, past the 517 tolerance, so arch-baseline-freshness.test.ts failed. The floor was refreshed to 52325 with scripts/refresh-arch-baseline.mjs and violationIds left untouched, following the same pattern as #1198. No refresh-baseline label was applied.",
+    "Entropy 140 vs 140 at the merge base, and maxFindings is unchanged. Perf has 0 new findings (211 vs 211). One advisory: migrator.ts file-length grew from 2428 to 2454, and that file was already over threshold at the base. Docs coverage is 70/401 vs 70/400."
+  ]
+}
