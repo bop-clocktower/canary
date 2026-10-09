@@ -1644,7 +1644,7 @@ a chained one-liner hides which link failed, and silence means it did not run:
 cd ts
 npm run build         # tsc -p . + copy-data
 npm run typecheck     # tsc --noEmit over tsconfig.check.json (src + test)
-npm run format:check  # prettier
+npm run format:check  # prettier: ts sources + .github/workflows/*.yml
 npm test              # vitest run --coverage
 ```
 
@@ -1660,11 +1660,13 @@ decision, and the `protect-config` hook blocks AI-authored linter configs. The
 one exception is a test, not a gate:
 `agents/skills/test/lib-portability.test.ts` calls ESLint's in-process `Linter`
 (devDependency of `agents/skills`, no config file) to prove the vendored `lib/`
-passes `no-undef` in a consumer repo (#1234). Prettier is the formatting gate;
-markdown is gated separately by `docs-lint.yml` via `markdownlint-cli`.
-`agents/skills/` carries its own `test` / `typecheck` / `format:check` for the
-skill bundles. Its `test` needs a built engine — run `npm run build` in `ts/`
-first: canary-cassandra delegates to `ts/dist`, and a vitest `globalSetup`
+passes `no-undef` in a consumer repo (#1234). Prettier is the formatting gate,
+and it covers `.github/workflows/*.yml` too (#1237). Workflow `run:` scripts are
+linted by the advisory `actionlint` job in `workflow-lint.yml` (#1238); markdown
+is gated separately by `docs-lint.yml` via `markdownlint-cli`. `agents/skills/`
+carries its own `test` / `typecheck` / `format:check` for the skill bundles. Its
+`test` needs a built engine — run `npm run build` in `ts/` first:
+canary-cassandra delegates to `ts/dist`, and a vitest `globalSetup`
 (`agents/skills/test/engine-precondition.ts`, #1221) fails the run once with
 `ts/dist missing` when it is absent, and warns when `ts/dist` is older than
 `ts/src`.

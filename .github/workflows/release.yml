@@ -101,6 +101,7 @@ jobs:
             exit 3
           fi
           # Empty or unreadable output parses as {} and fails closed below.
+          # shellcheck disable=SC2016 # single quotes on purpose: ${...} below is a JS template literal, not shell
           npm view "$NAME@$VERSION" bin --json | node -e '
             let raw = "";
             process.stdin.on("data", (c) => (raw += c));

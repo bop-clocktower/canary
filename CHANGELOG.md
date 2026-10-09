@@ -28,6 +28,21 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Workflow hygiene: least privilege, format gate, actionlint** (#1236, #1237,
+  #1238).
+  - `harness-architecture.yml` now declares `permissions: contents: read`.
+    Before, it ran with the repository's default token scope.
+  - `batwoman.yml` is prettier-clean. The `ts` `format:check` gate now covers
+    `.github/workflows/*.yml`, so workflow YAML cannot drift out of format
+    again.
+  - actionlint 1.7.12 reports zero findings. The 3 `SC2016` hits are intentional
+    single quotes around `node -e` JS. The 3 `SC2086` hits are the `*_BASE_FLAG`
+    expansions, which must stay unquoted because each one expands to zero or
+    four arguments. All 6 get scoped `shellcheck disable` directives with a
+    reason, and a test keeps the flags unquoted.
+  - A new advisory `actionlint` job (`workflow-lint.yml`) runs actionlint on
+    every PR.
+
 - **canary-cassandra reads `@covers` on every test in a file** (#1232). In a
   JS/TS file only the first test's annotation was read; every later one was
   dropped and the test fell back to import inference, so a wrong `@covers` claim

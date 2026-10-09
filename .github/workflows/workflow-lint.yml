@@ -1,0 +1,47 @@
+name: Workflow lint
+
+# actionlint over every workflow (#1238). It type-checks `${{ }}` expressions,
+# validates action inputs, and runs shellcheck on every `run:` script. Before
+# this job existed, findings piled up unnoticed: 5 were filed in #1238, and a
+# sixth landed in release.yml before that issue was picked up.
+#
+# Advisory, not required. See `.github/required-checks.json` for the reason.
+# There is no `paths:` filter: the job takes about 10 seconds, and a filtered
+# job cannot be promoted to required later without removing the filter first
+# (#542).
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The version and the SHA-256 are both pinned. A new actionlint release
+      # can add rules, so a release must never turn this job red when nothing
+      # in this repo changed. A git tag can be moved, so the tarball is checked
+      # against the digest that was in the v1.7.12 release's checksums.txt.
+      # A failed download or a digest mismatch fails this step, under its own
+      # name. Bump ACTIONLINT_VERSION and ACTIONLINT_SHA256 together.
+      # shellcheck comes preinstalled on ubuntu-latest, and actionlint uses it
+      # automatically.
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: '1.7.12'
+          ACTIONLINT_SHA256: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
+          tar xzf "$tarball" actionlint
+          ./actionlint -version
+      - name: Run actionlint
+        run: ./actionlint -color

@@ -47,6 +47,13 @@ on:
   schedule:
     - cron: '37 6 * * 1'
 
+# Least privilege (#1236). Before this block existed, the job ran with the
+# repository's default token scope. Its steps only check out the code and run
+# two read-only harness commands, `check-deps` and `validate`. Nothing writes
+# to the repo, the PR or the checks API, so no job needs a write scope.
+permissions:
+  contents: read
+
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
   HARNESS_CLI: '@harness-engineering/cli@12'
