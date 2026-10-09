@@ -619,6 +619,9 @@ describe('schedule-watchdog.yml wiring', () => {
   // only right for a schedule that fires at least weekly; a monthly cron would
   // read as stale for three weeks of every four.
   it('watches only crons that fire weekly or more often', () => {
+    // An empty `watched` would leave `tooRare` empty for the wrong reason
+    // (#1179). Pin the denominator in this test, not only in the one above.
+    expect(watched.length).toBeGreaterThan(0);
     const tooRare = watched.flatMap(({ file, crons }) =>
       crons
         .filter((cron) => {

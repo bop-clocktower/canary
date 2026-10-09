@@ -190,9 +190,17 @@ const PY_STDLIB = new Set([
  * `findings()` reaches it, and a pattern that only understood `const x = ` saw
  * none of it -- so every test in `doc-links.test.ts` read as touching nothing at
  * all. An object pattern binds every name in it to the same reaching RHS.
+ *
+ * A type annotation may sit between the binding and its `=` (#1179):
+ * `const parse: Parser = (...a) => parseArgv(a)` was invisible, so a test
+ * calling the target through it drew VAC-002. The annotation is one line with no
+ * `=` or `;` of its own -- except the `=>` of a function type, which is why the
+ * declaration's `=` must not be followed by `>`. A multi-line annotation, or an
+ * object type with `;` members, is still missed: the safe direction, because a
+ * missed declaration can only leave a finding standing, never silence one.
  */
 const JS_LOCAL_DECL =
-  /(?:^|\n)\s*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(?:\{([^}]*)\}|\[([^\]]*)\]|(\w+))\s*=)/g;
+  /(?:^|\n)\s*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(?:\{([^}]*)\}|\[([^\]]*)\]|(\w+))(?:\s*:(?:[^=;\n]|=>)+?)?\s*=(?![=>]))/g;
 const PY_LOCAL_DECL = /(?:^|\n)\s*def\s+(\w+)\s*\(/g;
 
 /**

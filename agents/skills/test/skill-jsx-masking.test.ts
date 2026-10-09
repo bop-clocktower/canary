@@ -82,6 +82,9 @@ describe.each(SKILLS)(
 
     it('does not read JSX children prose as code', () => {
       const prose = control.replace(/\{.*\}/, (m) => m.slice(1, -1));
+      // The same line with its braces kept must still fire, or an empty
+      // result is what a scanner that finds nothing returns too (#1179).
+      expect(linesOf(scan, control, 'a.test.tsx', rule)).toEqual([1]);
       expect(linesOf(scan, prose, 'a.test.tsx', rule)).toEqual([]);
     });
 

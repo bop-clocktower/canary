@@ -14,6 +14,18 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **canary-cassandra sees typed helper declarations** (#1179). A same-file
+  helper declared with a type annotation
+  (`const parse: Parser = (...a) => parseArgv(a)`) was invisible to the
+  local-declaration pattern, so a test that reached its target through it drew
+  VAC-002. The pattern now accepts a one-line annotation, including a function
+  type's own `=>`. Triage of the findings #1175 exposed on canary's own suites
+  fixed five tests that were vacuous or absence-only with no precondition in the
+  test; the remaining false-positive shapes are tracked in #1231, and a
+  `@covers` bug found along the way in #1232.
+
 ## [9.2.0] - 2026-10-09
 
 ### Added
