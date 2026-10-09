@@ -67,9 +67,10 @@ describe('#1237 workflow YAML is under the prettier gate', () => {
     );
   });
 
-  // The script runs from ts/, so the glob is relative to it. A glob that
-  // matches nothing checks nothing, and that would be a zero denominator.
-  it('the glob matches the workflow files', () => {
+  // The glob names `.yml` only. A `.yaml` workflow would sit outside the gate
+  // with nothing reporting the gap. (Prettier itself errors on a glob that
+  // matches nothing, so the zero-file case is already loud.)
+  it('workflows use the .yml extension the glob covers', () => {
     const files = readdirSync(WORKFLOW_DIR).filter((f) => f.endsWith('.yml'));
     expect(files.length).toBeGreaterThan(0);
     expect(readdirSync(WORKFLOW_DIR).some((f) => f.endsWith('.yaml'))).toBe(
@@ -81,12 +82,20 @@ describe('#1237 workflow YAML is under the prettier gate', () => {
 describe('#1238 actionlint runs in CI', () => {
   const wf = workflow('workflow-lint.yml');
   const job = wf.jobs?.actionlint;
-  const script = (job?.steps ?? []).map((s) => s.run ?? '').join('\n');
+  const install = (job?.steps ?? []).find(
+    (s) => s.env?.ACTIONLINT_VERSION !== undefined,
+  );
 
-  it('has an actionlint job that pins an exact actionlint version', () => {
+  // An unpinned version turns the job red whenever upstream adds a rule. An
+  // unverified tarball trusts a git tag that can be moved.
+  it('pins an exact actionlint version and verifies its SHA-256', () => {
     expect(job).toBeDefined();
-    expect(script).toMatch(/download-actionlint\.bash\)\s+1\.\d+\.\d+/);
-    expect(script).toMatch(/actionlint\/v1\.\d+\.\d+\/scripts\//);
+    expect(install?.env?.ACTIONLINT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(install?.env?.ACTIONLINT_SHA256).toMatch(/^[0-9a-f]{64}$/);
+    expect(install?.run).toContain('sha256sum -c');
+    expect(install?.run).toMatch(
+      /releases\/download\/v\$\{ACTIONLINT_VERSION\}/,
+    );
   });
 
   it('runs read-only', () => {
