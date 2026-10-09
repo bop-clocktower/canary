@@ -1369,6 +1369,23 @@ function installedVersion(repoRoot: string, pkg: string): string | null {
 }
 
 /**
+ * A `files` entry `mapStrykerReport` can walk: a `mutants` array whose every
+ * mutant carries `location.start`. Anything else would throw mid-mapping, and
+ * an uncaught throw exits 1 -- which ADR 0009 reads as "survivors".
+ */
+function isMappableStrykerFile(file: unknown): boolean {
+  const mutants = isRecord(file) ? file['mutants'] : undefined;
+  return (
+    Array.isArray(mutants) &&
+    mutants.every((m) => isRecord(m) && hasStart(m['location']))
+  );
+}
+
+function hasStart(location: unknown): boolean {
+  return isRecord(location) && isRecord(location['start']);
+}
+
+/**
  * Map a Stryker report file, or abstain with the reason it could not be.
  *
  * NOT diff-scoped: every mutant the supplied report contains is mapped, so a
@@ -1393,6 +1410,13 @@ function mappedStrykerReport(
   if (!isRecord(parsed) || !isRecord(parsed['files'])) {
     return abstainedReport(
       `the stryker report at ${path} has no "files" map`,
+      excluded,
+    );
+  }
+  if (!Object.values(parsed['files']).every(isMappableStrykerFile)) {
+    return abstainedReport(
+      `the stryker report at ${path} has a file entry without a "mutants" ` +
+        'list of located mutants',
       excluded,
     );
   }
