@@ -40,6 +40,27 @@ interface DiscoverOptions {
   dryRun?: boolean;
 }
 
+/**
+ * The `jira_projects` keys in company.json, or `[]` when the file is missing,
+ * unreadable, or the value is not a list of strings. Read raw rather than via
+ * the CompanyKnowledge loader, so it applies the same shape check itself: a
+ * bare string used to pass and be iterated one character at a time.
+ */
+function readJiraProjects(companyPath: string): string[] {
+  if (!existsSync(companyPath)) return [];
+  try {
+    const data = JSON.parse(readFileSync(companyPath, 'utf-8')) as {
+      jira_projects?: unknown;
+    } | null;
+    const raw = data?.jira_projects;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((k): k is string => typeof k === 'string');
+  } catch {
+    // JSONDecodeError / OSError -> no keys.
+    return [];
+  }
+}
+
 async function discoverCmd(
   opts: DiscoverOptions,
   deps: MainDeps,
@@ -50,17 +71,7 @@ async function discoverCmd(
   if (opts.project) {
     keys = [opts.project];
   } else {
-    const companyPath = join(deps.cwd(), '.canary', 'company.json');
-    if (existsSync(companyPath)) {
-      try {
-        const data = JSON.parse(readFileSync(companyPath, 'utf-8')) as {
-          jira_projects?: string[];
-        };
-        keys = data.jira_projects ?? [];
-      } catch {
-        // JSONDecodeError / OSError -> leave keys empty.
-      }
-    }
+    keys = readJiraProjects(join(deps.cwd(), '.canary', 'company.json'));
     if (keys.length === 0) {
       deps.out(
         `${pc.yellow('No project keys found.')} Pass ${pc.bold('--project <key>')} or add keys to ${pc.bold('.canary/company.json')} ${'\u{2192}'} ${pc.bold('jira_projects')}.`,
