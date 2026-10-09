@@ -383,13 +383,13 @@ reaction and nothing is stored
 ([ADR 0025](../knowledge/decisions/0025-adjudication-without-reactions.md)). For
 each finding on the guardian sticky's **first** revision of a merged PR:
 
-| What happened by merge                                                             | Verdict               |
-| ---------------------------------------------------------------------------------- | --------------------- |
-| a later commit covered it (coverage-verified finding gone, file still in the diff) | true positive         |
-| the merged diff adds `// canary:allow-untested <reason>` on that file              | intentional, excluded |
-| the reason starts with `fp:`, e.g. `// canary:allow-untested fp: type-only barrel` | **false positive**    |
-| it disappeared without coverage evidence (heuristic tier, file left the diff)      | ambiguous, excluded   |
-| still on the last revision at merge                                                | unresolved, excluded  |
+| What happened by merge                                                                                                                                     | Verdict               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| a later commit covered it (coverage-verified finding gone, file still in the diff)                                                                         | true positive         |
+| the merged diff adds `// canary:allow-untested <reason>` on that file                                                                                      | intentional, excluded |
+| the reason starts with `fp:`, e.g. `// canary:allow-untested fp: type-only barrel`                                                                         | **false positive**    |
+| it disappeared without coverage evidence (heuristic tier, file left the diff, or the last revision omitted rows for size or had no usable coverage report) | ambiguous, excluded   |
+| still on the last revision at merge                                                                                                                        | unresolved, excluded  |
 
 So when a finding is wrong, say so where the reasoning lives: suppress it with
 an `fp:` reason.

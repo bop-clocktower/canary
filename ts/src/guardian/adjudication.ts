@@ -11,7 +11,8 @@
  * - **intentional**: the merged diff adds `canary:allow-untested <reason>`.
  * - **false positive**: the reason starts with `fp:`.
  * - **ambiguous**: it disappeared with no coverage evidence (heuristic/graph
- *   tier, or the file left the diff).
+ *   tier, the file left the diff, or the last revision cannot vouch for its
+ *   absence: rows omitted for size, or coverage unavailable/partial).
  * - **unresolved**: still active at merge. Not a false positive.
  *
  * Nothing is stored. Precision is `null` below {@link PRECISION_FLOOR}
@@ -64,6 +65,15 @@ export interface PrEvidence {
 const FINDING_ROW_RE = /^\|[^|]*\|\s*\[?`([^`]+)`.*\|\s*([a-z-]+)\s*\|\s*$/;
 const TABLE_HEADER = '| Sev | File |';
 const HEADING = 'Canary PR Guardian';
+// A revision that hid rows for size (#457) or judged without a usable coverage
+// report (#554) cannot vouch that a missing finding is now covered.
+const ROWS_OMITTED = 'omitted to keep this comment under';
+const COVERAGE_BLIND_RE = /\bcoverage (?:unavailable|partial)\b/;
+
+/** Whether a finding ABSENT from this sticky body can count as covered. */
+function vouchesForAbsence(body: string): boolean {
+  return !body.includes(ROWS_OMITTED) && !COVERAGE_BLIND_RE.test(body);
+}
 
 /**
  * `fp:` (any case, optional space before the colon) marks a false positive;
@@ -116,6 +126,8 @@ export function classifyFinding(
   finding: StickyFinding,
   ctx: {
     last: StickyFinding[];
+    /** `false` when the last revision cannot vouch for absence (truncated or coverage-blind). */
+    lastVouches?: boolean;
     suppressions: Map<string, SuppressionKind>;
     mergedPaths: Set<string>;
   },
@@ -124,6 +136,7 @@ export function classifyFinding(
   if (suppression) return suppression;
   if (ctx.last.some((f) => f.path === finding.path)) return 'unresolved';
   const covered =
+    ctx.lastVouches !== false &&
     finding.fidelity === 'coverage-verified' &&
     ctx.mergedPaths.has(finding.path);
   return covered ? 'true-positive' : 'ambiguous';
@@ -167,8 +180,15 @@ function tallyPr(pr: PrEvidence, report: AdjudicationReport): void {
   }
   const ctx = {
     last,
+    lastVouches: vouchesForAbsence(pr.revisions.at(-1)!),
     suppressions: suppressionsByPath(pr.files),
-    mergedPaths: new Set(pr.files.map((f) => f.filename)),
+    // A file whose patch GitHub omitted (too large, binary) cannot show an
+    // added `fp:` suppression, so it cannot vouch for a true positive.
+    mergedPaths: new Set(
+      pr.files
+        .filter((f) => typeof f.patch === 'string')
+        .map((f) => f.filename),
+    ),
   };
   for (const finding of first) report.counts[classifyFinding(finding, ctx)]++;
 }
