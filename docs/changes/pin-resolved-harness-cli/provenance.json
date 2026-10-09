@@ -1,0 +1,16 @@
+{
+  "issues": [1248],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/harness-cli-exact-pin.test.ts, run as: cd ts && npx vitest run test/harness-cli-exact-pin.test.ts (base cafc2e25 workflow: 6 of 8 fail, the checker lists all 6 scans as using the floating $HARNESS_CLI; this branch: 8/8 pass). The denominator test asserts exactly 6 scans are found (check-docs, cleanup, check-perf at head and merge base); four planted-positive tests mutate the parsed workflow (scan back on the floating pin, scan moved above the resolve step, scan in a job with no resolve step, single-quoted hardcoded spec) and assert the checker reports each one.",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "All six scans live in the single `validate` job, after the `harness-cli` resolve step, so no step had to move; the test still enforces ordering per job so a future scan in another job needs its own resolve step.",
+    "The workflow-level `HARNESS_CLI: '@harness-engineering/cli@12'` float is intentional (standing rule) and is unchanged; pinning happens only within a run via $GITHUB_ENV.",
+    "The package name in HARNESS_CLI_EXACT is derived from HARNESS_CLI with `${HARNESS_CLI%@*}` rather than hardcoded, so a major bump still edits one line.",
+    "The resolve step's empty-check was tightened to a semver match, because the value is now interpolated into an npx package spec; a malformed version fails the step (the same fail-loud behavior as the empty case).",
+    "Three existing grep tests (docs/entropy/perf ratchet 'same instrument' assertions) pinned the old `\"$HARNESS_CLI\"` scan text and were updated to `\"$HARNESS_CLI_EXACT\"`; the entropy test for the empty-version guard was updated to the new guard.",
+    "The issue's optional extra (each scan records its own `harness --version` beside its report so the ratchet can abstain on mismatch) is not implemented; with one exact spec per run it would re-check the same pin.",
+    "Only harness-quality.yml is in scope; other workflows that use HARNESS_CLI pass no --cli-version and have no head/base pair."
+  ]
+}
