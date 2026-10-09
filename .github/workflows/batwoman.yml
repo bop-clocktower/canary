@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       issue:
-        description: "Issue number to audit"
+        description: 'Issue number to audit'
         required: true
         type: string
 
@@ -48,7 +48,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: '20'
           cache: npm
           cache-dependency-path: ts/package-lock.json
 
@@ -145,16 +145,21 @@ jobs:
       # checkable from outside.
       - name: Say that the issue could not be resolved
         if: steps.resolve.outcome == 'failure'
-        run: echo "::warning title=Batwoman::Could not resolve an issue to audit."
+        run:
+          echo "::warning title=Batwoman::Could not resolve an issue to audit."
 
       - name: Say that the audit did not complete
         if: steps.audit.outcome == 'failure'
-        run: echo "::warning title=Batwoman::The closure audit did not complete."
+        run:
+          echo "::warning title=Batwoman::The closure audit did not complete."
 
       - name: Say that the machine shape is missing
         if: steps.machine.outcome == 'failure'
-        run: echo "::warning title=Batwoman::The machine-shape report was not produced."
+        run:
+          echo "::warning title=Batwoman::The machine-shape report was not
+          produced."
 
       - name: Say that the artifact did not upload
         if: steps.upload.outcome == 'failure'
-        run: echo "::warning title=Batwoman::The report artifact was not uploaded."
+        run:
+          echo "::warning title=Batwoman::The report artifact was not uploaded."

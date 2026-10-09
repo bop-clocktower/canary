@@ -167,6 +167,7 @@ jobs:
       - name: canary doctor --json carries its denominator
         run: |
           canary doctor --json > doctor.json || true
+          # shellcheck disable=SC2016 # single quotes on purpose: ${...} below is a JS template literal, not shell
           node -e '
             const r = JSON.parse(require("fs").readFileSync("doctor.json", "utf8"));
             for (const k of ["checked", "skipped", "abstained", "allPassed"]) {
@@ -299,6 +300,7 @@ jobs:
       - name: Verify skill surfaces and execute documented examples
         run: |
           node ts/bin/canary.js skills verify --root . --json > surfaces.json
+          # shellcheck disable=SC2016 # single quotes on purpose: ${...} below is a JS template literal, not shell
           node -e '
             const r = JSON.parse(require("fs").readFileSync("surfaces.json", "utf8"));
             let broke = 0;

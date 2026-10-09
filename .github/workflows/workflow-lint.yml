@@ -1,0 +1,38 @@
+name: Workflow lint
+
+# actionlint over every workflow (#1238). It type-checks `${{ }}` expressions,
+# validates action inputs, and runs shellcheck on every `run:` script. Before
+# this job existed, findings piled up unnoticed: 5 were filed in #1238, and a
+# sixth landed in release.yml before that issue was picked up.
+#
+# Advisory, not required. See `.github/required-checks.json` for the reason.
+# There is no `paths:` filter: the job takes about 10 seconds, and a filtered
+# job cannot be promoted to required later without removing the filter first
+# (#542).
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned twice, deliberately: the download script is fetched from the
+      # release tag, not from `main`, and the binary version is an explicit
+      # argument. A new actionlint release can add rules, so a new release
+      # must not turn this job red with no diff in this repo. Bump both
+      # together. shellcheck comes preinstalled on ubuntu-latest, and
+      # actionlint uses it automatically.
+      - name: Install actionlint 1.7.12
+        run:
+          bash <(curl -sSfL
+          https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash)
+          1.7.12
+      - name: Run actionlint
+        run: ./actionlint -color
