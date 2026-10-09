@@ -326,10 +326,11 @@ describe('pr-check CI empty-diff warning (#369)', () => {
 });
 
 // bug-fleet A5: the local fallback shells a REAL `git diff`, so the user's git
-// config shapes its headers. `diff.mnemonicPrefix` swaps `a/`/`b/` for
-// `i/`/`w/`; the parser only strips `b/`, so every finding named a path that
-// does not exist (`w/pkg/widget.py`) and per-path suppressions never matched.
-describe('pr-check local diff under a user git diff-prefix config', () => {
+// config shapes its output. `diff.mnemonicPrefix` swaps `a/`/`b/` for `i/`/`w/`
+// (the parser strips only `b/`, so findings named `w/pkg/widget.py` and
+// per-path suppressions never matched); `color.ui=always` hides every `+++`
+// header behind ANSI codes; `diff.external` replaces the patch entirely.
+describe('pr-check local diff under user git diff config', () => {
   let tmp: string;
 
   beforeEach(() => {
@@ -339,7 +340,11 @@ describe('pr-check local diff under a user git diff-prefix config', () => {
     rmTmp(tmp);
   });
 
-  it('names repo-relative paths even with diff.mnemonicPrefix=true', async () => {
+  it.each([
+    ['diff.mnemonicPrefix', 'true'],
+    ['color.ui', 'always'],
+    ['diff.external', 'true'],
+  ])('names repo-relative paths with %s=%s', async (key, value) => {
     const git = (...args: string[]): void => {
       execFileSync('git', ['-C', tmp, ...args], { stdio: 'ignore' });
     };
@@ -356,7 +361,7 @@ describe('pr-check local diff under a user git diff-prefix config', () => {
       '-qm',
       'init',
     );
-    git('config', 'diff.mnemonicPrefix', 'true');
+    git('config', key, value);
     writeFileSync(
       join(tmp, 'pkg', 'widget.py'),
       'X = 1\n\ndef widget():\n    return 42\n',
@@ -367,8 +372,8 @@ describe('pr-check local diff under a user git diff-prefix config', () => {
     });
 
     const data = JSON.parse(res.stdout);
-    expect(data.findings.map((f: { path: string }) => f.path)).toContain(
+    expect(data.findings.map((f: { path: string }) => f.path)).toEqual([
       'pkg/widget.py',
-    );
+    ]);
   });
 });

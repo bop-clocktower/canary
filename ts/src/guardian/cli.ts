@@ -248,25 +248,29 @@ export interface GuardianDeps {
 }
 
 /**
- * Pin `git diff` header prefixes to the `a/`/`b/` the diff parser strips. A
- * user's `diff.mnemonicPrefix` (`i/`/`w/`), `diff.noprefix` or
- * `diff.srcPrefix`/`diff.dstPrefix` would otherwise leak into every scoped path
- * and suppression lookup. Harmless for the non-diff commands spawnGit also runs.
+ * Flags pinning `git diff` output to the shape the diff parser reads. Raw
+ * `git diff` honours user config: `diff.mnemonicPrefix` (`i/`/`w/`),
+ * `diff.noprefix` and `diff.srcPrefix`/`dstPrefix` leak into every scoped path
+ * and suppression lookup; `color.diff=always` hides the `+++` headers behind
+ * ANSI codes; `diff.external` replaces the patch with another tool's output.
  */
-const GIT_DIFF_PREFIX_CONFIG = [
-  '-c',
-  'diff.mnemonicPrefix=false',
-  '-c',
-  'diff.noprefix=false',
-  '-c',
-  'diff.srcPrefix=a/',
-  '-c',
-  'diff.dstPrefix=b/',
+const PARSEABLE_DIFF_FLAGS = [
+  '--no-ext-diff',
+  '--no-color',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
 ];
+
+/** `args` with {@link PARSEABLE_DIFF_FLAGS} inserted when it runs `git diff`. */
+function withParseableDiff(args: string[]): string[] {
+  return args[0] === 'diff'
+    ? ['diff', ...PARSEABLE_DIFF_FLAGS, ...args.slice(1)]
+    : args;
+}
 
 /** Run `git`; `null` when the binary is missing (Python OSError fail-safe). */
 function spawnGit(args: string[], cwd?: string): GitResult | null {
-  const res = spawnSync('git', [...GIT_DIFF_PREFIX_CONFIG, ...args], {
+  const res = spawnSync('git', withParseableDiff(args), {
     encoding: 'utf-8',
     maxBuffer: Infinity,
     ...(cwd ? { cwd } : {}),
