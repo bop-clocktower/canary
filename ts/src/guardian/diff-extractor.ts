@@ -215,6 +215,9 @@ function iterOperations(spec: Record<string, unknown>): Map<string, Operation> {
   const result = new Map<string, Operation>();
   const paths = orDefault(spec['paths'], {}) as Record<string, unknown>;
   for (const [path, pathItemRaw] of Object.entries(paths)) {
+    // An empty YAML path item (`/x:` with no body) parses to null: it declares
+    // no operation, so skip it rather than dereference it.
+    if (typeof pathItemRaw !== 'object' || pathItemRaw === null) continue;
     const pathItem = pathItemRaw as Record<string, unknown>;
     for (const method of HTTP_METHODS) {
       const op = pathItem[method];
