@@ -584,6 +584,19 @@ describe('writeTestFileImpl path containment', () => {
     expect(existsSync(join(elsewhere, 'pwned.spec.ts'))).toBe(false);
   });
 
+  // bug-fleet A1: the guard resolves a RELATIVE path against `root`, so the
+  // path it approves must be the path that gets written.
+  it('writes a relative path under the root it was checked against', () => {
+    const root = mkroot();
+    const relDir = `bf-a1-rel-${process.pid}-${Date.now()}`;
+    try {
+      writeTestFileImpl(join(relDir, 'a.spec.ts'), 'x', 'playwright', root);
+      expect(existsSync(resolve(relDir))).toBe(false);
+    } finally {
+      rmSync(resolve(relDir), { recursive: true, force: true });
+    }
+  });
+
   it('still writes a legitimate path inside the root', () => {
     const root = mkroot();
     const inside = join(root, 'tests', 'ok.spec.ts');
