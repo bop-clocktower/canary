@@ -9,7 +9,9 @@ import { measurabilityOf, type FlakyWindow } from '../../util/flake-window.js';
 
 /** The store seam: raw records, or nothing when the backend has none to give. */
 interface WindowSource {
-  readAll?: () => Promise<{ suite?: string | null }[]>;
+  readAll?: () => Promise<
+    { suite?: string | null; timestamp?: string | null }[]
+  >;
 }
 
 /**
@@ -30,6 +32,12 @@ export async function describeFlakyWindow(
   if (!store.readAll) return null;
   const all = await store.readAll();
   const scoped = suite ? all.filter((r) => r.suite === suite) : all;
-  const read = scoped.slice(-window) as { reporter_format?: string | null }[];
+  // TIME order, as `queryFlaky` windows it: a backfilled older run appended
+  // last is not in the newest window (stable sort keeps untimestamped rows).
+  const at = (r: { timestamp?: string | null }): string => r.timestamp ?? '';
+  const newest = [...scoped].sort((a, b) =>
+    at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : 0,
+  );
+  const read = newest.slice(-window) as { reporter_format?: string | null }[];
   return { runs_read: read.length, flaky_measurable: measurabilityOf(read) };
 }
