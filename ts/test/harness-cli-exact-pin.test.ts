@@ -46,25 +46,25 @@ type Scan = {
   sub: string;
 };
 
-/** Every harness invocation in every job, with the package spec it ran. */
+/** The harness invocations in one step, with the package spec each ran. */
+function stepScans(job: string, s: Step, index: number): Scan[] {
+  // Folded `run:` scalars keep `\` continuations; join them to one line.
+  const run = (s.run ?? '').replace(/\\\n\s*/g, ' ');
+  const step = s.name ?? s.id ?? `#${index}`;
+  return [...run.matchAll(NPX_HARNESS)].map((m) => ({
+    job,
+    step,
+    index,
+    pkg: m[2]!,
+    sub: m[3]!,
+  }));
+}
+
+/** Every harness invocation in every job. */
 function scans(wf: Workflow): Scan[] {
-  const out: Scan[] = [];
-  for (const [job, { steps = [] }] of Object.entries(wf.jobs)) {
-    steps.forEach((s, index) => {
-      // Folded `run:` scalars keep `\` continuations; join them to one line.
-      const run = (s.run ?? '').replace(/\\\n\s*/g, ' ');
-      for (const m of run.matchAll(NPX_HARNESS)) {
-        out.push({
-          job,
-          step: s.name ?? s.id ?? `#${index}`,
-          index,
-          pkg: m[2]!,
-          sub: m[3]!,
-        });
-      }
-    });
-  }
-  return out;
+  return Object.entries(wf.jobs).flatMap(([job, { steps = [] }]) =>
+    steps.flatMap((s, index) => stepScans(job, s, index)),
+  );
 }
 
 /** Violations of the #1248 invariant; empty means the workflow is pinned. */
@@ -78,7 +78,7 @@ function violations(wf: Workflow): string[] {
     if (resolve === -1) {
       problems.push(`${where}: job has no '${RESOLVE_ID}' resolve step`);
     } else if (resolve > scan.index) {
-      problems.push(`${where}: runs before the resolve step`);
+      problems.push(`${where}: precedes the resolve step`);
     }
     if (scan.pkg !== '$HARNESS_CLI_EXACT') {
       problems.push(`${where}: uses ${scan.pkg}, not "$HARNESS_CLI_EXACT"`);
@@ -152,7 +152,7 @@ describe('harness-quality.yml pins every scan to the resolved CLI (#1248)', () =
       const [scan] = steps.splice(scanAt, 1);
       steps.unshift(scan!);
       expect(violations(wf)).toEqual([
-        expect.stringMatching(/Entropy Scan.*runs before the resolve step/),
+        expect.stringMatching(/Entropy Scan.*precedes the resolve step/),
       ]);
     });
 
