@@ -18,7 +18,7 @@
  * still be able to say how many tests it read.
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { gateOutcome } from '../src/core/gate-result.js';
 import {
@@ -1116,5 +1116,38 @@ it('b', () => { render(<List />); expect(screen.getByText('x')).toBeVisible(); }
 it('c', () => { render(<List />); expect(screen.getByText('y')).toBeVisible(); });
 `;
     expect(scan('List.test.tsx', code).checked).toBe(3);
+  });
+});
+
+// bug-fleet A6 repro (base b0e258bd). The `@covers` look-back walks up from a
+// declaration one line at a time; on a file whose first line is blank it never
+// advanced past line 1 and the scan spun forever. A sync loop cannot be timed
+// out in-process, so a budget on the walk's own primitive turns the hang into
+// a red assertion instead of a stuck worker.
+describe('a file that starts with a blank line', () => {
+  it('scans to a result instead of hanging', () => {
+    const real = String.prototype.lastIndexOf;
+    const spun = new Error('look-back did not terminate');
+    let calls = 0;
+    const spy = vi
+      .spyOn(String.prototype, 'lastIndexOf')
+      .mockImplementation(function (
+        this: string,
+        ...args: Parameters<string['lastIndexOf']>
+      ) {
+        calls += 1;
+        if (calls > 100_000) throw spun;
+        return real.apply(this, args);
+      });
+    let hung = false;
+    try {
+      scan('test_lead.py', '\ndef test_a():\n    assert 1 == 2\n');
+    } catch (err) {
+      if (err !== spun) throw err;
+      hung = true;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(hung).toBe(false);
   });
 });
