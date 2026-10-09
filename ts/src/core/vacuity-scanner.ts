@@ -1319,7 +1319,11 @@ function annotationFor(
   const decl = python ? block.bodyStart : jsDeclarationStart(code, block);
   let from = code.lastIndexOf('\n', decl - 1) + 1;
   while (from > 0) {
-    const above = code.lastIndexOf('\n', from - 2) + 1;
+    // Search a slice, not `lastIndexOf('\n', from - 2)`: at `from === 1` that
+    // index is -1, which `lastIndexOf` clamps to 0 -- so a file opening with a
+    // blank line found its own leading `\n`, `above` stayed 1, and the walk
+    // never advanced (a hang on any file whose first line is empty).
+    const above = code.slice(0, from - 1).lastIndexOf('\n') + 1;
     if (!attachesToDeclaration(code.slice(above, from - 1), python)) break;
     from = above;
   }
