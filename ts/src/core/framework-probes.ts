@@ -6,39 +6,17 @@
  * the direction has to stay leafward.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { globFiles, readTextOrNull } from './fs-glob.js';
+import {
+  inferPlaywrightTestType,
+  probeConfig,
+  probeNestedConfig,
+  type ProbeResult,
+} from './config-probes.js';
+import { readTextOrNull } from './fs-glob.js';
 import type { TestShape } from './test-shapes.js';
-
-// (config_file, framework, shape, confidence)
-export const CONFIG_PROBES: Array<[string, string, TestShape, string]> = [
-  ['playwright.config.ts', 'playwright', 'e2e_ui', 'config'],
-  ['playwright.config.js', 'playwright', 'e2e_ui', 'config'],
-  ['cypress.config.ts', 'playwright', 'e2e_ui', 'config'],
-  ['cypress.config.js', 'playwright', 'e2e_ui', 'config'],
-  ['vitest.config.ts', 'vitest', 'frontend_unit', 'config'],
-  ['vitest.config.js', 'vitest', 'frontend_unit', 'config'],
-  ['vitest.config.mts', 'vitest', 'frontend_unit', 'config'],
-  ['jest.config.ts', 'vitest', 'frontend_unit', 'config'],
-  ['jest.config.js', 'vitest', 'frontend_unit', 'config'],
-  ['jest.config.mjs', 'vitest', 'frontend_unit', 'config'],
-  ['k6.config.js', 'k6', 'performance', 'config'],
-  ['pytest.ini', 'pytest', 'api', 'config'],
-  ['setup.cfg', 'pytest', 'api', 'config'],
-  ['axe.config.js', 'axe-core', 'accessibility', 'config'],
-  ['backstop.json', 'backstopjs', 'visual', 'config'],
-  ['pact.json', 'pact', 'contract', 'config'],
-  ['.pact', 'pact', 'contract', 'config'],
-  ['stryker.config.js', 'stryker', 'mutation', 'config'],
-  ['stryker.config.mjs', 'stryker', 'mutation', 'config'],
-  ['locust.conf', 'locust', 'load', 'config'],
-  ['locustfile.py', 'locust', 'load', 'config'],
-  ['wdio.conf.ts', 'wdio', 'mobile', 'config'],
-  ['wdio.conf.js', 'wdio', 'mobile', 'config'],
-  ['wdio.conf.mjs', 'wdio', 'mobile', 'config'],
-];
 
 // pyproject.toml section markers
 const _PYPROJECT_MARKERS: Array<[string, string, TestShape]> = [
@@ -88,64 +66,13 @@ const _LANGUAGE_FALLBACKS: Record<string, [string, TestShape]> = {
   javascript: ['playwright', 'e2e_ui'],
 };
 
-// Detects playwright UI fixture params. MULTILINE is a no-op (no `^`/`$`).
-const _PW_UI_FIXTURE_RE = /async\s*\(\s*\{[^}]*\b(?:page|browser)\b/;
-
 export type ProbeTier =
-  'config' | 'content' | 'scripts' | 'dependency' | 'language';
-
-export type ProbeResult = [
-  framework: string | null,
-  shape: string,
-  source: string,
-  confidence: string,
-];
-
-/**
- * Return 'api' when no playwright spec file uses page/browser fixtures, else
- * 'e2e_ui' (the default when any UI signal is found or no spec files exist).
- */
-export function inferPlaywrightTestType(root: string): TestShape {
-  const specGlobs = [
-    'tests/**/*.spec.ts',
-    'tests/**/*.spec.js',
-    'test/**/*.spec.ts',
-    'test/**/*.spec.js',
-  ];
-  let total = 0;
-  for (const glob of specGlobs) {
-    for (const path of globFiles(root, glob)) {
-      // Python read_text(errors="ignore"); readFileSync substitutes U+FFFD for
-      // invalid bytes -- immaterial for the ASCII fixture pattern below.
-      let content: string;
-      try {
-        content = readFileSync(path, 'utf-8');
-      } catch {
-        continue;
-      }
-      total += 1;
-      if (_PW_UI_FIXTURE_RE.test(content)) return 'e2e_ui';
-    }
-  }
-
-  return total > 0 ? 'api' : 'e2e_ui';
-}
-
-/** Tier 1 -- a dedicated config file (highest confidence). */
-function probeConfig(root: string): ProbeResult | null {
-  for (const [filename, framework, shape, confidence] of CONFIG_PROBES) {
-    if (existsSync(join(root, filename))) {
-      // For playwright config files, distinguish API vs UI suites.
-      if (framework === 'playwright' && shape === 'e2e_ui') {
-        const inferred = inferPlaywrightTestType(root);
-        if (inferred !== shape)
-          return [framework, inferred, filename, 'content'];
-      }
-      return [framework, shape, filename, confidence];
-    }
-  }
-  return null;
-}
+  | 'config'
+  | 'content'
+  | 'nested-config'
+  | 'scripts'
+  | 'dependency'
+  | 'language';
 
 /** Tier 2a -- pyproject.toml section markers, then its dependency scan. */
 function probePyproject(root: string): ProbeResult | null {
@@ -271,6 +198,13 @@ function probeLanguage(config: Record<string, unknown>): ProbeResult | null {
  * Note the tier list and the returned `confidence` are not the same axis: the
  * config tier returns confidence `content` when `inferPlaywrightTestType`
  * refines e2e_ui to api, because the refinement read file contents to decide.
+ *
+ * `nested-config` (#1212) walks below *dir*, so only a root that declares no
+ * workspace passes it -- at a workspace root it would report a package's own
+ * config as a root hit. It ranks below the root's own evidence and above the
+ * weaker tiers, and its mixed result (framework null, a `nested configs
+ * (mixed: ...)` source) ends the probe like any hit: an inherited language
+ * guess must not paper over configs that disagree.
  */
 export function probeFramework(
   dir: string,
@@ -286,6 +220,7 @@ export function probeFramework(
         probeRequirements(dir) ??
         probeScripts(dir, (key) => key === 'test'),
     ],
+    ['nested-config', () => probeNestedConfig(dir)],
     ['scripts', () => probeScripts(dir, isOtherScript)],
     ['dependency', () => probePackageDeps(dir)],
     ['language', () => probeLanguage(config)],

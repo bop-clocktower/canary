@@ -54,10 +54,10 @@ import { uncertainDetectionMessage } from './detection.js';
 import {
   CONFIG_PROBES,
   inferPlaywrightTestType,
-  probeFramework,
+  NESTED_CONFIG_MAX_DEPTH,
   ProbeResult,
-  ProbeTier,
-} from './framework-probes.js';
+} from './config-probes.js';
+import { probeFramework, ProbeTier } from './framework-probes.js';
 import {
   WORKSPACE_SKIP_DIRS,
   comparePathParts,
@@ -579,10 +579,13 @@ function namedWorkspaceSuites(ws: WorkspaceInfo): string {
  * message, plus -- only when the walk actually found suites -- the per-package
  * route, which needs no override at all (#504 part 1).
  */
-function unresolvedFrameworkFollowups(ws: WorkspaceInfo | null): string[] {
+function unresolvedFrameworkFollowups(
+  ws: WorkspaceInfo | null,
+  source: string,
+): string[] {
   const out = [
     uncertainDetectionMessage('test framework', {
-      reason: unresolvedFrameworkReason(ws),
+      reason: unresolvedFrameworkReason(ws, source),
       candidates: KNOWN_FRAMEWORKS,
       overrideHint: '`canary migrate --framework <name>`',
     }),
@@ -604,12 +607,29 @@ function unresolvedFrameworkFollowups(ws: WorkspaceInfo | null): string[] {
  * language marker matched" when two package configs *did* match is a claim the
  * run's own evidence contradicts (#504 part 1).
  */
-function unresolvedFrameworkReason(ws: WorkspaceInfo | null): string {
-  // Name exactly the probe tiers that ran: config files are only looked for at
-  // the probed root (nested configs are invisible), and dependencies are read
+function unresolvedFrameworkReason(
+  ws: WorkspaceInfo | null,
+  source: string,
+): string {
+  // Disagreeing nested configs are evidence, not absence: name them (#1212).
+  const mixed = /^nested configs \(mixed: (.*)\)$/.exec(source);
+  if (mixed !== null) {
+    return (
+      `the test configs below the root declare different frameworks ` +
+      `(${mixed[1]}), so no single framework applies at the root`
+    );
+  }
+  // Name exactly the probe tiers that ran: a single-package root also walks
+  // NESTED_CONFIG_MAX_DEPTH levels down for config files (#1212); a workspace
+  // root never does, its packages are probed instead. Dependencies are read
   // from package.json, pyproject.toml and requirements*.txt (#1205).
+  const configScope =
+    ws === null
+      ? `no config file at the root or up to ${NESTED_CONFIG_MAX_DEPTH} ` +
+        'directories below it'
+      : 'no root-level config file';
   const nothingMatched =
-    'no root-level config file, package.json script or dependency, ' +
+    `${configScope}, package.json script or dependency, ` +
     'Python dependency, or harness.config.json language matched a known ' +
     'framework';
   if (ws === null || ws.findings.length === 0) return nothingMatched;
@@ -1706,7 +1726,9 @@ export class HarnessMigrator {
     const followups: string[] = [];
 
     if (effectiveFramework === null) {
-      followups.push(...unresolvedFrameworkFollowups(ctx.workspace));
+      followups.push(
+        ...unresolvedFrameworkFollowups(ctx.workspace, ctx.detection_source),
+      );
       // Issue #295 point 3: a detection miss must not block skill deployment --
       // nor, for the same reason, the workflow install (#459). The guardian
       // workflow is exactly what an unrecognised repo most needs.
@@ -2409,6 +2431,10 @@ export class HarnessMigrator {
     const tiers: ProbeTier[] = hasPackageFindings
       ? ['config', 'content', 'language']
       : ['config', 'content', 'scripts', 'dependency', 'language'];
+    // The nested walk only where no workspace is declared (#1212): below a
+    // workspace root it would find the packages' own configs and report one
+    // as a root hit, masking the per-package findings.
+    if (ws === null) tiers.splice(2, 0, 'nested-config');
     return probeFramework(root, config, tiers);
   }
 

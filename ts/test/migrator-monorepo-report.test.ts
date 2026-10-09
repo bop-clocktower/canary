@@ -112,9 +112,14 @@ function monorepo(root: string, opts: MonorepoOptions = {}): void {
   writeJson(join(core, 'package.json'), { name: 'core' });
 }
 
-/** The unresolved-framework reason when no probe tier matched (#1205). */
+/**
+ * The unresolved-framework reason when no probe tier matched in a repo that
+ * declares no workspace (#1205), whose config tier also walks 3 levels down
+ * (#1212).
+ */
 const NOTHING_MATCHED =
-  'no root-level config file, package.json script or dependency, ' +
+  'no config file at the root or up to 3 directories below it, ' +
+  'package.json script or dependency, ' +
   'Python dependency, or harness.config.json language matched a known ' +
   'framework';
 
@@ -353,8 +358,11 @@ describe('JS package evidence beside a workspace (#1205)', () => {
 
       expect(r.framework).toBe('wdio');
       expect(r.shape).toBe('mobile');
+      // Since #1212 the nested config itself is the evidence: the config tier
+      // outranks other scripts and dependencies. The scripts and dependency
+      // tiers alone are covered in framework-probes.test.ts.
       expect(r.detection_source).toBe(
-        'package.json (scripts.test:wdio:android)',
+        'nested config Mobile/android/android-app/wdio.conf.ts',
       );
     }));
 
@@ -412,5 +420,62 @@ describe('JS package evidence beside a workspace (#1205)', () => {
         ['apps/web-e2e', 'playwright', 'playwright.config.ts'],
         ['packages/core', 'wdio', 'package.json (devDependencies: @wdio/cli)'],
       ]);
+    }));
+});
+
+describe('nested test configs (#1212)', () => {
+  it('never reports a workspace package config as a root hit', () =>
+    withTmp((root) => {
+      // apps/web-e2e/playwright.config.ts sits 2 levels down: inside the walk's
+      // depth bound, so only the no-workspace rule keeps it out of the root.
+      monorepo(root, { vitestPackage: false });
+      const ctx = new HarnessMigrator(HOME).detect(root);
+
+      expect(ctx.detection_source).toBe('workspace (1 package)');
+      expect(ctx.detection_source).not.toMatch(/nested/);
+    }));
+
+  it('keeps the root-level wording for a workspace with no findings', () =>
+    withTmp((root) => {
+      monorepo(root, { vitestPackage: false });
+      rmSync(join(root, 'apps', 'web-e2e', 'playwright.config.ts'));
+      writeJson(join(root, 'apps', 'web-e2e', 'package.json'), { name: 'e' });
+      const md = report(root).to_markdown();
+
+      expect(md).toContain('Reason: no root-level config file, ');
+      expect(md).not.toContain('directories below it');
+    }));
+
+  it('detects a single package from a nested wdio.conf.ts alone', () =>
+    withTmp((root) => {
+      harnessPackage(root);
+      writeJson(join(root, 'package.json'), { name: 'mobile-suite' });
+      write(
+        join(root, 'Mobile', 'android', 'android-app', 'wdio.conf.ts'),
+        'export const config = {};\n',
+      );
+      const r = report(root);
+
+      expect([r.framework, r.shape]).toEqual(['wdio', 'mobile']);
+      expect(r.detection_source).toBe(
+        'nested config Mobile/android/android-app/wdio.conf.ts',
+      );
+    }));
+
+  it('explains disagreeing nested configs instead of guessing', () =>
+    withTmp((root) => {
+      harnessPackage(root);
+      writeJson(join(root, 'package.json'), { name: 'mixed' });
+      write(join(root, 'web', 'vitest.config.ts'), 'export default {};\n');
+      write(join(root, 'e2e', 'wdio.conf.ts'), 'export const config = {};\n');
+      const r = report(root);
+
+      expect(r.detection_source).toMatch(/^nested configs \(mixed: /);
+      expect(r.to_markdown()).toContain(
+        'Reason: the test configs below the root declare different ' +
+          'frameworks (e2e/wdio.conf.ts (wdio/mobile), ' +
+          'web/vitest.config.ts (vitest/frontend_unit)), so no single ' +
+          'framework applies at the root.',
+      );
     }));
 });

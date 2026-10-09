@@ -21,7 +21,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { TestClassifier } from '../src/core/classifier.js';
-import { CONFIG_PROBES, probeFramework } from '../src/core/framework-probes.js';
+import { CONFIG_PROBES } from '../src/core/config-probes.js';
+import { probeFramework } from '../src/core/framework-probes.js';
 import { TEST_SHAPES } from '../src/core/test-shapes.js';
 
 const SHAPES: ReadonlySet<string> = new Set(TEST_SHAPES);
