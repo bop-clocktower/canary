@@ -41,7 +41,10 @@ function reEscape(s) {
  */
 export function authorshipPatterns(denylist) {
   return denylist
-    .map(([rx]) => rx.source.replace(/^\\b|\\b$/g, '').replace(/\\(.)/g, '$1'))
+    .map(
+      ([rx, , term]) =>
+        term ?? rx.source.replace(/^\\b|\\b$/g, '').replace(/\\(.)/g, '$1'),
+    )
     .map((term) => term.split(/[^\p{L}\p{N}]+/u).filter(Boolean))
     .filter((tokens) => tokens.length)
     .map((tokens) => {
