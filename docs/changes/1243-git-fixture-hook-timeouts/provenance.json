@@ -1,0 +1,15 @@
+{
+  "issues": [1243, 1245],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/branch-prune.test.ts + ts/test/rewind-replay.test.ts (+ ts/test/order-cli.test.ts), run as: cd ts && npx vitest run test/branch-prune.test.ts test/rewind-replay.test.ts test/order-cli.test.ts --hookTimeout=150 (base 858aa846: 24 of 43 fail with 'Hook timed out in 150ms'; this branch: 43/43 pass, also at --hookTimeout=50). Helper contract: ts/test/git-fixture-testkit.test.ts.",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Root cause is per-test fixture cost, not a defect in the code under test: each old beforeEach ran 8-10 synchronous git spawns (~130-150 ms idle, ~450-540 ms at load avg ~75 measured here, past 10 s on the issue reporters' machines).",
+    "A recursive file copy (fs.cpSync) of a committed repository is a whole, independent repository, so per-test isolation is unchanged; the clone's absolute remote.origin.url is the one path re-pointed (branch-prune, one `git remote set-url`).",
+    "The one-time beforeAll build keeps an explicit 60 s timeout (GIT_TEMPLATE_BUILD_TIMEOUT_MS): it does the same spawns one old beforeEach did, which was measured past 10 s under load.",
+    "CPU-only synthetic load (30x `yes`, load avg 24-98) did NOT reproduce a 10 s or even 1 s hook timeout on this machine before the fix; the deterministic reproduction is a lowered --hookTimeout, which the lane brief allows.",
+    "ts/test/order-cli.test.ts has the same beforeEach shape (3 git spawns) and was trivially moved to the same helper; no other ts/test beforeEach spawns git.",
+    "The new helper is declared in both entropy.entryPoints arrays (as doc-links-testkit is); entropy measured 140 with it vs 141 without, maxFindings untouched."
+  ]
+}
