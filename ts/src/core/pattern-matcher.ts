@@ -223,7 +223,10 @@ function analyzePython(files: string[], profile: PatternProfile): void {
 
 // --- JS / TS analysis ------------------------------------------------------
 
-const JS_IMPORT = /^import\s+.*?\s+from\s+['"]([^'"]+)['"]/gm;
+// The clause may span lines (a wrapped `{ a, b }` list), so it is `[^'";]`
+// rather than `.`: that crosses newlines but never a quote or a `;`, so a
+// side-effect `import './x';` cannot run on into the next statement.
+const JS_IMPORT = /^import\s+[^'";]*?\s+from\s+['"]([^'"]+)['"]/gm;
 const JS_REQUIRE = /require\(['"]([^'"]+)['"]\)/g;
 const JS_DESCRIBE = /\bdescribe\s*\(/;
 const JS_TEST_NAME = /\b(?:it|test)\s*\(\s*['"]([^'"]{3,60})['"]/g;
