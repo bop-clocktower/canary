@@ -19,12 +19,25 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
+import {
+  GIT_TEMPLATE_BUILD_TIMEOUT_MS,
+  buildGitTemplate,
+  copyGitTemplate,
+  removeGitFixture,
+} from './git-fixture-testkit.js';
 import { runCapture } from './subprocess-testkit.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -102,21 +115,40 @@ function localRefs(): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The origin + clone + first push is built ONCE per file and copied per test
+ * (#1243): built per test it was eight `git` spawns in a `beforeEach`, which
+ * ran past vitest's 10 s hook timeout under load. Each test still gets its own
+ * origin and clone; only the clone's absolute origin URL needs re-pointing.
+ */
+let template: string;
+
+beforeAll(() => {
+  template = buildGitTemplate('branch-prune-tpl-', (dir) => {
+    const origin = join(dir, 'origin.git');
+    work = join(dir, 'work');
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
+    execFileSync('git', ['clone', '-q', origin, work]);
+    git(work, 'config', 'user.email', 'fixture@example.invalid');
+    git(work, 'config', 'user.name', 'fixture');
+    git(work, 'switch', '-q', '-c', 'main');
+    commit('README', 'root\n');
+    git(work, 'push', '-q', '-u', 'origin', 'main');
+  });
+}, GIT_TEMPLATE_BUILD_TIMEOUT_MS);
+
+afterAll(() => {
+  removeGitFixture(template);
+});
+
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'branch-prune-'));
-  const origin = join(root, 'origin.git');
+  root = copyGitTemplate(template, 'branch-prune-');
   work = join(root, 'work');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
-  execFileSync('git', ['clone', '-q', origin, work]);
-  git(work, 'config', 'user.email', 'fixture@example.invalid');
-  git(work, 'config', 'user.name', 'fixture');
-  git(work, 'switch', '-q', '-c', 'main');
-  commit('README', 'root\n');
-  git(work, 'push', '-q', '-u', 'origin', 'main');
+  git(work, 'remote', 'set-url', 'origin', join(root, 'origin.git'));
 });
 
 afterEach(() => {
-  rmSync(root, { recursive: true, force: true });
+  removeGitFixture(root);
 });
 
 describe('branch-prune: dry-run default', () => {
