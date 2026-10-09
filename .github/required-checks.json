@@ -208,6 +208,11 @@
       "check": "refresh",
       "workflow": "refresh-arch-baseline.yml",
       "reason": "Not a gate. Triggers only on `pull_request: types: [labeled]` — an on-demand action a maintainer invokes to refresh the architecture baseline. It does not report on an ordinary PR, so requiring it would deadlock every PR that is never labeled."
+    },
+    {
+      "check": "actionlint",
+      "workflow": "workflow-lint.yml",
+      "reason": "Precision not yet known (ADR 0010). #1238 added this check after clearing the last 6 findings, so it has one clean run of history. It runs on every PR with no path filter, so it can be promoted with a ruleset edit (ADR 0011) once it has a record. It is pinned to actionlint 1.7.12, so a new upstream release cannot turn it red."
     }
   ],
 

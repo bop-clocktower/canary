@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -p . && node scripts/copy-data.mjs",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"*.ts\" \"../.github/workflows/*.yml\"",
     "test": "vitest run --coverage"
   },
   "engines": {

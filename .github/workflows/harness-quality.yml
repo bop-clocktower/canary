@@ -134,9 +134,9 @@ jobs:
             docs-base-report.json --base-baseline
             {0}/docs-base/.harness/docs-coverage-baseline.json', runner.temp) ||
             '' }}
-        run:
-          node scripts/docs-ratchet.mjs --report docs-report.json --cli-version
-          "${{ steps.harness-cli.outputs.version }}" $DOCS_BASE_FLAG
+        run: |
+          # shellcheck disable=SC2086 # unquoted on purpose: the flag expands to zero or four arguments (#1238)
+          node scripts/docs-ratchet.mjs --report docs-report.json --cli-version "${{ steps.harness-cli.outputs.version }}" $DOCS_BASE_FLAG
 
       # #588: a report that dies with the runner is unreadable on the one run
       # that needs it, the failing one.
@@ -217,9 +217,9 @@ jobs:
             entropy-base-report.txt --base-baseline
             {0}/entropy-base/.harness/entropy-baseline.json', runner.temp) || ''
             }}
-        run:
-          node scripts/entropy-ratchet.mjs --report entropy-report.txt
-          --cli-version "${{ steps.harness-cli.outputs.version }}" $BASE_FLAG
+        run: |
+          # shellcheck disable=SC2086 # unquoted on purpose: the flag expands to zero or four arguments (#1238)
+          node scripts/entropy-ratchet.mjs --report entropy-report.txt --cli-version "${{ steps.harness-cli.outputs.version }}" $BASE_FLAG
 
       # WIRED as of #717. `check-perf` was referenced by no workflow at all, so
       # its 237 violations at 8c865b5 protected nothing — a check that runs
@@ -285,11 +285,9 @@ jobs:
             ${{ github.event_name == 'pull_request' && format('--base-report
             perf-base-report.txt --base-baseline
             {0}/perf-base/.harness/perf-baseline.json', runner.temp) || '' }}
-        run:
-          node scripts/perf-ratchet.mjs --report perf-report.txt --cli-version
-          "${{ steps.harness-cli.outputs.version }}" --report-root
-          "$GITHUB_WORKSPACE" --base-report-root "$RUNNER_TEMP/perf-base"
-          $PERF_BASE_FLAG
+        run: |
+          # shellcheck disable=SC2086 # unquoted on purpose: the flag expands to zero or four arguments (#1238)
+          node scripts/perf-ratchet.mjs --report perf-report.txt --cli-version "${{ steps.harness-cli.outputs.version }}" --report-root "$GITHUB_WORKSPACE" --base-report-root "$RUNNER_TEMP/perf-base" $PERF_BASE_FLAG
 
       # `check-operational-drift` is deliberately NOT wired here. #717 proposed
       # wiring it blocking precisely because it was clean — no backlog to

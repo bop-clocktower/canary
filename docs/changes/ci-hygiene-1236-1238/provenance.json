@@ -1,0 +1,16 @@
+{
+  "issues": [1236, 1237, 1238],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan": "docs/changes/ci-hygiene-1236-1238/plans/2026-10-09-ci-hygiene-plan.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "harness-architecture.yml needs only contents: read. Its steps are checkout, setup-node, harness check-deps and harness validate, and none of them writes.",
+    "The SC2086 findings are NOT fixed by quoting. Each *_BASE_FLAG holds zero or four arguments, so quoting would fuse them on PRs and pass an empty argument on push. They get a scoped `shellcheck disable=SC2086` with a reason, and ts/test/workflow-hygiene.test.ts keeps them unquoted.",
+    "#1238 listed 5 findings at ccf6af0. A 6th (SC2016 in release.yml) landed afterwards, and it is cleared here too so that the new actionlint job starts green.",
+    "The workflow format gate rides on the existing ts format:check (the required 'TS engine (pilot)' check), not on a new job. Only batwoman.yml failed prettier --check across the 16 workflows on main.",
+    "The actionlint job is advisory (ADR 0010: precision unknown) and pinned to 1.7.12, with the download script fetched from the release tag.",
+    "The other workflows with no top-level permissions block (docs-lint, harness-quality, harness, refresh-arch-baseline, validate-plugin) are out of scope. They are flagged as a follow-up issue rather than fixed silently.",
+    "The run: blocks in harness-quality.yml change from folded plain scalars to literal blocks, because a shellcheck directive needs a comment line. Each command and its arguments are unchanged."
+  ]
+}
