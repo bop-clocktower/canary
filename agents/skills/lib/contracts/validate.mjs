@@ -11,6 +11,7 @@
 // failure is never a pass), 2 usage or unreadable input. There is no exit 3:
 // a parsed document always has a denominator of at least 1 (fork N).
 
+import console from 'node:console';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 

@@ -8,6 +8,7 @@
 // check can drift from the schema it adds to.
 
 import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
 
 const { $defs } = JSON.parse(
   readFileSync(new URL('./run.v1.schema.json', import.meta.url), 'utf8'),
