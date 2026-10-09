@@ -47,7 +47,7 @@ function errorsFor(layer: string, doc: unknown) {
 }
 
 describe('contract schemas', () => {
-  it('ships exactly one schema per layer (a zero denominator is not a pass)', () => {
+  it('ships one schema per layer plus the declared input schemas, and nothing else (a zero denominator is not a pass)', () => {
     // Plus the input files canary skills read that are not canary.* layers
     // (no `contract` field to dispatch on), each with its own entry point.
     expect(Object.keys(REGISTRY).sort()).toEqual(

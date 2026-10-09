@@ -25,37 +25,43 @@ export const normSymbol = (text) =>
   text.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /**
+ * A declared symbol shorter than this, once normalized, matches far too many
+ * test titles to mean anything (`a` is in nearly every one). Declared symbols
+ * may be shorter than derived ones (4): someone chose them on purpose.
+ */
+export const MIN_DECLARED_SYMBOL = 3;
+
+/**
  * What the schema subset cannot say about `symbols`: an empty list declares
- * nothing to match (omit the field to fall back to the basename), and a
- * symbol of punctuation alone normalizes to '' -- which every title contains.
+ * nothing to match (omit the field to fall back to the basename), and a symbol
+ * under MIN_DECLARED_SYMBOL letters or digits matches almost every title.
  */
 function symbolErrors(areas) {
   return areas.flatMap((area, i) => areaSymbolErrors(area?.symbols, i));
 }
 
 /** A blank or non-string item is the schema's error, so it is skipped here. */
-const matchesNothing = (s) =>
-  typeof s === 'string' && s.trim() !== '' && normSymbol(s) === '';
+const tooShort = (s) =>
+  typeof s === 'string' &&
+  s.trim() !== '' &&
+  normSymbol(s).length < MIN_DECLARED_SYMBOL;
+
+const symbolError = (i, j) => ({
+  path: `areas[${i}].symbols[${j}]`,
+  message: `has under ${MIN_DECLARED_SYMBOL} letters or digits to match a test title on`,
+});
 
 function areaSymbolErrors(symbols, i) {
   if (!Array.isArray(symbols)) return [];
-  const errors = symbols.flatMap((s, j) =>
-    matchesNothing(s)
-      ? [
-          {
-            path: `areas[${i}].symbols[${j}]`,
-            message: 'has no letters or digits to match a test title on',
-          },
-        ]
-      : [],
-  );
-  if (symbols.length > 0) return errors;
-  return [
-    {
-      path: `areas[${i}].symbols`,
-      message: 'is empty; omit it to match on the path basename instead',
-    },
-  ];
+  if (symbols.length === 0) {
+    return [
+      {
+        path: `areas[${i}].symbols`,
+        message: 'is empty; omit it to match on the path basename instead',
+      },
+    ];
+  }
+  return symbols.flatMap((s, j) => (tooShort(s) ? [symbolError(i, j)] : []));
 }
 
 /**

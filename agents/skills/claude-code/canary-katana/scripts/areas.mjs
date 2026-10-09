@@ -10,13 +10,8 @@ import {
   normSymbol,
   validateCriticalAreas,
 } from '../../../lib/contracts/critical-areas.mjs';
-import {
-  dirsOf,
-  isGenericDir,
-  moduleKey,
-  stripCodeSuffix,
-  toPosix,
-} from './nearby.mjs';
+import { importTargets } from './imports.mjs';
+import { dirsOf, sigPath, stripCodeSuffix, toPosix } from './nearby.mjs';
 
 // A derived (basename) symbol shorter than this matches too much to mean
 // anything. A DECLARED symbol is taken as given: someone chose it.
@@ -79,15 +74,38 @@ export function loadCriticalAreas(filePath) {
 
 const basename = (p) => toPosix(p).split('/').pop() || '';
 
+// Role words a framework appends to a file name (`invoice.service.ts`,
+// `user.controller.ts`). As a symbol on their own they match every sibling of
+// the same role -- `service` is in every `XService` title -- so they are never
+// derived as one.
+const ROLE_WORDS = new Set([
+  'service',
+  'controller',
+  'handler',
+  'utils',
+  'util',
+  'index',
+  'module',
+  'component',
+  'spec',
+  'test',
+]);
+
+/** The basename's parts: `invoice.service` -> [invoice.service, invoice]. */
+function baseParts(areaPath) {
+  const base = stripCodeSuffix(basename(areaPath));
+  const first = base.split('.').find(Boolean) ?? '';
+  return { base, first };
+}
+
 /**
- * Symbols an area path exposes: its basename minus code suffix, plus parts.
- * `src/loyalty/points.service.ts` -> {points.service, points, service}.
+ * Symbols an area path exposes: its joined basename (minus code suffix) and
+ * its first dotted part, never a bare role word.
+ * `src/billing/invoice.service.ts` -> {invoice.service, invoice}.
  */
 export function areaSymbols(areaPath) {
-  const base = stripCodeSuffix(basename(areaPath));
-  const symbols = new Set([base]);
-  for (const part of base.split('.')) if (part) symbols.add(part);
-  return symbols;
+  const { base, first } = baseParts(areaPath);
+  return new Set([base, first].filter((s) => s && !ROLE_WORDS.has(s)));
 }
 
 const derivedSymbols = (areaPath) =>
@@ -116,25 +134,29 @@ export const coveringSymbol = (testName, normSymbols) => {
 export const nameCovers = (testName, normSymbols) =>
   coveringSymbol(testName, normSymbols) !== null;
 
+/** The stems a test file named for the area may carry, lowercased. */
+function stemsOf(areaPath) {
+  const { base, first } = baseParts(areaPath);
+  return [...new Set([base, first])]
+    .map((s) => s.toLowerCase())
+    .filter((s) => s && !ROLE_WORDS.has(s));
+}
+
 /**
  * Everything matching and proximity need to know about one area, computed
- * once. `anchor` is the deepest significant directory name, or null when every
- * directory is generic (`src/engine.ts`).
+ * once. `sig` is its significant directories (empty when every directory is
+ * generic, as in `src/engine.ts`).
  */
 export function areaContext(area, problems) {
   const areaPath = typeof area?.path === 'string' ? area.path : '';
-  const dirs = dirsOf(areaPath);
-  const significant = dirs.filter((d) => !isGenericDir(d));
-  const key = moduleKey(areaPath);
   return {
     path: areaPath,
     risk: Number.parseFloat(area?.risk_score) || 0.0,
     problems,
     syms: symbolsFor(area ?? {}, areaPath, problems),
-    dirs,
-    anchor: significant.length ? significant[significant.length - 1] : null,
-    key,
-    keySegs: key.split('/'),
-    stem: stripCodeSuffix(basename(areaPath)).toLowerCase(),
+    dirs: dirsOf(areaPath),
+    sig: sigPath(areaPath),
+    targets: importTargets(areaPath),
+    stems: stemsOf(areaPath),
   };
 }

@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 
 import { isTestFile } from './diffscan.mjs';
-import { importsOf } from './nearby.mjs';
+import { importsOf } from './imports.mjs';
 
 // Heavy/ignored directories never worth walking for test files (#395).
 const SKIP_DIRS = new Set([
@@ -80,7 +80,7 @@ const readTextSafe = (p) => {
  * that never needs the repo never walks it, and one that does walks it once.
  * A file that cannot be read is skipped, not fatal (#395).
  */
-export function testIndex(repo) {
+function testIndex(repo) {
   let index = null;
   return () => {
     if (index !== null) return index;
@@ -95,5 +95,53 @@ export function testIndex(repo) {
       });
     }
     return index;
+  };
+}
+
+const stripAb = (p) =>
+  p.startsWith('a/') || p.startsWith('b/') ? p.slice(2) : p;
+
+/** The text of every file a diff touches, from its hunk lines on both sides. */
+function diffFileTexts(diff) {
+  const texts = new Map();
+  let minus = null;
+  let file = null;
+  for (const raw of String(diff).split('\n')) {
+    if (raw.startsWith('diff --git')) file = minus = null;
+    else if (raw.startsWith('--- ')) minus = stripAb(raw.slice(4).trim());
+    else if (raw.startsWith('+++ ')) {
+      const plus = stripAb(raw.slice(4).trim());
+      file = plus === '/dev/null' ? minus : plus;
+    } else if (file && /^[-+ ]/.test(raw)) {
+      texts.set(file, `${texts.get(file) ?? ''}${raw.slice(1)}\n`);
+    }
+  }
+  return texts;
+}
+
+/**
+ * Imports per file as the diff shows them, so a deleted test file -- gone from
+ * disk -- can still be tied to the area it imported.
+ */
+function diffImports(diff) {
+  const out = new Map();
+  for (const [file, text] of diffFileTexts(diff)) {
+    out.set(file, importsOf(file, text));
+  }
+  return out;
+}
+
+/**
+ * What the run can see: the repo's test files (lazily), and each touched
+ * file's imports -- from the diff when it carries the file (a deleted file is
+ * gone from disk), else from disk.
+ */
+export function scopeOf(repo, diff) {
+  const index = testIndex(repo);
+  const fromDiff = diffImports(diff);
+  return {
+    index,
+    importsOf: (file) =>
+      fromDiff.get(file) ?? index().find((e) => e.rel === file)?.imports ?? [],
   };
 }

@@ -7,9 +7,11 @@
 // says so; a gate that manufactures failures on missing data gets muted, and a
 // muted gate is worse than no gate.
 //
-// "Still covered" means a test NEAR the area still names the symbol (#1242,
-// see nearby.mjs). An area the gate still cannot alarm on is reported as NOT
-// ASSESSED, so "0 alarms" is never mistaken for "every area checked".
+// Both ends are tied to the area by proximity (#1242, nearby.mjs, imports.mjs):
+// the deleted test must have belonged to it, and "still covered" means a test
+// near the area, or importing it, remains. An area the gate still cannot alarm
+// on is reported as NOT ASSESSED, so "0 alarms" is never mistaken for "every
+// area checked".
 
 import {
   areaContext,
@@ -19,14 +21,15 @@ import {
   MIN_DERIVED_SYMBOL,
   nameCovers,
 } from './areas.mjs';
+import { importKind } from './imports.mjs';
 import {
   dirsOf,
-  importsAny,
   isNear,
+  isStronglyNear,
   ownsTest,
   significantDirs,
 } from './nearby.mjs';
-import { repoTestFiles, testIndex } from './testindex.mjs';
+import { repoTestFiles, scopeOf } from './testindex.mjs';
 
 // Imported then re-exported (not `export ... from`): the entropy scanner's
 // reachability model drops a module that is both imported and re-exported.
@@ -96,12 +99,20 @@ export function notAssessedToDict(n) {
   };
 }
 
-/** A test near the area (or importing it) still names one of its symbols. */
-function nameCoverageRemains(index, ctx) {
-  return index.some(
-    (e) =>
-      (isNear(e.rel, ctx) || importsAny(e, ctx)) &&
-      e.names.some((name) => nameCovers(name, ctx.syms)),
+/**
+ * Is this indexed test file still coverage of the area? It is when it has a
+ * test and either imports the area's module, or is near the area and named for
+ * it -- whatever its titles say -- or, failing both, is near (or imports the
+ * area's directory) and a title names the area's symbol.
+ */
+function covers(e, ctx) {
+  if (!e.names.length) return false;
+  const kind = importKind(e.imports, ctx);
+  if (kind === 'direct') return true;
+  const near = isNear(e.rel, ctx);
+  if (near && ownsTest(e.rel, ctx)) return true;
+  return (
+    (near || kind === 'barrel') && e.names.some((n) => nameCovers(n, ctx.syms))
   );
 }
 
@@ -111,29 +122,40 @@ function dirCoverageRemains(index, areaDirs) {
   );
 }
 
-/** Name-matched grade, or null when a nearby test still covers the area. */
-function nameGrade(ctx, index) {
-  if (nameCoverageRemains(index(), ctx)) return null;
+/** Name-matched grade, or null when a test near the area still covers it. */
+function nameGrade(ctx, scope) {
+  if (scope.index().some((e) => covers(e, ctx))) return null;
   const severity =
     ctx.risk >= CRITICAL_RISK ? Severity.CRITICAL : Severity.HIGH;
   return { fidelity: Fidelity.NAME_MATCHED, severity };
 }
 
 /** Directory-only grade, or null when unrelated or the directory is covered. */
-function dirGrade(deletion, ctx, index) {
+function dirGrade(deletion, ctx, scope) {
   const areaDirs = significantDirs(ctx.path);
   const delDirs = new Set(dirsOf(deletion.file));
   if (![...areaDirs].some((d) => delDirs.has(d))) return null;
-  if (dirCoverageRemains(index(), areaDirs)) return null;
+  if (dirCoverageRemains(scope.index(), areaDirs)) return null;
   return { fidelity: Fidelity.HEURISTIC, severity: Severity.MEDIUM };
 }
 
-function candidateFor(deletion, ctx, index) {
+/**
+ * Did the deleted test belong to the area? Its name alone is not enough
+ * (#1242 review): the file must be near the area, be named for it, or have
+ * imported it.
+ */
+const belongs = (deletion, ctx, scope) =>
+  isNear(deletion.file, ctx) ||
+  ownsTest(deletion.file, ctx) ||
+  importKind(scope.importsOf(deletion.file), ctx) !== null;
+
+function candidateFor(deletion, ctx, scope) {
   if (ctx.problems) return null; // invalid: reported as not assessed instead
-  const grade =
-    ctx.syms.size && nameCovers(deletion.name, ctx.syms)
-      ? nameGrade(ctx, index)
-      : dirGrade(deletion, ctx, index);
+  const named =
+    ctx.syms.size &&
+    nameCovers(deletion.name, ctx.syms) &&
+    belongs(deletion, ctx, scope);
+  const grade = named ? nameGrade(ctx, scope) : dirGrade(deletion, ctx, scope);
   if (grade === null) return null;
   return {
     kind: 'last-coverage-removed',
@@ -153,12 +175,12 @@ const outranks = (a, b) =>
     : a.severity.sortKey < b.severity.sortKey;
 
 /** Keep the best candidate per deletion across every area. */
-function findingsFor(deletions, contexts, index) {
+function findingsFor(deletions, contexts, scope) {
   const findings = [];
   for (const deletion of deletions) {
     let best = null;
     for (const ctx of contexts) {
-      const c = candidateFor(deletion, ctx, index);
+      const c = candidateFor(deletion, ctx, scope);
       if (c !== null && (best === null || outranks(c, best))) best = c;
     }
     if (best !== null) findings.push(best);
@@ -171,19 +193,26 @@ function findingsFor(deletions, contexts, index) {
   );
 }
 
+/**
+ * Tied to the area for certain: imports its module, or is named for it and sits
+ * in its own directory, its own test directory, or an exact mirror. A file
+ * merely named for it elsewhere (`apps/web/.../engine-signal.test.tsx`) is not.
+ */
+const tiedToArea = (e, ctx) =>
+  importKind(e.imports, ctx) === 'direct' ||
+  (ownsTest(e.rel, ctx) && isStronglyNear(e.rel, ctx));
+
 /** The first near test that names the symbol without being tied to the area. */
 function saturation(index, ctx) {
   for (const e of index) {
-    if (!isNear(e.rel, ctx) || ownsTest(e.rel, ctx) || importsAny(e, ctx)) {
-      continue;
-    }
+    if (!isNear(e.rel, ctx) || tiedToArea(e, ctx)) continue;
     const name = e.names.find((n) => nameCovers(n, ctx.syms));
     if (name === undefined) continue;
     return {
       reason: NotAssessed.SYMBOL_SATURATED,
       evidence:
         `'${name}' in ${e.rel} matches '${coveringSymbol(name, ctx.syms)}' ` +
-        `but neither imports ${ctx.path} nor is named for it, so ` +
+        `but neither imports ${ctx.path} nor is its own test file, so ` +
         `${ctx.path} always reads as covered; declare narrower symbols`,
     };
   }
@@ -206,31 +235,36 @@ function notAssessedReason(index, ctx) {
     return {
       reason: NotAssessed.NO_SYMBOL,
       evidence:
-        `basename of ${ctx.path} has under ${MIN_DERIVED_SYMBOL} letters or ` +
-        'digits to match a test title on, and no symbols are declared',
+        `basename of ${ctx.path} gives no symbol of ${MIN_DERIVED_SYMBOL}+ ` +
+        'letters or digits (role words like service are skipped), and no ' +
+        'symbols are declared',
     };
   }
   return saturation(index, ctx);
 }
 
-/** Could a deletion have taken coverage from this area, by any path we model? */
-function atStake(deletions, ctx) {
-  const areaDirs = significantDirs(ctx.path);
-  return deletions.some(
+/**
+ * Did this diff touch an area katana cannot assess? Only a deleted test named
+ * for the area or importing it does: proximity alone (any root `tests/` file)
+ * would put every such area at stake on every diff.
+ */
+const atStake = (deletions, ctx, scope) =>
+  deletions.some(
     (d) =>
-      (ctx.syms.size && nameCovers(d.name, ctx.syms)) ||
-      isNear(d.file, ctx) ||
-      dirsOf(d.file).some((x) => areaDirs.has(x)),
+      ownsTest(d.file, ctx) ||
+      importKind(scope.importsOf(d.file), ctx) !== null,
   );
-}
 
-function notAssessedFor(deletions, contexts, index) {
+function notAssessedFor(deletions, contexts, scope) {
   return contexts
     .map((ctx) => {
-      const why = notAssessedReason(index(), ctx);
-      return (
-        why && { area: ctx.path, ...why, atStake: atStake(deletions, ctx) }
-      );
+      const why = notAssessedReason(scope.index(), ctx);
+      if (!why) return null;
+      return {
+        area: ctx.path,
+        ...why,
+        atStake: atStake(deletions, ctx, scope),
+      };
     })
     .filter(Boolean)
     .sort((a, b) => a.area.localeCompare(b.area));
@@ -239,24 +273,25 @@ function notAssessedFor(deletions, contexts, index) {
 /**
  * The whole verdict: last-coverage findings, plus the denominator -- how many
  * areas were read and which of them the gate cannot alarm on. `atStake` marks
- * a not-assessed area some deletion in this diff relates to: for those, no
- * finding means "could not tell", not "fine".
+ * a not-assessed area a deletion in this diff was tied to: for those, no
+ * finding means "could not tell", not "fine". Pass the diff text so a deleted
+ * file's imports can be read.
  * @returns {{findings: Finding[], total: number, notAssessed: NotAssessedArea[]}}
  */
-export function assess(deletions, areas, repo) {
+export function assess(deletions, areas, repo, diff = '') {
   if (!areas.available) return { findings: [], total: 0, notAssessed: [] };
-  const index = testIndex(repo);
+  const scope = scopeOf(repo, diff);
   const contexts = areas.areas.map((a, i) =>
     areaContext(a, areas.problems?.get(i) ?? null),
   );
   return {
-    findings: findingsFor(deletions, contexts, index),
+    findings: findingsFor(deletions, contexts, scope),
     total: contexts.length,
-    notAssessed: notAssessedFor(deletions, contexts, index),
+    notAssessed: notAssessedFor(deletions, contexts, scope),
   };
 }
 
 /** Return last-coverage-removed findings; empty when data is unavailable. */
-export function buildFindings(deletions, areas, repo) {
-  return assess(deletions, areas, repo).findings;
+export function buildFindings(deletions, areas, repo, diff = '') {
+  return assess(deletions, areas, repo, diff).findings;
 }

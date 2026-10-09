@@ -1059,10 +1059,7 @@ describe('alarm proximity (#1242)', () => {
     ['a relative import', "import { earn } from '../../src/engine';"],
     ['a require', "const { earn } = require('../../src/engine.ts');"],
     ['an aliased import', "import { earn } from '@/engine';"],
-    [
-      'a two-segment package path',
-      "import { earn } from '@acme/app/src/engine';",
-    ],
+    ['a scoped tsconfig alias', "import { earn } from '@app/engine';"],
   ])('a far test that imports the area still covers it (%s)', (_, line) => {
     const tmp = mkTmp();
     const repo = repoWith(tmp, {
@@ -1120,8 +1117,21 @@ describe('alarm proximity (#1242)', () => {
     });
     const areas = alarm.loadCriticalAreas(areasFile(tmp, ENGINE_AREA));
     expect(
-      alarm.buildFindings(diffscan.findDeletions(ENGINE_REMOVAL), areas, repo),
-    ).toHaveLength(2);
+      alarm
+        .buildFindings(diffscan.findDeletions(ENGINE_REMOVAL), areas, repo)
+        .map((f) => ({
+          test: f.test,
+          area: f.area,
+          severity: f.severity.value,
+        })),
+    ).toEqual([
+      { test: 'engine', area: 'src/engine.ts', severity: 'critical' },
+      {
+        test: 'engine awards points',
+        area: 'src/engine.ts',
+        severity: 'critical',
+      },
+    ]);
   });
 
   it('a far python test with a relative import still covers it', () => {
@@ -1164,8 +1174,21 @@ deleted file mode 100644
     });
     const areas = alarm.loadCriticalAreas(areasFile(tmp, ENGINE_AREA));
     expect(
-      alarm.buildFindings(diffscan.findDeletions(ENGINE_REMOVAL), areas, repo),
-    ).toHaveLength(2);
+      alarm
+        .buildFindings(diffscan.findDeletions(ENGINE_REMOVAL), areas, repo)
+        .map((f) => ({
+          test: f.test,
+          area: f.area,
+          severity: f.severity.value,
+        })),
+    ).toEqual([
+      { test: 'engine', area: 'src/engine.ts', severity: 'critical' },
+      {
+        test: 'engine awards points',
+        area: 'src/engine.ts',
+        severity: 'critical',
+      },
+    ]);
   });
 });
 
@@ -1599,8 +1622,9 @@ deleted file mode 100644
     expect(text).toContain(
       '[symbol-saturated] src/rules.ts [at stake in this diff]',
     );
-    expect(text.toLowerCase()).toContain('abstained');
-    expect(text).toContain('0 alarms is not a pass');
+    expect(text).toContain(
+      '\u26A0 Abstained on 1 critical area(s) this diff put at risk \u2014 katana cannot alarm on them, so 0 alarms is not a pass.',
+    );
   });
 
   it('--strict exits 3 (abstained) when the diff touched a not-assessed area', () => {
@@ -1654,7 +1678,7 @@ deleted file mode 100644
     const text = out.join('\n');
     expect(text).toContain('[symbol-saturated] src/rules.ts:');
     expect(text).not.toContain('at stake');
-    expect(text.toLowerCase()).not.toContain('abstained');
+    expect(text).not.toContain('\u26A0 Abstained');
   });
 });
 

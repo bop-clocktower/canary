@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  MIN_DECLARED_SYMBOL,
   normSymbol,
   validateCriticalAreas,
 } from '../lib/contracts/critical-areas.mjs';
@@ -42,8 +43,8 @@ describe('critical-areas contract', () => {
 
   it.each([
     ['not an array', 'pricingEngine', ['areas[0].symbols']],
-    ['a non-string item', ['ok', 7], ['areas[0].symbols[1]']],
-    ['a blank item', ['ok', '  '], ['areas[0].symbols[1]']],
+    ['a non-string item', ['tax', 7], ['areas[0].symbols[1]']],
+    ['a blank item', ['tax', '  '], ['areas[0].symbols[1]']],
     ['an empty list', [], ['areas[0].symbols']],
     ['a punctuation-only item', ['--'], ['areas[0].symbols[0]']],
   ])('refuses symbols that are %s', (_, symbols, expected) => {
@@ -54,9 +55,31 @@ describe('critical-areas contract', () => {
 
   it('refuses an area without a path, or with a non-numeric risk_score', () => {
     expect(paths({ areas: [{ risk_score: 0.9 }] })).toEqual(['areas[0].path']);
-    expect(paths({ areas: [{ path: 'a.ts', risk_score: '0.9' }] })).toEqual([
+    expect(paths({ areas: [{ path: 'a.ts', risk_score: 'high' }] })).toEqual([
       'areas[0].risk_score',
     ]);
+    expect(paths({ areas: [{ path: 'a.ts', risk_score: -1 }] })).toEqual([
+      'areas[0].risk_score',
+    ]);
+  });
+
+  it('accepts what katana always read: a numeric string or null risk_score', () => {
+    // Back-compat (#1242 review): katana parsed risk_score with parseFloat, so
+    // files writing "0.9" or null alarmed before the contract existed.
+    for (const risk_score of ['0.9', '1', null]) {
+      expect(paths({ areas: [{ path: 'a.ts', risk_score }] })).toEqual([]);
+    }
+  });
+
+  it('refuses a declared symbol too short to mean anything', () => {
+    expect(MIN_DECLARED_SYMBOL).toBe(3);
+    expect(paths({ areas: [{ path: 'a.ts', symbols: ['a'] }] })).toEqual([
+      'areas[0].symbols[0]',
+    ]);
+    expect(paths({ areas: [{ path: 'a.ts', symbols: ['t-x'] }] })).toEqual([
+      'areas[0].symbols[0]',
+    ]);
+    expect(paths({ areas: [{ path: 'a.ts', symbols: ['tax'] }] })).toEqual([]);
   });
 
   it('refuses a document without an areas list', () => {
