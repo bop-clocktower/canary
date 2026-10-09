@@ -117,7 +117,7 @@ describe('release.yml (#1185)', () => {
       /\bnpm view\b/.test(s.run ?? '') && /\bbin\b/.test(s.run ?? '');
     const isCheckAfterPublish = (s: Step) => isBinCheck(s) && !isNpmPublish(s);
 
-    it('runs after npm publish and before the GitHub Release', () => {
+    it('sits between the npm publish step and the GitHub Release step', () => {
       const check = indexOf(isCheckAfterPublish, 'published-manifest bin');
       expect(check).toBeGreaterThan(indexOf(isNpmPublish, 'npm publish'));
       expect(check).toBeLessThan(indexOf(isGhRelease, 'GitHub Release'));
