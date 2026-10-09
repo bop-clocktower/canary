@@ -18,12 +18,19 @@ import {
   areaContext,
   areaSymbols,
   coveringSymbol,
+  CRITICAL_RISK,
   loadCriticalAreas,
   MIN_DERIVED_SYMBOL,
   nameCovers,
 } from './areas.mjs';
 import { importKind } from './imports.mjs';
-import { dirsOf, isNear, ownsTest, significantDirs } from './nearby.mjs';
+import {
+  dirsOf,
+  inRootTestDir,
+  isNear,
+  ownsTest,
+  significantDirs,
+} from './nearby.mjs';
 import { repoTestFiles, scopeOf } from './testindex.mjs';
 import { covers, related, tiedDeletion, tiedToArea } from './ties.mjs';
 
@@ -33,10 +40,6 @@ export { areaSymbols, loadCriticalAreas, repoTestFiles };
 
 export const DEGRADED_NOTICE =
   'critical-area data unavailable, recording only, not alarming';
-
-// risk_score at or above this makes a name-matched last-coverage loss CRITICAL;
-// below it the loss is still real but ranked HIGH.
-const CRITICAL_RISK = 0.7;
 
 export const Fidelity = {
   NAME_MATCHED: { value: 'name-matched', rank: 0 },
@@ -218,6 +221,12 @@ const atStake = (deletions, ctx, scope) =>
       importKind(scope.importsOf(d.file), ctx) !== null,
   );
 
+/** How a deletion relates to the area, for the evidence line (#1255). */
+const whereRelated = (d, ctx) =>
+  inRootTestDir(d.file) && !isNear(d.file, ctx)
+    ? `from the root test directory, and ${ctx.path} is high-risk,`
+    : `beside ${ctx.path}`;
+
 /**
  * An assessable area this diff left undecidable (#1253): a related test was
  * deleted that katana cannot tie to the area, none was tied to it, and no
@@ -231,7 +240,8 @@ function unlinked(deletions, ctx, scope) {
   return {
     reason: NotAssessed.UNLINKED,
     evidence:
-      `${untied.file} was deleted beside ${ctx.path} but neither imports it ` +
+      `${untied.file} was deleted ${whereRelated(untied, ctx)} but neither ` +
+      'imports it ' +
       'nor is named for it, and no remaining test imports it or is its own ' +
       'test file, so katana cannot tell whether its coverage went too; add a ' +
       'test that imports it',

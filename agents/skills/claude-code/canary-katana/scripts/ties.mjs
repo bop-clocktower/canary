@@ -5,10 +5,11 @@
 // areas.mjs. alarm.mjs grades deletions with them; the not-assessed report
 // uses the same ones, so "tied", "covers" and "related" mean one thing.
 
-import { nameCovers } from './areas.mjs';
+import { CRITICAL_RISK, nameCovers } from './areas.mjs';
 import { importKind } from './imports.mjs';
 import {
   dirsOf,
+  inRootTestDir,
   isNear,
   isStronglyNear,
   ownsTest,
@@ -52,10 +53,17 @@ export const tiedDeletion = (deletion, ctx, scope) =>
   ((nameCovers(deletion.name, ctx.syms) && belongs(deletion, ctx, scope)) ||
     importKind(scope.importsOf(deletion.file), ctx) === 'direct');
 
-/** Shares a significant directory with the area, or is near it. */
+/**
+ * Shares a significant directory with the area, or is near it -- or, for a
+ * high-risk area only, sits in the root `test/`/`tests/` (#1255): a
+ * single-package repo's integration tests live there and share no directory
+ * with `src/<dir>/`. Lower-risk areas keep #1246's rule, so a root-tests
+ * deletion cannot put every area at stake.
+ */
 export const related = (deletion, ctx) =>
   isNear(deletion.file, ctx) ||
-  dirsOf(deletion.file).some((d) => significantDirs(ctx.path).has(d));
+  dirsOf(deletion.file).some((d) => significantDirs(ctx.path).has(d)) ||
+  (ctx.risk >= CRITICAL_RISK && inRootTestDir(deletion.file));
 
 /**
  * Tied to the area for certain: imports its module, or is named for it and sits
