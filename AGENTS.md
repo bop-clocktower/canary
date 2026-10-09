@@ -1638,14 +1638,18 @@ sample input for the scanners. See #759 and
 `ts/test/typecheck-denominator.test.ts`, which fails if that exclusion widens.
 
 There is **no `lint` gate** and no linter to run one: the repo uses no ESLint by
-decision, and the `protect-config` hook blocks AI-authored linter configs.
-Prettier is the formatting gate; markdown is gated separately by `docs-lint.yml`
-via `markdownlint-cli`. `agents/skills/` carries its own `test` / `typecheck` /
-`format:check` for the skill bundles. Its `test` needs a built engine — run
-`npm run build` in `ts/` first: canary-cassandra delegates to `ts/dist`, and a
-vitest `globalSetup` (`agents/skills/test/engine-precondition.ts`, #1221) fails
-the run once with `ts/dist missing` when it is absent, and warns when `ts/dist`
-is older than `ts/src`.
+decision, and the `protect-config` hook blocks AI-authored linter configs. The
+one exception is a test, not a gate:
+`agents/skills/test/lib-portability.test.ts` calls ESLint's in-process `Linter`
+(devDependency of `agents/skills`, no config file) to prove the vendored `lib/`
+passes `no-undef` in a consumer repo (#1234). Prettier is the formatting gate;
+markdown is gated separately by `docs-lint.yml` via `markdownlint-cli`.
+`agents/skills/` carries its own `test` / `typecheck` / `format:check` for the
+skill bundles. Its `test` needs a built engine — run `npm run build` in `ts/`
+first: canary-cassandra delegates to `ts/dist`, and a vitest `globalSetup`
+(`agents/skills/test/engine-precondition.ts`, #1221) fails the run once with
+`ts/dist missing` when it is absent, and warns when `ts/dist` is older than
+`ts/src`.
 
 **The repo root is not a gate surface.** There is no root `package.json` in this
 repository — `/package.json` and `/package-lock.json` are gitignored as
