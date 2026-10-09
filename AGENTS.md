@@ -658,7 +658,7 @@ before lowering a ceiling to match it.
 passes the base worktree's `.harness/entropy-baseline.json` to
 `scripts/entropy-ratchet.mjs` as `--base-baseline`. A higher ceiling exits
 **1**. A base copy that is missing or unreadable exits **3**, never 0. The perf
-ceiling has no such rule yet.
+ceiling has no such rule yet (#1257).
 
 **The docs-coverage floor is the third baseline (#1241).**
 `scripts/docs-ratchet.mjs` fails a PR that unlinks a documented file (#865) and,

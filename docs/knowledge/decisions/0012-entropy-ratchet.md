@@ -574,7 +574,8 @@ rises" rule does (#1241):
 
 The offline block keeps its self-consistency guards and now states that they
 cannot see a raise. The perf ceiling (`maxViolations`) has no equivalent rule.
-No test there claimed one, so nothing was vacuous, but it is the same gap.
+No test there claimed one, so nothing was vacuous, but it is the same gap
+(#1257).
 
 ## Consequences
 
