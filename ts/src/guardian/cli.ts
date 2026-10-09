@@ -247,9 +247,30 @@ export interface GuardianDeps {
   sleep(secs: number): Promise<void>;
 }
 
+/**
+ * Flags pinning `git diff` output to the shape the diff parser reads. Raw
+ * `git diff` honours user config: `diff.mnemonicPrefix` (`i/`/`w/`),
+ * `diff.noprefix` and `diff.srcPrefix`/`dstPrefix` leak into every scoped path
+ * and suppression lookup; `color.diff=always` hides the `+++` headers behind
+ * ANSI codes; `diff.external` replaces the patch with another tool's output.
+ */
+const PARSEABLE_DIFF_FLAGS = [
+  '--no-ext-diff',
+  '--no-color',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+];
+
+/** `args` with {@link PARSEABLE_DIFF_FLAGS} inserted when it runs `git diff`. */
+function withParseableDiff(args: string[]): string[] {
+  return args[0] === 'diff'
+    ? ['diff', ...PARSEABLE_DIFF_FLAGS, ...args.slice(1)]
+    : args;
+}
+
 /** Run `git`; `null` when the binary is missing (Python OSError fail-safe). */
 function spawnGit(args: string[], cwd?: string): GitResult | null {
-  const res = spawnSync('git', args, {
+  const res = spawnSync('git', withParseableDiff(args), {
     encoding: 'utf-8',
     maxBuffer: Infinity,
     ...(cwd ? { cwd } : {}),
@@ -766,13 +787,24 @@ function loadSpec(path: string, deps: GuardianDeps): Record<string, unknown> {
   return (loadYaml(text) ?? {}) as Record<string, unknown>;
 }
 
+/**
+ * A row `mapImpact` can key: an object with a string `path` and `method`. Every
+ * other element is skipped, so one malformed row cannot crash `analyze`.
+ */
+function isKeyableCoverageRow(row: unknown): row is CoverageRow {
+  const r = row as Partial<CoverageRow> | null;
+  return typeof r?.path === 'string' && typeof r.method === 'string';
+}
+
 function loadCoverage(path: string): CoverageRow[] {
   if (!existsSync(path)) return [];
   try {
     const data = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
     if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
       const endpoints = (data as { endpoints?: unknown }).endpoints;
-      return Array.isArray(endpoints) ? (endpoints as CoverageRow[]) : [];
+      return Array.isArray(endpoints)
+        ? endpoints.filter(isKeyableCoverageRow)
+        : [];
     }
     return [];
   } catch {
@@ -1358,6 +1390,23 @@ function installedVersion(repoRoot: string, pkg: string): string | null {
 }
 
 /**
+ * A `files` entry `mapStrykerReport` can walk: a `mutants` array whose every
+ * mutant carries `location.start`. Anything else would throw mid-mapping, and
+ * an uncaught throw exits 1 -- which ADR 0009 reads as "survivors".
+ */
+function isMappableStrykerFile(file: unknown): boolean {
+  const mutants = isRecord(file) ? file['mutants'] : undefined;
+  return (
+    Array.isArray(mutants) &&
+    mutants.every((m) => isRecord(m) && hasStart(m['location']))
+  );
+}
+
+function hasStart(location: unknown): boolean {
+  return isRecord(location) && isRecord(location['start']);
+}
+
+/**
  * Map a Stryker report file, or abstain with the reason it could not be.
  *
  * NOT diff-scoped: every mutant the supplied report contains is mapped, so a
@@ -1382,6 +1431,13 @@ function mappedStrykerReport(
   if (!isRecord(parsed) || !isRecord(parsed['files'])) {
     return abstainedReport(
       `the stryker report at ${path} has no "files" map`,
+      excluded,
+    );
+  }
+  if (!Object.values(parsed['files']).every(isMappableStrykerFile)) {
+    return abstainedReport(
+      `the stryker report at ${path} has a file entry without a "mutants" ` +
+        'list of located mutants',
       excluded,
     );
   }
