@@ -182,6 +182,23 @@ describe('isTypeOnlyModule (#562)', () => {
   it('an unreadable file is unproven, so the finding survives', () => {
     expect(isTypeOnlyModule('src/does-not-exist.types.ts', root)).toBe(false);
   });
+
+  it('a "/*" inside a string literal does not hide the runtime code after it', () => {
+    // A glob-pattern string type is ordinary in a types.ts. The comment
+    // stripper must not read its `/*` as a block-comment opener: doing so
+    // blanks every following line, so the runtime `export const` below is
+    // never judged and the whole module is suppressed as type-only.
+    const path = write(
+      'src/types.ts',
+      [
+        "export type TestGlob = '**/*.test.ts';",
+        '',
+        'export const DEFAULT_GLOB = makeGlob();',
+        '',
+      ].join('\n'),
+    );
+    expect(isTypeOnlyModule(path, root)).toBe(false);
+  });
 });
 
 // The measured end of #562: precision 13/20 against a 0.8 promotion bar, with
