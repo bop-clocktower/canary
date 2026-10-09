@@ -932,6 +932,22 @@ describe('resolveFromHeuristic', () => {
     expect(results.length).toBe(2);
     expect(results.every((r) => r.fidelity === Fidelity.Heuristic)).toBe(true);
   });
+
+  it('a test shipped inside an installed dependency never covers repo code', () => {
+    // node_modules carries thousands of third-party `*.test.*`/`*.spec.*`
+    // files; one that merely mentions a common stem (`bar`) is no evidence
+    // that THIS repo's pkg/bar.py is tested.
+    const repo = buildRepo();
+    mkdirSync(join(dir, 'node_modules', 'some-dep'), { recursive: true });
+    writeFileSync(
+      join(dir, 'node_modules', 'some-dep', 'index.test.js'),
+      "it('bar', () => {});\n",
+      'utf-8',
+    );
+    const bar: ChangedUnit = { path: 'pkg/bar.py', added_ranges: [[1, 2]] };
+    const results = resolveFromHeuristic([bar], repo);
+    expect(results[0]!.covered).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
