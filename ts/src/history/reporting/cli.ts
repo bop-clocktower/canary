@@ -37,6 +37,15 @@ import type { HistoryDeps } from '../cli-deps.js';
 const EM_DASH = '\u{2014}';
 const MDASH_CELL = '\u{2014}'; // rich `r.get("area") or <em-dash>`
 
+/** A flake-rate percent. NaN would fail every `>=` and print a false clean. */
+function parseMinRate(raw: string): number {
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n)) {
+    throw new InvalidArgumentError(`--min-rate takes a percent; got "${raw}".`);
+  }
+  return n;
+}
+
 /**
  * A whole count of runs, >= 1 (same rule `canary analyze` adopted in #673).
  *
@@ -254,7 +263,7 @@ export function registerReportingCommands(
     .addOption(
       new Option('--min-rate <pct>', 'Minimum flake rate % to show.')
         .default(10.0)
-        .argParser((v) => Number.parseFloat(v)),
+        .argParser(parseMinRate),
     )
     .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
     .option('--json')
