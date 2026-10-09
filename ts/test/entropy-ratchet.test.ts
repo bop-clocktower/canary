@@ -33,18 +33,19 @@
  *
  * Exit codes follow the repo's gate convention (#508):
  *   0 = verified — findings are at or under the baseline
- *   1 = the ratchet fired — findings grew past the baseline
+ *   1 = the ratchet fired — findings grew past the baseline, or the ceiling
+ *       was raised above the merge base's (`--base-baseline`, #1247)
  *   2 = error — the baseline file is missing or unreadable
- *   3 = ABSTENTION — no findings line in the input, so nothing was measured
+ *   3 = ABSTENTION — no findings line in the input, so nothing was measured,
+ *       or the merge base's baseline cannot be read
  *
  * Offline throughout: never runs `harness`, never touches the network. The
  * `entropy-ratchet` block supplies its own report and baseline in a tmpdir; the
  * `the checked-in entropy baseline` block instead reads the REAL
  * `.harness/entropy-baseline.json`, `.github/workflows/harness-quality.yml` and
- * `scripts/entropy-ratchet.mjs`, and shells out to `git show` for the previous
- * committed baseline. Those four are deliberately sensitive to repo state —
- * that is the point of them — which also makes them the only tests here whose
- * result depends on the working tree rather than on inputs they control.
+ * `scripts/entropy-ratchet.mjs`. Those three are deliberately sensitive to repo
+ * state — that is the point of them — which also makes them the only tests here
+ * whose result depends on the working tree rather than on inputs they control.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -52,6 +53,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { load as loadYaml } from 'js-yaml';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -264,6 +266,95 @@ describe('entropy-ratchet', () => {
       expect(out).not.toMatch(/merge-base entropy report/);
     });
   });
+
+  /**
+   * The ceiling only falls (#1247).
+   *
+   * Raising `maxFindings` is the baseline's one forbidden move, and no offline
+   * test can see it: the guard that tried compared the file with
+   * `git show HEAD:`, which on a PR's merge ref (and on any committed change)
+   * IS the file, so a committed 145 -> 200 raise passed all 68 tests. The only
+   * copy a PR cannot rewrite is the merge base's, so CI hands it over as
+   * `--base-baseline` and the script compares at runtime — the docs floor's
+   * design (#1244). No bootstrap exemption: main has had the file since #544.
+   */
+  describe('the ceiling only falls against the merge base (#1247)', () => {
+    let baseBaseline: string;
+
+    beforeEach(() => {
+      baseBaseline = join(dir, 'base-baseline.json');
+      writeFileSync(report, contractLine(140));
+    });
+
+    const withBase = (): string[] => ['--base-baseline', baseBaseline];
+
+    it('fails a ceiling raised above the merge base, naming both values', () => {
+      writeFileSync(baseBaseline, JSON.stringify({ maxFindings: 145 }));
+      writeBaseline(200);
+      const { status, out } = run(withBase());
+      expect(status).toBe(1);
+      expect(out).toMatch(/RAISED/);
+      expect(out).toContain('145');
+      expect(out).toContain('200');
+    });
+
+    // The smallest raise must fire too: the comparison is `>`, not a margin.
+    it('fails a raise of one', () => {
+      writeFileSync(baseBaseline, JSON.stringify({ maxFindings: 145 }));
+      writeBaseline(146);
+      expect(run(withBase()).status).toBe(1);
+    });
+
+    it('passes a ceiling equal to the merge base', () => {
+      writeFileSync(baseBaseline, JSON.stringify({ maxFindings: 145 }));
+      writeBaseline(145);
+      expect(run(withBase()).status).toBe(0);
+    });
+
+    it('passes a ceiling lowered below the merge base', () => {
+      writeFileSync(baseBaseline, JSON.stringify({ maxFindings: 145 }));
+      writeBaseline(141);
+      expect(run(withBase()).status).toBe(0);
+    });
+
+    // "Cannot verify" is a finding, not a pass: the old guard's
+    // `if (prev.status !== 0) return;` is exactly the shape this replaces.
+    it('ABSTAINS when the merge base baseline is missing', () => {
+      writeBaseline(145);
+      const { status, out } = run(withBase());
+      expect(status).toBe(3);
+      expect(out).toMatch(/ABSTAINED/);
+      expect(out).toContain(baseBaseline);
+    });
+
+    it('ABSTAINS when the merge base baseline is not JSON', () => {
+      writeFileSync(baseBaseline, '{"maxFindings": 14');
+      writeBaseline(145);
+      const { status, out } = run(withBase());
+      expect(status).toBe(3);
+      expect(out).toMatch(/not JSON/);
+    });
+
+    it('ABSTAINS when the merge base baseline has no integer ceiling', () => {
+      writeFileSync(baseBaseline, JSON.stringify({ maxFindings: '145' }));
+      writeBaseline(145);
+      const { status, out } = run(withBase());
+      expect(status).toBe(3);
+      expect(out).toMatch(/maxFindings/);
+    });
+
+    // A raise is a property of two files, not of the measurement, so a head
+    // scan that fits under the raised ceiling must not mask it.
+    it('fails the raise even when the delta and the count are clean', () => {
+      const baseReport = join(dir, 'base-report.txt');
+      writeFileSync(baseReport, contractLine(140));
+      writeFileSync(baseBaseline, JSON.stringify({ maxFindings: 145 }));
+      writeBaseline(150);
+      const r = run([...withBase(), '--base-report', baseReport]);
+      expect(r.status).toBe(1);
+      expect(r.out).toMatch(/RAISED/);
+    });
+  });
 });
 
 /**
@@ -294,10 +385,16 @@ describe('entropy-ratchet', () => {
  * So these catch a HUMAN-EDIT class of defect, which is the class that is
  * checkable without the network:
  *
- *   - the ceiling RAISED above its last committed value (the ratchet's actual
- *     forbidden move, compared against git rather than against a sibling field)
  *   - `maxFindings` moved without re-measuring `measuredCount`
  *   - a missing, range-valued, or major-mismatched `harnessCli`
+ *
+ * They do NOT catch the ratchet's actual forbidden move, a RAISED ceiling.
+ * Every assertion here compares this file with itself, and raising
+ * `maxFindings` with `measuredCount` moved to match agrees with itself. A guard
+ * here used to compare against `git show HEAD:`, which on a PR's merge ref (and
+ * on any committed change) is this same file, so it could never fail (#1247).
+ * The raise is caught at RUNTIME instead, against the merge base's copy
+ * (`--base-baseline`, tested in the `entropy-ratchet` block, wired below).
  *
  * And they explicitly do NOT catch minor-version drift: the workflows pin a
  * floating `@12`, so a 12.1.0 -> 12.2.0 move would pass the major check just as
@@ -390,32 +487,37 @@ describe('the checked-in entropy baseline', () => {
     };
   }
 
-  // THE ratchet invariant, and the one this block originally missed entirely.
-  // Every other assertion here compares two fields of the same file, so raising
-  // the ceiling and editing `measuredCount` to match satisfies all of them —
-  // which is precisely the move the baseline forbids in prose six times.
-  // Git holds the only ground truth that is available offline: the value this
-  // file had before the current edit.
-  it('never raises the ceiling above its last committed value', () => {
-    const prev = spawnSync('git', ['show', `HEAD:${BASELINE_REL}`], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-    });
-    // A brand-new file has nothing to ratchet against. Skipping is correct
-    // here and is NOT a silent abstention: every other assertion still runs.
-    if (prev.status !== 0) return;
-    const before = JSON.parse(prev.stdout).maxFindings as number;
+  // Behavioural, not a source grep (#1247): with no `--baseline`, the merge
+  // base comparison must run against THIS file. A base copy one below the real
+  // ceiling is what this file would look like after a raise of one.
+  it('is the baseline the ratchet compares with the merge base by default', () => {
     const { maxFindings } = baselineNumbers();
-    expect(
-      maxFindings,
-      `${BASELINE_REL}: the entropy ceiling ROSE ${before} -> ${maxFindings}. ` +
-        `A ratchet only turns one way (#544) and raising it to make a failing ` +
-        `check pass is the one move that is never right. FIX: fix the new ` +
-        `findings, or declare a false-positive entry point in ` +
-        `\`entropy.entryPoints\` in harness.config.json. If the ANALYZER moved ` +
-        `under you rather than the code, that is still not a raise — record ` +
-        `the new \`harnessCli\` and explain it in \`$driftfix\` (see #744).`,
-    ).toBeLessThanOrEqual(before);
+    const tmp = mkdtempSync(join(tmpdir(), 'entropy-ratchet-default-'));
+    try {
+      const head = join(tmp, 'report.txt');
+      const base = join(tmp, 'base-baseline.json');
+      writeFileSync(head, contractLine(0));
+      writeFileSync(base, JSON.stringify({ maxFindings: maxFindings - 1 }));
+      const r = spawnSync(
+        process.execPath,
+        [
+          SCRIPT,
+          '--report',
+          head,
+          '--base-baseline',
+          base,
+          '--cli-version',
+          String(baselineFile().harnessCli),
+        ],
+        { encoding: 'utf8' },
+      );
+      const out = `${r.stdout}${r.stderr}`;
+      expect(r.status, out).toBe(1);
+      expect(out).toContain(BASELINE_REL);
+      expect(out).toContain(`${maxFindings - 1} at the merge base`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it('records the exact CLI version that produced its measurement', () => {
@@ -746,6 +848,54 @@ describe('the merge-base delta gate is wired', () => {
 
   it('checks out full history, without which there is no base commit to scan', () => {
     expect(yaml()).toMatch(/fetch-depth:\s*0/);
+  });
+});
+
+/**
+ * The ceiling-only-falls rule is WIRED (#1247). Parsed, not grepped: the flag
+ * has to reach the ratchet step's own env on pull requests, and point into the
+ * base worktree the merge-base scan step creates — not into the checkout,
+ * where it would be the head's own file and the comparison vacuous again.
+ */
+describe('the entropy merge-base baseline is wired (#1247)', () => {
+  type Step = {
+    name?: string;
+    if?: string;
+    run?: string;
+    env?: Record<string, string>;
+  };
+  const steps = (): Step[] =>
+    (
+      loadYaml(
+        readFileSync(
+          join(REPO_ROOT, '.github', 'workflows', 'harness-quality.yml'),
+          'utf8',
+        ),
+      ) as { jobs: Record<string, { steps: Step[] }> }
+    ).jobs.validate!.steps;
+  const RATCHET = 'Entropy ratchet (blocking)';
+  const BASE_SCAN = 'Harness Cleanup (Entropy Scan, merge base)';
+
+  it('hands the merge base baseline to the ratchet on pull requests', () => {
+    const ratchet = steps().find((s) => s.name === RATCHET);
+    expect(ratchet, `no step named ${RATCHET}`).toBeDefined();
+    const flag = ratchet!.env?.BASE_FLAG ?? '';
+    expect(flag).toMatch(/github\.event_name == 'pull_request'/);
+    expect(flag).toMatch(
+      /--base-baseline\s+\{0\}\/entropy-base\/\.harness\/entropy-baseline\.json',\s*runner\.temp\)/,
+    );
+    expect(ratchet!.run).toMatch(/entropy-ratchet\.mjs[\s\S]*\$BASE_FLAG/);
+  });
+
+  it('points at the worktree the merge-base scan step creates, before it', () => {
+    const all = steps();
+    const scan = all.findIndex((s) => s.name === BASE_SCAN);
+    const ratchet = all.findIndex((s) => s.name === RATCHET);
+    expect(scan).toBeGreaterThan(-1);
+    expect(ratchet).toBeGreaterThan(scan);
+    expect(all[scan]!.run).toMatch(
+      /git worktree add --detach "\$RUNNER_TEMP\/entropy-base" "\$BASE_SHA"/,
+    );
   });
 });
 

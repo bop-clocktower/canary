@@ -1,0 +1,17 @@
+{
+  "issues": [1247],
+  "route": "bug",
+  "stages": [
+    "harness:debugging/investigate",
+    "harness:debugging/analyze",
+    "harness:debugging/fix"
+  ],
+  "assumptions": [
+    "The raised-ceiling check runs first and exits 1 before the instrument and findings checks, because a raise depends only on the two baseline files and no measurement can excuse it.",
+    "No bootstrap exemption: main has carried .harness/entropy-baseline.json since #544, so a missing base copy abstains (exit 3).",
+    "The docs-coverage floor has no sibling HEAD-vs-HEAD test: #1244 already removed it, as its docblock records; nothing to fix there.",
+    "The perf ceiling (maxViolations) has no HEAD-vs-HEAD test (nothing vacuous) but also no ceiling-only-falls rule at all; filed as a follow-up rather than widened into this PR."
+  ],
+  "closingKeyword": "Closes",
+  "reproducingTest": "ts/test/entropy-ratchet.test.ts"
+}
