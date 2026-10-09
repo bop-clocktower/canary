@@ -69,6 +69,23 @@ describe('#1040 init: an unsupported framework is not a success', () => {
     }
   });
 
+  // bug-fleet A1: initCmd's catch block, meant for the scaffolder's
+  // unknown-framework Error, also caught the CliExitError(2) thrown for the
+  // unsupported status -- so stderr gained "Error: exit 2" and the
+  // unknown-framework "Supported frameworks" hint for a KNOWN framework.
+  it('reports only the guidance, not a caught exit as an unknown framework', async () => {
+    const tmp = mkTmp();
+    try {
+      const res = await invokeCanary(['init', 'cucumber'], {
+        cwd: tmp,
+        deps: { makeScaffolder: unsupportedScaffolder as never },
+      });
+      expect(res.stderr).not.toMatch(/Error: exit \d|Supported frameworks:/);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+
   it('does not claim scaffolding completed', async () => {
     const tmp = mkTmp();
     try {
