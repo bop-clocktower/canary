@@ -63,6 +63,11 @@ describe('false block: the gate must not refuse a correct test', () => {
   });
 
   it('takes the NEAREST annotation when several are in range', () => {
+    // The second test names `load` but only calls `save`, so exactly one
+    // `annotated` VAC-002 on it proves the NEAREST annotation was read. Taking
+    // the previous test's `@covers save`, or dropping the annotation and falling
+    // back to import inference (which sees `save`), both clear the test -- and
+    // the second one is what #1232 did, so this used to pass vacuously.
     const r = scanVacuity(
       write(
         'a.test.ts',
@@ -70,10 +75,14 @@ describe('false block: the gate must not refuse a correct test', () => {
           `// @covers save\n` +
           `it('saves', () => { expect(save(1)).toBe(1); });\n` +
           `// @covers load\n` +
-          `it('loads', () => { expect(load(2)).toBe(2); });\n`,
+          `it('loads', () => { expect(save(2)).toBe(2); });\n`,
       ),
     );
-    expect(r.findings.filter((f) => f.rule === 'VAC-002')).toEqual([]);
+    const vac = r.findings.filter((f) => f.rule === 'VAC-002');
+    expect(vac.map((f) => [f.test, f.fidelity])).toEqual([
+      ['loads', 'annotated'],
+    ]);
+    expect(vac[0]!.message).toContain('load');
   });
 
   it('clears SOUND-001 taint when the name is re-bound deterministically', () => {
@@ -134,6 +143,101 @@ describe('false block: the gate must not refuse a correct test', () => {
       ),
     );
     expect(r.findings.filter((f) => f.rule === 'VAC-002')).toEqual([]);
+  });
+});
+
+describe('@covers is read for every test in a file, not just the first (#1232)', () => {
+  // A JS test's body runs to the NEXT declaration, so the comment above the
+  // second `it(` sat inside the first test's body -- and the look-back was
+  // floored at that body's end. Every annotation after the first was dropped,
+  // and a false `@covers` claim went unchecked: `annotated` is the one fidelity
+  // allowed to block, so the drop was a false green.
+  function annotatedVac002(name: string, content: string): string[][] {
+    return scanVacuity(write(name, content))
+      .findings.filter((f) => f.rule === 'VAC-002')
+      .map((f) => [f.test, f.fidelity ?? '']);
+  }
+
+  it('checks the annotation on the second test (the issue repro)', () => {
+    expect(
+      annotatedVac002(
+        'a.test.ts',
+        HEAD +
+          `it('first', () => { expect(save(1)).toBe(1); });\n` +
+          `// @covers migrate\n` +
+          `it('claims to migrate', () => { expect(save(1)).toBe(1); });\n`,
+      ),
+    ).toEqual([['claims to migrate', 'annotated']]);
+  });
+
+  it('checks the same annotation repeated above consecutive tests', () => {
+    // The shape measured on roadmap-sync-guard.test.ts: one annotation per
+    // test, of which only the first was ever read.
+    const tests = ['a', 'b', 'c']
+      .map(
+        (t) =>
+          `// @covers migrate\nit('${t}', () => {\n  expect(save(1)).toBe(1);\n});\n`,
+      )
+      .join('');
+    expect(annotatedVac002('a.test.ts', HEAD + tests)).toEqual([
+      ['a', 'annotated'],
+      ['b', 'annotated'],
+      ['c', 'annotated'],
+    ]);
+  });
+
+  it('reads an annotation in a multi-line comment run, past a blank line', () => {
+    expect(
+      annotatedVac002(
+        'a.test.ts',
+        HEAD +
+          `it('first', () => { expect(save(1)).toBe(1); });\n` +
+          `\n` +
+          `/**\n * @covers migrate\n */\n` +
+          `\n` +
+          `it('claims to migrate', () => { expect(save(1)).toBe(1); });\n`,
+      ),
+    ).toEqual([['claims to migrate', 'annotated']]);
+  });
+
+  it('reads the annotation above a declaration whose title wraps', () => {
+    // The body starts after the title, a line below the `it(`, so the walk up
+    // has to begin at the `it(` line, not the title's.
+    expect(
+      annotatedVac002(
+        'a.test.ts',
+        HEAD +
+          `it('first', () => { expect(save(1)).toBe(1); });\n` +
+          `// @covers migrate\n` +
+          `it(\n  'claims to migrate',\n  () => { expect(save(1)).toBe(1); },\n);\n`,
+      ),
+    ).toEqual([['claims to migrate', 'annotated']]);
+  });
+
+  it('does not read an annotation from inside the previous test body', () => {
+    // The run of comment lines stops at the previous test's closing line, so a
+    // comment INSIDE that test cannot attach to the next declaration -- if it
+    // did, `second` would be checked against `migrate` and flagged.
+    expect(
+      annotatedVac002(
+        'a.test.ts',
+        HEAD +
+          `it('first', () => {\n  expect(save(1)).toBe(1);\n  // @covers migrate\n});\n` +
+          `it('second', () => { expect(save(1)).toBe(1); });\n`,
+      ),
+    ).toEqual([]);
+  });
+
+  it('checks the annotation on a second pytest test, through a decorator', () => {
+    expect(
+      annotatedVac002(
+        'test_a.py',
+        `import pytest\nfrom store import save\n\n` +
+          `def test_first():\n    assert save(1) == 1\n\n` +
+          `# @covers migrate\n@pytest.mark.slow\n` +
+          `def test_claims_to_migrate():\n    assert save(1) == 1\n`,
+      ),
+    ).toEqual([['test_claims_to_migrate', 'annotated']]);
   });
 });
 

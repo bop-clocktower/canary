@@ -28,6 +28,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **canary-cassandra reads `@covers` on every test in a file** (#1232). In a
+  JS/TS file only the first test's annotation was read; every later one was
+  dropped and the test fell back to import inference, so a wrong `@covers` claim
+  went unchecked. The annotation is now read from the comment lines directly
+  above the declaration (blank lines, block comments, and Python decorators
+  included). An annotated target must also be referenced by code: the next
+  test's `// @covers` comment no longer counts as a reference, which had cleared
+  every test but the last when one annotation was repeated above consecutive
+  tests.
 - **canary-cassandra sees typed helper declarations** (#1179). A same-file
   helper declared with a type annotation
   (`const parse: Parser = (...a) => parseArgv(a)`) was invisible to the
