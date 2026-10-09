@@ -310,3 +310,23 @@ describe('pyEqual equality contract (#907, #922)', () => {
     },
   );
 });
+
+describe('path-item level contract', () => {
+  it('a path-level parameter change is a change to every operation under it', () => {
+    // OpenAPI applies pathItem.parameters to each operation on the path, so
+    // retyping one is a params change consumers see on GET /u/{id}.
+    const spec = (type: string): Spec => ({
+      openapi: '3.0.0',
+      paths: {
+        '/u/{id}': {
+          parameters: [{ name: 'id', in: 'path', schema: { type } }],
+          get: { operationId: 'getU' },
+        },
+      },
+    });
+    const diff = extractApiDiff(spec('string'), spec('integer'));
+    expect(diff.changed.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'get /u/{id}',
+    ]);
+  });
+});
