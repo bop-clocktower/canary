@@ -80,14 +80,15 @@ jobs:
       # #1249. `agents/commands/gemini-cli/harness/*.toml` are generated from
       # each skill's SKILL.md and headed "Do not edit", yet nothing regenerated
       # or checked them, so Gemini users read instructions months out of date.
-      # This regenerates into a temp dir with the same `$HARNESS_CLI` and fails
+      # This regenerates into a temp dir with `$HARNESS_CLI_EXACT` (the version
+      # resolved above, so the generator is the one the log reports, #1248) and fails
       # on any changed, missing or stale file; the log names the regenerate
       # command. `npx -p` puts that CLI on PATH. If the generator is unavailable
       # or emits nothing, the script abstains with exit 3, which fails this
       # step: a check that could not run is not a pass.
       - name: Gemini CLI commands drift gate (blocking)
         run: |
-          npx --yes -p "$HARNESS_CLI" -c 'node scripts/gemini-commands-drift.mjs'
+          npx --yes -p "$HARNESS_CLI_EXACT" -c 'node scripts/gemini-commands-drift.mjs'
 
       # BLOCKING as of #718; a merge-base RATCHET rather than a floor as of
       # #865. History below, then why the floor went.
