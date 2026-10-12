@@ -138,7 +138,8 @@ function collectClasses(body: string, index: Record<string, LineHits>): void {
     // Normalize Windows separators so .NET/coverlet reports resolve against
     // POSIX-style diff paths (the path matcher only recognizes "/").
     const raw = attrValue(cls[1]!, 'filename');
-    const filename = raw === null ? null : raw.replace(/\\/g, '/');
+    const filename =
+      raw === null ? null : decodeEntities(raw).replace(/\\/g, '/');
 
     if (cls[2] === '/') {
       // Record the filename (mirrors ET's `setdefault`), but consume no body so
@@ -154,6 +155,37 @@ function collectClasses(body: string, index: Record<string, LineHits>): void {
     if (!filename) continue;
     readClassLines(body.slice(openEnd, closeIdx), bucketFor(index, filename));
   }
+}
+
+// A Map, not an object literal: `&constructor;` must not resolve to a
+// prototype member.
+const PREDEFINED_ENTITIES: ReadonlyMap<string, string> = new Map([
+  ['amp', '&'],
+  ['lt', '<'],
+  ['gt', '>'],
+  ['quot', '"'],
+  ['apos', "'"],
+]);
+
+/**
+ * Decode the XML predefined entities and character references in an attribute
+ * value, so `src/a&amp;b.py` names the file the diff calls `src/a&b.py`. One
+ * pass, so `&amp;lt;` decodes to the literal `&lt;`, never to `<`. An unknown
+ * named reference is left as written (no DTD is ever read).
+ */
+function decodeEntities(value: string): string {
+  return value.replace(
+    /&(#x[0-9A-Fa-f]+|#[0-9]+|[A-Za-z]+);/g,
+    (whole, ref: string) => decodeReference(ref) ?? whole,
+  );
+}
+
+/** One reference body (`amp`, `#39`, `#x27`) decoded, or `undefined`. */
+function decodeReference(ref: string): string | undefined {
+  if (!ref.startsWith('#')) return PREDEFINED_ENTITIES.get(ref);
+  const hex = ref[1] === 'x';
+  const code = Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10);
+  return code <= 0x10ffff ? String.fromCodePoint(code) : undefined;
 }
 
 /** One filename's hit map, created on first mention (ET's `setdefault`). */
