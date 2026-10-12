@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Synthetic: the shape `vitest run --reporter=junit` writes (classname = file). -->
+<testsuites name="vitest tests" tests="6" failures="1" errors="0" time="0.004">
+    <testsuite name="tests/cart/math.test.ts" timestamp="2026-10-01T10:00:00.000Z" hostname="ci" tests="5" failures="1" errors="0" skipped="2" time="0.003">
+        <testcase classname="tests/cart/math.test.ts" name="math &gt; adds" time="0.0006">
+        </testcase>
+        <testcase classname="tests/cart/math.test.ts" name="math &gt; rounds &amp; &lt;clamps&gt;" time="0.0021">
+            <failure message="expected 1 to be 2 // Object.is equality" type="AssertionError">
+AssertionError: expected 1 to be 2 // Object.is equality
+ ❯ tests/cart/math.test.ts:4:42
+            </failure>
+        </testcase>
+        <testcase classname="tests/cart/math.test.ts" name="math &gt; skipped one" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/cart/math.test.ts" name="math &gt; checkout @smoke" time="0.0004">
+        </testcase>
+        <testcase classname="tests/cart/math.test.ts" name="shared name" time="0.00003">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/search/other.test.ts" timestamp="2026-10-01T10:00:00.100Z" hostname="ci" tests="1" failures="0" errors="0" skipped="0" time="0.0008">
+        <testcase classname="tests/search/other.test.ts" name="shared name" time="0.0004">
+            <failure message="boom in search" type="Error">Error: boom in search</failure>
+        </testcase>
+    </testsuite>
+</testsuites>

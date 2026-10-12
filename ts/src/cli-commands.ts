@@ -1238,7 +1238,7 @@ export function upgradeCmd(opts: UpgradeOptions, deps: MainDeps): void {
   );
 }
 
-// --- overlay / doctor / uninstall (npm-shim pointers) ------------------------
+// --- overlay / doctor / uninstall / testtracker (npm-shim pointers) ----------
 
 export function overlayCmd(deps: MainDeps): void {
   deps.out(
@@ -1257,6 +1257,13 @@ export function doctorCmd(deps: MainDeps): void {
 export function uninstallCmd(deps: MainDeps): void {
   deps.out(
     `${pc.yellow('`canary uninstall` is provided by the npm install of Canary.')}\nInstall it with:  ${pc.bold('npm install -g canary-test-cli')}\nThe pipx/Python entry point does not include the uninstall command.`,
+  );
+  throw new CliExitError(1);
+}
+
+export function testtrackerCmd(deps: MainDeps): void {
+  deps.out(
+    `${pc.yellow('`canary testtracker` is provided by the npm install of Canary.')}\nInstall it with:  ${pc.bold('npm install -g canary-test-cli')}\nThe pipx/Python entry point does not include the testtracker command.`,
   );
   throw new CliExitError(1);
 }

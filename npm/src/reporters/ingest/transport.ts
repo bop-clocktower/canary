@@ -107,8 +107,11 @@ async function postWithRetry(
   return { ...last, attempts: delaysMs.length + 1 };
 }
 
-/** POSTs the run and turns the answer into one log line or warning. */
-export async function push(cfg: ResolvedConfig, payload: IngestPayload): Promise<void> {
+/**
+ * POSTs the run and turns the answer into one log line or warning. True only
+ * when the run was ingested and kept; `canary testtracker push` exits on it.
+ */
+export async function push(cfg: ResolvedConfig, payload: IngestPayload): Promise<boolean> {
   const { resp, error, attempts } = await postWithRetry(
     `${cfg.url}/api/ingest/runs`,
     {
@@ -122,7 +125,7 @@ export async function push(cfg: ResolvedConfig, payload: IngestPayload): Promise
     const data = (await resp.json().catch(() => ({}))) as IngestResponse;
     const outcome = ingestOutcome(data, { results: payload.results.length, collected: payload.collected?.length });
     (outcome.level === "warn" ? warn : log)(outcome.message);
-    return;
+    return outcome.level === "info";
   }
   const why = resp ? `${resp.status} ${(await resp.text().catch(() => "")).slice(0, 200)}` : errText(error);
   warn(
@@ -130,4 +133,5 @@ export async function push(cfg: ResolvedConfig, payload: IngestPayload): Promise
       ? `push rejected (${why}); run not ingested. A 4xx is a payload problem and is not retried.`
       : `run not ingested after ${attempts} attempts (${why}).`,
   );
+  return false;
 }

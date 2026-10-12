@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic: the shape `node --test --test-reporter=junit` writes (Node 22): -->
+<!-- classname is always "test" and no testcase names its file. -->
+<testsuites>
+	<testsuite name="math" time="0.000964" disabled="0" errors="0" tests="4" failures="1" skipped="2" hostname="ci">
+		<testcase name="adds" time="0.000199" classname="test"/>
+		<testcase name="fails &amp; &lt;breaks>" time="0.000278" classname="test" failure="one is not two">
+			<failure type="testCodeFailure" message="one is not two">
+Error [ERR_TEST_FAILURE]: one is not two
+    at TestContext.&lt;anonymous> (tests/a/math.test.js:5:41)
+			</failure>
+		</testcase>
+		<testcase name="skipped one" time="0.000073" classname="test">
+			<skipped type="skipped" message="true"/>
+		</testcase>
+		<testcase name="later" time="0.000032" classname="test">
+			<skipped type="todo" message="waiting on #12"/>
+		</testcase>
+	</testsuite>
+	<testcase name="shared name" time="0.000035" classname="test"/>
+	<testcase name="shared name" time="0.000262" classname="test"/>
+	<!-- tests 6 -->
+	<!-- suites 1 -->
+	<!-- pass 3 -->
+	<!-- fail 1 -->
+	<!-- skipped 1 -->
+	<!-- todo 1 -->
+</testsuites>

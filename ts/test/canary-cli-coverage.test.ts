@@ -437,6 +437,15 @@ describe('overlay / doctor npm-shim pointers', () => {
     expect(res.stdout).toContain('npm install -g canary-test-cli');
     expect(res.stdout).toContain('does not include the uninstall command');
   });
+
+  it('testtracker points at the npm install and exits 1', async () => {
+    const res = await invokeCanary(['testtracker', 'push', '--junit', 'x.xml']);
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain(
+      '`canary testtracker` is provided by the npm install of Canary.',
+    );
+    expect(res.stdout).toContain('does not include the testtracker command');
+  });
 });
 
 describe('skills sub-app', () => {
