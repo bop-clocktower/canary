@@ -37,6 +37,12 @@
  *     error caught in {@link applyHardGate}.
  */
 
+import {
+  MAX_PAGES,
+  parseNextLink,
+  restPageReader,
+  withPerPage,
+} from './github-paging.js';
 import { GitHubPermissionError } from './pr-comment.js';
 
 /**
@@ -384,16 +390,20 @@ export class RestBranchProtectionClient implements BranchProtection {
     private readonly token: string,
   ) {}
 
+  private headers(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.token}`,
+      Accept: 'application/vnd.github+json',
+    };
+  }
+
   private async request(
     method: string,
     path: string,
     body?: unknown,
   ): Promise<Record<string, unknown>> {
     const url = `${RestBranchProtectionClient.API}/repos/${this.repo}/${path}`;
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.token}`,
-      Accept: 'application/vnd.github+json',
-    };
+    const headers = this.headers();
     const init: RequestInit = { method, headers };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -423,7 +433,7 @@ export class RestBranchProtectionClient implements BranchProtection {
     // True only if the branch has NO protection object at all (parent 404). A
     // protected branch without a checks section returns 200 here.
     try {
-      await this.request('GET', `branches/${branch}/protection`);
+      await this.request('GET', `branches/${refPath(branch)}/protection`);
       return false;
     } catch (err) {
       if (err instanceof HttpError && err.status === 404) {
@@ -438,7 +448,7 @@ export class RestBranchProtectionClient implements BranchProtection {
     try {
       data = await this.request(
         'GET',
-        `branches/${branch}/protection/required_status_checks`,
+        `branches/${refPath(branch)}/protection/required_status_checks`,
       );
     } catch (err) {
       if (err instanceof HttpError && err.status === 404) {
@@ -459,18 +469,14 @@ export class RestBranchProtectionClient implements BranchProtection {
   }
 
   async observedCheckContexts(branch: string): Promise<string[]> {
-    let data: Record<string, unknown>;
+    let runs: unknown[];
     try {
-      data = await this.request('GET', `commits/${branch}/check-runs`);
+      runs = await this.readAllCheckRuns(branch);
     } catch (err) {
       // URLError / GitHubPermissionError → best-effort empty. (An HttpError for
       // another status also degrades to empty here, matching the Python
       // best-effort intent for observed checks.)
       void err;
-      return [];
-    }
-    const runs = data['check_runs'];
-    if (!Array.isArray(runs)) {
       return [];
     }
     const names = new Set<string>();
@@ -483,6 +489,36 @@ export class RestBranchProtectionClient implements BranchProtection {
     return [...names].sort();
   }
 
+  /**
+   * Every check run on `ref`, across all pages. GitHub serves 30 per page by
+   * default, so a single read hid any context past row 30 and `applyHardGate`
+   * refused a real check as a phantom. The rows sit under `check_runs` rather
+   * than being the body itself, which is why this cannot use `readAllPages`.
+   * A paging cycle or the page cap throws (never a quietly short list).
+   */
+  private async readAllCheckRuns(ref: string): Promise<unknown[]> {
+    const read = restPageReader(this.headers(), (status) =>
+      status === 401 || status === 403
+        ? new GitHubPermissionError(`HTTP ${status}`)
+        : new HttpError(status, `HTTP ${status}`),
+    );
+    const start = `${RestBranchProtectionClient.API}/repos/${this.repo}/commits/${refPath(ref)}/check-runs`;
+    const rows: unknown[] = [];
+    const visited = new Set<string>();
+    let url: string | null = withPerPage(start);
+    while (url !== null) {
+      if (visited.has(url) || visited.size >= MAX_PAGES) {
+        throw new Error(`check-runs paging did not terminate at ${url}`);
+      }
+      visited.add(url);
+      const page = await read(url);
+      const runs = isRecord(page.body) ? page.body['check_runs'] : undefined;
+      if (Array.isArray(runs)) rows.push(...runs);
+      url = parseNextLink(page.linkHeader);
+    }
+    return rows;
+  }
+
   async setRequiredChecks(
     branch: string,
     contexts: string[],
@@ -492,7 +528,7 @@ export class RestBranchProtectionClient implements BranchProtection {
     if (create) {
       // Genuinely unprotected — PUT a minimal ruleset requiring only the checks;
       // other protections stay unset.
-      await this.request('PUT', `branches/${branch}/protection`, {
+      await this.request('PUT', `branches/${refPath(branch)}/protection`, {
         required_status_checks: { strict: false, checks },
         enforce_admins: null,
         required_pull_request_reviews: null,
@@ -504,11 +540,22 @@ export class RestBranchProtectionClient implements BranchProtection {
       // enforce_admins / the existing `strict` flag).
       await this.request(
         'PATCH',
-        `branches/${branch}/protection/required_status_checks`,
+        `branches/${refPath(branch)}/protection/required_status_checks`,
         { checks },
       );
     }
   }
+}
+
+/**
+ * A branch name as a REST path fragment. `#` and `%` are legal in a git ref
+ * name, and interpolated raw, `release#2` ends the URL at a fragment, so the
+ * request silently reads and WRITES protection on branch `release`. Each
+ * `/`-segment is encoded and the slashes are kept, so `release/v1` produces the
+ * same path it always did.
+ */
+function refPath(branch: string): string {
+  return branch.split('/').map(encodeURIComponent).join('/');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1545,6 +1545,27 @@ interface PrCheckOptions {
   analysesDir?: string;
 }
 
+/**
+ * The `--gate` override, held to the same rule as the config gate: anything
+ * outside {soft, hard} warns loudly and falls back to the configured gate.
+ * Unchecked, a typo such as `--gate hrad` reached `computeExitCode`, which
+ * reads every non-`hard` value as soft -- a hard gate disabled in silence.
+ */
+function gateOverride(
+  raw: string | undefined,
+  configGate: string,
+  deps: GuardianDeps,
+): string {
+  if (raw === undefined) return configGate;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'soft' || normalized === 'hard') return normalized;
+  deps.err(
+    `WARNING: guardian --gate must be 'soft' or 'hard', got "${raw}"; ` +
+      `using the configured gate (${configGate})`,
+  );
+  return configGate;
+}
+
 async function prCheckCmd(
   opts: PrCheckOptions,
   deps: GuardianDeps,
@@ -1562,7 +1583,7 @@ async function prCheckCmd(
     throw new CliExitError(0);
   }
 
-  const effectiveGate = opts.gate ?? config.pr_gate;
+  const effectiveGate = gateOverride(opts.gate, config.pr_gate, deps);
 
   // #369: in CI an omitted `--diff` resolves the PR diff from the base ref;
   // the working-tree fallback is empty on a clean checkout.
