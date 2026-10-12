@@ -2009,15 +2009,28 @@ async function watchCmd(opts: WatchOptions, deps: GuardianDeps): Promise<void> {
  * abc` polled with a zero delay. Throwing `InvalidArgumentError` turns both
  * into a commander usage error, which exits 2.
  */
-function parsePositiveInt(value: string): number {
+function parsePositiveInt(value: string, max: number): number {
   const n = Number(value.trim());
   if (!Number.isInteger(n) || n <= 0) {
     throw new InvalidArgumentError(
       `must be a positive integer, got "${value}"`,
     );
   }
+  if (n > max) {
+    throw new InvalidArgumentError(`must be at most ${max}, got "${value}"`);
+  }
   return n;
 }
+
+/**
+ * Upper bounds the consumers can actually hold. A positive integer is not
+ * enough: `precision --days 1000000000` pushed the window start past the Date
+ * range (the same `RangeError` the parser exists to prevent), and `watch
+ * --interval 2147484` overflowed setTimeout's 32-bit millisecond delay, which
+ * Node clamps to 1 ms -- the zero-delay poll loop again.
+ */
+const MAX_PRECISION_DAYS = 36_500; // a century of merged PRs
+const MAX_WATCH_INTERVAL_SECS = Math.floor((2 ** 31 - 1) / 1000);
 
 /** Collect a repeatable option value into an array (commander pattern). */
 function collect(value: string, previous: string[]): string[] {
@@ -2114,7 +2127,7 @@ export function createGuardianCommand(
     .addOption(
       new Option('--days <n>', 'Merged-PR window in days.')
         .default(14)
-        .argParser(parsePositiveInt),
+        .argParser((v) => parsePositiveInt(v, MAX_PRECISION_DAYS)),
     )
     .option('--json', 'Emit the report as JSON (precision null = unknown).')
     .action(async (opts: PrecisionOptions) => {
@@ -2238,7 +2251,7 @@ export function createGuardianCommand(
     .addOption(
       new Option('--interval <secs>', 'Polling interval in seconds.')
         .default(300)
-        .argParser(parsePositiveInt),
+        .argParser((v) => parsePositiveInt(v, MAX_WATCH_INTERVAL_SECS)),
     )
     // Python's `watch` declares `--suite` with NO `-s` short form (unlike
     // `analyze`); adding `-s` here would accept an invocation Python rejected.
