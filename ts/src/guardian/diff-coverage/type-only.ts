@@ -160,22 +160,78 @@ function isErasableTopLevelLine(line: string): boolean {
  * the rest of the file from inspection.
  */
 function isTypeOnlySource(source: string): boolean {
-  let depth = 0;
+  const scan: Scan = { depth: 0, inInterface: false };
   for (const raw of splitLines(stripComments(source))) {
-    const line = raw.trim();
-    if (depth === 0 && !isErasableTopLevelLine(line)) return false;
-    depth += bracketDelta(line);
-    if (depth < 0) return false;
+    if (!scanLine(raw.trim(), scan)) return false;
   }
-  return depth === 0;
+  return scan.depth === 0;
 }
 
-/** Net nesting change across one line: openers minus closers. */
-function bracketDelta(line: string): number {
-  let delta = 0;
-  for (const ch of line) {
-    if (ch === '{' || ch === '(' || ch === '[') delta += 1;
-    else if (ch === '}' || ch === ')' || ch === ']') delta -= 1;
+/** Nesting state carried across lines. */
+interface Scan {
+  depth: number;
+  /** The open top-level statement is an interface, so its `}` ends it. */
+  inInterface: boolean;
+}
+
+/**
+ * Judge every top-level statement that STARTS on `line`, not only the first.
+ *
+ * A statement starts at the line's beginning (when at depth 0), after a
+ * depth-0 `;`, and after the `}` that closes an interface. Judging by line
+ * prefix alone let `export type A = string; register('x');` or an interface
+ * closed by `} register('x');` pass as type-only, hiding the call. A type
+ * alias's `}` does not end it (`} & Base;` continues the alias). Brackets and
+ * `;` inside string literals are ignored.
+ */
+function scanLine(line: string, scan: Scan): boolean {
+  if (scan.depth === 0 && !startStatement(line, scan)) return false;
+  let quote: string | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!;
+    if (quote !== null || QUOTES.has(ch)) {
+      [quote, i] = stepQuote(line, i, quote);
+      continue;
+    }
+    scan.depth += BRACKET_DELTA[ch] ?? 0;
+    if (scan.depth < 0) return false;
+    if (!endsStatement(ch, scan)) continue;
+    if (!startStatement(line.slice(i + 1), scan)) return false;
   }
-  return delta;
+  return true;
+}
+
+const BRACKET_DELTA: Readonly<Record<string, number>> = {
+  '{': 1,
+  '(': 1,
+  '[': 1,
+  '}': -1,
+  ')': -1,
+  ']': -1,
+};
+
+/** Advance through a string literal: the new quote state and index. */
+function stepQuote(
+  line: string,
+  i: number,
+  quote: string | null,
+): [string | null, number] {
+  const ch = line[i]!;
+  if (quote === null) return [ch, i];
+  if (ch === '\\') return [quote, i + 1];
+  return [ch === quote ? null : quote, i];
+}
+
+/** True if `ch`, just consumed, closed the current top-level statement. */
+function endsStatement(ch: string, scan: Scan): boolean {
+  if (scan.depth !== 0) return false;
+  return ch === ';' || (ch === '}' && scan.inInterface);
+}
+
+/** Judge the statement starting at `rest`, recording whether it is an interface. */
+function startStatement(rest: string, scan: Scan): boolean {
+  const text = rest.replace(/^[\s;]+/, '');
+  scan.inInterface =
+    /^(?:export\s+(?:default\s+)?|declare\s+)*interface\s/.test(text);
+  return isErasableTopLevelLine(text);
 }
