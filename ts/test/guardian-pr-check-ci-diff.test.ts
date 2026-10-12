@@ -17,7 +17,8 @@
  * --staged`. Network-free; `git` is injected through {@link GuardianDeps}.
  */
 
-import { writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -321,5 +322,58 @@ describe('pr-check CI empty-diff warning (#369)', () => {
     expect(res.code).toBe(3);
     expect(res.stdout.toLowerCase()).toContain('abstained');
     expect(res.stdout).not.toContain('::warning::');
+  });
+});
+
+// bug-fleet A5: the local fallback shells a REAL `git diff`, so the user's git
+// config shapes its output. `diff.mnemonicPrefix` swaps `a/`/`b/` for `i/`/`w/`
+// (the parser strips only `b/`, so findings named `w/pkg/widget.py` and
+// per-path suppressions never matched); `color.ui=always` hides every `+++`
+// header behind ANSI codes; `diff.external` replaces the patch entirely.
+describe('pr-check local diff under user git diff config', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkTmp();
+  });
+  afterEach(() => {
+    rmTmp(tmp);
+  });
+
+  it.each([
+    ['diff.mnemonicPrefix', 'true'],
+    ['color.ui', 'always'],
+    ['diff.external', 'true'],
+  ])('names repo-relative paths with %s=%s', async (key, value) => {
+    const git = (...args: string[]): void => {
+      execFileSync('git', ['-C', tmp, ...args], { stdio: 'ignore' });
+    };
+    git('init', '-q');
+    mkdirSync(join(tmp, 'pkg'));
+    writeFileSync(join(tmp, 'pkg', 'widget.py'), 'X = 1\n');
+    git('add', '.');
+    git(
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@example.invalid',
+      'commit',
+      '-qm',
+      'init',
+    );
+    git('config', key, value);
+    writeFileSync(
+      join(tmp, 'pkg', 'widget.py'),
+      'X = 1\n\ndef widget():\n    return 42\n',
+    );
+
+    const res = await invokeGuardian(['pr-check', '--format', 'json'], {
+      cwd: tmp,
+    });
+
+    const data = JSON.parse(res.stdout);
+    expect(data.findings.map((f: { path: string }) => f.path)).toEqual([
+      'pkg/widget.py',
+    ]);
   });
 });
