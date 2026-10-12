@@ -3,7 +3,7 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { basename, join, posix } from 'node:path';
+import { basename, join, posix, relative } from 'node:path';
 
 import { isTestPath } from './paths.js';
 import {
@@ -47,6 +47,13 @@ function extractSymbols(unitPath: string, repoRoot: string): Set<string> {
   return symbols;
 }
 
+/**
+ * Directories whose contents are never this repo's tests: installed
+ * dependencies ship their own `*.test.*`/`*.spec.*` files, and one that merely
+ * names a common stem would otherwise mark repo code heuristic-covered.
+ */
+const NOT_REPO_TESTS: ReadonlySet<string> = new Set(['node_modules', '.git']);
+
 /** Recursively list every file under `root` (sorted for determinism). */
 function walkFiles(root: string): string[] {
   const out: string[] = [];
@@ -59,18 +66,24 @@ function walkFiles(root: string): string[] {
     }
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       const full = join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) out.push(full);
+      if (entry.isDirectory()) {
+        if (!NOT_REPO_TESTS.has(entry.name)) walk(full);
+      } else if (entry.isFile()) out.push(full);
     }
   };
   walk(root);
   return out;
 }
 
-/** Relative POSIX path of `full` under `root`. */
+/**
+ * Relative POSIX path of `full` under `root`.
+ *
+ * `path.relative`, not a `root.length` slice: `join` normalizes the root, so
+ * under the default root `'.'` a walked path is `tests/x.py`, not
+ * `./tests/x.py`, and slicing one character off yielded `ests/x.py`.
+ */
 function relPosix(root: string, full: string): string {
-  const rel = full.slice(root.length).replace(/^[/\\]/, '');
-  return rel.split(/[/\\]/).join(posix.sep);
+  return relative(root, full).split(/[/\\]/).join(posix.sep);
 }
 
 /** Yield `[relPath, text]` for every test-looking file under `repoRoot`. */

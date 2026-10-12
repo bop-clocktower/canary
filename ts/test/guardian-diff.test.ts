@@ -310,3 +310,15 @@ describe('pyEqual equality contract (#907, #922)', () => {
     },
   );
 });
+
+describe('malformed path items', () => {
+  it('an empty (null) path item is skipped rather than crashing the diff', () => {
+    // YAML `paths:\n  /x:` with no body parses to {"/x": null}.
+    const before: Spec = { openapi: '3.0.0', paths: { '/x': null } };
+    const after: Spec = {
+      openapi: '3.0.0',
+      paths: { '/x': null, '/y': { get: { operationId: 'y' } } },
+    };
+    expect(() => extractApiDiff(before, after)).not.toThrow();
+  });
+});
