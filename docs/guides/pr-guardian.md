@@ -145,7 +145,11 @@ The rule is per-**report**, because absence only means "not coverable" where the
 report says what it measured. lcov and Cobertura say so by construction. The
 `coverage.json` contract does not: a line absent from both of its fields is
 uncovered, and its `covered_lines` shorthand cannot express an unhit line at
-all, so absence there counts as a miss.
+all, so absence there counts as a miss. For the same reason the coverage delta
+(`--base-coverage`) cannot score a file whose entry declares no
+`instrumented_lines` and records no `line_hits` 0: every line it lists is
+covered, so its ratio is 100% on both sides whatever changed. Such a file is
+reported head-only, never as compared-and-clean.
 
 A coverage-json producer can opt in to the lcov rule per file by declaring
 `instrumented_lines` ([#657]) — the set of lines its tool actually measured.
@@ -383,13 +387,13 @@ reaction and nothing is stored
 ([ADR 0025](../knowledge/decisions/0025-adjudication-without-reactions.md)). For
 each finding on the guardian sticky's **first** revision of a merged PR:
 
-| What happened by merge                                                             | Verdict               |
-| ---------------------------------------------------------------------------------- | --------------------- |
-| a later commit covered it (coverage-verified finding gone, file still in the diff) | true positive         |
-| the merged diff adds `// canary:allow-untested <reason>` on that file              | intentional, excluded |
-| the reason starts with `fp:`, e.g. `// canary:allow-untested fp: type-only barrel` | **false positive**    |
-| it disappeared without coverage evidence (heuristic tier, file left the diff)      | ambiguous, excluded   |
-| still on the last revision at merge                                                | unresolved, excluded  |
+| What happened by merge                                                                                                                                     | Verdict               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| a later commit covered it (coverage-verified finding gone, file still in the diff)                                                                         | true positive         |
+| the merged diff adds `// canary:allow-untested <reason>` on that file                                                                                      | intentional, excluded |
+| the reason starts with `fp:`, e.g. `// canary:allow-untested fp: type-only barrel`                                                                         | **false positive**    |
+| it disappeared without coverage evidence (heuristic tier, file left the diff, or the last revision omitted rows for size or had no usable coverage report) | ambiguous, excluded   |
+| still on the last revision at merge                                                                                                                        | unresolved, excluded  |
 
 So when a finding is wrong, say so where the reasoning lives: suppress it with
 an `fp:` reason.
