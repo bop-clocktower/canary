@@ -14,7 +14,7 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
-## [9.2.1] - 2026-10-12
+## [9.3.0] - 2026-10-12
 
 ### Added
 
@@ -94,6 +94,13 @@ under the project's former name) are documented in the
   `harness-quality.yml` passes the merge base's copy. A higher ceiling exits 1.
   A base copy that is missing or unreadable exits 3. This mirrors the entropy
   fix (#1247).
+- **A PR can no longer raise the entropy ceiling (#1247; #1258).** The test
+  meant to stop a raised `maxFindings` in `.harness/entropy-baseline.json`
+  compared the file with `HEAD:`, which is the same file, so it could never
+  fail. A ceiling raised from 145 to 200 passed. `scripts/entropy-ratchet.mjs`
+  now takes `--base-baseline`, and on pull requests `harness-quality.yml` passes
+  the merge base's copy. A higher ceiling exits 1, and a base copy that is
+  missing, not JSON or has no integer `maxFindings` exits 3.
 - **The quality ratchets' scans run the CLI version they report** (#1248).
   `harness-quality.yml` resolved the floating `@harness-engineering/cli@12` once
   for `--cli-version`, but each of the six scans (docs, entropy and perf, at
@@ -278,14 +285,14 @@ under the project's former name) are documented in the
   is resolved and contained against it. Before, `init_suite`, `analyze_file`,
   `migrate` and `run_tests` had no containment, and `write_test_file` checked
   one path and wrote another. Users running canary as a Claude Code plugin were
-  affected. Upgrade to 9.2.1.
+  affected. Upgrade to 9.3.0.
 - **Guardian's report readers treat report paths as data** (#1328,
   [GHSA-w522-r2v2-gcc3](https://github.com/bop-clocktower/canary/security/advisories/GHSA-w522-r2v2-gcc3)).
   The lcov, Cobertura, coverage-json, JUnit and Stryker readers keyed per-file
   data on the report's own path strings, so a `__proto__` path in an untrusted
   report, such as one from a fork PR's CI run, could write to
   `Object.prototype`. Every such map is now a `Map` or a null-prototype object
-  read through `Object.hasOwn`. Upgrade to 9.2.1.
+  read through `Object.hasOwn`. Upgrade to 9.3.0.
 
 ## [9.2.0] - 2026-10-09
 
@@ -4711,8 +4718,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.2.1...HEAD
-[9.2.1]: https://github.com/bop-clocktower/canary/compare/v9.2.0...v9.2.1
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.3.0...HEAD
+[9.3.0]: https://github.com/bop-clocktower/canary/compare/v9.2.0...v9.3.0
 [9.2.0]: https://github.com/bop-clocktower/canary/compare/v9.1.0...v9.2.0
 [9.1.0]: https://github.com/bop-clocktower/canary/compare/v9.0.0...v9.1.0
 [9.0.0]: https://github.com/bop-clocktower/canary/compare/v8.0.0...v9.0.0
