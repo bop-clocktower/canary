@@ -233,7 +233,6 @@ function collapseAttempts(rows: TestResultInput[]): TestResultInput[] {
   const byName = new Map<string, TestResultInput>();
   const out: TestResultInput[] = [];
   for (const row of rows) {
-    // Same name in two files is two tests, not one test retried.
     const key = `${row.test_file}\u0000${row.test_name}`;
     const prev = row.test_name ? byName.get(key) : undefined;
     if (prev === undefined) {
