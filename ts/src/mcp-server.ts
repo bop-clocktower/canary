@@ -607,6 +607,21 @@ export function writeTestFileImpl(
   return { written_path: outPath };
 }
 
+/**
+ * The runner's own passed count: the number in the LAST "<n> passed" of the
+ * output, which is the summary line for pytest ("3 passed in 0.1s"),
+ * Playwright ("  3 passed (1.2s)") and vitest ("Tests  3 passed (3)", after
+ * its "Test Files" line). The Python port counted " passed" substrings and
+ * added one on exit 0, so "3 passed" came back as 2. With no summary at all,
+ * the old fallback stands: one on a clean exit, else zero.
+ */
+function passedFromOutput(output: string, exitCode: number): number {
+  const counts = [...output.matchAll(/(\d+) passed/g)];
+  const last = counts[counts.length - 1];
+  if (last === undefined) return exitCode === 0 ? 1 : 0;
+  return Number(last[1]);
+}
+
 /** Python: `_run_tests_impl`. */
 export function runTestsImpl(
   testFile: string,
@@ -630,9 +645,7 @@ export function runTestsImpl(
     return { passed: 0, failed: 0, output: errStr(exc), exit_code: 1 };
   }
   const output = (stdout || '') + (stderr || '');
-  // `output.count(" passed")` - non-overlapping occurrences.
-  const passedCount = output.split(' passed').length - 1;
-  const passed = passedCount + (exitCode === 0 ? 1 : 0);
+  const passed = passedFromOutput(output, exitCode);
   const failed = exitCode === 0 ? 0 : 1;
   return { passed, failed, output, exit_code: exitCode };
 }
