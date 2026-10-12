@@ -179,6 +179,12 @@ export interface ResolvedCoverageDelta {
 function ratioFor(path: string, index: ReportIndex): CoverageRatio | null {
   const file = matchFile(path, index);
   if (file === null) return null;
+  // A report that never says what it measured AND records no miss (the
+  // coverage-json `covered_lines` shorthand) lists covered lines only: its
+  // ratio is 100% by construction, so a drop would compare clean. Unscoreable.
+  if (file.coverable === null && !Object.values(file.hits).includes(0)) {
+    return null;
+  }
   const coverableLines =
     file.coverable !== null
       ? [...file.coverable]
