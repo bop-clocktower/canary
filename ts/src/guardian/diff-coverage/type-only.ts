@@ -70,8 +70,12 @@ function stripComments(source: string): string {
       inBlock = false;
     }
     for (;;) {
-      const start = text.indexOf('/*');
+      const start = commentStart(text);
       if (start === -1) break;
+      if (text[start + 1] === '/') {
+        text = text.slice(0, start);
+        break;
+      }
       const end = text.indexOf('*/', start + 2);
       if (end === -1) {
         text = text.slice(0, start);
@@ -80,10 +84,42 @@ function stripComments(source: string): string {
       }
       text = text.slice(0, start) + text.slice(end + 2);
     }
-    const line2 = text.indexOf('//');
-    out.push(line2 === -1 ? text : text.slice(0, line2));
+    out.push(text);
   }
   return out.join('\n');
+}
+
+/**
+ * Index of the first `//` or `/*` that is NOT inside a string literal, or -1.
+ *
+ * A glob-typed literal such as `'**\/*.test.ts'` is ordinary in a types file;
+ * read as a comment opener, its `/*` blanked every following line, so runtime
+ * code after it was never judged and the module was wrongly suppressed. A
+ * quote left open at end of line just ends the scan: the rest stays code,
+ * which can only keep a finding, never hide one.
+ */
+function commentStart(text: string): number {
+  let quote: string | null = null;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (quote !== null) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = null;
+    } else if (QUOTES.has(ch)) {
+      quote = ch;
+    } else if (opensComment(text, i)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+const QUOTES: ReadonlySet<string> = new Set(["'", '"', '`']);
+const COMMENT_SECOND: ReadonlySet<string> = new Set(['/', '*']);
+
+/** True if a `//` or `/*` begins at `text[i]`. */
+function opensComment(text: string, i: number): boolean {
+  return text[i] === '/' && COMMENT_SECOND.has(text[i + 1] ?? '');
 }
 
 /**
