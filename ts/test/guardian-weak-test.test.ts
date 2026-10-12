@@ -175,3 +175,48 @@ describe('weakTests config toggle', () => {
     expect(config.weak_tests).toBe(true);
   });
 });
+
+// bug-fleet A5: delimiter counting blanks strings and comments but not
+// regex literals, so `/\(/` leaves depth at +1 and test "a" swallows test "b";
+// b's assertion then excuses the assertion-free a.
+describe('bug-fleet A5: regex literal with a bracket', () => {
+  it('still flags the assertion-free test before an asserting one', () => {
+    const diff = `diff --git a/src/x.test.ts b/src/x.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/x.test.ts
+@@ -0,0 +1,7 @@
++it('a', () => {
++  const re = /\\(/;
++  run(re);
++});
++it('b', () => {
++  expect(1).toBe(1);
++});
+`;
+    const findings = buildWeakTestFindings(testUnits(diff), diff);
+    expect(findings.map((f) => f.added_ranges)).toEqual([[[1, 4]]]);
+  });
+
+  // A `/` after `]` ends an operand, so it is division: blanking
+  // `/ (b /` as a regex leaves an unbalanced `)` (depth -1 per line), and
+  // two such lines close test "a" two lines early.
+  it('treats a slash after ] as division, not a regex literal', () => {
+    const diff = `diff --git a/src/x.test.ts b/src/x.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/x.test.ts
+@@ -0,0 +1,8 @@
++it('a', () => {
++  const r = a[i] / (b / c);
++  const s = a[j] / (b / c);
++  run(r, s);
++});
++it('b', () => {
++  expect(1).toBe(1);
++});
+`;
+    const findings = buildWeakTestFindings(testUnits(diff), diff);
+    expect(findings.map((f) => f.added_ranges)).toEqual([[[1, 5]]]);
+  });
+});
