@@ -3,9 +3,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { resolveArea } from './config.js';
-import type { ResolvedConfig } from './config.js';
-import { relativeFile } from './describe.js';
 import { isJunitXml, readJunitCases } from './junit.js';
 import { runTiming } from './payload.js';
 import type { CollectedEntry, ResultEntry } from './payload.js';
@@ -20,15 +17,18 @@ export interface JunitReport {
   seconds?: number;
 }
 
+/** A row's `test_file` and area, from the file its testcase names (if any). */
+export type Locate = (
+  testFile: string | undefined,
+  reportPath: string,
+) => { test_file: string; area?: string };
+
 /**
  * Reads one report, or throws naming the file when it is missing, unreadable
- * or not JUnit. A report that names no test file (node, Newman, Maestro)
- * gives its own path as `test_file`, so a row still says where it came from.
+ * or not JUnit. `locate` gets the report's own repo-relative path for a
+ * testcase that names no file (node, Newman, Maestro).
  */
-export function readJunitReport(
-  file: string,
-  cfg: Pick<ResolvedConfig, 'testFilePrefix' | 'areaMap'>,
-): JunitReport {
+export function readJunitReport(file: string, locate: Locate): JunitReport {
   let xml: string;
   try {
     xml = fs.readFileSync(file, 'utf8');
@@ -38,13 +38,11 @@ export function readJunitReport(
   if (!isJunitXml(xml)) throw new Error(`${file} is not a JUnit XML report.`);
   const { cases, numbered } = readJunitCases(xml);
   const reportPath = path.relative(process.cwd(), path.resolve(file)) || file;
-  const rows = cases.map(({ title, file: testFile, ...rest }): ResultEntry => {
-    const test_file = testFile
-      ? relativeFile(testFile, cfg.testFilePrefix)
-      : reportPath;
-    const area = resolveArea([], test_file, cfg.areaMap);
-    return { full_title: title, test_file, ...rest, ...(area ? { area } : {}) };
-  });
+  const rows = cases.map(({ title, file: testFile, ...rest }): ResultEntry => ({
+    full_title: title,
+    ...rest,
+    ...locate(testFile, reportPath),
+  }));
   return { file, rows, numbered, ...timingOf(xml) };
 }
 

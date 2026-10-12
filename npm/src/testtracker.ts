@@ -13,15 +13,20 @@
  * held zero testcases, so nothing was pushed (#508 D4).
  */
 import { EXIT_ABSTAINED } from './gate-result.js';
-import { envVar, resolveConfig } from './reporters/ingest/config.js';
+import {
+  envVar,
+  resolveArea,
+  resolveConfig,
+} from './reporters/ingest/config.js';
 import type { ResolvedConfig } from './reporters/ingest/config.js';
+import { relativeFile } from './reporters/ingest/describe.js';
 import {
   junitCatalog,
   junitDenominator,
   junitRunTiming,
   readJunitReport,
 } from './reporters/ingest/junit-run.js';
-import type { JunitReport } from './reporters/ingest/junit-run.js';
+import type { JunitReport, Locate } from './reporters/ingest/junit-run.js';
 import {
   buildPayload,
   dedupeByFullTitle,
@@ -77,21 +82,43 @@ interface PushArgs {
 
 class UsageError extends Error {}
 
-/** Every flag but `--junit`; `value()` takes the flag's argument or throws. */
-const FLAGS: Record<string, (p: PushArgs, value: () => string) => void> = {
-  '--suite': (p, value) => (p.suite = value()),
-  '--workflow': (p, value) => (p.workflow = value()),
-  '--no-collected': (p) => (p.collected = false),
-  '--dry-run': (p) => (p.dryRun = true),
+/** Every flag but `--junit`: whether it takes a value, and where it goes. */
+const FLAGS: Record<
+  string,
+  { takes: boolean; set: (p: PushArgs, value: string) => void }
+> = {
+  '--suite': { takes: true, set: (p, v) => (p.suite = v) },
+  '--workflow': { takes: true, set: (p, v) => (p.workflow = v) },
+  '--no-collected': { takes: false, set: (p) => (p.collected = false) },
+  '--dry-run': { takes: false, set: (p) => (p.dryRun = true) },
 };
 
-/** The run of non-flag arguments starting at `from`. */
-function leadingFiles(args: readonly string[], from: number): string[] {
+/**
+ * `--junit=a.xml` is one file; `--junit a.xml b.xml` takes every following
+ * non-flag. Returns the files and the index after them.
+ */
+function junitFiles(
+  args: readonly string[],
+  from: number,
+  inline: string | undefined,
+): { files: string[]; next: number } {
   const end = args.findIndex((a, i) => i >= from && a.startsWith('--'));
-  return args.slice(from, end === -1 ? args.length : end);
+  const files =
+    inline !== undefined
+      ? [inline]
+      : args.slice(from, end === -1 ? args.length : end);
+  if (!files.length || files.some((f) => !f))
+    throw new UsageError('--junit needs at least one file.');
+  return { files, next: inline !== undefined ? from : from + files.length };
 }
 
-/** `--junit a.xml b.xml` takes every following non-flag; repeats accumulate. */
+function flagValue(flag: string, value: string | undefined): string {
+  if (!value || value.startsWith('--'))
+    throw new UsageError(`${flag} needs a value.`);
+  return value;
+}
+
+/** `--junit` may repeat and its files accumulate; other flags are single. */
 function parsePushArgs(args: readonly string[]): PushArgs {
   const parsed: PushArgs = { junit: [], collected: true, dryRun: false };
   let i = 0;
@@ -99,21 +126,16 @@ function parsePushArgs(args: readonly string[]): PushArgs {
     const [flag, inline] = args[i].split(/=(.*)/s, 2);
     i += 1;
     if (flag === '--junit') {
-      const files = inline !== undefined ? [inline] : leadingFiles(args, i);
-      if (inline === undefined) i += files.length;
-      if (!files.length || files.some((f) => !f))
-        throw new UsageError('--junit needs at least one file.');
+      const { files, next } = junitFiles(args, i, inline);
       parsed.junit.push(...files);
+      i = next;
       continue;
     }
-    const handler = FLAGS[flag];
-    if (!handler) throw new UsageError(`unknown option "${args[i - 1]}".`);
-    handler(parsed, () => {
-      const v = inline ?? args[i++];
-      if (!v || v.startsWith('--'))
-        throw new UsageError(`${flag} needs a value.`);
-      return v;
-    });
+    const spec = FLAGS[flag];
+    if (!spec) throw new UsageError(`unknown option "${args[i - 1]}".`);
+    if (!spec.takes) spec.set(parsed, '');
+    else if (inline !== undefined) spec.set(parsed, flagValue(flag, inline));
+    else spec.set(parsed, flagValue(flag, args[i++]));
   }
   if (!parsed.junit.length)
     throw new UsageError('--junit <file…> is required.');
@@ -144,6 +166,17 @@ function configure(
   return { opts, cfg };
 }
 
+/** The reporter's file prefix and area map (#1183), applied to JUnit rows. */
+function locator(cfg: ResolvedConfig): Locate {
+  return (testFile, reportPath) => {
+    const test_file = testFile
+      ? relativeFile(testFile, cfg.testFilePrefix)
+      : reportPath;
+    const area = resolveArea([], test_file, cfg.areaMap);
+    return { test_file, ...(area ? { area } : {}) };
+  };
+}
+
 async function runPush(
   args: readonly string[],
   deps: TesttrackerDeps,
@@ -162,7 +195,7 @@ async function runPush(
   }
   for (const w of cfg.configWarnings) warn(w, env);
   try {
-    reports = opts.junit.map((f) => readJunitReport(f, cfg));
+    reports = opts.junit.map((f) => readJunitReport(f, locator(cfg)));
   } catch (e) {
     err.write(`canary testtracker: ${errText(e)} Nothing was pushed.\n`);
     return 1;
