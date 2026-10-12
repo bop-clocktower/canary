@@ -118,17 +118,21 @@ function close(scan: Scan, name: string): void {
   else if (OUTCOME_TAGS.has(name)) scan.outcome = null;
 }
 
+/** One token: CDATA or text feeds the open outcome's body; tags open or close. */
+function step(s: Scan, m: RegExpMatchArray): void {
+  const text = m[1] ?? (m[6] === undefined ? undefined : decode(m[6]));
+  if (text !== undefined) {
+    if (s.outcome) s.outcome.body += text;
+    return;
+  }
+  if (m[3] === undefined) return; // a comment or processing instruction
+  if (m[2] === '/') close(s, m[3]);
+  else open(s, m[3], attrsOf(m[4] ?? ''), m[5] === '/');
+}
+
 function scan(xml: string): OpenCase[] {
   const s: Scan = { suites: [], current: null, outcome: null, cases: [] };
-  for (const m of xml.matchAll(TOKEN_RE)) {
-    if (m[1] !== undefined || m[6] !== undefined) {
-      // CDATA or text: only an open outcome element's body is kept.
-      if (s.outcome) s.outcome.body += m[1] ?? decode(m[6]);
-    } else if (m[3] !== undefined) {
-      if (m[2] === '/') close(s, m[3]);
-      else open(s, m[3], attrsOf(m[4] ?? ''), m[5] === '/');
-    }
-  }
+  for (const m of xml.matchAll(TOKEN_RE)) step(s, m);
   return s.cases;
 }
 
@@ -138,7 +142,7 @@ const alnum = (s: string) => s.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
 /**
  * The classname, when it says something the title does not already: not
  * node's constant `test`, not the file (vitest), not the name (Maestro), and
- * not the innermost suite re-cased (Newman's UpperCamel collection name).
+ * not the innermost suite re-cased (Newman's UpperCamel request name).
  */
 function usefulClassname(
   cls: string | undefined,
@@ -201,27 +205,36 @@ function skipTagsOf(outcomes: OpenCase['outcomes']): string[] {
   return tags;
 }
 
+/** The `file` attribute, else a classname that is a path (vitest). */
+function fileOf(attrs: Map<string, string>): string | undefined {
+  const cls = attrs.get('classname');
+  return attrs.get('file') ?? (cls && PATH_LIKE.test(cls) ? cls : undefined);
+}
+
+/** JUnit `time` is fractional seconds and may be absent. */
+function durationOf(time: string | undefined): { duration_ms?: number } {
+  const seconds = Number(time);
+  return time !== undefined && Number.isFinite(seconds) && seconds >= 0
+    ? { duration_ms: Math.round(seconds * 1000) }
+    : {};
+}
+
 function toCase(c: OpenCase): JunitCase {
   const name = c.attrs.get('name') ?? '';
-  const cls = c.attrs.get('classname');
-  const file =
-    c.attrs.get('file') ?? (cls && PATH_LIKE.test(cls) ? cls : undefined);
-  const suites = c.suites.filter((s) => s !== file);
+  const file = fileOf(c.attrs);
+  const cls = usefulClassname(c.attrs.get('classname'), c, file, name);
   const retries = RETRY_TAGS.reduce(
     (n, t) => n + (c.outcomes.get(t)?.length ?? 0),
     0,
   );
-  const seconds = Number(c.attrs.get('time'));
   const inlineTags = [...name.matchAll(/(?:^|\s)@([\w:-]+)/g)].map((m) => m[1]);
   return {
-    title: [file, ...suites, usefulClassname(cls, c, file, name), name]
+    title: [file, ...c.suites.filter((s) => s !== file), cls, name]
       .filter(Boolean)
       .join(' > '),
     file,
     status: statusOf(c.outcomes, retries),
-    ...(c.attrs.has('time') && Number.isFinite(seconds) && seconds >= 0
-      ? { duration_ms: Math.round(seconds * 1000) }
-      : {}),
+    ...durationOf(c.attrs.get('time')),
     ...errorOf(c.outcomes),
     retries,
     tags: [...new Set([...inlineTags, ...skipTagsOf(c.outcomes)])],

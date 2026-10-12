@@ -12,27 +12,20 @@
  * not JUnit, or the push was not ingested; 2 usage; 3 abstained — a report
  * held zero testcases, so nothing was pushed (#508 D4).
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-
 import { EXIT_ABSTAINED } from './gate-result.js';
-import {
-  envVar,
-  resolveArea,
-  resolveConfig,
-} from './reporters/ingest/config.js';
+import { envVar, resolveConfig } from './reporters/ingest/config.js';
 import type { ResolvedConfig } from './reporters/ingest/config.js';
-import { relativeFile } from './reporters/ingest/describe.js';
-import { isJunitXml, readJunitCases } from './reporters/ingest/junit.js';
+import {
+  junitCatalog,
+  junitDenominator,
+  junitRunTiming,
+  readJunitReport,
+} from './reporters/ingest/junit-run.js';
+import type { JunitReport } from './reporters/ingest/junit-run.js';
 import {
   buildPayload,
   dedupeByFullTitle,
   fitPayload,
-  runTiming,
-} from './reporters/ingest/payload.js';
-import type {
-  CollectedEntry,
-  ResultEntry,
 } from './reporters/ingest/payload.js';
 import { errText, push, warn } from './reporters/ingest/transport.js';
 
@@ -84,146 +77,71 @@ interface PushArgs {
 
 class UsageError extends Error {}
 
-const VALUE_FLAGS = new Set(['--suite', '--workflow']);
+/** Every flag but `--junit`; `value()` takes the flag's argument or throws. */
+const FLAGS: Record<string, (p: PushArgs, value: () => string) => void> = {
+  '--suite': (p, value) => (p.suite = value()),
+  '--workflow': (p, value) => (p.workflow = value()),
+  '--no-collected': (p) => (p.collected = false),
+  '--dry-run': (p) => (p.dryRun = true),
+};
+
+/** The run of non-flag arguments starting at `from`. */
+function leadingFiles(args: readonly string[], from: number): string[] {
+  const end = args.findIndex((a, i) => i >= from && a.startsWith('--'));
+  return args.slice(from, end === -1 ? args.length : end);
+}
 
 /** `--junit a.xml b.xml` takes every following non-flag; repeats accumulate. */
 function parsePushArgs(args: readonly string[]): PushArgs {
   const parsed: PushArgs = { junit: [], collected: true, dryRun: false };
-  for (let i = 0; i < args.length; i += 1) {
+  let i = 0;
+  while (i < args.length) {
     const [flag, inline] = args[i].split(/=(.*)/s, 2);
+    i += 1;
     if (flag === '--junit') {
-      const files = inline !== undefined ? [inline] : [];
-      while (
-        inline === undefined &&
-        args[i + 1] !== undefined &&
-        !args[i + 1].startsWith('--')
-      )
-        files.push(args[++i]);
+      const files = inline !== undefined ? [inline] : leadingFiles(args, i);
+      if (inline === undefined) i += files.length;
       if (!files.length || files.some((f) => !f))
         throw new UsageError('--junit needs at least one file.');
       parsed.junit.push(...files);
-    } else if (VALUE_FLAGS.has(flag)) {
-      const value = inline ?? args[++i];
-      if (!value || value.startsWith('--'))
+      continue;
+    }
+    const handler = FLAGS[flag];
+    if (!handler) throw new UsageError(`unknown option "${args[i - 1]}".`);
+    handler(parsed, () => {
+      const v = inline ?? args[i++];
+      if (!v || v.startsWith('--'))
         throw new UsageError(`${flag} needs a value.`);
-      parsed[flag === '--suite' ? 'suite' : 'workflow'] = value;
-    } else if (flag === '--no-collected') parsed.collected = false;
-    else if (flag === '--dry-run') parsed.dryRun = true;
-    else throw new UsageError(`unknown option "${args[i]}".`);
+      return v;
+    });
   }
   if (!parsed.junit.length)
     throw new UsageError('--junit <file…> is required.');
   return parsed;
 }
 
-/** One report's rows, or the reason it cannot be pushed. */
-interface ReadReport {
-  file: string;
-  rows: ResultEntry[];
-  numbered: number;
-  started?: number;
-  seconds?: number;
-}
-
-class RefusedError extends Error {
-  constructor(
-    message: string,
-    readonly code: number,
-  ) {
-    super(message);
-  }
-}
-
-function readReport(file: string, cfg: ResolvedConfig): ReadReport {
-  let xml: string;
-  try {
-    xml = fs.readFileSync(file, 'utf8');
-  } catch (err) {
-    throw new RefusedError(`cannot read ${file} (${errText(err)}).`, 1);
-  }
-  if (!isJunitXml(xml))
-    throw new RefusedError(`${file} is not a JUnit XML report.`, 1);
-  const { cases, numbered } = readJunitCases(xml);
-  // Where a row came from when the report names no file (node, Newman, Maestro).
-  const reportPath = path.relative(process.cwd(), path.resolve(file)) || file;
-  const rows = cases.map(({ title, file: testFile, ...rest }): ResultEntry => {
-    const test_file = testFile
-      ? relativeFile(testFile, cfg.testFilePrefix)
-      : reportPath;
-    const area = resolveArea([], test_file, cfg.areaMap);
-    return { full_title: title, test_file, ...rest, ...(area ? { area } : {}) };
-  });
-  return { file, rows, numbered, ...timingOf(xml) };
-}
-
-/** The first suite timestamp (UTC when zoneless) and the root's `time`. */
-function timingOf(xml: string): { started?: number; seconds?: number } {
-  const stamp = /<testsuites?\b[^>]*?\btimestamp\s*=\s*["']([^"']+)["']/.exec(
-    xml,
-  )?.[1];
-  const zoned =
-    stamp && (/(?:Z|[+-]\d\d:?\d\d)$/.test(stamp) ? stamp : `${stamp}Z`);
-  const started = zoned ? Date.parse(zoned) : NaN;
-  const seconds = Number(
-    /<testsuites?\b[^>]*?\btime\s*=\s*["']([^"']+)["']/.exec(xml)?.[1],
+/** Flags and env resolved into the reporter's own config, or a usage error. */
+function configure(
+  args: readonly string[],
+  deps: TesttrackerDeps,
+  env: NodeJS.ProcessEnv,
+): { opts: PushArgs; cfg: ResolvedConfig } {
+  const opts = parsePushArgs(args);
+  const cfg = resolveConfig(
+    {
+      suite: opts.suite,
+      workflow: opts.workflow ?? envVar(env, 'workflow') ?? 'junit',
+      collected: opts.collected && envVar(env, 'collected') !== 'false',
+      ...(deps.retryDelaysMs ? { retryDelaysMs: deps.retryDelaysMs } : {}),
+    },
+    env,
   );
-  return {
-    ...(Number.isFinite(started) ? { started } : {}),
-    ...(Number.isFinite(seconds) ? { seconds } : {}),
-  };
-}
-
-/** Earliest start across reports; the longest report decides the end. */
-function timingAcross(reports: ReadReport[], now: number) {
-  const starts = reports
-    .map((r) => r.started)
-    .filter((n): n is number => n !== undefined);
-  if (!starts.length) return runTiming(undefined, now, now);
-  const seconds = Math.max(0, ...reports.map((r) => r.seconds ?? 0));
-  return runTiming(
-    { startTime: new Date(Math.min(...starts)), duration: seconds * 1000 },
-    now,
-    now,
-  );
-}
-
-/** Same title in two reports is one row there too (dedupe), tags merged. */
-function catalog(rows: ResultEntry[]): CollectedEntry[] {
-  const byTitle = new Map<string, CollectedEntry>();
-  for (const { full_title, test_file, tags, area } of rows) {
-    const prior = byTitle.get(full_title);
-    byTitle.set(full_title, {
-      full_title,
-      test_file,
-      tags: [...new Set([...(prior?.tags ?? []), ...tags])],
-      ...(area ? { area } : {}),
-    });
-  }
-  return [...byTitle.values()];
-}
-
-function denominatorLine(
-  reports: ReadReport[],
-  results: ResultEntry[],
-): string {
-  const read = reports.reduce((n, r) => n + r.rows.length, 0);
-  const count = (s: string) => results.filter((r) => r.status === s).length;
-  const failed = count('failed') + count('timed_out');
-  const lines = [
-    `canary testtracker: read ${read} testcases from ${reports.length} JUnit report${reports.length === 1 ? '' : 's'}; ` +
-      `${results.length} results: ${count('passed')} passed, ${failed} failed, ${count('flaky')} flaky, ${count('skipped')} skipped.`,
-  ];
-  if (read !== results.length) {
-    lines.push(
-      `  ${read - results.length} testcase(s) shared a title across reports and were merged (worst status wins).`,
+  if (!opts.dryRun && (!cfg.url || !cfg.token)) {
+    throw new UsageError(
+      'pushing needs CANARY_INGEST_URL and CANARY_INGEST_TOKEN (or use --dry-run).',
     );
   }
-  for (const r of reports.filter((x) => x.numbered)) {
-    lines.push(
-      `  ${r.numbered} testcase(s) in ${r.file} share a title and name no file; numbered " [2]", " [3]" in report order, so their identity follows that order.`,
-    );
-  }
-  return `${lines.join('\n')}\n`;
+  return { opts, cfg };
 }
 
 async function runPush(
@@ -235,35 +153,19 @@ async function runPush(
   const env = deps.env ?? process.env;
   let opts: PushArgs;
   let cfg: ResolvedConfig;
+  let reports: JunitReport[];
   try {
-    opts = parsePushArgs(args);
-    cfg = resolveConfig(
-      {
-        suite: opts.suite,
-        workflow: opts.workflow ?? envVar(env, 'workflow') ?? 'junit',
-        collected: opts.collected && envVar(env, 'collected') !== 'false',
-        ...(deps.retryDelaysMs ? { retryDelaysMs: deps.retryDelaysMs } : {}),
-      },
-      env,
-    );
-    if (!opts.dryRun && (!cfg.url || !cfg.token)) {
-      throw new UsageError(
-        'pushing needs CANARY_INGEST_URL and CANARY_INGEST_TOKEN (or use --dry-run).',
-      );
-    }
+    ({ opts, cfg } = configure(args, deps, env));
   } catch (e) {
     err.write(`canary testtracker: ${errText(e)}\n\n${USAGE}`);
     return 2;
   }
   for (const w of cfg.configWarnings) warn(w, env);
-
-  let reports: ReadReport[];
   try {
-    reports = opts.junit.map((f) => readReport(f, cfg));
+    reports = opts.junit.map((f) => readJunitReport(f, cfg));
   } catch (e) {
-    const code = e instanceof RefusedError ? e.code : 1;
     err.write(`canary testtracker: ${errText(e)} Nothing was pushed.\n`);
-    return code;
+    return 1;
   }
   const empty = reports.filter((r) => r.rows.length === 0);
   if (empty.length) {
@@ -274,19 +176,16 @@ async function runPush(
     );
     return EXIT_ABSTAINED;
   }
-
   const rows = reports.flatMap((r) => r.rows);
   const payload = buildPayload(
     rows,
     cfg,
-    timingAcross(reports, Date.now()),
+    junitRunTiming(reports, Date.now()),
     env,
     undefined,
-    {
-      collected: cfg.collected ? catalog(rows) : null,
-    },
+    { collected: cfg.collected ? junitCatalog(rows) : null },
   );
-  out.write(denominatorLine(reports, dedupeByFullTitle(rows)));
+  out.write(junitDenominator(reports, dedupeByFullTitle(rows)));
   if (opts.dryRun) {
     out.write(`${JSON.stringify(payload, null, 2)}\n`);
     return 0;
@@ -296,27 +195,25 @@ async function runPush(
   return (await push(cfg, fitted.payload)) ? 0 : 1;
 }
 
+const isHelp = (a: string) => a === '--help' || a === '-h' || a === 'help';
+
 /** `canary testtracker <subcommand>`; returns the process exit code. */
 export async function runTesttracker(
   argv: readonly string[],
   deps: TesttrackerDeps = {},
 ): Promise<number> {
   const [sub, ...rest] = argv;
-  if (
-    sub === undefined ||
-    ['--help', '-h', 'help'].includes(sub) ||
-    rest.some((a) => a === '--help' || a === '-h')
-  ) {
-    (sub === undefined
-      ? (deps.err ?? process.stderr)
-      : (deps.out ?? process.stdout)
-    ).write(USAGE);
-    return sub === undefined ? 2 : 0;
+  const err = deps.err ?? process.stderr;
+  if (sub === undefined) {
+    err.write(USAGE);
+    return 2;
+  }
+  if (isHelp(sub) || rest.some(isHelp)) {
+    (deps.out ?? process.stdout).write(USAGE);
+    return 0;
   }
   if (sub !== 'push') {
-    (deps.err ?? process.stderr).write(
-      `canary testtracker: unknown subcommand '${sub}'.\n\n${USAGE}`,
-    );
+    err.write(`canary testtracker: unknown subcommand '${sub}'.\n\n${USAGE}`);
     return 2;
   }
   return runPush(rest, deps);
