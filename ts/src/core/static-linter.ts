@@ -712,7 +712,12 @@ export function enumerateTests(
       const start = m.index!;
       const bodyStart = start + m[0].length;
       const rest = code.slice(bodyStart);
-      const nextFn = rest.match(new RegExp(`^[ \\t]{${indent}}def `, 'm'));
+      // The body ends at the next `def` or `class` at the SAME OR SHALLOWER
+      // indent. An exact-indent match let a method test run on past its class
+      // into a later module-level test and borrow that test's assertion.
+      const nextFn = rest.match(
+        new RegExp(`^[ \\t]{0,${indent}}(?:def|class)\\b`, 'm'),
+      );
       out.push({
         name: m[2]!,
         line: lineOf(code, start),
