@@ -148,4 +148,26 @@ describe('guardian analyze --coverage', () => {
       expect(stdout).not.toContain('existing test(s)');
     },
   );
+
+  // bug-fleet A5: the shape checks above stop at "endpoints is an array" and
+  // then trust every element. A row without a string path/method used to reach
+  // `mapImpact`'s `method.toLowerCase()` and crash `analyze` with a raw
+  // TypeError -- the opposite of this boundary's "no rows, never a crash" job.
+  it.each([
+    ['a row missing path and method', '{"endpoints":[{"test_name":"t"}]}'],
+    ['a null row', '{"endpoints":[null]}'],
+    ['a row with a numeric method', '{"endpoints":[{"path":"/x","method":1}]}'],
+  ])('skips %s instead of crashing', async (_label, body) => {
+    const p = join(tmp, 'rows.json');
+    writeFileSync(p, body);
+
+    const outcome = await analyzeWithCoverage(p).catch(
+      (e: unknown) => `threw: ${String(e)}`,
+    );
+
+    expect(outcome).toEqual({
+      code: 0,
+      stdout: expect.stringContaining('no existing tests'),
+    });
+  });
 });
