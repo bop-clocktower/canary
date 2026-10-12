@@ -1457,7 +1457,8 @@ function mutatedSources(
   report: MutationReport,
   repoRoot: string,
 ): Record<string, string[]> {
-  const sources: Record<string, string[]> = {};
+  // Null-prototype: a Stryker path is report text (`__proto__`, `constructor`).
+  const sources: Record<string, string[]> = Object.create(null);
   for (const finding of report.findings) {
     if (finding.path in sources) continue;
     try {

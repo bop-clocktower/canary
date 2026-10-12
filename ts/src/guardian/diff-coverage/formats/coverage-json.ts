@@ -42,7 +42,9 @@ export function parseCoverageJson(data: unknown): ReportIndex | null {
   const files = data['files'];
   if (!isRecord(files)) return null;
 
-  const index: ReportIndex = {};
+  // Null-prototype, so an own `__proto__` key from JSON.parse stays a file
+  // entry instead of re-parenting the index.
+  const index: ReportIndex = Object.create(null);
   for (const [path, entry] of Object.entries(files)) {
     if (isRecord(entry)) index[String(path)] = parseFileEntry(entry);
   }
