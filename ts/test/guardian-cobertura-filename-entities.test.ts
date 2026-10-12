@@ -54,6 +54,15 @@ describe('Cobertura filename entity decoding', () => {
     expect(results?.map((r) => r.unit.path)).toEqual(["src/it's.py"]);
   });
 
+  it('leaves a reference named after an Object.prototype member as written', () => {
+    const report = cobertura('src/a&constructor;.py');
+    const results = resolveFromReport(
+      [{ path: 'src/a&constructor;.py', added_ranges: [[1, 1]] }],
+      report,
+    );
+    expect(results?.map((r) => r.unit.path)).toEqual(['src/a&constructor;.py']);
+  });
+
   it('decodes in one pass, so &amp;lt; names a literal &lt;', () => {
     const report = cobertura('src/a&amp;lt;b.py');
     const results = resolveFromReport(

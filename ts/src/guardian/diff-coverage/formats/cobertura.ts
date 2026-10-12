@@ -157,13 +157,15 @@ function collectClasses(body: string, index: Record<string, LineHits>): void {
   }
 }
 
-const PREDEFINED_ENTITIES: Readonly<Record<string, string>> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-};
+// A Map, not an object literal: `&constructor;` must not resolve to a
+// prototype member.
+const PREDEFINED_ENTITIES: ReadonlyMap<string, string> = new Map([
+  ['amp', '&'],
+  ['lt', '<'],
+  ['gt', '>'],
+  ['quot', '"'],
+  ['apos', "'"],
+]);
 
 /**
  * Decode the XML predefined entities and character references in an attribute
@@ -173,13 +175,17 @@ const PREDEFINED_ENTITIES: Readonly<Record<string, string>> = {
  */
 function decodeEntities(value: string): string {
   return value.replace(
-    /&(?:#x([0-9A-Fa-f]+)|#([0-9]+)|([A-Za-z]+));/g,
-    (whole, hex?: string, dec?: string, name?: string) => {
-      if (name !== undefined) return PREDEFINED_ENTITIES[name] ?? whole;
-      const code = Number.parseInt(hex ?? dec!, hex ? 16 : 10);
-      return code <= 0x10ffff ? String.fromCodePoint(code) : whole;
-    },
+    /&(#x[0-9A-Fa-f]+|#[0-9]+|[A-Za-z]+);/g,
+    (whole, ref: string) => decodeReference(ref) ?? whole,
   );
+}
+
+/** One reference body (`amp`, `#39`, `#x27`) decoded, or `undefined`. */
+function decodeReference(ref: string): string | undefined {
+  if (!ref.startsWith('#')) return PREDEFINED_ENTITIES.get(ref);
+  const hex = ref[1] === 'x';
+  const code = Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10);
+  return code <= 0x10ffff ? String.fromCodePoint(code) : undefined;
 }
 
 /** One filename's hit map, created on first mention (ET's `setdefault`). */
