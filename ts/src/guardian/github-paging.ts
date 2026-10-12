@@ -107,11 +107,11 @@ export async function readAllPages(
  */
 export function restPageReader(
   headers: Record<string, string>,
-  onError: (status: number, url: string) => Error,
+  onError: (status: number, url: string, headers: Headers) => Error,
 ): PageReader {
   return async (url: string): Promise<PageResponse> => {
     const resp = await fetch(url, { method: 'GET', headers });
-    if (!resp.ok) throw onError(resp.status, url);
+    if (!resp.ok) throw onError(resp.status, url, resp.headers);
     return { body: await resp.json(), linkHeader: resp.headers.get('link') };
   };
 }

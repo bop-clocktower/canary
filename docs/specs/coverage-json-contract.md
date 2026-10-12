@@ -142,7 +142,8 @@ only `--strict` turns warnings into a non-zero exit.
 - **Paths** are matched against the diff by path-suffix on a separator boundary,
   so a report path may carry a leading source root the diff path lacks
   (`src/main/java/…/Foo.java` resolves a `…/Foo.java` unit). Repository-relative
-  paths are recommended.
+  paths are recommended. Windows `\` separators are read as `/`, as the lcov and
+  Cobertura readers do.
 - **Unknown _fields_ are ignored** (additive-safe): a future minor revision may
   add keys, and a v1 consumer skips ones it doesn't recognize rather than
   rejecting. This is distinct from an unknown **`schema_version`** — a version
