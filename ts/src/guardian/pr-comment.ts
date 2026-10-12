@@ -155,15 +155,17 @@ function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {
 
 /**
  * Update guardian's own sticky in place, else create one (SC-9: never stacks).
- * A 403 degrades to a `degraded` result instead of crashing the job (OT-4).
+ * A 403 degrades to a `degraded` result instead of crashing the job (OT-4) --
+ * on the lookup as well as the write, since the paged read maps 403 the same
+ * way (#528).
  */
 export async function upsertStickyComment(
   client: GitHubClient,
   body: string,
   marker: string = STICKY_MARKER,
 ): Promise<UpsertResult> {
-  const existing = findSticky(await client.listComments(), marker);
   try {
+    const existing = findSticky(await client.listComments(), marker);
     if (existing !== null) {
       const updated = await client.updateComment(existing.id, body);
       return { action: 'updated', comment_id: updated.id, notice: null };
