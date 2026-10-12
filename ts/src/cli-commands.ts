@@ -309,6 +309,15 @@ function printInitSignpost(deps: MainDeps): void {
   );
 }
 
+/** The fields of a scaffolder result that `initCmd` reports on. */
+type ScaffoldResult = {
+  status?: string;
+  guidance?: string;
+  created_dirs?: string[];
+  created_files?: string[];
+  skipped_files?: string[];
+};
+
 export function initCmd(framework: string | undefined, deps: MainDeps): void {
   if (framework === undefined) {
     printInitSignpost(deps);
@@ -319,54 +328,12 @@ export function initCmd(framework: string | undefined, deps: MainDeps): void {
     `\n${pc.bold(pc.cyan(`${HAMMER} Canary Initializing ${framework} Scaffold...`))}\n`,
   );
 
+  // Only scaffold() is guarded: its plain Error means an unknown framework. A
+  // wider try also caught the CliExitError(2) thrown for `unsupported` below
+  // and reported it as "Error: exit 2" plus the unknown-framework hint.
+  let result: ScaffoldResult;
   try {
-    const result = deps.makeScaffolder().scaffold(framework) as {
-      status?: string;
-      guidance?: string;
-      created_dirs?: string[];
-      created_files?: string[];
-      skipped_files?: string[];
-    };
-
-    if (result.status === 'unsupported') {
-      // #1040: nothing was scaffolded, so exiting 0 told a script the opposite.
-      // Exit 2 matches the unknown-framework case below -- both mean the
-      // invocation has to change, not that the command half-worked.
-      deps.err(pc.bold(pc.yellow(`${WARN} ${result.guidance}`)));
-      throw new CliExitError(2);
-    }
-
-    deps.out(`${pc.bold(pc.green(`${CHECK_MARK} Scaffolding Complete`))}\n`);
-
-    if (result.created_dirs && result.created_dirs.length) {
-      deps.out(pc.bold('Directories Created:'));
-      for (const d of result.created_dirs) deps.out(`  + ${d}`);
-    }
-    if (result.created_files && result.created_files.length) {
-      deps.out(`\n${pc.bold('Files Created:')}`);
-      for (const f of result.created_files) deps.out(`  + ${f}`);
-    }
-    if (result.skipped_files && result.skipped_files.length) {
-      deps.out(`\n${pc.bold(pc.yellow('Files Skipped (Already Exist):'))}`);
-      for (const f of result.skipped_files) deps.out(`  - ${f}`);
-    }
-
-    deps.out(`\n${pc.bold(pc.cyan(`${NEXT} Next Steps:`))}`);
-    const fw = framework.toLowerCase();
-    if (fw === 'playwright') {
-      deps.out(
-        `  1. Run: ${pc.bold(pc.green('npm install -D @playwright/test'))}`,
-      );
-      deps.out(`  2. Run: ${pc.bold(pc.green('npx playwright install'))}`);
-    } else if (fw === 'vitest') {
-      deps.out(`  1. Run: ${pc.bold(pc.green('npm install -D vitest'))}`);
-    } else if (fw === 'pytest') {
-      deps.out(`  1. Run: ${pc.bold(pc.green('pip install pytest'))}`);
-    } else if (fw === 'k6') {
-      deps.out(
-        `  1. Install k6: ${pc.bold(pc.green('https://k6.io/docs/getting-started/installation/'))}`,
-      );
-    }
+    result = deps.makeScaffolder().scaffold(framework) as ScaffoldResult;
   } catch (e) {
     // The scaffolder throws a plain Error for an unknown framework. #1007: that
     // is a usage error -- report it on stderr and exit 2, never exit 0.
@@ -375,6 +342,46 @@ export function initCmd(framework: string | undefined, deps: MainDeps): void {
     );
     deps.err(pc.yellow('Supported frameworks: playwright, vitest, pytest, k6'));
     throw new CliExitError(2);
+  }
+
+  if (result.status === 'unsupported') {
+    // #1040: nothing was scaffolded, so exiting 0 told a script the opposite.
+    // Exit 2 matches the unknown-framework case above -- both mean the
+    // invocation has to change, not that the command half-worked.
+    deps.err(pc.bold(pc.yellow(`${WARN} ${result.guidance}`)));
+    throw new CliExitError(2);
+  }
+
+  deps.out(`${pc.bold(pc.green(`${CHECK_MARK} Scaffolding Complete`))}\n`);
+
+  if (result.created_dirs && result.created_dirs.length) {
+    deps.out(pc.bold('Directories Created:'));
+    for (const d of result.created_dirs) deps.out(`  + ${d}`);
+  }
+  if (result.created_files && result.created_files.length) {
+    deps.out(`\n${pc.bold('Files Created:')}`);
+    for (const f of result.created_files) deps.out(`  + ${f}`);
+  }
+  if (result.skipped_files && result.skipped_files.length) {
+    deps.out(`\n${pc.bold(pc.yellow('Files Skipped (Already Exist):'))}`);
+    for (const f of result.skipped_files) deps.out(`  - ${f}`);
+  }
+
+  deps.out(`\n${pc.bold(pc.cyan(`${NEXT} Next Steps:`))}`);
+  const fw = framework.toLowerCase();
+  if (fw === 'playwright') {
+    deps.out(
+      `  1. Run: ${pc.bold(pc.green('npm install -D @playwright/test'))}`,
+    );
+    deps.out(`  2. Run: ${pc.bold(pc.green('npx playwright install'))}`);
+  } else if (fw === 'vitest') {
+    deps.out(`  1. Run: ${pc.bold(pc.green('npm install -D vitest'))}`);
+  } else if (fw === 'pytest') {
+    deps.out(`  1. Run: ${pc.bold(pc.green('pip install pytest'))}`);
+  } else if (fw === 'k6') {
+    deps.out(
+      `  1. Install k6: ${pc.bold(pc.green('https://k6.io/docs/getting-started/installation/'))}`,
+    );
   }
 }
 
