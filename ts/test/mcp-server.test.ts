@@ -21,6 +21,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -595,7 +596,7 @@ describe('writeTestFileImpl path containment', () => {
   // path it approves must be the path that gets written.
   it('writes a relative path under the root it was checked against', () => {
     const root = mkroot();
-    const relDir = `bf-a1-rel-${process.pid}-${Date.now()}`;
+    const relDir = `rel-containment-${randomUUID()}`;
     try {
       writeTestFileImpl(join(relDir, 'a.spec.ts'), 'x', 'playwright', root);
       expect(existsSync(resolve(relDir))).toBe(false);
