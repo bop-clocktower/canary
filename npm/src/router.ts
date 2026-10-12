@@ -5,7 +5,7 @@
  *
  * The npm shim (`bin/canary.js`) forwards every command to the bundled
  * TypeScript engine (`dist/engine/cli.js`) except the ones handled here
- * natively: `overlay` and `doctor`.
+ * natively: `overlay`, `doctor`, `uninstall` and `testtracker`.
  *
  * `route()` returns a process exit code, or `null` when the command is not
  * TS-handled and the shim should fall through to the bundled engine.
@@ -15,12 +15,14 @@ import * as overlay from './overlay-commands.js';
 import type { CommandDeps, Writer } from './overlay-commands.js';
 import { runDoctor } from './doctor.js';
 import { run as runUninstall } from './uninstall.js';
+import { run as runTesttracker, type TesttrackerDeps } from './testtracker.js';
 
 /** Subcommands handled in TypeScript rather than forwarded to the binary. */
 export const TS_COMMANDS: readonly string[] = [
   'overlay',
   'doctor',
   'uninstall',
+  'testtracker',
 ];
 
 /** True when `argv` (process.argv.slice(2)) targets a TS-handled command. */
@@ -128,7 +130,7 @@ function runOverlay(args: readonly string[], deps: CommandDeps): number {
  */
 export function route(
   argv: readonly string[],
-  deps: CommandDeps = {},
+  deps: CommandDeps & TesttrackerDeps = {},
 ): number | Promise<number> | null {
   if (!isTsCommand(argv)) {
     return null;
@@ -141,6 +143,9 @@ export function route(
   }
   if (argv[0] === 'uninstall') {
     return runUninstall(argv.slice(1), deps);
+  }
+  if (argv[0] === 'testtracker') {
+    return runTesttracker(argv.slice(1), deps);
   }
   return null;
 }

@@ -16,6 +16,14 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary testtracker push --junit <file…> --suite <name>`.** vitest,
+  `node --test`, Newman and Maestro can now report to TestTracker: the command
+  reads their JUnit XML and sends it through the Playwright ingest reporter's
+  own payload builder and push. It prints its denominator, sends `collected`,
+  keeps same-named tests in different files apart, and abstains (exit 3) on a
+  report with zero testcases instead of pushing an empty run. See
+  [Ingest Reporter](docs/wiki/Ingest-Reporter.md#other-runners-junit-xml)
+  (#1320).
 - **`canary migrate` finds test configs below the root.** In a repo that
   declares no workspace, the config tier now also looks up to 3 directories
   down. It skips `node_modules`, `.git`, and build and tool output. A package

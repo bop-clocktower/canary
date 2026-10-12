@@ -46,6 +46,7 @@ const EXPECTED_COMMANDS = [
   'overlay',
   'doctor',
   'uninstall',
+  'testtracker',
   'ticket-update',
   'history',
   'analyze',

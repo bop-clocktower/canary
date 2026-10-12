@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic: the shape `newman run -r junit` writes. A suite per request -->
+<!-- (folder path), classname = the request name in UpperCamel. -->
+<testsuites name="Sample API" tests="3" time="0.412">
+  <testsuite name="Users / Get user" id="item-1" timestamp="2026-10-01T10:00:00.000Z" tests="2" failures="1" errors="0" time="0.211">
+    <testcase name="Status code is 200" time="0.211" classname="UsersGetUser"/>
+    <testcase name="Body has an id" time="0.211" classname="UsersGetUser">
+      <failure type="AssertionFailure" message="expected undefined to be a number"><![CDATA[Failed 1 times.]]><![CDATA[Collection name: Sample API.]]><![CDATA[Request name: Users / Get user.]]></failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="Orders / Create order" id="item-2" timestamp="2026-10-01T10:00:00.000Z" tests="1" failures="0" errors="0" time="0.201">
+    <testcase name="Status code is 200" time="0.201" classname="OrdersCreateOrder"/>
+  </testsuite>
+</testsuites>

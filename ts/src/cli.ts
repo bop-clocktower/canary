@@ -39,6 +39,7 @@ import {
   setupCmd,
   ticketUpdateCmd,
   uninstallCmd,
+  testtrackerCmd,
   upgradeCmd,
   vacuityCheckCmd,
   versionCmd,
@@ -330,6 +331,18 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .argument('[args...]')
     .action(() => {
       uninstallCmd(deps);
+    });
+
+  program
+    .command('testtracker')
+    .description(
+      'Push JUnit XML reports to TestTracker (requires the npm install of Canary).',
+    )
+    .allowUnknownOption(true)
+    .allowExcessArguments(true)
+    .argument('[args...]')
+    .action(() => {
+      testtrackerCmd(deps);
     });
 
   program
