@@ -188,17 +188,25 @@ function scanLine(line: string, scan: Scan): boolean {
   if (scan.depth === 0 && !startStatement(line, scan)) return false;
   let quote: string | null = null;
   for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!;
-    if (quote !== null || QUOTES.has(ch)) {
+    if (quote !== null || QUOTES.has(line[i]!)) {
       [quote, i] = stepQuote(line, i, quote);
-      continue;
+    } else if (!stepCode(line, i, scan)) {
+      return false;
     }
-    scan.depth += BRACKET_DELTA[ch] ?? 0;
-    if (scan.depth < 0) return false;
-    if (!endsStatement(ch, scan)) continue;
-    if (!startStatement(line.slice(i + 1), scan)) return false;
   }
   return true;
+}
+
+/**
+ * Consume one code character (outside any string): track nesting, and judge
+ * the next statement when this character ends the current one. False on an
+ * unbalanced closer or a non-erasable statement.
+ */
+function stepCode(line: string, i: number, scan: Scan): boolean {
+  const ch = line[i]!;
+  scan.depth += BRACKET_DELTA[ch] ?? 0;
+  if (scan.depth < 0) return false;
+  return !endsStatement(ch, scan) || startStatement(line.slice(i + 1), scan);
 }
 
 const BRACKET_DELTA: Readonly<Record<string, number>> = {
