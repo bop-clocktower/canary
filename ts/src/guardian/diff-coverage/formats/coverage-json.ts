@@ -46,7 +46,10 @@ export function parseCoverageJson(data: unknown): ReportIndex | null {
   // entry instead of re-parenting the index.
   const index: ReportIndex = Object.create(null);
   for (const [path, entry] of Object.entries(files)) {
-    if (isRecord(entry)) index[String(path)] = parseFileEntry(entry);
+    // Normalize Windows separators so the POSIX-only path matcher resolves
+    // them, mirroring the lcov and Cobertura readers.
+    if (isRecord(entry))
+      index[path.replace(/\\/g, '/')] = parseFileEntry(entry);
   }
   return index;
 }
