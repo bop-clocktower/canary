@@ -105,6 +105,10 @@ session — no API key required for plugin users.
 - `CLAUDE_PLUGIN_ROOT` is set by Claude Code when the plugin is active; the
   MCP server reads it from the environment when needed (not as `cwd`, which
   would otherwise leave the bundled Python package unimportable).
+  **Superseded for the TS server:** `CLAUDE_PLUGIN_ROOT` is the plugin's
+  install directory, so it is never the MCP server's served root. The root
+  every tool path is contained to is `CANARY_PROJECT_ROOT`, else
+  `CLAUDE_PROJECT_DIR` (the user's project), else the server's cwd.
 - CLI users continue to need `ANTHROPIC_API_KEY` — identical to the harness
   orchestrator's Anthropic backend pattern.
 - Plugin users need no API key — Claude Code's session provides the LLM.
