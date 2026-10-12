@@ -43,11 +43,20 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 
 import { readJsonWithWarning } from './config-validation.js';
 import { uncertainDetectionMessage } from './detection.js';
@@ -433,6 +442,31 @@ function realPathIfPresent(path: string): string {
   } catch {
     return path;
   }
+}
+
+/**
+ * Copy *skillDir* to *dest*, replacing whatever is there, all-or-nothing.
+ *
+ * The copy lands in a dot-prefixed staging sibling first (the skill scanner
+ * skips leading-dot entries) and only a complete copy is swapped in. Copying
+ * straight onto *dest* meant a copy that failed part-way left a partial tree
+ * with no manifest entry for it: its hash matched neither the overlay nor the
+ * recorded deploy, so every later run classified an untouched skill as locally
+ * edited and refused to refresh it -- after the previous deployment had
+ * already been deleted.
+ */
+function placeSkillDir(skillDir: string, dest: string): void {
+  const staging = join(dirname(dest), `.${basename(dest)}.staging`);
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(dirname(dest), { recursive: true });
+  try {
+    cpSync(skillDir, staging, { recursive: true });
+  } catch (e) {
+    rmSync(staging, { recursive: true, force: true });
+    throw e;
+  }
+  rmSync(dest, { recursive: true, force: true });
+  renameSync(staging, dest);
 }
 
 /**
@@ -1988,8 +2022,7 @@ export class HarnessMigrator {
           );
           continue;
         }
-        rmSync(dest, { recursive: true, force: true });
-        cpSync(skillDir, dest, { recursive: true });
+        placeSkillDir(skillDir, dest);
         manifest[dirName] = { name: info.name, hash: overlayHash };
         manifestDirty = true;
         results.push(new SkillDeployResult(info.name, 'updated'));
@@ -2000,8 +2033,7 @@ export class HarnessMigrator {
         results.push(new SkillDeployResult(info.name, 'dry_run'));
         continue;
       }
-      mkdirSync(targetSkillsDir, { recursive: true });
-      cpSync(skillDir, dest, { recursive: true });
+      placeSkillDir(skillDir, dest);
       manifest[dirName] = { name: info.name, hash: overlayHash };
       manifestDirty = true;
       results.push(new SkillDeployResult(info.name, 'copied'));
