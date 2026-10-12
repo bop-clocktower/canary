@@ -181,11 +181,7 @@ export function instrumentedTrees(
     const p = isAbsolute(raw) ? relative(root, raw).split(sep).join('/') : raw;
     const clean = p.replace(/^\.\//, '');
     const top = clean.split('/')[0]!;
-    // Append in place: re-spreading the group on every entry is quadratic in
-    // the report's size under one top-level directory.
-    const group = groups.get(top) ?? [];
-    group.push(clean);
-    groups.set(top, group);
+    (groups.get(top) ?? groups.set(top, []).get(top)!).push(clean);
   }
   return [...groups.values()].map((paths) => {
     const tree = anchorPrefix(paths, reportPath, root) + commonDir(paths);
