@@ -304,8 +304,62 @@ describe('RestBranchProtectionClient', () => {
       'guardian',
     ]);
     expect(call(0)[0]).toBe(
-      'https://api.github.com/repos/owner/repo/commits/main/check-runs',
+      'https://api.github.com/repos/owner/repo/commits/main/check-runs?per_page=100',
     );
+  });
+
+  it('a branch name containing # is percent-encoded, not cut off as a URL fragment', async () => {
+    // `release#2` is a legal git branch name. Unencoded, fetch drops `#2/...`
+    // as a fragment and the request hits branch `release` instead.
+    fetchMock.mockResolvedValueOnce(ok({ checks: [{ context: 'guardian' }] }));
+    await client().requiredCheckContexts('release#2');
+    expect(new URL(call(0)[0]).pathname).toBe(
+      '/repos/owner/repo/branches/release%232/protection/required_status_checks',
+    );
+  });
+
+  it('a branch name with a slash keeps its slash in the path', async () => {
+    fetchMock.mockResolvedValueOnce(ok({}));
+    await client().setRequiredChecks('release/v1', ['guardian'], false);
+    expect(call(0)[0]).toBe(
+      'https://api.github.com/repos/owner/repo/branches/release/v1/protection/required_status_checks',
+    );
+  });
+
+  it('observedCheckContexts percent-encodes # in the check-runs ref', async () => {
+    fetchMock.mockResolvedValueOnce(ok({ check_runs: [{ name: 'guardian' }] }));
+    await client().observedCheckContexts('release#2');
+    expect(new URL(call(0)[0]).pathname).toBe(
+      '/repos/owner/repo/commits/release%232/check-runs',
+    );
+  });
+
+  it('observedCheckContexts reads every page of check-runs, not only the first 30', async () => {
+    // GitHub serves 30 check runs per page by default. A context reported on
+    // page 2 must still count as observed, or applyHardGate refuses a real
+    // check as a phantom.
+    const page1 = Array.from({ length: 30 }, (_, i) => ({ name: `job-${i}` }));
+    fetchMock
+      .mockResolvedValueOnce(
+        ok(
+          { total_count: 31, check_runs: page1 },
+          200,
+          'https://api.github.com/repos/owner/repo/commits/main/check-runs?per_page=30&page=2',
+        ),
+      )
+      .mockResolvedValueOnce(
+        ok({ total_count: 31, check_runs: [{ name: 'guardian' }] }),
+      );
+    expect(await client().observedCheckContexts('main')).toContain('guardian');
+  });
+
+  it('observedCheckContexts degrades to [] on a check-runs Link cycle rather than a partial list', async () => {
+    const self =
+      'https://api.github.com/repos/owner/repo/commits/main/check-runs?per_page=100';
+    fetchMock.mockResolvedValue(
+      ok({ check_runs: [{ name: 'guardian' }] }, 200, self),
+    );
+    expect(await client().observedCheckContexts('main')).toEqual([]);
   });
 
   it('observedCheckContexts degrades to [] on error', async () => {
