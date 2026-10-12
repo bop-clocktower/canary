@@ -15,7 +15,7 @@ import * as overlay from './overlay-commands.js';
 import type { CommandDeps, Writer } from './overlay-commands.js';
 import { runDoctor } from './doctor.js';
 import { run as runUninstall } from './uninstall.js';
-import { run as runTesttracker, type TesttrackerDeps } from './testtracker.js';
+import { runTesttracker, type TesttrackerDeps } from './testtracker.js';
 
 /** Subcommands handled in TypeScript rather than forwarded to the binary. */
 export const TS_COMMANDS: readonly string[] = [

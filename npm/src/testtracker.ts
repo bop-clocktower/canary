@@ -297,7 +297,7 @@ async function runPush(
 }
 
 /** `canary testtracker <subcommand>`; returns the process exit code. */
-export async function run(
+export async function runTesttracker(
   argv: readonly string[],
   deps: TesttrackerDeps = {},
 ): Promise<number> {
