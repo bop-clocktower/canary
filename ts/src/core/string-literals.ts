@@ -240,7 +240,10 @@ function pushSpan(spans: Span[], start: number, end: number): void {
  * apostrophe in "don't" would otherwise open a phantom literal.
  */
 function skipComment(code: string, i: number, python: boolean): number | null {
-  if (python && code[i] === '#') return endOfLine(code, i);
+  // Python has only `#` comments. Its `//` is floor division: read as a
+  // comment, it hid a `"""` opened later on the line, so the string's closing
+  // delimiter opened a phantom one and its content was scanned as code.
+  if (python) return code[i] === '#' ? endOfLine(code, i) : null;
   if (code[i] !== '/') return null;
   if (code[i + 1] === '/') return endOfLine(code, i);
   if (code[i + 1] === '*') {
