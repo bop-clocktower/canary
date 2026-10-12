@@ -1,0 +1,8 @@
+{
+  "reason": "JUnit push for TestTracker (#1320): module-size 52692->53311 (+619 non-blank lines), measured with harness check-arch --json (CLI 12.10.1) in clean worktrees at origin/main 3bb6aa4b and at branch head 5d100470. main's 52692 was measured by planting a 600-line probe file (53292 - 600); it sits above the 52325 floor but inside the ratchet's tolerance, and this branch's +619 crosses it. newViolations is 0 and module-size is the only regression. The growth is the feature: npm/src/reporters/ingest/junit.ts (+267) reads the four runner dialects (suite path, classname rules, skip reasons, surefire retry markers), reporters/ingest/junit-run.ts (+119) turns report files into one run's rows, timing, catalog and denominator line, and npm/src/testtracker.ts (+253) is the command (usage, arg parsing, exit codes) on top of the reporter's own config, buildPayload, fitPayload and push, which are reused rather than copied. The rest is wiring: router.ts +5, transport.ts push() now returns whether the run was ingested (+4), and the engine's --help pointer (cli.ts +13, cli-commands.ts +7). Perf (delta: one structural coupling finding, allowanced with a why; the complexity and file-length findings were fixed in code) and entropy (140=140) are flat.",
+  "categories": {
+    "module-size": 53311
+  },
+  "violationIds": [],
+  "createdFrom": "5d100470"
+}
