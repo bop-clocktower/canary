@@ -433,7 +433,7 @@ export class RestBranchProtectionClient implements BranchProtection {
     // True only if the branch has NO protection object at all (parent 404). A
     // protected branch without a checks section returns 200 here.
     try {
-      await this.request('GET', `branches/${branch}/protection`);
+      await this.request('GET', `branches/${refPath(branch)}/protection`);
       return false;
     } catch (err) {
       if (err instanceof HttpError && err.status === 404) {
@@ -448,7 +448,7 @@ export class RestBranchProtectionClient implements BranchProtection {
     try {
       data = await this.request(
         'GET',
-        `branches/${branch}/protection/required_status_checks`,
+        `branches/${refPath(branch)}/protection/required_status_checks`,
       );
     } catch (err) {
       if (err instanceof HttpError && err.status === 404) {
@@ -502,7 +502,7 @@ export class RestBranchProtectionClient implements BranchProtection {
         ? new GitHubPermissionError(`HTTP ${status}`)
         : new HttpError(status, `HTTP ${status}`),
     );
-    const start = `${RestBranchProtectionClient.API}/repos/${this.repo}/commits/${ref}/check-runs`;
+    const start = `${RestBranchProtectionClient.API}/repos/${this.repo}/commits/${refPath(ref)}/check-runs`;
     const rows: unknown[] = [];
     const visited = new Set<string>();
     let url: string | null = withPerPage(start);
@@ -528,7 +528,7 @@ export class RestBranchProtectionClient implements BranchProtection {
     if (create) {
       // Genuinely unprotected — PUT a minimal ruleset requiring only the checks;
       // other protections stay unset.
-      await this.request('PUT', `branches/${branch}/protection`, {
+      await this.request('PUT', `branches/${refPath(branch)}/protection`, {
         required_status_checks: { strict: false, checks },
         enforce_admins: null,
         required_pull_request_reviews: null,
@@ -540,11 +540,22 @@ export class RestBranchProtectionClient implements BranchProtection {
       // enforce_admins / the existing `strict` flag).
       await this.request(
         'PATCH',
-        `branches/${branch}/protection/required_status_checks`,
+        `branches/${refPath(branch)}/protection/required_status_checks`,
         { checks },
       );
     }
   }
+}
+
+/**
+ * A branch name as a REST path fragment. `#` and `%` are legal in a git ref
+ * name, and interpolated raw, `release#2` ends the URL at a fragment, so the
+ * request silently reads and WRITES protection on branch `release`. Each
+ * `/`-segment is encoded and the slashes are kept, so `release/v1` produces the
+ * same path it always did.
+ */
+function refPath(branch: string): string {
+  return branch.split('/').map(encodeURIComponent).join('/');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -308,6 +308,32 @@ describe('RestBranchProtectionClient', () => {
     );
   });
 
+  it('a branch name containing # is percent-encoded, not cut off as a URL fragment', async () => {
+    // `release#2` is a legal git branch name. Unencoded, fetch drops `#2/...`
+    // as a fragment and the request hits branch `release` instead.
+    fetchMock.mockResolvedValueOnce(ok({ checks: [{ context: 'guardian' }] }));
+    await client().requiredCheckContexts('release#2');
+    expect(new URL(call(0)[0]).pathname).toBe(
+      '/repos/owner/repo/branches/release%232/protection/required_status_checks',
+    );
+  });
+
+  it('a branch name with a slash keeps its slash in the path', async () => {
+    fetchMock.mockResolvedValueOnce(ok({}));
+    await client().setRequiredChecks('release/v1', ['guardian'], false);
+    expect(call(0)[0]).toBe(
+      'https://api.github.com/repos/owner/repo/branches/release/v1/protection/required_status_checks',
+    );
+  });
+
+  it('observedCheckContexts percent-encodes # in the check-runs ref', async () => {
+    fetchMock.mockResolvedValueOnce(ok({ check_runs: [{ name: 'guardian' }] }));
+    await client().observedCheckContexts('release#2');
+    expect(new URL(call(0)[0]).pathname).toBe(
+      '/repos/owner/repo/commits/release%232/check-runs',
+    );
+  });
+
   it('observedCheckContexts reads every page of check-runs, not only the first 30', async () => {
     // GitHub serves 30 check runs per page by default. A context reported on
     // page 2 must still count as observed, or applyHardGate refuses a real
