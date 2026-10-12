@@ -178,7 +178,9 @@ export function matchFile(
   path: string,
   index: ReportIndex,
 ): FileCoverage | null {
-  if (path in index) return index[path]!;
+  // Own keys only: `in` would hand back Object.prototype members for a changed
+  // file named `constructor` or `toString`.
+  if (Object.hasOwn(index, path)) return index[path]!;
   const matches: FileCoverage[] = [];
   for (const [reportPath, file] of Object.entries(index)) {
     if (pathBoundaryMatch(reportPath, path)) matches.push(file);

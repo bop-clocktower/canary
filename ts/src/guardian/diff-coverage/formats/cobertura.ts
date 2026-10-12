@@ -39,7 +39,9 @@ export function parseCobertura(text: string): ReportIndex | null {
   if (body === null) return null;
   // Built as raw hit maps; every `<line>` record is a line the instrumenter
   // measured, so the recorded lines become the coverable set on the way out.
-  const index: Record<string, LineHits> = {};
+  // Null-prototype: a `filename` named `__proto__` must be a file, not a
+  // handle on Object.prototype (GHSA-w522-r2v2-gcc3).
+  const index: Record<string, LineHits> = Object.create(null);
   collectClasses(body, index);
   return pruneEmptyClasses(index);
 }
@@ -180,7 +182,7 @@ function readClassLines(body: string, hitsByLine: LineHits): void {
 function pruneEmptyClasses(
   index: Record<string, LineHits>,
 ): ReportIndex | null {
-  const pruned: ReportIndex = {};
+  const pruned: ReportIndex = Object.create(null);
   for (const [path, hits] of Object.entries(index)) {
     if (Object.keys(hits).length > 0) pruned[path] = selfDescribing(hits);
   }
