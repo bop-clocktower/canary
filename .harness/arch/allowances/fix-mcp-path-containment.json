@@ -1,0 +1,8 @@
+{
+  "reason": "MCP path containment: module-size 53431->53458 (+27 non-blank lines), measured with harness check-arch --json (CLI 12.10.1) in a clean worktree on main 2b54f762. The growth is one containPath helper plus resolveServedRoot in ts/src/mcp-server.ts, applied to every tool that takes a path (write_test_file, run_tests, init_suite, analyze_file, migrate). newViolations is 0; entropy (+0) and perf (0 new) are flat.",
+  "categories": {
+    "module-size": 53458
+  },
+  "violationIds": [],
+  "createdFrom": "2d3438f"
+}
