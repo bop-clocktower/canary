@@ -191,7 +191,9 @@ function hunkCount(raw: string | undefined): number {
 function headerPath(line: string): string | null {
   // A quoted path is unquoted BEFORE the `b/` strip: the quotes wrap the
   // prefix too (`"b/caf\303\251.ts"`), so stripping first would never match.
-  const target = unquoteCStyle(line.slice(4).trim());
+  // Plain `diff -u` appends `\t<timestamp>`; git C-quotes a real tab in a
+  // path, so the first raw tab always ends the path.
+  const target = unquoteCStyle(line.slice(4).split('\t')[0]!.trim());
   if (target === '/dev/null') return null;
   // Strip the conventional "b/" prefix.
   return target.startsWith('b/') ? target.slice(2) : target;
