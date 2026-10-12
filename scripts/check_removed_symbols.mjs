@@ -463,9 +463,14 @@ function loadDenylist() {
   const reason =
     'company/proprietary identifier (from denylist) — keep it in the ' +
     'private overlay; use a neutral placeholder (e.g. ACME) in public examples';
+  // Lookarounds, not `\b`: a `\b` beside punctuation needs a word character on
+  // its far side, so a term ending in `+` or `.` ("Acme+", "Acme Inc.") never
+  // matched a real mention and failed open. For word-bounded terms the two are
+  // identical. The raw term rides along for the authorship scan, which
+  // compiles its own identity-shaped pattern from it.
   return [...terms]
     .sort()
-    .map((t) => [new RegExp(`\\b${reEscape(t)}\\b`, 'i'), reason]);
+    .map((t) => [new RegExp(`(?<!\\w)${reEscape(t)}(?!\\w)`, 'i'), reason, t]);
 }
 
 function isProprietaryTarget(rel) {
