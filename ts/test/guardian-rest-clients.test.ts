@@ -308,6 +308,24 @@ describe('RestBranchProtectionClient', () => {
     );
   });
 
+  it('a branch name containing # is percent-encoded, not cut off as a URL fragment', async () => {
+    // `release#2` is a legal git branch name. Unencoded, fetch drops `#2/...`
+    // as a fragment and the request hits branch `release` instead.
+    fetchMock.mockResolvedValueOnce(ok({ checks: [{ context: 'guardian' }] }));
+    await client().requiredCheckContexts('release#2');
+    expect(new URL(call(0)[0]).pathname).toBe(
+      '/repos/owner/repo/branches/release%232/protection/required_status_checks',
+    );
+  });
+
+  it('a branch name with a slash keeps its slash in the path', async () => {
+    fetchMock.mockResolvedValueOnce(ok({}));
+    await client().setRequiredChecks('release/v1', ['guardian'], false);
+    expect(call(0)[0]).toBe(
+      'https://api.github.com/repos/owner/repo/branches/release/v1/protection/required_status_checks',
+    );
+  });
+
   it('observedCheckContexts degrades to [] on error', async () => {
     fetchMock.mockResolvedValueOnce(fail(500));
     expect(await client().observedCheckContexts('main')).toEqual([]);
