@@ -3,7 +3,7 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { basename, join, posix } from 'node:path';
+import { basename, join, posix, relative } from 'node:path';
 
 import { isTestPath } from './paths.js';
 import {
@@ -67,10 +67,15 @@ function walkFiles(root: string): string[] {
   return out;
 }
 
-/** Relative POSIX path of `full` under `root`. */
+/**
+ * Relative POSIX path of `full` under `root`.
+ *
+ * `path.relative`, not a `root.length` slice: `join` normalizes the root, so
+ * under the default root `'.'` a walked path is `tests/x.py`, not
+ * `./tests/x.py`, and slicing one character off yielded `ests/x.py`.
+ */
 function relPosix(root: string, full: string): string {
-  const rel = full.slice(root.length).replace(/^[/\\]/, '');
-  return rel.split(/[/\\]/).join(posix.sep);
+  return relative(root, full).split(/[/\\]/).join(posix.sep);
 }
 
 /** Yield `[relPath, text]` for every test-looking file under `repoRoot`. */
