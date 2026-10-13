@@ -1919,7 +1919,7 @@ export class HarnessMigrator {
    * Return `[[SkillInfo, skillDir], ...]` for overlay skills whose `deploy_to`
    * matches **any** shape in *shapes* (or the `all` sentinel). Sources:
    * *overlayPath* first, then `~/.canary/skills/`. The first definition of a
-   * name wins.
+   * name, or of a skill directory name, wins.
    *
    * *shapes* is a set, not a scalar, because a monorepo genuinely has several
    * shapes at once (#504 part 1). One pass over the overlay collects the union
@@ -1941,6 +1941,7 @@ export class HarnessMigrator {
     const reg = new SkillRegistry();
     const collected: Array<[SkillInfo, string]> = [];
     const seenNames = new Set<string>();
+    const seenDirs = new Set<string>();
 
     for (const root of candidateRoots) {
       let overlaySkillsDir = join(root, '.canary', 'skills');
@@ -1976,7 +1977,12 @@ export class HarnessMigrator {
         ) {
           continue;
         }
+        // Deployment is keyed on the DIRECTORY name, so a later tier reusing
+        // it under a different skill name would overwrite the earlier copy
+        // as a "safe refresh". First tier wins here too.
+        if (seenDirs.has(name)) continue;
         seenNames.add(info.name);
+        seenDirs.add(name);
         collected.push([info, skillDir]);
       }
     }
