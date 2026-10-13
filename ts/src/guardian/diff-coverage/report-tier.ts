@@ -181,7 +181,7 @@ export function instrumentedTrees(
     const p = isAbsolute(raw) ? relative(root, raw).split(sep).join('/') : raw;
     const clean = p.replace(/^\.\//, '');
     const top = clean.split('/')[0]!;
-    groups.set(top, [...(groups.get(top) ?? []), clean]);
+    (groups.get(top) ?? groups.set(top, []).get(top)!).push(clean);
   }
   return [...groups.values()].map((paths) => {
     const tree = anchorPrefix(paths, reportPath, root) + commonDir(paths);

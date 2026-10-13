@@ -1545,6 +1545,27 @@ interface PrCheckOptions {
   analysesDir?: string;
 }
 
+/**
+ * The `--gate` override, held to the same rule as the config gate: anything
+ * outside {soft, hard} warns loudly and falls back to the configured gate.
+ * Unchecked, a typo such as `--gate hrad` reached `computeExitCode`, which
+ * reads every non-`hard` value as soft -- a hard gate disabled in silence.
+ */
+function gateOverride(
+  raw: string | undefined,
+  configGate: string,
+  deps: GuardianDeps,
+): string {
+  if (raw === undefined) return configGate;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'soft' || normalized === 'hard') return normalized;
+  deps.err(
+    `WARNING: guardian --gate must be 'soft' or 'hard', got "${raw}"; ` +
+      `using the configured gate (${configGate})`,
+  );
+  return configGate;
+}
+
 async function prCheckCmd(
   opts: PrCheckOptions,
   deps: GuardianDeps,
@@ -1562,7 +1583,7 @@ async function prCheckCmd(
     throw new CliExitError(0);
   }
 
-  const effectiveGate = opts.gate ?? config.pr_gate;
+  const effectiveGate = gateOverride(opts.gate, config.pr_gate, deps);
 
   // #369: in CI an omitted `--diff` resolves the PR diff from the base ref;
   // the working-tree fallback is empty on a clean checkout.
@@ -1988,15 +2009,28 @@ async function watchCmd(opts: WatchOptions, deps: GuardianDeps): Promise<void> {
  * abc` polled with a zero delay. Throwing `InvalidArgumentError` turns both
  * into a commander usage error, which exits 2.
  */
-function parsePositiveInt(value: string): number {
+function parsePositiveInt(value: string, max: number): number {
   const n = Number(value.trim());
   if (!Number.isInteger(n) || n <= 0) {
     throw new InvalidArgumentError(
       `must be a positive integer, got "${value}"`,
     );
   }
+  if (n > max) {
+    throw new InvalidArgumentError(`must be at most ${max}, got "${value}"`);
+  }
   return n;
 }
+
+/**
+ * Upper bounds the consumers can actually hold. A positive integer is not
+ * enough: `precision --days 1000000000` pushed the window start past the Date
+ * range (the same `RangeError` the parser exists to prevent), and `watch
+ * --interval 2147484` overflowed setTimeout's 32-bit millisecond delay, which
+ * Node clamps to 1 ms -- the zero-delay poll loop again.
+ */
+const MAX_PRECISION_DAYS = 36_500; // a century of merged PRs
+const MAX_WATCH_INTERVAL_SECS = Math.floor((2 ** 31 - 1) / 1000);
 
 /** Collect a repeatable option value into an array (commander pattern). */
 function collect(value: string, previous: string[]): string[] {
@@ -2093,7 +2127,7 @@ export function createGuardianCommand(
     .addOption(
       new Option('--days <n>', 'Merged-PR window in days.')
         .default(14)
-        .argParser(parsePositiveInt),
+        .argParser((v) => parsePositiveInt(v, MAX_PRECISION_DAYS)),
     )
     .option('--json', 'Emit the report as JSON (precision null = unknown).')
     .action(async (opts: PrecisionOptions) => {
@@ -2217,7 +2251,7 @@ export function createGuardianCommand(
     .addOption(
       new Option('--interval <secs>', 'Polling interval in seconds.')
         .default(300)
-        .argParser(parsePositiveInt),
+        .argParser((v) => parsePositiveInt(v, MAX_WATCH_INTERVAL_SECS)),
     )
     // Python's `watch` declares `--suite` with NO `-s` short form (unlike
     // `analyze`); adding `-s` here would accept an invocation Python rejected.
