@@ -20,7 +20,7 @@
  *      `--arch <the file the capture wrote>`.
  *   2. That step can fail the job: no `|| true` / `|| :` / `|| exit 0`, no
  *      `continue-on-error: true`.
- *   3. It runs after a failed step: its `if:` contains `!cancelled()` or
+ *   3. It survives a failed earlier step: its `if:` contains `!cancelled()` or
  *      `always()`. `harness ci check` exits 1 on a metric regression, and a
  *      summariser with the default `success()` condition would then be SKIPPED
  *      — the one run where the new-violation gate matters most.
@@ -213,7 +213,7 @@ describe('#1208 — the check-arch capture is paired with a gating summariser', 
         /no later step/,
       ],
       [
-        'the summariser runs before the capture',
+        'the summariser step is moved ahead of the capture step',
         (s, steps) => {
           steps.splice(steps.indexOf(s), 1);
           const capture = steps.findIndex((x) => x.run?.includes('check-arch'));
