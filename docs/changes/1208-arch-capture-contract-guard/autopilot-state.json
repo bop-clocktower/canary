@@ -37,10 +37,26 @@
     {
       "id": 6,
       "title": "Push, open PR (Refs #1208), watch CI",
+      "status": "done"
+    },
+    {
+      "id": 7,
+      "title": "Fix savant SV004 false positive (step-order wording) failing Skills (JS)",
+      "status": "done"
+    },
+    {
+      "id": 8,
+      "title": "Harden guard against 4 security-review fail-open findings (F1 scope, F2 soft detection, F3 exact condition, F4 command position); refresh consumer empty-file case",
+      "status": "done"
+    },
+    {
+      "id": 9,
+      "title": "Push and watch CI on the hardened head",
       "status": "in_progress"
     }
   ],
   "assumptions": [
+    "guard scans every workflow; captures today: harness.yml and refresh-arch-baseline.yml (>=2 asserted); declared fail-closed consumers: harness-report-summary.mjs --arch, refresh-arch-baseline.mjs (both verified exit 3 on missing/empty/field-less)",
     "DECIDED fork (human, CONFIRM): F2=a — document + guard, no baseline refresh",
     "summariser verified to gate: probe exits 0 (measured report), 1 (planted new violation), 3 (empty), 3 (missing)",
     "latent gap: a ci report without an `arch` entry makes the summariser ignore --arch (exit 0 over a planted new violation); guarded structurally by forbidding `--skip arch`, not changed in the script"

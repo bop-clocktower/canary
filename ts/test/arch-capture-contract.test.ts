@@ -1,238 +1,347 @@
 /**
- * #1208 — the `|| true` on the check-arch capture is only safe while the
- * summariser downstream of it still gates.
+ * #1208 — a swallowed `check-arch` capture is only safe while a fail-closed
+ * consumer downstream of it still gates.
  *
- * `harness.yml` runs `harness check-arch --json > arch-report.json || true`.
- * Read alone, that line swallows a red gate: on main the command exits 1 on the
- * ABSOLUTE count (12 pre-existing complexity violations, 0 new, on d4b5681f
- * with harness 12.10.1). The swallow is deliberate — the absolute exit is the
- * verdict the summariser exists to reinterpret — and it is safe only because a
- * later step in the same job reads that file and fails the job itself:
- * `newViolations` non-empty → exit 1 (#968); a missing, empty or field-less
- * report → exit 3, an abstention.
+ * Two workflows run `harness check-arch --json > arch-report.json || true`:
+ * `harness.yml` (the summariser reinterprets the absolute exit) and
+ * `refresh-arch-baseline.yml` (the refresh script reads the same report). On
+ * main the command exits 1 on the ABSOLUTE count (12 pre-existing complexity
+ * violations, 0 new, on d4b5681f with harness 12.10.1). The swallow is
+ * deliberate, and it is safe only because a later step in the same job reads
+ * that file and fails the job itself:
  *
- * Every piece of that is a separate line of YAML, and removing any one of them
- * turns the `|| true` back into the masking it looks like, with every
- * exit-code test in arch-verdict.test.ts still green (they run the script, not
- * the workflow). So this file binds the PAIRING, per capture step:
+ * - `harness-report-summary.mjs --arch`: `newViolations` non-empty → exit 1
+ *   (#968); a missing, empty or field-less report → exit 3.
+ * - `refresh-arch-baseline.mjs`: a missing, empty or field-less report → exit 3
+ *   (pinned in refresh-arch-baseline.test.ts).
  *
- *   1. A later step in the SAME job runs `harness-report-summary.mjs` with
- *      `--arch <the file the capture wrote>`.
- *   2. That step can fail the job: no `|| true` / `|| :` / `|| exit 0`, no
- *      `continue-on-error: true`.
- *   3. It survives a failed earlier step: its `if:` contains `!cancelled()` or
- *      `always()`. `harness ci check` exits 1 on a metric regression, and a
- *      summariser with the default `success()` condition would then be SKIPPED
- *      — the one run where the new-violation gate matters most.
- *   4. The job's `harness ci check` does not `--skip arch`. The summariser only
- *      consults the arch detail when the CI report carries an `arch` entry;
- *      with that entry absent it exits 0 even over a planted new violation.
+ * Every piece of that pairing is a separate line of YAML. Remove one and the
+ * `|| true` goes back to masking, with every exit-code test of those scripts
+ * still green (they run the script, not the workflow). So this file binds the
+ * PAIRING, for every swallowed capture in EVERY workflow:
  *
- * The script's own exit-code rows are pinned in arch-verdict.test.ts
- * (`#968 — the summariser blocks new arch violations`, `abstains on the empty
- * file a crashed check-arch leaves behind`, `abstains, after rendering the
- * summary, on an unreadable arch report`). This file does not duplicate them.
+ *   1. A later step in the SAME job invokes a declared consumer IN COMMAND
+ *      POSITION (the logical line starts with `node scripts/<consumer>.mjs`)
+ *      and reads the file the capture wrote. A capture with no declared
+ *      consumer fails.
+ *   2. The consumer can fail the job: no `||` fallback of any kind, no pipe, no
+ *      `set +e`, no trailing `; true`, and no `continue-on-error` at step or
+ *      job level unless it is absent or literally false.
+ *   3. The consumer survives a failed earlier step: its `if:`, with `${{ }}`
+ *      and whitespace stripped, is EXACTLY `!cancelled()` or `always()`. A
+ *      default (absent) condition is accepted only when the capture has no
+ *      condition either and the consumer runs immediately after it, so that
+ *      the capture having run (and swallowed) implies the consumer runs.
+ *   4. For the summariser, the job's `harness ci check` does not skip `arch`:
+ *      the summariser only consults the arch detail when the CI report carries
+ *      an `arch` entry, and exits 0 over a planted new violation without it.
+ *
+ * Fail-closed on parse problems: a workflow YAML that does not parse, or parses
+ * to something without a `jobs` map, throws. A job with neither `steps` nor a
+ * reusable-workflow `uses:` throws. Both denominators — files parsed and
+ * captures found — must be non-zero on the real tree.
  *
  * Offline: parses workflow YAML. Never runs `harness`.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const HARNESS_YML = join(REPO_ROOT, '.github', 'workflows', 'harness.yml');
+const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 
 interface Step {
   name?: string;
   run?: string;
-  if?: string;
-  'continue-on-error'?: boolean;
+  if?: unknown;
+  'continue-on-error'?: unknown;
+}
+interface Job {
+  steps?: Step[];
+  uses?: string;
+  'continue-on-error'?: unknown;
 }
 interface Workflow {
-  jobs?: Record<string, { steps?: Step[] }>;
+  jobs: Record<string, Job>;
 }
+type WorkflowSet = Array<[string, Workflow]>;
 
 /** Continuation lines joined, blanks and comments dropped. */
-function logicalLines(script: string): string[] {
-  return script
+function logicalLines(script: unknown): string[] {
+  if (script === undefined) return [];
+  return String(script)
     .replace(/\\\r?\n\s*/g, ' ')
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith('#'));
 }
 
-const SWALLOW = /\|\|\s*(true|:|exit 0)\b/;
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-function isSoft(step: Step): boolean {
-  return (
-    step['continue-on-error'] === true ||
-    logicalLines(step.run ?? '').some((l) => SWALLOW.test(l))
-  );
+/** `continue-on-error` that is anything but absent or literally false. */
+function softFlag(value: unknown): boolean {
+  return value !== undefined && value !== false && value !== 'false';
 }
 
-/** A check-arch capture whose own failure cannot fail the job. */
-function softArchCapture(step: Step): string | undefined {
-  const line = logicalLines(step.run ?? '').find((l) =>
-    /\bharness check-arch\b/.test(l),
+/** Every reason this step's failure would not fail the job. */
+function softReasons(step: Step, job: Job): string[] {
+  const reasons: string[] = [];
+  if (softFlag(step['continue-on-error']))
+    reasons.push('step continue-on-error');
+  if (softFlag(job['continue-on-error'])) reasons.push('job continue-on-error');
+  for (const line of logicalLines(step.run)) {
+    if (/\|\|/.test(line)) reasons.push(`|| fallback in \`${line}\``);
+    if (/(^|[^|])\|([^|]|$)/.test(line)) reasons.push(`pipe in \`${line}\``);
+    if (/\bset\s+(\+e\b|\+o\s+errexit\b)/.test(line))
+      reasons.push(`errexit disabled in \`${line}\``);
+    if (/;\s*(true|:)\s*$/.test(line))
+      reasons.push(`trailing no-op in \`${line}\``);
+  }
+  return reasons;
+}
+
+/** `${{ … }}` and whitespace stripped; '' when there is no condition. */
+function normalisedIf(step: Step): string {
+  if (step.if === undefined) return '';
+  return String(step.if)
+    .trim()
+    .replace(/^\$\{\{/, '')
+    .replace(/\}\}$/, '')
+    .replace(/\s+/g, '');
+}
+
+/** The consumers known to fail closed on a missing, empty or field-less report. */
+const CONSUMERS = [
+  {
+    name: 'harness-report-summary.mjs',
+    invokes: (file: string) =>
+      new RegExp(
+        `^node scripts/harness-report-summary\\.mjs\\s(?:.*\\s)?--arch\\s+${escape(file)}(?:\\s|$)`,
+      ),
+    needsArchInCiCheck: true,
+  },
+  {
+    name: 'refresh-arch-baseline.mjs',
+    invokes: (file: string) =>
+      new RegExp(
+        `^node scripts/refresh-arch-baseline\\.mjs\\s+${escape(file)}(?:\\s|$)`,
+      ),
+    needsArchInCiCheck: false,
+  },
+] as const;
+
+function stepsOf(file: string, jobId: string, job: Job): Step[] {
+  if (Array.isArray(job.steps)) return job.steps;
+  if (typeof job.uses === 'string') return [];
+  throw new Error(
+    `${file} › ${jobId}: job has neither steps nor a reusable-workflow uses`,
   );
-  if (!line || !isSoft(step)) return undefined;
-  return /(?<![0-9=])>\s*(\S+)/.exec(line)?.[1] ?? '';
 }
 
 /**
- * Every way a soft check-arch capture in `wf` is left unguarded, as
- * human-readable reasons. Empty means every capture is paired with a gating
- * summariser. `captures` is the denominator, so a caller can refuse to read
- * zero captures as a pass.
+ * Every way a swallowed check-arch capture in `set` is left unguarded, as
+ * human-readable reasons, plus both denominators so a caller can refuse to
+ * read zero as a pass.
  */
-function archCaptureContract(wf: Workflow): {
+function archCaptureContract(set: WorkflowSet): {
+  files: number;
   captures: number;
   violations: string[];
 } {
   const violations: string[] = [];
   let captures = 0;
-  for (const [jobId, job] of Object.entries(wf.jobs ?? {})) {
-    const steps = job.steps ?? [];
-    steps.forEach((step, index) => {
-      const target = softArchCapture(step);
-      if (target === undefined) return;
-      captures++;
-      const where = `${jobId} › ${step.name ?? `step ${index}`}`;
-      if (!target) {
-        violations.push(
-          `${where}: swallows check-arch without writing a report file`,
+  for (const [file, wf] of set) {
+    for (const [jobId, job] of Object.entries(wf.jobs)) {
+      const steps = stepsOf(file, jobId, job);
+      steps.forEach((step, index) => {
+        const archLine = logicalLines(step.run).find((l) =>
+          /\bharness\s+check-arch\b/.test(l),
         );
-        return;
-      }
-      const summariser = steps
-        .slice(index + 1)
-        .find((s) =>
-          logicalLines(s.run ?? '').some(
+        if (!archLine || softReasons(step, job).length === 0) return;
+        captures++;
+        const where = `${file} › ${jobId} › ${step.name ?? `step ${index}`}`;
+        const target = /(?<![0-9=])>\s*(\S+)/.exec(archLine)?.[1];
+        if (target === undefined) {
+          violations.push(
+            `${where}: swallows check-arch without writing a report file`,
+          );
+          return;
+        }
+        let found: { at: number; consumer: (typeof CONSUMERS)[number] } | null =
+          null;
+        for (let at = index + 1; at < steps.length && !found; at++) {
+          const lines = logicalLines(steps[at]!.run);
+          const consumer = CONSUMERS.find((c) =>
+            lines.some((l) => c.invokes(target).test(l)),
+          );
+          if (consumer) found = { at, consumer };
+        }
+        if (!found) {
+          violations.push(
+            `${where}: no later step in job ${jobId} invokes a declared fail-closed consumer of ${target}`,
+          );
+          return;
+        }
+        const consumerStep = steps[found.at]!;
+        const soft = softReasons(consumerStep, job);
+        if (soft.length > 0) {
+          violations.push(
+            `${where}: the ${found.consumer.name} step that reads ${target} cannot fail the job (${soft.join('; ')})`,
+          );
+        }
+        const condition = normalisedIf(consumerStep);
+        const reachable =
+          condition === '!cancelled()' ||
+          condition === 'always()' ||
+          (condition === '' &&
+            normalisedIf(step) === '' &&
+            found.at === index + 1);
+        if (!reachable) {
+          violations.push(
+            `${where}: the ${found.consumer.name} step's condition \`${condition || '(default success())'}\` can skip it after the capture ran`,
+          );
+        }
+        const skipsArch = steps.some((s) =>
+          logicalLines(s.run).some(
             (l) =>
-              l.includes('harness-report-summary.mjs') &&
-              new RegExp(
-                `--arch\\s+${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`,
-              ).test(l),
+              /\bharness ci check\b/.test(l) &&
+              /--skip(\s+|=)\S*\barch\b/.test(l),
           ),
         );
-      if (!summariser) {
-        violations.push(
-          `${where}: no later step in job ${jobId} runs harness-report-summary.mjs --arch ${target}`,
-        );
-        return;
-      }
-      if (isSoft(summariser)) {
-        violations.push(
-          `${where}: the summariser that reads ${target} cannot fail the job`,
-        );
-      }
-      if (!/!cancelled\(\)|always\(\)/.test(summariser.if ?? '')) {
-        violations.push(
-          `${where}: the summariser has no !cancelled()/always() condition, so a failed ci check skips it`,
-        );
-      }
-      const skipsArch = steps.some((s) =>
-        logicalLines(s.run ?? '').some(
-          (l) =>
-            /\bharness ci check\b/.test(l) &&
-            /--skip(\s+|=)\S*\barch\b/.test(l),
-        ),
-      );
-      if (skipsArch) {
-        violations.push(
-          `${where}: harness ci check skips arch, so the summariser never consults ${target}`,
-        );
-      }
-    });
+        if (found.consumer.needsArchInCiCheck && skipsArch) {
+          violations.push(
+            `${where}: harness ci check skips arch, so the summariser never consults ${target}`,
+          );
+        }
+      });
+    }
   }
-  return { captures, violations };
+  return { files: set.length, captures, violations };
 }
 
-function realWorkflow(): Workflow {
-  return loadYaml(readFileSync(HARNESS_YML, 'utf-8')) as Workflow;
+/** Every workflow file, parsed. Throws rather than skipping one it cannot read. */
+function realWorkflows(): WorkflowSet {
+  return readdirSync(WORKFLOW_DIR)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .sort()
+    .map((f) => {
+      const parsed = loadYaml(
+        readFileSync(join(WORKFLOW_DIR, f), 'utf-8'),
+      ) as Partial<Workflow> | null;
+      if (
+        parsed === null ||
+        typeof parsed !== 'object' ||
+        parsed.jobs === null ||
+        typeof parsed.jobs !== 'object'
+      ) {
+        throw new Error(`${f}: parsed to no jobs map`);
+      }
+      return [f, parsed as Workflow];
+    });
 }
 
-/** A deep copy of harness.yml with `mutate` applied to its summariser step. */
+/** A deep copy of the real set with `mutate` applied to one workflow's job. */
 function mutated(
-  mutate: (summariser: Step, steps: Step[], wf: Workflow) => void,
-): Workflow {
-  const wf = structuredClone(realWorkflow());
-  const steps = wf.jobs!.harness!.steps!;
-  const summariser = steps.find((s) =>
-    s.run?.includes('harness-report-summary.mjs'),
-  )!;
-  mutate(summariser, steps, wf);
-  return wf;
+  file: string,
+  mutate: (steps: Step[], job: Job, set: WorkflowSet) => void,
+): WorkflowSet {
+  const set = structuredClone(realWorkflows());
+  const entry = set.find(([f]) => f === file);
+  if (!entry) throw new Error(`${file} not found`);
+  const job = Object.values(entry[1].jobs)[0]!;
+  mutate(job.steps!, job, set);
+  return set;
 }
 
-describe('#1208 — the check-arch capture is paired with a gating summariser', () => {
+const isSummariser = (s: Step) =>
+  String(s.run ?? '').includes('harness-report-summary.mjs');
+const isRefresh = (s: Step) =>
+  String(s.run ?? '').includes('refresh-arch-baseline.mjs');
+const summariser = (steps: Step[]) => steps.find(isSummariser)!;
+const refresher = (steps: Step[]) => steps.find(isRefresh)!;
+
+type Case = [
+  string,
+  string,
+  (s: Step[], j: Job, set: WorkflowSet) => void,
+  RegExp,
+];
+
+describe('#1208 — every swallowed check-arch capture has a fail-closed consumer', () => {
   describe('the predicate catches every way the pairing breaks', () => {
-    // Planted positives: each fixture is the real harness.yml with one line of
+    // Planted positives: each fixture is the real workflow set with one line of
     // the contract broken. Without them, a predicate that never fires would
-    // pass the real-workflow assertion below for the wrong reason.
-    const cases: Array<
-      [string, (s: Step, steps: Step[], wf: Workflow) => void, RegExp]
-    > = [
+    // pass the real-tree assertion below for the wrong reason.
+    const H = 'harness.yml';
+    const R = 'refresh-arch-baseline.yml';
+    const cases: Case[] = [
+      // Original pairing breaks.
       [
         'the summariser step is removed',
-        (s, steps) => steps.splice(steps.indexOf(s), 1),
+        H,
+        (s) => void s.splice(s.indexOf(summariser(s)), 1),
         /no later step/,
       ],
       [
-        'the summariser is continue-on-error',
-        (s) => {
-          s['continue-on-error'] = true;
-        },
+        'the summariser is continue-on-error: true',
+        H,
+        (s) => void (summariser(s)['continue-on-error'] = true),
         /cannot fail the job/,
       ],
       [
-        'the summariser swallows its own exit',
-        (s) => {
-          s.run = `${s.run!.trimEnd()} || true\n`;
-        },
+        'the summariser swallows its own exit with || true',
+        H,
+        (s) => void (summariser(s).run += ' || true'),
         /cannot fail the job/,
       ],
       [
-        'the summariser loses its !cancelled() condition',
-        (s) => {
-          delete s.if;
-        },
-        /!cancelled\(\)/,
+        'the summariser loses its condition',
+        H,
+        (s) => void delete summariser(s).if,
+        /can skip it/,
       ],
       [
         'the summariser reads a different file',
-        (s) => {
-          s.run = s.run!.replace(
+        H,
+        (s) =>
+          void (summariser(s).run = summariser(s).run!.replace(
             '--arch arch-report.json',
             '--arch other.json',
+          )),
+        /no later step/,
+      ],
+      [
+        'the summariser step is moved ahead of the capture step',
+        H,
+        (s) => {
+          const sum = summariser(s);
+          s.splice(s.indexOf(sum), 1);
+          s.splice(
+            s.findIndex((x) => String(x.run).includes('check-arch')),
+            0,
+            sum,
           );
         },
         /no later step/,
       ],
       [
-        'the summariser step is moved ahead of the capture step',
-        (s, steps) => {
-          steps.splice(steps.indexOf(s), 1);
-          const capture = steps.findIndex((x) => x.run?.includes('check-arch'));
-          steps.splice(capture, 0, s);
-        },
-        /no later step/,
-      ],
-      [
         'the summariser moves to another job',
-        (s, steps, wf) => {
-          steps.splice(steps.indexOf(s), 1);
-          wf.jobs!.other = { steps: [s] };
+        H,
+        (s, _j, set) => {
+          const sum = summariser(s);
+          s.splice(s.indexOf(sum), 1);
+          set.find(([f]) => f === H)![1].jobs.other = { steps: [sum] };
         },
         /no later step/,
       ],
       [
         'harness ci check skips arch',
-        (_s, steps) => {
-          const ci = steps.find((x) => x.run?.includes('harness ci check'))!;
+        H,
+        (s) => {
+          const ci = s.find((x) => String(x.run).includes('harness ci check'))!;
           ci.run = ci.run!.replace(
             '--skip phase-gate',
             '--skip phase-gate,arch',
@@ -240,40 +349,173 @@ describe('#1208 — the check-arch capture is paired with a gating summariser', 
         },
         /skips arch/,
       ],
+      // F1 — scope: every workflow, not just harness.yml.
+      [
+        'F1: the refresh consumer is removed',
+        R,
+        (s) => void s.splice(s.indexOf(refresher(s)), 1),
+        /refresh-arch-baseline\.yml.*no later step/,
+      ],
+      [
+        'F1: a step slips between the capture and a default-condition refresh',
+        R,
+        (s) => void s.splice(s.indexOf(refresher(s)), 0, { run: 'echo hi' }),
+        /can skip it/,
+      ],
+      [
+        'F1: a new workflow swallows check-arch with no consumer',
+        H,
+        (_s, _j, set) =>
+          void set.push([
+            'rogue.yml',
+            {
+              jobs: {
+                x: {
+                  steps: [
+                    {
+                      name: 'cap',
+                      run: 'harness check-arch --json > a.json || true',
+                    },
+                  ],
+                },
+              },
+            },
+          ]),
+        /rogue\.yml.*no later step/,
+      ],
+      // F2 — soft detection.
+      [
+        'F2: the summariser falls back with || echo',
+        H,
+        (s) => void (summariser(s).run += ' || echo "arch summary failed"'),
+        /\|\| fallback/,
+      ],
+      [
+        'F2: the summariser disables errexit',
+        H,
+        (s) => void (summariser(s).run = `set +e\n${summariser(s).run}`),
+        /errexit disabled/,
+      ],
+      [
+        'F2: the summariser ends with ; true',
+        H,
+        (s) =>
+          void (summariser(s).run = `${summariser(s).run!.trimEnd()} ; true`),
+        /trailing no-op/,
+      ],
+      [
+        'F2: the summariser pipes into tee',
+        H,
+        (s) =>
+          void (summariser(s).run =
+            `${summariser(s).run!.trimEnd()} | tee summary.log`),
+        /pipe/,
+      ],
+      [
+        "F2: continue-on-error is the string 'true'",
+        H,
+        (s) => void (summariser(s)['continue-on-error'] = 'true'),
+        /step continue-on-error/,
+      ],
+      [
+        'F2: continue-on-error is an expression',
+        H,
+        (s) => void (summariser(s)['continue-on-error'] = '${{ true }}'),
+        /step continue-on-error/,
+      ],
+      [
+        'F2: the job is continue-on-error',
+        H,
+        (_s, j) => void (j['continue-on-error'] = true),
+        /job continue-on-error/,
+      ],
+      // F3 — condition must be exact.
+      [
+        'F3: the condition is `false && !cancelled()`',
+        H,
+        (s) => void (summariser(s).if = '${{ false && !cancelled() }}'),
+        /can skip it/,
+      ],
+      [
+        'F3: the condition is success()',
+        H,
+        (s) => void (summariser(s).if = '${{ success() }}'),
+        /can skip it/,
+      ],
+      // F4 — command position.
+      [
+        'F4: the summariser line is only echoed',
+        H,
+        (s) =>
+          void (summariser(s).run =
+            'echo node scripts/harness-report-summary.mjs harness-report.json --arch arch-report.json'),
+        /no later step/,
+      ],
+      [
+        'F4: the refresh line is only echoed',
+        R,
+        (s) =>
+          void (refresher(s).run =
+            'echo node scripts/refresh-arch-baseline.mjs arch-report.json'),
+        /no later step/,
+      ],
     ];
 
-    for (const [label, mutate, reason] of cases) {
+    for (const [label, file, mutate, reason] of cases) {
       it(`flags it when ${label}`, () => {
-        const { captures, violations } = archCaptureContract(mutated(mutate));
-        expect(captures).toBe(1);
+        const { violations } = archCaptureContract(mutated(file, mutate));
         expect(violations.join('\n')).toMatch(reason);
       });
     }
 
     it('does not count a hard (non-swallowed) check-arch as a capture', () => {
-      const wf: Workflow = {
-        jobs: { a: { steps: [{ run: 'harness check-arch --json > r.json' }] } },
-      };
-      expect(archCaptureContract(wf)).toEqual({ captures: 0, violations: [] });
+      const set: WorkflowSet = [
+        [
+          'a.yml',
+          {
+            jobs: {
+              a: { steps: [{ run: 'harness check-arch --json > r.json' }] },
+            },
+          },
+        ],
+      ];
+      expect(archCaptureContract(set)).toEqual({
+        files: 1,
+        captures: 0,
+        violations: [],
+      });
     });
 
     it('flags a swallowed check-arch that writes no file', () => {
-      const wf: Workflow = {
-        jobs: {
-          a: { steps: [{ name: 'x', run: 'harness check-arch || true' }] },
-        },
-      };
-      expect(archCaptureContract(wf).violations.join('\n')).toMatch(
+      const set: WorkflowSet = [
+        [
+          'a.yml',
+          {
+            jobs: {
+              a: { steps: [{ name: 'x', run: 'harness check-arch || true' }] },
+            },
+          },
+        ],
+      ];
+      expect(archCaptureContract(set).violations.join('\n')).toMatch(
         /without writing a report file/,
       );
     });
+
+    it('throws on a job with neither steps nor uses, rather than iterating zero steps', () => {
+      const set = [['a.yml', { jobs: { a: {} } }]] as WorkflowSet;
+      expect(() => archCaptureContract(set)).toThrow(/neither steps nor/);
+    });
   });
 
-  it('holds on the real harness.yml, over a non-zero denominator', () => {
-    const { captures, violations } = archCaptureContract(realWorkflow());
-    // Zero captures would mean the swallow moved or was renamed out of reach;
-    // that is an abstention, not a pass.
-    expect(captures).toBeGreaterThan(0);
+  it('holds on every real workflow, over non-zero denominators', () => {
+    const { files, captures, violations } =
+      archCaptureContract(realWorkflows());
+    // Zero files or zero captures would mean the scan read nothing; that is an
+    // abstention, not a pass. Two captures today: harness.yml and
+    // refresh-arch-baseline.yml.
+    expect(files).toBeGreaterThan(0);
+    expect(captures).toBeGreaterThanOrEqual(2);
     expect(violations).toEqual([]);
   });
 });

@@ -57,12 +57,19 @@ verdict the summariser reinterprets. A later step in the same job reads the file
 and fails the job itself, with exit 1 on any `newViolations` and exit 3 when the
 report is missing, empty or has no `newViolations` field.
 
-That holds only while four lines of YAML do. The summariser must stay in the
-same job and read the same file via `--arch`. It must be able to fail, so no
-`|| true` and no `continue-on-error`. It must run after a failed step under
-`!cancelled()`. And `harness ci check` must not `--skip arch`, because the
-summariser consults the arch detail only when the CI report has an `arch` entry.
-`ts/test/arch-capture-contract.test.ts` fails if any of the four breaks.
+That holds only while the pairing does. The summariser must stay in the same
+job, be invoked in command position, and read the same file via `--arch`. It
+must be able to fail: no `||` fallback, pipe, `set +e` or trailing `; true`, and
+no `continue-on-error` at step or job level. Its condition must be exactly
+`!cancelled()` or `always()`, so a failed earlier step cannot skip it. And
+`harness ci check` must not `--skip arch`, because the summariser consults the
+arch detail only when the CI report has an `arch` entry.
+
+`refresh-arch-baseline.yml` swallows the same capture, and its consumer,
+`scripts/refresh-arch-baseline.mjs`, also exits 3 on a missing, empty or
+field-less report. `ts/test/arch-capture-contract.test.ts` scans every workflow
+and fails on any swallowed `check-arch` capture that lacks a declared
+fail-closed consumer meeting these rules.
 
 The red absolute exit itself is a stale baseline, not a defect: refreshing it is
 the human, label-gated `refresh-arch-baseline.yml` step.

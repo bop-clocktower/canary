@@ -77,9 +77,10 @@ jobs:
       # Refreshing the baseline is a human, label-gated step
       # (`refresh-arch-baseline.yml`), never something this step does.
       #
-      # The `|| true` is safe ONLY while the summariser below (same job, reads
-      # this file via `--arch`, no `|| true` / `continue-on-error`, runs under
-      # `!cancelled()`) exists and `harness ci check` does not `--skip arch`.
+      # The `|| true` is safe ONLY while the summariser below exists in this
+      # job, invoked in command position with `--arch` this file, with no `||`
+      # fallback, pipe, `set +e` or `continue-on-error`, under exactly
+      # `!cancelled()` — and while `harness ci check` does not `--skip arch`.
       # ts/test/arch-capture-contract.test.ts fails if any of that breaks.
       - name: Capture arch detail for the ratchet verdict
         if: ${{ !cancelled() }}
