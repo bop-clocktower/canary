@@ -107,12 +107,18 @@ function defaultGraphql(token: string): GraphqlPost {
       },
       body: JSON.stringify({ query, variables }),
     });
-    const json = (await resp.json()) as {
-      data?: Record<string, unknown>;
-      errors?: unknown;
-    };
-    if (!resp.ok || json.errors || !json.data) {
-      throw new Error(`GitHub GraphQL ${resp.status}: ${JSON.stringify(json)}`);
+    // Read text first: a gateway error (502/503) has an HTML body, and parsing
+    // it as JSON threw a SyntaxError that hid the status this error reports.
+    const text = await resp.text();
+    let json: { data?: Record<string, unknown>; errors?: unknown } | null;
+    try {
+      json = JSON.parse(text) as typeof json;
+    } catch {
+      json = null;
+    }
+    if (!resp.ok || !json || json.errors || !json.data) {
+      const detail = json ? JSON.stringify(json) : text.slice(0, 200);
+      throw new Error(`GitHub GraphQL ${resp.status}: ${detail}`);
     }
     return json.data;
   };
