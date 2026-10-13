@@ -1,0 +1,14 @@
+{
+  "issues": [1208],
+  "route": "cicd",
+  "stages": ["workflow-audit"],
+  "assumptions": [
+    "DECIDED fork (human, CONFIRM, F2=a): document why the check-arch capture's `|| true` is not masking and add a guard test; do NOT refresh the arch baseline, edit .harness/arch, or apply the refresh-baseline label.",
+    "MEASURED on d4b5681f with harness 12.10.1: `harness check-arch --json` exit 1, mode baseline, passed false, totalViolations 12 (all complexity thresholdViolations), newViolations 0, regressions 0, resolvedViolations 45.",
+    "SUMMARISER VERIFIED TO GATE: scripts/harness-report-summary.mjs with that report exits 0; with one planted newViolations entry exits 1; with an empty file exits 3; with a missing file exits 3. The issue's 'new violation lands silently' premise is obsolete since #968.",
+    "LATENT GAP (not live): archSection() returns 0 when the ci report has no `arch` entry, so `harness ci check --skip arch` would silently disable the new-violation gate. Guarded structurally in the new test; the script is unchanged.",
+    "REMAINING RED: the absolute exit stays 1 until a human applies refresh-baseline (refresh-arch-baseline.yml). Hence Refs, not a closing keyword."
+  ],
+  "closingKeyword": "Refs",
+  "reproducingTest": "ts/test/arch-capture-contract.test.ts"
+}

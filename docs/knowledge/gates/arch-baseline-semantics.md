@@ -48,6 +48,25 @@ exit 0. PR #959 merged an over-threshold module on that green (#968). In
 detail lists any `newViolations`. Allowance-covered violations are already
 filtered out of that list by the CLI.
 
+## The `|| true` on the `check-arch` capture is not masking
+
+`harness.yml` runs `harness check-arch --json > arch-report.json || true`, and
+on main that command exits 1 on every run (#1208; 12 pre-existing violations, 0
+new, on harness 12.10.1). The swallow is deliberate: the absolute exit is the
+verdict the summariser reinterprets. A later step in the same job reads the file
+and fails the job itself, with exit 1 on any `newViolations` and exit 3 when the
+report is missing, empty or has no `newViolations` field.
+
+That holds only while four lines of YAML do. The summariser must stay in the
+same job and read the same file via `--arch`. It must be able to fail, so no
+`|| true` and no `continue-on-error`. It must run after a failed step under
+`!cancelled()`. And `harness ci check` must not `--skip arch`, because the
+summariser consults the arch detail only when the CI report has an `arch` entry.
+`ts/test/arch-capture-contract.test.ts` fails if any of the four breaks.
+
+The red absolute exit itself is a stale baseline, not a defect: refreshing it is
+the human, label-gated `refresh-arch-baseline.yml` step.
+
 ## Three metrics are 0 by construction: no layer or cycle evidence
 
 In harness 12.10.1, three of the seven arch metrics cannot report anything,

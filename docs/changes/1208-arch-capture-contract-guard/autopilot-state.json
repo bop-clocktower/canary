@@ -1,0 +1,53 @@
+{
+  "item": "#1208",
+  "fleet": "cicd-fleet",
+  "option": "F2-A",
+  "scope": [
+    "document why the check-arch capture's `|| true` is not masking (workflow comment, arch-baseline-semantics.md, AGENTS.md pointer)",
+    "guard test binding the capture to a same-job, non-soft, !cancelled() summariser that reads the same file, with ci check keeping arch",
+    "no baseline refresh, no .harness/arch edits, no refresh-baseline label"
+  ],
+  "phase": "VERIFY",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "harness:workflow-audit over harness.yml; re-measure check-arch (exit 1, 12 total, 0 new, 45 resolved)",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "title": "Write ts/test/arch-capture-contract.test.ts; red against stubbed predicate and on-disk mutation",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "title": "Green on the real harness.yml",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "title": "Docs: harness.yml comment, docs/knowledge/gates/arch-baseline-semantics.md, AGENTS.md",
+      "status": "done"
+    },
+    {
+      "id": 5,
+      "title": "Local gates from ts/: build, typecheck, format:check, test",
+      "status": "done"
+    },
+    {
+      "id": 6,
+      "title": "Push, open PR (Refs #1208), watch CI",
+      "status": "in_progress"
+    }
+  ],
+  "assumptions": [
+    "DECIDED fork (human, CONFIRM): F2=a — document + guard, no baseline refresh",
+    "summariser verified to gate: probe exits 0 (measured report), 1 (planted new violation), 3 (empty), 3 (missing)",
+    "latent gap: a ci report without an `arch` entry makes the summariser ignore --arch (exit 0 over a planted new violation); guarded structurally by forbidding `--skip arch`, not changed in the script"
+  ],
+  "outOfScope": [
+    "missing top-level permissions block on harness.yml (workflow-audit M2 warning)",
+    "stale arch baseline / red absolute check-arch exit — human label-gated refresh-arch-baseline.yml"
+  ],
+  "verdict": "local gates green; awaiting CI and human review (not merged)"
+}

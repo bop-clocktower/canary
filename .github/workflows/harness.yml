@@ -69,6 +69,18 @@ jobs:
       # count, which is exactly the verdict we are here to reinterpret. The
       # failure is not swallowed: the summariser reads a missing, empty or
       # field-less report as an ABSTENTION and exits 3.
+      #
+      # On main this command is permanently red (#1208): 12 pre-existing
+      # complexity violations, 0 new, against a baseline that still records 45
+      # since-resolved ones. That is the stale-baseline state the summariser
+      # reports as BASELINE TRIP and exits 0 on; only `newViolations` blocks.
+      # Refreshing the baseline is a human, label-gated step
+      # (`refresh-arch-baseline.yml`), never something this step does.
+      #
+      # The `|| true` is safe ONLY while the summariser below (same job, reads
+      # this file via `--arch`, no `|| true` / `continue-on-error`, runs under
+      # `!cancelled()`) exists and `harness ci check` does not `--skip arch`.
+      # ts/test/arch-capture-contract.test.ts fails if any of that breaks.
       - name: Capture arch detail for the ratchet verdict
         if: ${{ !cancelled() }}
         run: harness check-arch --json > arch-report.json || true
