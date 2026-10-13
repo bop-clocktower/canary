@@ -141,6 +141,88 @@ function stepsOf(file: string, jobId: string, job: Job): Step[] {
   );
 }
 
+type Consumer = (typeof CONSUMERS)[number];
+
+/** The first later step in `steps` that invokes a declared consumer of `target`. */
+function findConsumer(
+  steps: Step[],
+  from: number,
+  target: string,
+): { at: number; consumer: Consumer } | null {
+  for (let at = from + 1; at < steps.length; at++) {
+    const lines = logicalLines(steps[at]!.run);
+    const consumer = CONSUMERS.find((c) =>
+      lines.some((l) => c.invokes(target).test(l)),
+    );
+    if (consumer) return { at, consumer };
+  }
+  return null;
+}
+
+/** Whether the consumer runs on every run in which the capture ran. */
+function consumerReachable(
+  steps: Step[],
+  captureAt: number,
+  consumerAt: number,
+): boolean {
+  const condition = normalisedIf(steps[consumerAt]!);
+  if (condition === '!cancelled()' || condition === 'always()') return true;
+  return (
+    condition === '' &&
+    normalisedIf(steps[captureAt]!) === '' &&
+    consumerAt === captureAt + 1
+  );
+}
+
+function ciCheckSkipsArch(steps: Step[]): boolean {
+  return steps.some((s) =>
+    logicalLines(s.run).some(
+      (l) =>
+        /\bharness ci check\b/.test(l) && /--skip(\s+|=)\S*\barch\b/.test(l),
+    ),
+  );
+}
+
+/** The violations for one swallowed capture at `steps[index]`. */
+function captureViolations(
+  where: string,
+  job: Job,
+  steps: Step[],
+  index: number,
+  archLine: string,
+): string[] {
+  const target = /(?<![0-9=])>\s*(\S+)/.exec(archLine)?.[1];
+  if (target === undefined) {
+    return [`${where}: swallows check-arch without writing a report file`];
+  }
+  const found = findConsumer(steps, index, target);
+  if (!found) {
+    return [
+      `${where}: no later step in the job invokes a declared fail-closed consumer of ${target}`,
+    ];
+  }
+  const out: string[] = [];
+  const name = found.consumer.name;
+  const soft = softReasons(steps[found.at]!, job);
+  if (soft.length > 0) {
+    out.push(
+      `${where}: the ${name} step that reads ${target} cannot fail the job (${soft.join('; ')})`,
+    );
+  }
+  if (!consumerReachable(steps, index, found.at)) {
+    const condition = normalisedIf(steps[found.at]!) || '(default success())';
+    out.push(
+      `${where}: the ${name} step's condition \`${condition}\` can skip it after the capture ran`,
+    );
+  }
+  if (found.consumer.needsArchInCiCheck && ciCheckSkipsArch(steps)) {
+    out.push(
+      `${where}: harness ci check skips arch, so the summariser never consults ${target}`,
+    );
+  }
+  return out;
+}
+
 /**
  * Every way a swallowed check-arch capture in `set` is left unguarded, as
  * human-readable reasons, plus both denominators so a caller can refuse to
@@ -163,59 +245,9 @@ function archCaptureContract(set: WorkflowSet): {
         if (!archLine || softReasons(step, job).length === 0) return;
         captures++;
         const where = `${file} › ${jobId} › ${step.name ?? `step ${index}`}`;
-        const target = /(?<![0-9=])>\s*(\S+)/.exec(archLine)?.[1];
-        if (target === undefined) {
-          violations.push(
-            `${where}: swallows check-arch without writing a report file`,
-          );
-          return;
-        }
-        let found: { at: number; consumer: (typeof CONSUMERS)[number] } | null =
-          null;
-        for (let at = index + 1; at < steps.length && !found; at++) {
-          const lines = logicalLines(steps[at]!.run);
-          const consumer = CONSUMERS.find((c) =>
-            lines.some((l) => c.invokes(target).test(l)),
-          );
-          if (consumer) found = { at, consumer };
-        }
-        if (!found) {
-          violations.push(
-            `${where}: no later step in job ${jobId} invokes a declared fail-closed consumer of ${target}`,
-          );
-          return;
-        }
-        const consumerStep = steps[found.at]!;
-        const soft = softReasons(consumerStep, job);
-        if (soft.length > 0) {
-          violations.push(
-            `${where}: the ${found.consumer.name} step that reads ${target} cannot fail the job (${soft.join('; ')})`,
-          );
-        }
-        const condition = normalisedIf(consumerStep);
-        const reachable =
-          condition === '!cancelled()' ||
-          condition === 'always()' ||
-          (condition === '' &&
-            normalisedIf(step) === '' &&
-            found.at === index + 1);
-        if (!reachable) {
-          violations.push(
-            `${where}: the ${found.consumer.name} step's condition \`${condition || '(default success())'}\` can skip it after the capture ran`,
-          );
-        }
-        const skipsArch = steps.some((s) =>
-          logicalLines(s.run).some(
-            (l) =>
-              /\bharness ci check\b/.test(l) &&
-              /--skip(\s+|=)\S*\barch\b/.test(l),
-          ),
+        violations.push(
+          ...captureViolations(where, job, steps, index, archLine),
         );
-        if (found.consumer.needsArchInCiCheck && skipsArch) {
-          violations.push(
-            `${where}: harness ci check skips arch, so the summariser never consults ${target}`,
-          );
-        }
       });
     }
   }
