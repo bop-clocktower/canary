@@ -684,6 +684,39 @@ function shapeForFrameworkOverride(
 }
 
 /**
+ * The scalar shape a run resolves, honoring a `--framework` override.
+ *
+ * #504 (2): the override must resolve the shape too. Without this, shape stays
+ * 'unknown' and every shape-keyed behavior downstream (overlay-skill matching,
+ * `<shape>:`-prefixed workflow templates) silently no-ops, so the override
+ * only half-works. An explicit `canary_shape` is a stronger statement of
+ * intent than the framework name, so it still wins.
+ *
+ * Shared by `migrate` and `checkFreshness`: the gate must examine exactly the
+ * skill set `migrate` deploys, so the two cannot resolve the override apart.
+ */
+function effectiveShape(
+  ctx: MigrationContext,
+  framework: string | null,
+  projectRoot: string,
+): string {
+  const explicitShape = String(ctx.harness_config['canary_shape'] ?? '')
+    .trim()
+    .toLowerCase();
+  if (!isTruthy(framework) || explicitShape !== '') return ctx.detected_shape;
+  // A workspace package that already declares this framework has already had
+  // its shape refined against its OWN spec files. The root-only refinement
+  // cannot see them -- in the reported repo the specs live in
+  // `apps/web-e2e/tests/`, so refining at the root reads zero spec files and
+  // falls back to the table default (#504).
+  return (
+    workspaceShapeForFramework(ctx.workspace, framework as string) ??
+    shapeForFrameworkOverride(framework as string, projectRoot) ??
+    ctx.detected_shape
+  );
+}
+
+/**
  * Return a human reason when *config* describes a skills/docs overlay (not a
  * migratable test suite), else null. Conservative: fires only when there are no
  * test `entryPoints` AND every declared layer is a docs/skills layer.
@@ -1700,25 +1733,7 @@ export class HarnessMigrator {
       ? 'override'
       : ctx.detection_confidence;
 
-    // #504 (2): the override must resolve the shape too. Without this, shape
-    // stays 'unknown' and every shape-keyed behavior downstream (overlay-skill
-    // matching, `<shape>:`-prefixed workflow templates) silently no-ops, so the
-    // override only half-works. An explicit `canary_shape` is a stronger
-    // statement of intent than the framework name, so it still wins.
-    const explicitShape = String(ctx.harness_config['canary_shape'] ?? '')
-      .trim()
-      .toLowerCase();
-    const overrideShape =
-      isTruthy(framework) && explicitShape === ''
-        ? // A workspace package that already declares this framework has
-          // already had its shape refined against its OWN spec files. The
-          // root-only refinement cannot see them -- in the reported repo the
-          // specs live in `apps/web-e2e/tests/`, so refining at the root reads
-          // zero spec files and falls back to the table default (#504).
-          (workspaceShapeForFramework(ctx.workspace, framework as string) ??
-          shapeForFrameworkOverride(framework as string, projectRoot))
-        : null;
-    const shape = overrideShape ?? ctx.detected_shape;
+    const shape = effectiveShape(ctx, framework, projectRoot);
     // The set that actually drives deployment. Re-derived from the *effective*
     // scalar rather than reusing `ctx.shapes`, so a `--framework` override
     // contributes its resolved shape to the union too (#504 parts 1-2).
@@ -2289,12 +2304,13 @@ export class HarnessMigrator {
       );
     }
 
-    const shape = ctx.detected_shape;
+    const shape = effectiveShape(ctx, options.framework ?? null, projectRoot);
     // The gate must examine exactly what `migrate` deploys. Resolving only the
     // scalar here would let `--check` report "in sync" about skills it never
     // looked at in a monorepo -- a deliberate false green in a drift gate
-    // (#504 part 1).
-    const shapes = ctx.shapes;
+    // (#504 part 1). Re-derived like `migrate`'s deployShapes so a framework
+    // override joins the union here too.
+    const shapes = unionShapes(shape, ctx.workspace);
     const skills = this.collectOverlaySkills(shapes, overlayPath);
     const targetSkillsDir = join(projectRoot, '.canary', 'skills');
     const manifest = readManifestDoc(targetSkillsDir).skills;
