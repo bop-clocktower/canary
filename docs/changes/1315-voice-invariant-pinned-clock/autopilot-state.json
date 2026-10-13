@@ -1,0 +1,46 @@
+{
+  "item": "#1315",
+  "fleet": "cicd-fleet",
+  "option": "F1-A",
+  "scope": [
+    "deflake the voice invariant test (criteria 3, 4) by pinning Date around both in-process main() runs",
+    "deterministic reproducing case that forces a real-clock second-boundary crossing between the runs",
+    "verify (not redo) the already-landed CANARY_NO_FLAVOR / NO_FLAVOR afterEach env-leak fix"
+  ],
+  "evidenceRuns": {
+    "flaky attempt 1 (59639c05 != b605fcdf)": 37982635124
+  },
+  "phase": "VERIFY",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Investigate: trace sha mismatch to json_report.mjs generated_at (second precision); confirm no other time source",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "title": "Write reproducing test: runPair helper + boundary-crossing case; red 3/3 before fix",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "title": "Fix: vi.useFakeTimers({ toFake: ['Date'] }) + vi.setSystemTime in beforeEach, vi.useRealTimers in afterEach",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "title": "Verify: 20x voice file green; revert-check red 3/3; skills test/typecheck/format:check green",
+      "status": "done"
+    },
+    { "id": 5, "title": "Push, open PR, watch CI", "status": "in_progress" }
+  ],
+  "assumptions": [
+    "DECIDED fork F1-A: pin the clock; never normalize generated_at, retry, skip, or loosen the assertion",
+    "only Date is faked: main() is synchronous and awaits no timer or fs promise",
+    "the guard reads the real clock via performance (not faked) and sync-sleeps with Atomics.wait, costing up to ~1s once"
+  ],
+  "outOfScope": [
+    "json_report.mjs itself: generated_at is a real, wanted field and stays unchanged"
+  ],
+  "verdict": "local gates green; awaiting CI and human review (not merged)"
+}
