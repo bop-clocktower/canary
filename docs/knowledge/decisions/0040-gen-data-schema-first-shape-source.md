@@ -2,7 +2,7 @@
 number: 0040
 title: gen-data shapes come from a schema first; the compiler API is opt-in
 date: 2026-10-15
-status: proposed
+status: accepted
 tier: medium
 source: docs/changes/765-synthetic-test-data/proposal.md
 ---
@@ -11,7 +11,7 @@ source: docs/changes/765-synthetic-test-data/proposal.md
 
 # ADR 0040 — gen-data shapes come from an explicit schema first
 
-**Status:** proposed **Date:** 2026-10-15 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-10-15 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #765 (source issue, closed); PR #986 (the D2 spike,
 `spike/765-shape-extraction/SPIKE_REPORT.md`);
 `docs/changes/765-synthetic-test-data/proposal.md` (D2, "D2 revisited after the
