@@ -1,0 +1,14 @@
+{
+  "issues": [1315],
+  "route": "bug",
+  "stages": ["debugging"],
+  "assumptions": [
+    "DECIDED fork (human, CONFIRM, F1=a): pin the clock with vi.useFakeTimers / vi.setSystemTime around both main() calls so every byte must still match; no normalizing or excluding generated_at, no retries, skip, or loosened assertion.",
+    "ROOT CAUSE (reproduced): renderJson() in agents/skills/claude-code/canary-test-reporter/scripts/json_report.mjs stamps generated_at from new Date() at second precision; the invariant test runs main() twice in-process and compares sha256 of both --json-out files, so a whole-second boundary between the runs changes one field and the hash. Reproduced deterministically by sync-sleeping on the real clock past the next second between the runs: 3/3 failed before the fix.",
+    "ENV-LEAK HALF: already fixed on main (top-level afterEach deletes CANARY_NO_FLAVOR and NO_FLAVOR); verified, not changed.",
+    "MECHANISM: the invariant describe fakes only Date (toFake: ['Date']) at 2026-01-01T00:00:00.999Z in beforeEach and restores real timers in afterEach; main() is synchronous so no timer or fs await is affected.",
+    "GUARD: the boundary-crossing case reads the real clock through performance (untouched by fake Date) and asserts generated_at equals the pinned instant plus byte-identity; with the pin removed it fails 3/3."
+  ],
+  "closingKeyword": "Fixes",
+  "reproducingTest": "agents/skills/test/canary-test-reporter-voice.test.ts"
+}

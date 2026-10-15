@@ -4,7 +4,7 @@
 // on and off, the line is deterministic, and a missing lines file degrades to
 // no footer. Proposal criteria 1-8.
 
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -202,6 +202,51 @@ describe('the invariant (criteria 3, 4)', () => {
   const sha = (p: string): string =>
     crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 
+  // #1315: json_report stamps generated_at from `new Date()`, so pin the clock
+  // for both runs and every byte must still match. Only Date is faked: main()
+  // is synchronous and never waits on a timer, and the real clock stays
+  // reachable through `performance` for the boundary-crossing case below.
+  const PINNED = new Date('2026-01-01T00:00:00.999Z');
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(PINNED);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Runs the reporter voiced, then with CANARY_NO_FLAVOR=1, on one input. */
+  function runPair(
+    p: number,
+    f: number,
+    k: number,
+    between: () => void = () => {},
+  ) {
+    const dir = mkTmp();
+    const res = results(dir, p, f, k);
+    const on = path.join(dir, 'on.json');
+    const off = path.join(dir, 'off.json');
+    const codeOn = run([
+      '--results',
+      res,
+      '--json-out',
+      on,
+      '--markdown-out',
+      path.join(dir, 'on.md'),
+    ]).code;
+    between();
+    process.env['CANARY_NO_FLAVOR'] = '1';
+    const codeOff = run([
+      '--results',
+      res,
+      '--json-out',
+      off,
+      '--markdown-out',
+      path.join(dir, 'off.md'),
+    ]).code;
+    return { on, off, codeOn, codeOff };
+  }
+
   it.each([
     ['all pass', 3, 0, 0],
     ['mixed', 2, 1, 1],
@@ -210,31 +255,29 @@ describe('the invariant (criteria 3, 4)', () => {
   ])(
     '%s: --json-out is byte-identical and the exit code matches',
     (_l, p, f, k) => {
-      const dir = mkTmp();
-      const res = results(dir, p, f, k);
-      const on = path.join(dir, 'on.json');
-      const off = path.join(dir, 'off.json');
-      const codeOn = run([
-        '--results',
-        res,
-        '--json-out',
-        on,
-        '--markdown-out',
-        path.join(dir, 'on.md'),
-      ]).code;
-      process.env['CANARY_NO_FLAVOR'] = '1';
-      const codeOff = run([
-        '--results',
-        res,
-        '--json-out',
-        off,
-        '--markdown-out',
-        path.join(dir, 'off.md'),
-      ]).code;
+      const { on, off, codeOn, codeOff } = runPair(p, f, k);
       expect(sha(on)).toBe(sha(off));
       expect(codeOn).toBe(codeOff);
     },
   );
+
+  // #1315: generated_at is stamped from the wall clock at second precision, so
+  // two runs that straddle a second boundary used to differ by that one field.
+  // Force the crossing (sleep on the real clock, which `performance` reads and
+  // fake Date does not touch) and require every byte to still match.
+  it('stays byte-identical when the wall clock crosses a second between the runs (#1315)', () => {
+    const crossSecond = (): void => {
+      const now = performance.timeOrigin + performance.now();
+      const wait = 1000 - (now % 1000) + 20;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
+    };
+    const { on, off, codeOn, codeOff } = runPair(2, 1, 1, crossSecond);
+    expect(JSON.parse(fs.readFileSync(on, 'utf8')).generated_at).toBe(
+      '2026-01-01T00:00:00Z',
+    );
+    expect(sha(on)).toBe(sha(off));
+    expect(codeOn).toBe(codeOff);
+  });
 });
 
 describe('lines file integrity (criterion 8)', () => {
