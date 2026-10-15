@@ -2,7 +2,7 @@
 number: 0038
 title: Mutation findings are advisory until a measured exit criterion
 date: 2026-10-15
-status: proposed
+status: accepted
 tier: medium
 source: docs/changes/486-diff-scoped-mutation-testing/proposal.md
 ---
@@ -11,7 +11,7 @@ source: docs/changes/486-diff-scoped-mutation-testing/proposal.md
 
 # ADR 0038 — Mutation findings are advisory until a measured exit criterion
 
-**Status:** proposed **Date:** 2026-10-15 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-10-15 **Deciders:** Bri Stevenski
 (maintainer) **Related:**
 [#486](https://github.com/bop-clocktower/canary/issues/486);
 `docs/changes/486-diff-scoped-mutation-testing/proposal.md` (D4, D5, D6; forks
