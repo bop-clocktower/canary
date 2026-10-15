@@ -1,0 +1,16 @@
+{
+  "issues": [1208],
+  "route": "cicd",
+  "stages": ["workflow-audit"],
+  "assumptions": [
+    "DECIDED fork (human, CONFIRM, F2=a): document why the check-arch capture's `|| true` is not masking and add a guard test; do NOT refresh the arch baseline, edit .harness/arch, or apply the refresh-baseline label.",
+    "MEASURED on d4b5681f with harness 12.10.1: `harness check-arch --json` exit 1, mode baseline, passed false, totalViolations 12 (all complexity thresholdViolations), newViolations 0, regressions 0, resolvedViolations 45.",
+    "SUMMARISER VERIFIED TO GATE: scripts/harness-report-summary.mjs with that report exits 0; with one planted newViolations entry exits 1; with an empty file exits 3; with a missing file exits 3. The issue's 'new violation lands silently' premise is obsolete since #968.",
+    "LATENT GAP (not live): archSection() returns 0 when the ci report has no `arch` entry, so `harness ci check --skip arch` would silently disable the new-violation gate. Guarded structurally in the new test; the script is unchanged.",
+    "SECURITY-REVIEW HARDENING (orchestrator relay, 4 fail-open findings): F1 scan every workflow, not just harness.yml (refresh-arch-baseline.yml:69 is a second swallowed capture), with non-zero file and capture (>=2) denominators and a declared fail-closed consumer per capture; F2 soft = any `||`, pipe, `set +e`, trailing `; true`, or step/job continue-on-error not absent/false; F3 consumer condition exactly `!cancelled()`/`always()` after stripping `${{ }}`, or default only when the capture is unconditioned and immediately followed; F4 consumer must be in command position. 17 fixtures red against the prior predicate, all green after.",
+    "REFRESH CONSUMER VERIFIED FAIL-CLOSED: scripts/refresh-arch-baseline.mjs exits 3 on a missing report, an empty file, and `{}` (no regressions field). The empty-file case was untested; added to ts/test/refresh-arch-baseline.test.ts as a characterization test (passes on the unchanged script).",
+    "REMAINING RED: the absolute exit stays 1 until a human applies refresh-baseline (refresh-arch-baseline.yml). Hence Refs, not a closing keyword."
+  ],
+  "closingKeyword": "Refs",
+  "reproducingTest": "ts/test/arch-capture-contract.test.ts"
+}

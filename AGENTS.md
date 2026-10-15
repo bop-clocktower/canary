@@ -832,7 +832,10 @@ and exits 0. PR #959 merged a 2,013-line `ts/src/history` that way. So the
 summary step exits **1** whenever `newViolations` is non-empty, and **3** when
 the supplied arch report is unreadable. Pre-existing violations over baselined
 debt exit 0. So do violations an allowance's `violationIds` covers, because
-`check-arch` removes those from `newViolations` before writing the report.
+`check-arch` removes those from `newViolations` before writing the report. The
+capture step's `|| true` is safe only because of that summary step (#1208);
+`ts/test/arch-capture-contract.test.ts` binds the pairing — see
+[arch baseline semantics](docs/knowledge/gates/arch-baseline-semantics.md).
 
 Locally, run the same classifier rather than `check-arch` on its own:
 

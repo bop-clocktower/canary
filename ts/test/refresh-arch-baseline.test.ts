@@ -205,6 +205,18 @@ describe('refresh-arch-baseline', () => {
     expect(out).toMatch(/abstain/i);
   });
 
+  it('abstains (3) on the empty file a crashed check-arch leaves behind', () => {
+    // The Measure step's `> arch-report.json || true` creates the file before
+    // the CLI runs, so a crash leaves it empty. That must not read as a report
+    // (#1208 — ts/test/arch-capture-contract.test.ts relies on this).
+    writeFileSync(reportPath, '');
+    const before = readFileSync(baselinePath, 'utf-8');
+    const { code, out } = run([reportPath, '--baseline', baselinePath]);
+    expect(code).toBe(3);
+    expect(out).toMatch(/abstain/i);
+    expect(readFileSync(baselinePath, 'utf-8')).toBe(before);
+  });
+
   it('abstains (3) when the report lacks the regressions field', () => {
     // Guessing "nothing regressed" from an absent field would be a fabricated
     // green — the same shape as reading a missing count as zero.
