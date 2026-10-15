@@ -2,7 +2,7 @@
 number: 0037
 title: The mutation report counts only what Stryker tested, and all of it
 date: 2026-10-15
-status: proposed
+status: accepted
 tier: medium
 source: docs/changes/486-diff-scoped-mutation-testing/proposal.md
 ---
@@ -11,7 +11,7 @@ source: docs/changes/486-diff-scoped-mutation-testing/proposal.md
 
 # ADR 0037 — The mutation report counts only what Stryker tested, and all of it
 
-**Status:** proposed **Date:** 2026-10-15 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-10-15 **Deciders:** Bri Stevenski
 (maintainer) **Related:** PR #1302; issue #1306 (repro branch
 `repro/bf-mutation-untested-statuses`);
 `docs/changes/486-diff-scoped-mutation-testing/proposal.md` (success criterion
