@@ -2,7 +2,7 @@
 number: 0039
 title: canary-ivy reports suite overgrowth and never recommends deleting a test
 date: 2026-10-15
-status: proposed
+status: accepted
 tier: small
 source: https://github.com/bop-clocktower/canary/issues/615
 ---
@@ -11,7 +11,7 @@ source: https://github.com/bop-clocktower/canary/issues/615
 
 # ADR 0039 — canary-ivy reports overgrowth, never deletion
 
-**Status:** proposed **Date:** 2026-10-15 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-10-15 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #615 (canary-ivy); ADR 0021 (direction-of-fit rule);
 ADR 0009 (exit 3 reserved for "abstained"); ADR 0013 and ADR 0030 (run-history
 store); ADR 0029 (repo-relative `test_file` join key);
