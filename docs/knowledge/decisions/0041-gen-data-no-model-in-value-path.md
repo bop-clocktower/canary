@@ -2,7 +2,7 @@
 number: 0041
 title: No model sits in gen-data's value path
 date: 2026-10-15
-status: proposed
+status: accepted
 tier: small
 source: docs/changes/765-synthetic-test-data/proposal.md
 ---
@@ -11,7 +11,7 @@ source: docs/changes/765-synthetic-test-data/proposal.md
 
 # ADR 0041 — No model sits in gen-data's value path
 
-**Status:** proposed **Date:** 2026-10-15 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-10-15 **Deciders:** Bri Stevenski
 (maintainer) **Related:**
 [#765](https://github.com/bop-clocktower/canary/issues/765);
 `docs/changes/765-synthetic-test-data/proposal.md` (D7, with D4 and D8); ADR
