@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- Synthetic: the shape `maestro test --format junit` writes. One case per -->
+<!-- flow; id, name and classname are the flow name. -->
+<testsuites>
+  <testsuite name="Test Suite" device="emulator-5554" tests="2" failures="1" time="42">
+    <testcase id="login_flow" name="login_flow" classname="login_flow" time="20.5" status="SUCCESS"/>
+    <testcase id="checkout_flow" name="checkout_flow" classname="checkout_flow" time="21.5" status="ERROR">
+      <failure>Element not found: Text matching regex: Pay</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

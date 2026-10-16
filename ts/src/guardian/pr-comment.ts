@@ -54,13 +54,34 @@ export class GitHubPermissionError extends Error {
   }
 }
 
-/** Map a non-2xx status to an error; ONLY 403 is a permission error. */
-function toGitHubError(status: number, url: string): Error {
-  return status === 403
-    ? new GitHubPermissionError(
+/**
+ * GitHub also answers 403 to a RATE-LIMITED token (primary limit:
+ * `x-ratelimit-remaining: 0`; secondary limit: `retry-after`). That is not a
+ * permission failure, and reporting it as one sends the reader off to fix a
+ * token that is fine (#931: the notice must say what failed).
+ */
+class GitHubRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GitHubRateLimitError';
+  }
+}
+
+function isRateLimited(headers: Headers | undefined): boolean {
+  return (
+    headers?.get('x-ratelimit-remaining') === '0' ||
+    (headers?.get('retry-after') ?? null) !== null
+  );
+}
+
+/** Map a non-2xx status to an error; a non-rate-limit 403 is a permission error. */
+function toGitHubError(status: number, url: string, headers?: Headers): Error {
+  if (status !== 403) return new Error(`GitHub API ${status}: ${url}`);
+  return isRateLimited(headers)
+    ? new GitHubRateLimitError(`GitHub API 403 (rate limited): ${url}`)
+    : new GitHubPermissionError(
         `GitHub API 403 (read-only token / fork PR?): ${url}`,
-      )
-    : new Error(`GitHub API ${status}: ${url}`);
+      );
 }
 
 /**
@@ -155,15 +176,17 @@ function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {
 
 /**
  * Update guardian's own sticky in place, else create one (SC-9: never stacks).
- * A 403 degrades to a `degraded` result instead of crashing the job (OT-4).
+ * A 403 degrades to a `degraded` result instead of crashing the job (OT-4) --
+ * on the lookup as well as the write, since the paged read maps 403 the same
+ * way (#528).
  */
 export async function upsertStickyComment(
   client: GitHubClient,
   body: string,
   marker: string = STICKY_MARKER,
 ): Promise<UpsertResult> {
-  const existing = findSticky(await client.listComments(), marker);
   try {
+    const existing = findSticky(await client.listComments(), marker);
     if (existing !== null) {
       const updated = await client.updateComment(existing.id, body);
       return { action: 'updated', comment_id: updated.id, notice: null };
@@ -176,6 +199,13 @@ export async function upsertStickyComment(
         action: 'degraded',
         comment_id: null,
         notice: `guardian: token lacks write permission on PR comments (HTTP 403) — findings not posted as a comment`,
+      };
+    }
+    if (err instanceof GitHubRateLimitError) {
+      return {
+        action: 'degraded',
+        comment_id: null,
+        notice: `guardian: GitHub API rate limit hit (HTTP 403) — findings not posted as a comment; re-run the job once the limit resets`,
       };
     }
     throw err;
@@ -239,7 +269,7 @@ export class RestGitHubClient implements GitHubClient {
       init.body = JSON.stringify(payload);
     }
     const resp = await fetch(url, init);
-    if (!resp.ok) throw toGitHubError(resp.status, url);
+    if (!resp.ok) throw toGitHubError(resp.status, url, resp.headers);
     return resp.json();
   }
 

@@ -632,6 +632,21 @@ describe('ledger', () => {
     expect(doc.entries[0].cause).toBe('blocked-data');
   });
 
+  it('a pending-feature row supersedes a causeless row for the same pair (#1330)', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [entry({ kind: 'skipped' })]);
+    const doc = ledger.appendEntries(p, [
+      entry({
+        kind: 'skipped',
+        cause: 'pending-feature',
+        issue: 'acme/widgets#3100',
+      }),
+    ]);
+    expect(doc.entries).toHaveLength(1);
+    expect(doc.entries[0].cause).toBe('pending-feature');
+    expect(doc.entries[0].issue).toBe('acme/widgets#3100');
+  });
+
   it('supersede is scoped to the pair — other tests are untouched', () => {
     const p = path.join(mkTmp(), 'q.json');
     ledger.appendEntries(p, [
@@ -678,12 +693,15 @@ describe('ledger', () => {
       'flaky',
       'product-defect',
       'blocked-data',
+      'pending-feature',
       'obsolete',
     ]);
-    // The two where the TEST is correct and someone else owns the fix.
+    // The three where the TEST is correct and someone else owns the fix:
+    // a product defect, missing data, or a feature that has not shipped.
     expect(ledger.CAUSES_REQUIRING_ISSUE).toEqual([
       'product-defect',
       'blocked-data',
+      'pending-feature',
     ]);
   });
 

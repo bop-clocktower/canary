@@ -14,8 +14,58 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Guardian no longer calls an edit inside a multi-line expression
+  "non-executable".** lcov records a multi-line statement on one line, so a
+  changed ternary arm, a term of a multi-line `a +` initializer, a method-chain
+  link or a property of a multi-line object literal had no record of its own and
+  was headlined `✅ nothing to test: only non-executable lines changed`, a false
+  green on a required check. The report tier now reads the changed file's source
+  and scores such a line by its statement's recorded line, so it gets a coverage
+  verdict or a finding. Comments, blank lines and statements the instrumenter
+  recorded nowhere (types, signatures, imports) stay non-executable. A source
+  that cannot be judged (unreadable, over 2 MB, shorter than the diff, or with
+  unbalanced brackets) now fails closed and is scored, where before it read as
+  `nothing to test`
+  ([#1314](https://github.com/bop-clocktower/canary/issues/1314)).
+
+### Changed
+
+- **`canary guardian pr-check` on a test-only diff whose added test asserts
+  nothing exits 3, not 0** (#1305). No source unit was checked, so the run
+  abstains, under both `--gate soft` and `--gate hard`. That matches the same
+  diff with an asserting test, or with `weakTests: false`. Before, the advisory
+  `weak-test` finding lifted the run past both abstain exits, so a worse test
+  turned an abstention into a pass. The `weak-test` findings are kept. The JSON
+  payload and the analysis record carry `abstained: true` (`checked: 0`). The
+  comment and text headline read
+  `abstained: no source unit checked (only added tests were judged)`. A CI step
+  that read exit 0 on such a PR as a pass must treat 3 as "not checked".
+
 ### Added
 
+- **katana `pending-feature` ledger cause.** The quarantine ledger has a fifth
+  cause for a correct test whose feature has not shipped or is behind a flag
+  that is off. Before this, producers filed those rows as `blocked-data`, so
+  dashboards could not tell "waiting on the feature" from "waiting on test
+  data". Like `product-defect` and `blocked-data`, it requires an `issue`:
+  manhunter flags `out as pending-feature with no linked issue`. A new parity
+  test fails if manhunter's copy of the issue-requiring causes drifts from
+  katana's. No schema bump; existing rows are unchanged (#1330).
+
+## [9.3.0] - 2026-10-12
+
+### Added
+
+- **`canary testtracker push --junit <file…> --suite <name>`.** vitest,
+  `node --test`, Newman and Maestro can now report to TestTracker: the command
+  reads their JUnit XML and sends it through the Playwright ingest reporter's
+  own payload builder and push. It prints its denominator, sends `collected`,
+  keeps same-named tests in different files apart, and abstains (exit 3) on a
+  report with zero testcases instead of pushing an empty run. See
+  [Ingest Reporter](docs/wiki/Ingest-Reporter.md#other-runners-junit-xml)
+  (#1320).
 - **`canary migrate` finds test configs below the root.** In a repo that
   declares no workspace, the config tier now also looks up to 3 directories
   down. It skips `node_modules`, `.git`, and build and tool output. A package
@@ -65,7 +115,8 @@ under the project's former name) are documented in the
   dir and fails on any changed, missing or stale file. Its failure message gives
   the fix: `node scripts/gemini-commands-drift.mjs --write`. If the generator is
   unavailable or emits nothing, it abstains with exit 3 instead of passing. It
-  runs as a blocking step in the Quality & Integrity `validate` job (#1249).
+  runs as a blocking step in the Quality & Integrity `validate` job (#1249;
+  #1270).
 
 - **canary-cassandra reads `@covers` on every test in a file** (#1232). In a
   JS/TS file only the first test's annotation was read; every later one was
@@ -83,6 +134,13 @@ under the project's former name) are documented in the
   `harness-quality.yml` passes the merge base's copy. A higher ceiling exits 1.
   A base copy that is missing or unreadable exits 3. This mirrors the entropy
   fix (#1247).
+- **A PR can no longer raise the entropy ceiling (#1247; #1258).** The test
+  meant to stop a raised `maxFindings` in `.harness/entropy-baseline.json`
+  compared the file with `HEAD:`, which is the same file, so it could never
+  fail. A ceiling raised from 145 to 200 passed. `scripts/entropy-ratchet.mjs`
+  now takes `--base-baseline`, and on pull requests `harness-quality.yml` passes
+  the merge base's copy. A higher ceiling exits 1, and a base copy that is
+  missing, not JSON or has no integer `maxFindings` exits 3.
 - **The quality ratchets' scans run the CLI version they report** (#1248).
   `harness-quality.yml` resolved the floating `@harness-engineering/cli@12` once
   for `--cli-version`, but each of the six scans (docs, entropy and perf, at
@@ -139,6 +197,142 @@ under the project's former name) are documented in the
   package. The release workflow now reads the published manifest back from the
   registry. It fails if any declared bin is missing and abstains with exit 3 if
   the version is not visible yet.
+- **Behavior change: `canary review-test -f <value>` rejects a framework it
+  cannot honour** (#1277). `--framework` accepted any value. Anything other than
+  `pytest` silently ran the JS rules, so `review-test README.md -f bogus`, or a
+  typo such as `-f Pytest` on a `.py` file, could print `✅ No issues found.`
+  and exit 0: a false clean. The option is now limited to
+  `pytest, playwright, vitest, k6`, and any other value is a usage error (exit
+  2). Every documented value works as before.
+- **`canary init <framework>` no longer calls a known framework unknown**
+  (#1273). For a framework the registry knows but has no scaffold template for,
+  init printed its guidance and then `❌ Error: exit 2` and the
+  unknown-framework list. Only the guidance is printed now. The exit code (2) is
+  unchanged.
+- **`canary workflow discover` ignores a `jira_projects` value that is not a
+  list** (#1281). `"jira_projects": "ABC"` in `.canary/company.json` used to
+  start discovery for the projects `A`, `B` and `C`, and `{}` threw a raw
+  `TypeError`. Only an array of strings is read now. Anything else reaches the
+  existing "No project keys found." refusal (exit 1).
+- **The MCP `canary__run_tests` tool reports the runner's real `passed` count**
+  (#1282). It counted how often the word "passed" appeared in the output, so
+  pytest's `3 passed` came back as `2`. It now reads the number from the
+  runner's last `<n> passed` summary (pytest, Playwright, vitest) and keeps the
+  old fallback when there is none. `failed` is still `0` or `1`.
+- **`canary history` JUnit reading and flake reporting** (#1292, #1293, #1294,
+  #1295).
+  - Two tests with the same `classname::name` in different files are no longer
+    folded into one `flaky` row. A failure in `a.test.js` followed by a pass in
+    `b.test.js` used to read as a retry that passed, which hid the failure from
+    the run's `failed` count. Retry folding is now keyed on file and name
+    (#1294).
+  - A numeric character reference above U+10FFFF (`&#x110000;`) in a JUnit
+    report is kept as written instead of crashing `history record` with a
+    `RangeError` stack trace (#1293).
+  - `history flaky --min-rate abc` is a usage error. It used to read `NaN`,
+    match nothing and print a clean "No tests above NaN% flake rate" with
+    exit 0. Every value accepted before (`10`, `2.5`, `10%`) still works
+    (#1295).
+  - The `runs_read` / `flaky_measurable` disclosure now describes the same
+    newest-by-timestamp window the flake query reads. In a backfilled store it
+    could describe a different run and claim `flaky_measurable: "yes"` over a
+    window that could not measure retry flakes (#1292).
+- **Guardian adjudication no longer over-counts true positives** (#1276, #1278,
+  #1279). Derived adjudication (ADR 0025) read a finding's absence from the last
+  sticky revision as proof it was fixed. That evidence is now refused when it
+  cannot show it, and the finding is classified `ambiguous` (excluded from
+  precision) instead: when the last sticky was cut for size or ran without
+  usable coverage (#1276), and when GitHub returned no `patch` for the file, so
+  a reviewer's `canary:allow-untested` suppression was invisible (#1278). A
+  suppression on an added line that starts with `++` (such as `++count;`) is now
+  read instead of being skipped as a diff header (#1279). Counts can only move
+  from true positive to ambiguous, so the precision behind soft-to-hard
+  promotion is no longer inflated.
+- **Guardian `pr-check` reads the paths a diff really names** (#1280, #1300).
+  Without `--diff`, the local `git diff` that `pr-check`, `author-plan` and the
+  pre-commit flow run now passes fixed flags, so a user's `diff.mnemonicPrefix`,
+  `color.ui=always` or `diff.external` setting can no longer produce `w/…`
+  paths, which broke suppressions and could fail `--gate hard`, or zero parsed
+  units (#1300). A plain `diff -u` header with a tab-separated timestamp no
+  longer leaks the timestamp into the file path, which had dropped every file
+  from the check (#1280).
+- **Guardian's heuristic coverage tier no longer reads untested code as covered,
+  or misses real tests** (#1286, #1287). It skips `node_modules` and `.git`, so
+  a dependency's own `*.test.*` file that mentions a common stem such as `index`
+  or `utils` no longer marks a repo file covered (#1287). Under the default repo
+  root it no longer cuts the first character off every test path, which had
+  hidden `tests/` files not named `test_*.py` and printed evidence such as
+  `referenced by ests/...` (#1286).
+- **Guardian type-only detection is not fooled by `/*` inside a string**
+  (#1285). A types file holding a literal such as `'**/*.test.ts'` read as one
+  unclosed block comment, so runtime code after it was suppressed as type-only
+  and never judged. Quoted text is now skipped before looking for a comment.
+- **Guardian's coverage delta no longer reports a `covered_lines`-only
+  coverage-json as compared and clean** (#1288). Such a report records only
+  covered lines, so both sides scored 100% and a real drop went unseen. Those
+  units are now unscoreable and listed in the existing "head-only" notice.
+  Reports that can express a miss are unchanged.
+- **Guardian's sticky PR comment** (#1272, #1274). A 403 on the comment
+  **lookup** now degrades the same way a 403 on the write does. Before, a token
+  that could not list comments, as on many fork PRs, crashed `pr-check` with a
+  `GitHubPermissionError` (#1272). The diff-provenance line is now counted in
+  the comment's 60,000-character budget, so a comment that fills the budget no
+  longer overshoots it (#1274).
+- **Guardian commands abstain on malformed input instead of crashing** (#1289,
+  #1299, #1303). `guardian analyze --spec-before/--spec-after` skips an empty
+  OpenAPI path item (`/x:` with no body) instead of throwing a `TypeError`
+  (#1289). `guardian analyze --coverage` skips an `endpoints` row with no string
+  `path` or `method` (#1299). `guardian mutation --report` exits 3 with a reason
+  when a Stryker file entry has no `mutants` list or a mutant has no `location`.
+  Before, it crashed with exit 1, which ADR 0009 defines as "survivors", so a
+  crash read as a verdict (#1303).
+- **Guardian's weak-test check sees past a regex literal with a bracket**
+  (#1304). A regex such as `/\(/` in an assertion-free test left the bracket
+  count open, so the test ran on into the next one and borrowed its `expect`.
+  Regex literals are now blanked like strings and comments, and `a / b / c` is
+  still read as division.
+- **LINT-006 counts unittest `self.assert*` calls as assertions** (#1309). Every
+  `unittest.TestCase` test using `self.assertEqual` and friends was reported as
+  containing no assertions.
+- **`canary heal-test --pattern` no longer adds `await` to sync Python tests**
+  (#1308). HEAL-003 rewrote `page.click(...)` as `await page.click(...)` inside
+  a plain `def`, which is a `SyntaxError`. HEAL-003 no longer runs on `.py`
+  files. HEAL-001 still does. An async Python test missing an `await` is no
+  longer auto-fixed.
+- **Generated tests see imports that span several lines** (#1301). The pattern
+  matcher missed any `import { … } from '…'` wrapped over several lines, which
+  is how a formatter writes a long one. Those imports now count toward the
+  project's `common_imports` and `assertion_style`.
+- **`canary vacuity-check` no longer hangs on a file that opens with a blank
+  line** (#1307). When a test file started with an empty line followed only by
+  blank, comment or decorator lines before its first test, the `@covers`
+  look-back looped forever, which also stalled the promotion gate. This was a
+  regression in the unreleased #1232 fix above, so 9.2.0 is not affected.
+- **Internal** (#1243, #1245; #1261; #1275).
+  - `branch-prune`, `rewind-replay` and `order-cli` tests build each git fixture
+    once and copy it per test, so their hooks no longer time out under load
+    (#1243, #1245; #1261).
+  - The leak gate's file scan now matches denylist terms that end in
+    punctuation, such as `+` or `.`. Before, `\b` boundaries made those terms
+    match nothing, so the gate failed open for them (#1275).
+
+### Security
+
+- **MCP server: every file tool is contained to the user's project** (#1327,
+  [GHSA-5c33-fcc5-v844](https://github.com/bop-clocktower/canary/security/advisories/GHSA-5c33-fcc5-v844)).
+  The served root is now the user's project, `CLAUDE_PROJECT_DIR` and then the
+  working directory, never the plugin install directory, and every path argument
+  is resolved and contained against it. Before, `init_suite`, `analyze_file`,
+  `migrate` and `run_tests` had no containment, and `write_test_file` checked
+  one path and wrote another. Users running canary as a Claude Code plugin were
+  affected. Upgrade to 9.3.0.
+- **Guardian's report readers treat report paths as data** (#1328,
+  [GHSA-w522-r2v2-gcc3](https://github.com/bop-clocktower/canary/security/advisories/GHSA-w522-r2v2-gcc3)).
+  The lcov, Cobertura, coverage-json, JUnit and Stryker readers keyed per-file
+  data on the report's own path strings, so a `__proto__` path in an untrusted
+  report, such as one from a fork PR's CI run, could write to
+  `Object.prototype`. Every such map is now a `Map` or a null-prototype object
+  read through `Object.hasOwn`. Upgrade to 9.3.0.
 
 ## [9.2.0] - 2026-10-09
 
@@ -4564,7 +4758,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.2.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.3.0...HEAD
+[9.3.0]: https://github.com/bop-clocktower/canary/compare/v9.2.0...v9.3.0
 [9.2.0]: https://github.com/bop-clocktower/canary/compare/v9.1.0...v9.2.0
 [9.1.0]: https://github.com/bop-clocktower/canary/compare/v9.0.0...v9.1.0
 [9.0.0]: https://github.com/bop-clocktower/canary/compare/v8.0.0...v9.0.0

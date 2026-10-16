@@ -40,7 +40,9 @@ import {
  * are exactly the coverable set — see `FileCoverage`.
  */
 function parseLcov(text: string): ReportIndex {
-  const byPath: Record<string, LineHits> = {};
+  // Null-prototype maps: a report path is attacker-shaped text, and on a plain
+  // object `SF:__proto__` would write hit counts onto Object.prototype.
+  const byPath: Record<string, LineHits> = Object.create(null);
   let current: string | null = null;
   for (const line of splitLines(text)) {
     if (line.startsWith('SF:')) {
@@ -54,7 +56,7 @@ function parseLcov(text: string): ReportIndex {
       current = null;
     }
   }
-  const index: ReportIndex = {};
+  const index: ReportIndex = Object.create(null);
   for (const [path, hits] of Object.entries(byPath)) {
     index[path] = selfDescribing(hits);
   }
@@ -179,7 +181,7 @@ export function instrumentedTrees(
     const p = isAbsolute(raw) ? relative(root, raw).split(sep).join('/') : raw;
     const clean = p.replace(/^\.\//, '');
     const top = clean.split('/')[0]!;
-    groups.set(top, [...(groups.get(top) ?? []), clean]);
+    (groups.get(top) ?? groups.set(top, []).get(top)!).push(clean);
   }
   return [...groups.values()].map((paths) => {
     const tree = anchorPrefix(paths, reportPath, root) + commonDir(paths);

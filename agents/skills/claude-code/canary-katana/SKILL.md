@@ -259,8 +259,22 @@ abc123" is provenance, not a judgement about why the test is out of the suite.
 
 `reason` and `cause` are deliberately separate. `reason` is **derived** (the
 commit subject). `cause` is **asserted** — one of `flaky`, `product-defect`,
-`blocked-data`, `obsolete`. Collapsing them would dress an auto-derived string
-up as a claim someone stands behind.
+`blocked-data`, `pending-feature`, `obsolete`. Collapsing them would dress an
+auto-derived string up as a claim someone stands behind.
+
+Three causes **require an `issue`**: `product-defect`, `blocked-data` and
+`pending-feature`. In each, the test is correct and someone else owns the fix,
+so a row with no link decays into an unexplained skip. Katana does not enforce
+this at write time; consumers do (manhunter flags
+`out as <cause> with no linked issue`, and `canary-ci-ready` fails an unlinked
+quarantine). Use `pending-feature` when a correct test covers behaviour that has
+not shipped, or has shipped behind a flag that is off; link the feature's
+ticket. It is not `blocked-data`: the owner and the trigger differ (the feature
+team ships the feature, not someone supplying environment data), and filing one
+as the other sends whoever looks for data work to feature work. The release rule
+is the same for every cause: **remove the row when the test passes live**, not
+when the ticket closes. A closed ticket with a still-failing test is exactly
+what the ledger exists to keep visible (#1330).
 
 **One row per `(test, file)` may state a cause, and a caused row wins.** A row
 with a cause supersedes a causeless row for the same pair, and a causeless row

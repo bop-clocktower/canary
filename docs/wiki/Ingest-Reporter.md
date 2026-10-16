@@ -260,6 +260,82 @@ Pushing from each shard also works now (each shard lands as its own run,
 `…-s1of4`, `…-s2of4`), but the dashboard then shows a sharded suite as several
 partial runs. `merge-reports` remains the recommended setup.
 
+## Other runners: JUnit XML
+
+The reporter above is a Playwright reporter. Every other runner reports through
+`canary testtracker push`, which reads JUnit XML and sends it through the same
+config, payload builder, size budget and push (#1320):
+
+```bash
+canary testtracker push --junit <file…> --suite <name> \
+  [--workflow <label>] [--no-collected] [--dry-run]
+```
+
+One adapter covers each runner's JUnit output:
+
+```bash
+# vitest
+vitest run --reporter=junit --outputFile=junit.xml
+# node --test
+node --test --test-reporter=junit --test-reporter-destination=junit.xml
+# Newman
+newman run collection.json -r junit --reporter-junit-export junit.xml
+# Maestro
+maestro test flows/ --format junit --output junit.xml
+
+canary testtracker push --junit junit.xml --suite web-unit
+```
+
+Pass several reports to push them as one run (`--junit a.xml b.xml`, or repeat
+`--junit`). `CANARY_INGEST_URL` and `CANARY_INGEST_TOKEN` are required unless
+`--dry-run`, which prints the payload instead. Unlike the reporter, the command
+pushes whenever they are set: running it is the request to push.
+`CANARY_INGEST_ENVIRONMENT`, `CANARY_INGEST_AREA_MAP` and
+`CANARY_INGEST_TEST_FILE_PREFIX` work as above. `workflow` defaults to `junit`.
+The command does not write a `canary.run/1` file.
+
+**Identity.** `full_title` is `file > suite… > classname > name`, from whichever
+of those the report carries. A classname that repeats the file (vitest), the
+name (Maestro) or the request (Newman), or is node's constant `test`, is left
+out. Same-named tests in different files stay separate rows.
+
+| Runner        | `full_title`                              | `test_file`      |
+| ------------- | ----------------------------------------- | ---------------- |
+| vitest        | `tests/cart/math.test.ts > math > adds`   | the test file    |
+| `node --test` | `math > adds` (describe chain, then name) | the JUnit report |
+| Newman        | `Users / Get user > Status code is 200`   | the JUnit report |
+| Maestro       | `Test Suite > login_flow`                 | the JUnit report |
+
+`node --test` (Node 22) writes no file into its JUnit report, so two files'
+top-level `shared name` tests are identical there. The command keeps both,
+numbering the later ones `shared name [2]` in report order, and says so in its
+output. That identity follows report order; give such tests distinct names or a
+`describe` if their history matters. A report with a `file` attribute (vitest's
+`addFileAttribute`, surefire) uses it.
+
+**Status.** `<failure>` or `<error>` is `failed`, with the `message` attribute
+as `error_message` and the element text as `error_stack` (Maestro writes text
+only, which becomes the message). `<skipped>` is `skipped`; node's `type="todo"`
+adds a `todo` tag and a skip message adds `reason:<text>`. Inline `@tags` in a
+test name become tags, as in the reporter.
+
+**Retries.** Surefire's `<flakyFailure>`/`<flakyError>`/`<rerunFailure>`/
+`<rerunError>` count into `retries`, and with no final failure the test is
+`flaky`. None of the four runners writes them: vitest reports a test that passed
+on `retry` as a plain pass, and `node --test`, Newman and Maestro have no retry
+marker in JUnit, so their `retries` is always 0.
+
+**The denominator.** The command prints how many testcases it read from how many
+reports and the results it sends by status. `collected` carries every testcase,
+so the dashboard has the suite's denominator. Pass `--no-collected` (or
+`CANARY_INGEST_COLLECTED=false`) when the reports are a subset of the suite,
+such as a shard or a name filter: JUnit cannot say so itself.
+
+**Exit codes.** `0` pushed (or printed). `1` a report is missing, unreadable or
+not JUnit, or the run was not ingested (a rejected push, or a duplicate whose
+results were discarded). `2` usage. `3` abstained: a report holds zero
+testcases, so nothing was pushed rather than a smaller, greener run.
+
 ## The `canary.run/1` file
 
 With `runFile` set, the reporter also writes the run as a
@@ -302,6 +378,10 @@ Validate a file with
   identity, tags, catalog filters and result rows.
 - [`ingest/transport.ts`](../../npm/src/reporters/ingest/transport.ts) — the
   POST, retry and log output.
+- [`ingest/junit.ts`](../../npm/src/reporters/ingest/junit.ts) — JUnit XML to
+  result rows.
+- [`npm/src/testtracker.ts`](../../npm/src/testtracker.ts) —
+  `canary testtracker push`.
 
 ## Convergence
 

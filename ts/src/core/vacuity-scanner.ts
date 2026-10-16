@@ -146,7 +146,8 @@ const SCRIPT_PATH_LITERAL =
  * A declaration binding one name to an expression -- the statement-bounded form
  * used to spot a handle on a first-party script.
  */
-const JS_SIMPLE_DECL = /(?:^|\n)\s*(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)/g;
+const JS_SIMPLE_DECL =
+  /(?:^|\n)[^\S\n]*(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)/g;
 
 /** The child-process launchers whose first argument is an executable target. */
 const SUBPROCESS_LAUNCH =
@@ -198,10 +199,17 @@ const PY_STDLIB = new Set([
  * declaration's `=` must not be followed by `>`. A multi-line annotation, or an
  * object type with `;` members, is still missed: the safe direction, because a
  * missed declaration can only leave a finding standing, never silence one.
+ *
+ * The leading indent is `[^\S\n]*`, not `\s*`, here and in every
+ * `(?:^|\n)`-anchored pattern in this file. These run over BLANKED source, where
+ * a big multi-line fixture is a long run of spaces and newlines, and `\s*`
+ * restarted at every newline in it and re-consumed the rest of the run --
+ * quadratic, ~23s on a 16,000-line fixture. The match set is unchanged: a
+ * declaration after blank lines is still found from the last newline.
  */
 const JS_LOCAL_DECL =
-  /(?:^|\n)\s*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(?:\{([^}]*)\}|\[([^\]]*)\]|(\w+))(?:\s*:(?:[^=;\n]|=>)+?)?\s*=(?![=>]))/g;
-const PY_LOCAL_DECL = /(?:^|\n)\s*def\s+(\w+)\s*\(/g;
+  /(?:^|\n)[^\S\n]*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(?:\{([^}]*)\}|\[([^\]]*)\]|(\w+))(?:\s*:(?:[^=;\n]|=>)+?)?\s*=(?![=>]))/g;
+const PY_LOCAL_DECL = /(?:^|\n)[^\S\n]*def\s+(\w+)\s*\(/g;
 
 /**
  * A destructuring ASSIGNMENT with no declarator: `({ write, findings } =
@@ -589,7 +597,7 @@ function oneLevelHelpers(decls: LocalDecl[], direct: Set<string>): Set<string> {
  * it abstains (#1170) rather than being judged on a helper nobody read.
  */
 const JS_UNINITIALIZED_DECL =
-  /(?:^|\n)\s*(?:let|var)\s+([A-Za-z_$][\w$]*)\s*(?::(?:[^=;\n]|=>)+)?;/g;
+  /(?:^|\n)[^\S\n]*(?:let|var)\s+([A-Za-z_$][\w$]*)\s*(?::(?:[^=;\n]|=>)+)?;/g;
 
 function unresolvedNames(code: string, decls: LocalDecl[]): Set<string> {
   const resolved = new Set(decls.flatMap((d) => d.names));
@@ -1319,7 +1327,11 @@ function annotationFor(
   const decl = python ? block.bodyStart : jsDeclarationStart(code, block);
   let from = code.lastIndexOf('\n', decl - 1) + 1;
   while (from > 0) {
-    const above = code.lastIndexOf('\n', from - 2) + 1;
+    // Search a slice, not `lastIndexOf('\n', from - 2)`: at `from === 1` that
+    // index is -1, which `lastIndexOf` clamps to 0 -- so a file opening with a
+    // blank line found its own leading `\n`, `above` stayed 1, and the walk
+    // never advanced (a hang on any file whose first line is empty).
+    const above = code.slice(0, from - 1).lastIndexOf('\n') + 1;
     if (!attachesToDeclaration(code.slice(above, from - 1), python)) break;
     from = above;
   }

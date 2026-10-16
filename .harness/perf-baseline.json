@@ -25,6 +25,11 @@
     },
     {
       "rule": "coupling",
+      "path": "npm/src/testtracker.ts",
+      "why": "`canary testtracker push` (#1320) is a CLI wiring module: it imports the ingest reporter's config, payload, transport and JUnit modules and is imported only by npm/src/router.ts, which IS a coupling ratio of 1.00 — the same shape as uninstall.ts, doctor.ts and overlay-commands.ts, all already in the backlog. Its reading and summary half was split into reporters/ingest/junit-run.ts (two local imports, not flagged) and its arg parser flattened, so the complexity and file-length findings this module first introduced were FIXED, not allowanced; only the structural coupling finding is."
+    },
+    {
+      "rule": "coupling",
       "path": "ts/src/**/cli.ts",
       "why": "A CLI wiring module imports many modules and is imported by few, which IS a coupling ratio of 1.00 — the rule fires on the shape, not on a defect. Splitting a subcommand into its own module is the change this repo wants; taxing it pushed work into the already-oversized ts/src/cli.ts."
     },

@@ -247,9 +247,30 @@ export interface GuardianDeps {
   sleep(secs: number): Promise<void>;
 }
 
+/**
+ * Flags pinning `git diff` output to the shape the diff parser reads. Raw
+ * `git diff` honours user config: `diff.mnemonicPrefix` (`i/`/`w/`),
+ * `diff.noprefix` and `diff.srcPrefix`/`dstPrefix` leak into every scoped path
+ * and suppression lookup; `color.diff=always` hides the `+++` headers behind
+ * ANSI codes; `diff.external` replaces the patch with another tool's output.
+ */
+const PARSEABLE_DIFF_FLAGS = [
+  '--no-ext-diff',
+  '--no-color',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+];
+
+/** `args` with {@link PARSEABLE_DIFF_FLAGS} inserted when it runs `git diff`. */
+function withParseableDiff(args: string[]): string[] {
+  return args[0] === 'diff'
+    ? ['diff', ...PARSEABLE_DIFF_FLAGS, ...args.slice(1)]
+    : args;
+}
+
 /** Run `git`; `null` when the binary is missing (Python OSError fail-safe). */
 function spawnGit(args: string[], cwd?: string): GitResult | null {
-  const res = spawnSync('git', args, {
+  const res = spawnSync('git', withParseableDiff(args), {
     encoding: 'utf-8',
     maxBuffer: Infinity,
     ...(cwd ? { cwd } : {}),
@@ -766,13 +787,24 @@ function loadSpec(path: string, deps: GuardianDeps): Record<string, unknown> {
   return (loadYaml(text) ?? {}) as Record<string, unknown>;
 }
 
+/**
+ * A row `mapImpact` can key: an object with a string `path` and `method`. Every
+ * other element is skipped, so one malformed row cannot crash `analyze`.
+ */
+function isKeyableCoverageRow(row: unknown): row is CoverageRow {
+  const r = row as Partial<CoverageRow> | null;
+  return typeof r?.path === 'string' && typeof r.method === 'string';
+}
+
 function loadCoverage(path: string): CoverageRow[] {
   if (!existsSync(path)) return [];
   try {
     const data = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
     if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
       const endpoints = (data as { endpoints?: unknown }).endpoints;
-      return Array.isArray(endpoints) ? (endpoints as CoverageRow[]) : [];
+      return Array.isArray(endpoints)
+        ? endpoints.filter(isKeyableCoverageRow)
+        : [];
     }
     return [];
   } catch {
@@ -1358,6 +1390,23 @@ function installedVersion(repoRoot: string, pkg: string): string | null {
 }
 
 /**
+ * A `files` entry `mapStrykerReport` can walk: a `mutants` array whose every
+ * mutant carries `location.start`. Anything else would throw mid-mapping, and
+ * an uncaught throw exits 1 -- which ADR 0009 reads as "survivors".
+ */
+function isMappableStrykerFile(file: unknown): boolean {
+  const mutants = isRecord(file) ? file['mutants'] : undefined;
+  return (
+    Array.isArray(mutants) &&
+    mutants.every((m) => isRecord(m) && hasStart(m['location']))
+  );
+}
+
+function hasStart(location: unknown): boolean {
+  return isRecord(location) && isRecord(location['start']);
+}
+
+/**
  * Map a Stryker report file, or abstain with the reason it could not be.
  *
  * NOT diff-scoped: every mutant the supplied report contains is mapped, so a
@@ -1385,6 +1434,13 @@ function mappedStrykerReport(
       excluded,
     );
   }
+  if (!Object.values(parsed['files']).every(isMappableStrykerFile)) {
+    return abstainedReport(
+      `the stryker report at ${path} has a file entry without a "mutants" ` +
+        'list of located mutants',
+      excluded,
+    );
+  }
   const mapped = mapStrykerReport(parsed as unknown as StrykerReport, {
     excludedTests: excluded,
   });
@@ -1401,7 +1457,8 @@ function mutatedSources(
   report: MutationReport,
   repoRoot: string,
 ): Record<string, string[]> {
-  const sources: Record<string, string[]> = {};
+  // Null-prototype: a Stryker path is report text (`__proto__`, `constructor`).
+  const sources: Record<string, string[]> = Object.create(null);
   for (const finding of report.findings) {
     if (finding.path in sources) continue;
     try {
@@ -1488,6 +1545,27 @@ interface PrCheckOptions {
   analysesDir?: string;
 }
 
+/**
+ * The `--gate` override, held to the same rule as the config gate: anything
+ * outside {soft, hard} warns loudly and falls back to the configured gate.
+ * Unchecked, a typo such as `--gate hrad` reached `computeExitCode`, which
+ * reads every non-`hard` value as soft -- a hard gate disabled in silence.
+ */
+function gateOverride(
+  raw: string | undefined,
+  configGate: string,
+  deps: GuardianDeps,
+): string {
+  if (raw === undefined) return configGate;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'soft' || normalized === 'hard') return normalized;
+  deps.err(
+    `WARNING: guardian --gate must be 'soft' or 'hard', got "${raw}"; ` +
+      `using the configured gate (${configGate})`,
+  );
+  return configGate;
+}
+
 async function prCheckCmd(
   opts: PrCheckOptions,
   deps: GuardianDeps,
@@ -1505,7 +1583,7 @@ async function prCheckCmd(
     throw new CliExitError(0);
   }
 
-  const effectiveGate = opts.gate ?? config.pr_gate;
+  const effectiveGate = gateOverride(opts.gate, config.pr_gate, deps);
 
   // #369: in CI an omitted `--diff` resolves the PR diff from the base ref;
   // the working-tree fallback is empty on a clean checkout.
@@ -1639,11 +1717,15 @@ async function prCheckCmd(
   // calls above make, and the one that consumer run needed. It does not exit
   // through `abstainPrCheck`: those findings are worth showing, so the run keeps
   // every surface and changes only its headline and its exit code.
-  const coverageAbstained = isCoverageAbstention(coverage, findings);
+  // #1305: so is checking no unit and finding only weak tests (findings > 0 here).
+  const abstained =
+    isCoverageAbstention(coverage, findings) ||
+    (scoredResults.length === 0 &&
+      findings.every((f) => f.kind === 'weak-test'));
 
   // Compute the gate result once, up front: the emitted record carries it and it
   // is the process exit at the end (SC-4 -- emit never changes the exit logic).
-  const exitCode = coverageAbstained
+  const exitCode = abstained
     ? EXIT_ABSTAINED
     : computeExitCode(findings, effectiveGate);
 
@@ -1651,7 +1733,7 @@ async function prCheckCmd(
   // never saw a coverage report cannot present as one that checked and passed.
   const gateMeta: GateMeta = {
     checked: scoredResults.length,
-    abstained: coverageAbstained,
+    abstained,
     coverage,
     // #606: the delta's own denominator, so "no regressions" can never be read
     // as "compared and clean" on a run that compared nothing.
@@ -1697,7 +1779,7 @@ async function prCheckCmd(
       // #761: a coverage abstention DOES reach emit — unlike the
       // findings-eligible abstention, it keeps its findings, so a machine
       // consumer must see the flag rather than infer a result from the array.
-      abstained: coverageAbstained,
+      abstained,
       coverage,
       skipped: allSkips,
       // #761: the archived artifact is where an inflated diff gets diagnosed
@@ -1931,15 +2013,28 @@ async function watchCmd(opts: WatchOptions, deps: GuardianDeps): Promise<void> {
  * abc` polled with a zero delay. Throwing `InvalidArgumentError` turns both
  * into a commander usage error, which exits 2.
  */
-function parsePositiveInt(value: string): number {
+function parsePositiveInt(value: string, max: number): number {
   const n = Number(value.trim());
   if (!Number.isInteger(n) || n <= 0) {
     throw new InvalidArgumentError(
       `must be a positive integer, got "${value}"`,
     );
   }
+  if (n > max) {
+    throw new InvalidArgumentError(`must be at most ${max}, got "${value}"`);
+  }
   return n;
 }
+
+/**
+ * Upper bounds the consumers can actually hold. A positive integer is not
+ * enough: `precision --days 1000000000` pushed the window start past the Date
+ * range (the same `RangeError` the parser exists to prevent), and `watch
+ * --interval 2147484` overflowed setTimeout's 32-bit millisecond delay, which
+ * Node clamps to 1 ms -- the zero-delay poll loop again.
+ */
+const MAX_PRECISION_DAYS = 36_500; // a century of merged PRs
+const MAX_WATCH_INTERVAL_SECS = Math.floor((2 ** 31 - 1) / 1000);
 
 /** Collect a repeatable option value into an array (commander pattern). */
 function collect(value: string, previous: string[]): string[] {
@@ -2036,7 +2131,7 @@ export function createGuardianCommand(
     .addOption(
       new Option('--days <n>', 'Merged-PR window in days.')
         .default(14)
-        .argParser(parsePositiveInt),
+        .argParser((v) => parsePositiveInt(v, MAX_PRECISION_DAYS)),
     )
     .option('--json', 'Emit the report as JSON (precision null = unknown).')
     .action(async (opts: PrecisionOptions) => {
@@ -2160,7 +2255,7 @@ export function createGuardianCommand(
     .addOption(
       new Option('--interval <secs>', 'Polling interval in seconds.')
         .default(300)
-        .argParser(parsePositiveInt),
+        .argParser((v) => parsePositiveInt(v, MAX_WATCH_INTERVAL_SECS)),
     )
     // Python's `watch` declares `--suite` with NO `-s` short form (unlike
     // `analyze`); adding `-s` here would accept an invocation Python rejected.

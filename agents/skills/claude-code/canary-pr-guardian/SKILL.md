@@ -59,7 +59,11 @@ Run the Tier-0 pass and read its findings:
 canary guardian pr-check --format json
 ```
 
-Findings are `untested-new-code` gaps. If there are none, report clean and stop.
+Findings are `untested-new-code` gaps. If there are none, report clean and stop
+— unless the run **abstained** (exit 3, `abstained: true`). A test-only diff
+whose only findings are `weak-test` checked no source unit, so it abstains
+rather than passing (#1305); report the abstention and its weak-test findings,
+never "clean".
 
 **Coverage regressions (#606).** `--coverage` alone answers only "is this
 changed unit covered at all?". To also catch a unit whose coverage _fell_

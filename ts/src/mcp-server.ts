@@ -27,9 +27,9 @@
  *     {@link CanaryTestExecutor} (spawnSync, maxBuffer:Infinity).
  *   - **pathlib -> node:path/fs.** `Path(...).suffix` semantics are reproduced
  *     by {@link fileExtension} (empty for a trailing dot or dotfile).
- *   - **Python truthiness.** `target_dir or _WORKING_DIR` uses `||`; the env
- *     default for `_WORKING_DIR` uses `??` to mirror `os.environ.get(k, cwd)`
- *     (an explicitly-empty env var stays `""`).
+ *   - **Python truthiness.** `target_dir or _WORKING_DIR` uses `||`. The served
+ *     root itself deliberately diverges from Python - see
+ *     {@link resolveServedRoot}.
  *   - **ensure_ascii.** Hand-built JSON returned to the MCP host is escaped via
  *     the shared {@link ensureAscii} (`util/ensure-ascii.ts`) so non-ASCII units
  *     emit `\uXXXX` (ASCII-safe JSON).
@@ -84,11 +84,36 @@ const SERVER_NAME = 'canary';
 const SERVER_VERSION = '0.1.0';
 
 /**
- * Python: `_WORKING_DIR = os.environ.get("CLAUDE_PLUGIN_ROOT", os.getcwd())`.
- * `??` (not `||`) mirrors `dict.get(key, default)`: an env var set to `""`
- * keeps `""`; only an unset var falls back to the cwd.
+ * The directory the server serves: every path argument is contained to it.
+ *
+ * Resolution order is `CANARY_PROJECT_ROOT` (explicit override), then
+ * `CLAUDE_PROJECT_DIR` (the user's project, set by Claude Code), then `cwd`.
+ * An empty-string variable counts as unset. The result is an absolute realpath
+ * (falling back to the lexical absolute path when it does not exist yet).
+ *
+ * Deliberate divergence from the Python reference, which used
+ * `os.environ.get("CLAUDE_PLUGIN_ROOT", os.getcwd())`: Claude Code sets
+ * `CLAUDE_PLUGIN_ROOT` to the plugin's INSTALL directory, and a plugin-launched
+ * server inherits it. Rooting there confines every tool to the plugin cache and
+ * refuses every path in the user's project, so it is never consulted.
+ *
+ * Pure in its inputs (env object + cwd) so tests do not depend on load order.
  */
-const WORKING_DIR = process.env['CLAUDE_PLUGIN_ROOT'] ?? process.cwd();
+export function resolveServedRoot(
+  env: Readonly<Record<string, string | undefined>>,
+  cwd: string,
+): string {
+  const chosen = env['CANARY_PROJECT_ROOT'] || env['CLAUDE_PROJECT_DIR'] || cwd;
+  const absolute = resolve(cwd, chosen);
+  try {
+    return realpathSync(absolute);
+  } catch {
+    return absolute;
+  }
+}
+
+/** The served root, resolved once at startup. */
+const WORKING_DIR = resolveServedRoot(process.env, process.cwd());
 
 const CONFIG_FRAMEWORK_GLOBS: readonly (readonly [
   string,
@@ -435,13 +460,26 @@ export function findExistingTests(
 // Tool implementation functions (Python: _*_impl)
 // ---------------------------------------------------------------------------
 
-/** Python: `_analyze_file_impl`. */
-export function analyzeFileImpl(filePath: string): Record<string, unknown> {
+/**
+ * Python: `_analyze_file_impl`. The path is contained to `root` first: this
+ * tool returns the file's leading lines, so an unconfined path is an arbitrary
+ * file read. The project-root walk is clamped to `root` too, so a `.git` above
+ * the served root never widens what gets scanned and reported.
+ */
+export function analyzeFileImpl(
+  requestedPath: string,
+  root: string = WORKING_DIR,
+): Record<string, unknown> {
+  const contained = containPath(requestedPath, root);
+  if ('error' in contained) return contained;
+  const filePath = contained.path;
   if (!existsSync(filePath)) {
-    return { error: `file not found: ${filePath}` };
+    return { error: `file not found: ${requestedPath}` };
   }
 
-  const projectRoot = projectRootFor(filePath);
+  const walked = projectRootFor(filePath);
+  const projectRoot =
+    resolveInsideRoot(walked, root) === null ? resolve(root) : walked;
   const pattern = new PatternMatcher().scan(projectRoot);
   const domain = new DomainScanner().scan(projectRoot);
 
@@ -540,10 +578,7 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
  *
  * @returns the resolved absolute path, or `null` when it escapes `root`.
  */
-export function resolveInsideRoot(
-  candidate: string,
-  root: string,
-): string | null {
+function resolveInsideRoot(candidate: string, root: string): string | null {
   let realRoot: string;
   try {
     realRoot = realpathSync(resolve(root));
@@ -574,9 +609,31 @@ export function resolveInsideRoot(
   return resolved;
 }
 
-/** The refusal an MCP tool returns when a path argument escapes its root. */
-function escapeError(path: string): Record<string, unknown> {
-  return { error: `path escapes the project root: ${path}` };
+/**
+ * The single containment gate every path-taking MCP tool goes through.
+ *
+ * Returns the path the tool must then read, write, or execute -- `candidate`
+ * resolved against `root` -- so the path that was checked is the path that is
+ * used. (Checking against `root` but then acting on the raw argument would
+ * resolve a relative path against the server's cwd instead: a different file
+ * from the one approved.) Refused, with a message naming the reason, when the
+ * argument escapes `root` by `..`, by an absolute path, or through a symlink,
+ * or when it is option-shaped (leading `-`): a value that reaches a spawned
+ * runner's argv must never be parseable as a flag.
+ */
+function containPath(
+  candidate: string,
+  root: string,
+): { path: string } | { error: string } {
+  if (candidate.startsWith('-')) {
+    return {
+      error: `path argument looks like a command-line option: ${candidate}`,
+    };
+  }
+  if (resolveInsideRoot(candidate, root) === null) {
+    return { error: `path escapes the project root: ${candidate}` };
+  }
+  return { path: resolve(root, candidate) };
 }
 
 /** Python: `_write_test_file_impl`. */
@@ -601,23 +658,42 @@ export function writeTestFileImpl(
   // Checked on the FINAL path, after the extension is inferred, and before the
   // first filesystem mutation -- `mkdirSync` below would otherwise create
   // directories outside the root even when the write itself were refused.
-  if (resolveInsideRoot(outPath, root) === null) return escapeError(outPath);
-  mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, content, 'utf-8');
-  return { written_path: outPath };
+  const contained = containPath(outPath, root);
+  if ('error' in contained) return contained;
+  mkdirSync(dirname(contained.path), { recursive: true });
+  writeFileSync(contained.path, content, 'utf-8');
+  return { written_path: contained.path };
+}
+
+/**
+ * The runner's own passed count: the number in the LAST "<n> passed" of the
+ * output, which is the summary line for pytest ("3 passed in 0.1s"),
+ * Playwright ("  3 passed (1.2s)") and vitest ("Tests  3 passed (3)", after
+ * its "Test Files" line). The Python port counted " passed" substrings and
+ * added one on exit 0, so "3 passed" came back as 2. With no summary at all,
+ * the old fallback stands: one on a clean exit, else zero.
+ */
+function passedFromOutput(output: string, exitCode: number): number {
+  const counts = [...output.matchAll(/(\d+) passed/g)];
+  const last = counts[counts.length - 1];
+  if (last === undefined) return exitCode === 0 ? 1 : 0;
+  return Number(last[1]);
 }
 
 /** Python: `_run_tests_impl`. */
 export function runTestsImpl(
-  testFile: string,
+  requestedFile: string,
   root: string = WORKING_DIR,
 ): Record<string, unknown> {
   // The same containment the write path gets: this spawns a test runner over
   // the named file, so an unconfined path is arbitrary code execution, not
-  // merely an arbitrary read. Refused before the executor is constructed.
-  if (resolveInsideRoot(testFile, root) === null) {
-    return { passed: 0, failed: 1, exit_code: 1, ...escapeError(testFile) };
+  // merely an arbitrary read. Refused before the executor is constructed, and
+  // the runner receives the resolved absolute path, never the raw argument.
+  const contained = containPath(requestedFile, root);
+  if ('error' in contained) {
+    return { passed: 0, failed: 1, exit_code: 1, ...contained };
   }
+  const testFile = contained.path;
   const suffix = extname(testFile).toLowerCase();
   const framework = suffix === '.py' ? 'pytest' : 'playwright';
   const executor = new CanaryTestExecutor();
@@ -630,21 +706,21 @@ export function runTestsImpl(
     return { passed: 0, failed: 0, output: errStr(exc), exit_code: 1 };
   }
   const output = (stdout || '') + (stderr || '');
-  // `output.count(" passed")` - non-overlapping occurrences.
-  const passedCount = output.split(' passed').length - 1;
-  const passed = passedCount + (exitCode === 0 ? 1 : 0);
+  const passed = passedFromOutput(output, exitCode);
   const failed = exitCode === 0 ? 0 : 1;
   return { passed, failed, output, exit_code: exitCode };
 }
 
-/** Python: `_init_suite_impl`. */
+/** Python: `_init_suite_impl`. `targetDir` is contained to `root`. */
 export function initSuiteImpl(
   framework: string,
   targetDir: string,
+  root: string = WORKING_DIR,
 ): Record<string, unknown> {
-  const target = targetDir || WORKING_DIR;
+  const contained = containPath(targetDir || root, root);
+  if ('error' in contained) return contained;
   const scaffolder = new Scaffolder();
-  const result = scaffolder.scaffold(framework, target);
+  const result = scaffolder.scaffold(framework, contained.path);
   const createdFiles = (result['created_files'] as string[]) ?? [];
   const createdDirs = (result['created_dirs'] as string[]) ?? [];
   const out: Record<string, unknown> = {
@@ -670,14 +746,20 @@ export function listFrameworksImpl(): Record<string, unknown> {
   return { frameworks: names, details: registry.summaries() };
 }
 
-/** Python: `_migrate_impl`. */
+/**
+ * Python: `_migrate_impl`. `targetDir` is contained to `root` on dry-run as
+ * well as apply: detection reads the target's config, and apply writes there.
+ */
 export function migrateImpl(
   targetDir: string,
   apply: boolean,
+  root: string = WORKING_DIR,
 ): Record<string, unknown> {
-  const root = targetDir || WORKING_DIR;
+  const contained = containPath(targetDir || root, root);
+  if ('error' in contained) return contained;
+  const projectDir = contained.path;
   const migrator = new HarnessMigrator();
-  const ctx = migrator.detect(root);
+  const ctx = migrator.detect(projectDir);
   if (!ctx.is_harness_project) {
     // #319 C: distinguish "config present but not a test project" from a
     // genuinely missing config.
@@ -686,7 +768,7 @@ export function migrateImpl(
     }
     return { error: 'no harness.config.json found' };
   }
-  const report = migrator.migrate(root, { dryRun: !apply });
+  const report = migrator.migrate(projectDir, { dryRun: !apply });
   if (report.dry_run) {
     return {
       framework: report.framework,

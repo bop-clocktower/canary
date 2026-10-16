@@ -956,3 +956,13 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
 - **Plan:** docs/changes/canary-batwoman/plans/2026-08-23-canary-batwoman-phase1-core-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#749
+
+### canary-huntress — targeted regression pursuit
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** [NOT PLANNED — ADR 0021] Not built, and nothing shipped under this row. ADR 0021 (docs/knowledge/decisions/0021-huntress-folds-into-cry.md) decided that targeted pursuit of one defect class is a mode of canary-cry (#608), not a separate skill, and that the canary-huntress name stays reserved. Issue #617 was closed as not planned on that basis. The row is archived so the live roadmap stops listing a closed, decided item as backlog; `done` here means the decision is final, not that a capability exists. Original row: Ideation rank 12 (score 2.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Hunt one specific defect CLASS across the entire suite and its history, rather than exploring broadly. First attempt to give the previously reserved canary-huntress name a scope; it did not clear the bar, so the name remains reserved.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#617

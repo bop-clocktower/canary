@@ -55,7 +55,7 @@ export function isTypeOnlyModule(path: string, repoRoot: string): boolean {
 }
 
 /** Drop `//` and `/* *\/` comments so keywords inside prose never count. */
-function stripComments(source: string): string {
+export function stripComments(source: string): string {
   const out: string[] = [];
   let inBlock = false;
   for (const line of splitLines(source)) {
@@ -70,8 +70,12 @@ function stripComments(source: string): string {
       inBlock = false;
     }
     for (;;) {
-      const start = text.indexOf('/*');
+      const start = commentStart(text);
       if (start === -1) break;
+      if (text[start + 1] === '/') {
+        text = text.slice(0, start);
+        break;
+      }
       const end = text.indexOf('*/', start + 2);
       if (end === -1) {
         text = text.slice(0, start);
@@ -80,10 +84,42 @@ function stripComments(source: string): string {
       }
       text = text.slice(0, start) + text.slice(end + 2);
     }
-    const line2 = text.indexOf('//');
-    out.push(line2 === -1 ? text : text.slice(0, line2));
+    out.push(text);
   }
   return out.join('\n');
+}
+
+/**
+ * Index of the first `//` or `/*` that is NOT inside a string literal, or -1.
+ *
+ * A glob-typed literal such as `'**\/*.test.ts'` is ordinary in a types file;
+ * read as a comment opener, its `/*` blanked every following line, so runtime
+ * code after it was never judged and the module was wrongly suppressed. A
+ * quote left open at end of line just ends the scan: the rest stays code,
+ * which can only keep a finding, never hide one.
+ */
+function commentStart(text: string): number {
+  let quote: string | null = null;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (quote !== null) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = null;
+    } else if (QUOTES.has(ch)) {
+      quote = ch;
+    } else if (opensComment(text, i)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+export const QUOTES: ReadonlySet<string> = new Set(["'", '"', '`']);
+const COMMENT_SECOND: ReadonlySet<string> = new Set(['/', '*']);
+
+/** True if a `//` or `/*` begins at `text[i]`. */
+function opensComment(text: string, i: number): boolean {
+  return text[i] === '/' && COMMENT_SECOND.has(text[i + 1] ?? '');
 }
 
 /**
@@ -124,22 +160,86 @@ function isErasableTopLevelLine(line: string): boolean {
  * the rest of the file from inspection.
  */
 function isTypeOnlySource(source: string): boolean {
-  let depth = 0;
+  const scan: Scan = { depth: 0, inInterface: false };
   for (const raw of splitLines(stripComments(source))) {
-    const line = raw.trim();
-    if (depth === 0 && !isErasableTopLevelLine(line)) return false;
-    depth += bracketDelta(line);
-    if (depth < 0) return false;
+    if (!scanLine(raw.trim(), scan)) return false;
   }
-  return depth === 0;
+  return scan.depth === 0;
 }
 
-/** Net nesting change across one line: openers minus closers. */
-function bracketDelta(line: string): number {
-  let delta = 0;
-  for (const ch of line) {
-    if (ch === '{' || ch === '(' || ch === '[') delta += 1;
-    else if (ch === '}' || ch === ')' || ch === ']') delta -= 1;
+/** Nesting state carried across lines. */
+interface Scan {
+  depth: number;
+  /** The open top-level statement is an interface, so its `}` ends it. */
+  inInterface: boolean;
+}
+
+/**
+ * Judge every top-level statement that STARTS on `line`, not only the first.
+ *
+ * A statement starts at the line's beginning (when at depth 0), after a
+ * depth-0 `;`, and after the `}` that closes an interface. Judging by line
+ * prefix alone let `export type A = string; register('x');` or an interface
+ * closed by `} register('x');` pass as type-only, hiding the call. A type
+ * alias's `}` does not end it (`} & Base;` continues the alias). Brackets and
+ * `;` inside string literals are ignored.
+ */
+function scanLine(line: string, scan: Scan): boolean {
+  if (scan.depth === 0 && !startStatement(line, scan)) return false;
+  let quote: string | null = null;
+  for (let i = 0; i < line.length; i++) {
+    if (quote !== null || QUOTES.has(line[i]!)) {
+      [quote, i] = stepQuote(line, i, quote);
+    } else if (!stepCode(line, i, scan)) {
+      return false;
+    }
   }
-  return delta;
+  return true;
+}
+
+/**
+ * Consume one code character (outside any string): track nesting, and judge
+ * the next statement when this character ends the current one. False on an
+ * unbalanced closer or a non-erasable statement.
+ */
+function stepCode(line: string, i: number, scan: Scan): boolean {
+  const ch = line[i]!;
+  scan.depth += BRACKET_DELTA[ch] ?? 0;
+  if (scan.depth < 0) return false;
+  return !endsStatement(ch, scan) || startStatement(line.slice(i + 1), scan);
+}
+
+const BRACKET_DELTA: Readonly<Record<string, number>> = {
+  '{': 1,
+  '(': 1,
+  '[': 1,
+  '}': -1,
+  ')': -1,
+  ']': -1,
+};
+
+/** Advance through a string literal: the new quote state and index. */
+export function stepQuote(
+  line: string,
+  i: number,
+  quote: string | null,
+): [string | null, number] {
+  const ch = line[i]!;
+  if (quote === null) return [ch, i];
+  if (ch === '\\') return [quote, i + 1];
+  return [ch === quote ? null : quote, i];
+}
+
+/** True if `ch`, just consumed, closed the current top-level statement. */
+function endsStatement(ch: string, scan: Scan): boolean {
+  if (scan.depth !== 0) return false;
+  return ch === ';' || (ch === '}' && scan.inInterface);
+}
+
+/** Judge the statement starting at `rest`, recording whether it is an interface. */
+function startStatement(rest: string, scan: Scan): boolean {
+  const text = rest.replace(/^[\s;]+/, '');
+  scan.inInterface =
+    /^(?:export\s+(?:default\s+)?|declare\s+)*interface\s/.test(text);
+  return isErasableTopLevelLine(text);
 }

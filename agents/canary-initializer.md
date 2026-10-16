@@ -22,7 +22,9 @@ scaffold tools.
    not to scaffolded config or test files. If none, use neutral voice.
 
 2. Call `canary__init_suite` with the chosen framework and an empty
-   `target_dir` (defaults to the plugin root).
+   `target_dir` (defaults to the user's project root: `CANARY_PROJECT_ROOT`,
+   else `CLAUDE_PROJECT_DIR`, else the server's cwd). A non-empty
+   `target_dir` must resolve inside that root, or the tool refuses it.
 
 3. Report the list of created files and directories from the response.
    Remind the user to install the framework's dependencies if applicable

@@ -34,6 +34,14 @@ the design rationale.
   gating**, even under `gate: hard` — it surfaces the gap, never blocks the
   merge. Disable by setting `canary.guardian.pr.weakTests` to `false`.
 
+  Advisory does not mean it counts as a check, though ([#1305]). A test-only
+  diff checks no source unit, so it **abstains** (exit 3, `abstained: true`)
+  under either gate — and it still abstains when the added test is weak. The
+  weak-test findings stay on every surface, under the headline
+  `abstained: no source unit checked (only added tests were judged)`. Before
+  #1305 the weak finding lifted that run to exit 0, so a worse test turned an
+  abstention into a pass.
+
   The signal is tuned for precision over recall (it should not nag on correct
   tests): snapshot/table-driven tests and the common assertion styles (`expect`,
   `assert`, chai `.should`, `pytest.raises`, `assert_*` helpers in Python and
@@ -141,11 +149,34 @@ the report has nothing to say about it and the guardian abstains for that unit,
 falling through to the graph or heuristic tier rather than inventing either a
 pass or a finding.
 
+"No record" is not the same as "not executable" for a statement that spans lines
+([#1314]). lcov (v8 and istanbul alike) and coverage.py record a multi-line
+statement on **one** line, so a ternary's arms, the terms of a multi-line `a +`
+initializer, the links of a method chain and the properties of a multi-line
+object literal carry no record of their own, yet they run. The report tier reads
+the changed file's source at head and scores such a continuation line by its
+statement's recorded line: covered when that line was hit, a finding when it was
+not. The judgement is lexical: one linear pass that tracks open brackets, object
+literals versus blocks, trailing and leading operators, regex literals and
+multi-line template literals. A statement with no recorded line anywhere is one
+the instrumenter itself judged non-executable (a type, a signature, an import),
+and only it, blank lines and comments stay "not coverable". Everything else
+fails **closed**, toward "code", since a wrong "code" costs one noisy finding
+and a wrong "not code" hides untested code. If the brackets do not balance,
+every non-blank line is scored by the nearest recorded line above it. If the
+source is unreadable, larger than 2 MB, or shorter than the diff (not the source
+the diff describes), the file is scored as if the report never said what it
+measured: every changed line counts, and absence means uncovered.
+
 The rule is per-**report**, because absence only means "not coverable" where the
 report says what it measured. lcov and Cobertura say so by construction. The
 `coverage.json` contract does not: a line absent from both of its fields is
 uncovered, and its `covered_lines` shorthand cannot express an unhit line at
-all, so absence there counts as a miss.
+all, so absence there counts as a miss. For the same reason the coverage delta
+(`--base-coverage`) cannot score a file whose entry declares no
+`instrumented_lines` and records no `line_hits` 0: every line it lists is
+covered, so its ratio is 100% on both sides whatever changed. Such a file is
+reported head-only, never as compared-and-clean.
 
 A coverage-json producer can opt in to the lcov rule per file by declaring
 `instrumented_lines` ([#657]) — the set of lines its tool actually measured.
@@ -383,13 +414,13 @@ reaction and nothing is stored
 ([ADR 0025](../knowledge/decisions/0025-adjudication-without-reactions.md)). For
 each finding on the guardian sticky's **first** revision of a merged PR:
 
-| What happened by merge                                                             | Verdict               |
-| ---------------------------------------------------------------------------------- | --------------------- |
-| a later commit covered it (coverage-verified finding gone, file still in the diff) | true positive         |
-| the merged diff adds `// canary:allow-untested <reason>` on that file              | intentional, excluded |
-| the reason starts with `fp:`, e.g. `// canary:allow-untested fp: type-only barrel` | **false positive**    |
-| it disappeared without coverage evidence (heuristic tier, file left the diff)      | ambiguous, excluded   |
-| still on the last revision at merge                                                | unresolved, excluded  |
+| What happened by merge                                                                                                                                     | Verdict               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| a later commit covered it (coverage-verified finding gone, file still in the diff)                                                                         | true positive         |
+| the merged diff adds `// canary:allow-untested <reason>` on that file                                                                                      | intentional, excluded |
+| the reason starts with `fp:`, e.g. `// canary:allow-untested fp: type-only barrel`                                                                         | **false positive**    |
+| it disappeared without coverage evidence (heuristic tier, file left the diff, or the last revision omitted rows for size or had no usable coverage report) | ambiguous, excluded   |
+| still on the last revision at merge                                                                                                                        | unresolved, excluded  |
 
 So when a finding is wrong, say so where the reasoning lives: suppress it with
 an `fp:` reason.
@@ -455,9 +486,11 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#553]: https://github.com/bop-clocktower/canary/issues/553
 [#655]: https://github.com/bop-clocktower/canary/issues/655
 [#657]: https://github.com/bop-clocktower/canary/issues/657
+[#1314]: https://github.com/bop-clocktower/canary/issues/1314
 [#738]: https://github.com/bop-clocktower/canary/issues/738
 [#747]: https://github.com/bop-clocktower/canary/issues/747
 [#761]: https://github.com/bop-clocktower/canary/issues/761
+[#1305]: https://github.com/bop-clocktower/canary/issues/1305
 
 Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
 config, which makes `canary guardian pr-check` exit non-zero on an unaddressed

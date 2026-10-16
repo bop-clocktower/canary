@@ -39,6 +39,7 @@ import {
   setupCmd,
   ticketUpdateCmd,
   uninstallCmd,
+  testtrackerCmd,
   upgradeCmd,
   vacuityCheckCmd,
   versionCmd,
@@ -205,9 +206,13 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .argument('<path>', 'Test file or directory to lint.')
     .option('--static', 'Run static-only analysis (no LLM).')
     .option('--no-static', 'Disable static-only analysis.')
-    .option(
-      '-f, --framework <framework>',
-      'Force framework: pytest, playwright, vitest, k6.',
+    // The linter only tells `pytest` from everything else, so an unchecked
+    // value silently linted with the JS rules and could report a false clean.
+    .addOption(
+      new Option(
+        '-f, --framework <framework>',
+        'Force the framework instead of detecting it.',
+      ).choices(['pytest', 'playwright', 'vitest', 'k6']),
     )
     .option('--json', 'Output findings as JSON.')
     .action(
@@ -330,6 +335,18 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .argument('[args...]')
     .action(() => {
       uninstallCmd(deps);
+    });
+
+  program
+    .command('testtracker')
+    .description(
+      'Push JUnit XML reports to TestTracker (requires the npm install of Canary).',
+    )
+    .allowUnknownOption(true)
+    .allowExcessArguments(true)
+    .argument('[args...]')
+    .action(() => {
+      testtrackerCmd(deps);
     });
 
   program

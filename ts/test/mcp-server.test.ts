@@ -21,6 +21,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -55,6 +56,14 @@ import {
   writeTestFileImpl,
   writeTestFileTool,
 } from '../src/mcp-server.js';
+
+/**
+ * The served root for analyze_file fixtures. Every fixture lives under
+ * os.tmpdir(), which is outside the default root (the server's cwd), so the
+ * containment gate would refuse them; these tests are about analysis, not
+ * containment (that is mcp-tool-containment.test.ts), so they serve tmpdir.
+ */
+const TMP_ROOT = tmpdir();
 
 const roots: string[] = [];
 function mkroot(): string {
@@ -105,7 +114,7 @@ describe('analyzeFileImpl', () => {
       apiRoutes: [],
     });
 
-    const result = analyzeFileImpl(target);
+    const result = analyzeFileImpl(target, TMP_ROOT);
     expect(['playwright', 'vitest', 'pytest', 'k6', 'unknown']).toContain(
       result['framework'],
     );
@@ -118,7 +127,7 @@ describe('analyzeFileImpl', () => {
   });
 
   it('returns an error dict when the file does not exist', () => {
-    const result = analyzeFileImpl('/nonexistent/path/foo.ts');
+    const result = analyzeFileImpl(join(mkroot(), 'foo.ts'), TMP_ROOT);
     expect(result).toHaveProperty('error');
     expect(String(result['error'])).toContain('file not found');
   });
@@ -128,7 +137,7 @@ describe('analyzeFileImpl', () => {
     writeFileSync(join(root, 'playwright.config.ts'), 'export default {};');
     const target = join(root, 'login.spec.ts');
     writeFileSync(target, "import { test } from '@playwright/test';\n");
-    const result = analyzeFileImpl(target);
+    const result = analyzeFileImpl(target, TMP_ROOT);
     expect(result['framework']).toBe('playwright');
     expect(result['framework_source']).toBe('config');
     expect(result['test_type']).toBe('e2e');
@@ -144,7 +153,7 @@ describe('analyzeFileImpl', () => {
     const target = join(root, 'tests', 'e2e', 'login.spec.ts');
     mkdirSync(join(root, 'tests', 'e2e'), { recursive: true });
     writeFileSync(target, "import { test } from '@playwright/test';\n");
-    const result = analyzeFileImpl(target);
+    const result = analyzeFileImpl(target, TMP_ROOT);
     const env = result['environment'] as Record<string, unknown>;
     expect(env['base_url']).toBe('https://app.example.com');
     expect(env['suite_type']).toBe('e2e');
@@ -179,7 +188,7 @@ describe('analyzeFileImpl', () => {
   }
 
   it('resolves a persona from the detected user level (#462)', () => {
-    const result = analyzeFileImpl(sdetProject());
+    const result = analyzeFileImpl(sdetProject(), TMP_ROOT);
     const persona = result['persona'] as Record<string, unknown>;
     expect(persona['id']).toBe('sdet');
     expect(persona['source']).toBe('detected');
@@ -193,7 +202,7 @@ describe('analyzeFileImpl', () => {
   it('leaves the #341 environment block untouched beside it', () => {
     // The persona block is additive. Nothing that read `environment` before
     // has to change.
-    const result = analyzeFileImpl(sdetProject());
+    const result = analyzeFileImpl(sdetProject(), TMP_ROOT);
     expect(result['environment']).toBeTypeOf('object');
     expect((result['environment'] as Record<string, unknown>)['user_level']);
   });
@@ -202,7 +211,7 @@ describe('analyzeFileImpl', () => {
     // Inferring an audience wrongly is the failure users resent, so the
     // inference must always be overridable without editing a config file.
     vi.stubEnv('CANARY_PERSONA', 'manual');
-    const result = analyzeFileImpl(sdetProject());
+    const result = analyzeFileImpl(sdetProject(), TMP_ROOT);
     const persona = result['persona'] as Record<string, unknown>;
     expect(persona['id']).toBe('manual');
     expect(persona['source']).toBe('explicit');
@@ -210,7 +219,7 @@ describe('analyzeFileImpl', () => {
 
   it('reports an unknown CANARY_PERSONA instead of ignoring it', () => {
     vi.stubEnv('CANARY_PERSONA', 'architect');
-    const result = analyzeFileImpl(sdetProject());
+    const result = analyzeFileImpl(sdetProject(), TMP_ROOT);
     const persona = result['persona'] as Record<string, unknown>;
     // The detection still applies — a typo is a mistake, not an instruction
     // to discard the signal — but the typo is named.
@@ -220,7 +229,7 @@ describe('analyzeFileImpl', () => {
 
   it('ignores a blank CANARY_PERSONA', () => {
     vi.stubEnv('CANARY_PERSONA', '   ');
-    const result = analyzeFileImpl(sdetProject());
+    const result = analyzeFileImpl(sdetProject(), TMP_ROOT);
     expect((result['persona'] as Record<string, unknown>)['source']).toBe(
       'detected',
     );
@@ -234,7 +243,7 @@ describe('analyzeFileImpl', () => {
     const root = gitRoot();
     const target = join(root, 'fixtures.yaml');
     writeFileSync(target, 'a: 1\n');
-    const persona = analyzeFileImpl(target)['persona'] as Record<
+    const persona = analyzeFileImpl(target, TMP_ROOT)['persona'] as Record<
       string,
       unknown
     >;
@@ -247,10 +256,9 @@ describe('analyzeFileImpl', () => {
     // The regression this floor exists for. A manifest is one observation, and
     // a manifest plus full confidence used to be enough to declare the reader a
     // senior SDET and strip every explanation out of the output.
-    const persona = analyzeFileImpl(oneSignalProject())['persona'] as Record<
-      string,
-      unknown
-    >;
+    const persona = analyzeFileImpl(oneSignalProject(), TMP_ROOT)[
+      'persona'
+    ] as Record<string, unknown>;
     expect(persona['source']).toBe('fallback');
     expect(persona['id']).not.toBe('sdet');
     expect(persona['reason']).toContain('independent signal');
@@ -261,7 +269,7 @@ describe('analyzeFileImpl', () => {
     // what the caller happens to be working on, so it must not be one of the
     // two. If it were counted, this project (manifest + the analyzed `.ts`
     // file) would clear the floor and resolve `sdet`.
-    const result = analyzeFileImpl(oneSignalProject());
+    const result = analyzeFileImpl(oneSignalProject(), TMP_ROOT);
     const persona = result['persona'] as Record<string, unknown>;
     expect(persona['reason']).toContain('1 independent signal');
     const personaSignals = persona['signals'] as string[];
@@ -288,7 +296,7 @@ describe('analyzeFileImpl', () => {
     const root = gitRoot();
     const target = join(root, 'test-plan.md');
     writeFileSync(target, '# plan\n');
-    const persona = analyzeFileImpl(target)['persona'] as Record<
+    const persona = analyzeFileImpl(target, TMP_ROOT)['persona'] as Record<
       string,
       unknown
     >;
@@ -301,7 +309,7 @@ describe('analyzeFileImpl', () => {
     const root = gitRoot();
     const target = join(root, 'test-plan.md');
     writeFileSync(target, '# plan\n');
-    const persona = analyzeFileImpl(target)['persona'] as Record<
+    const persona = analyzeFileImpl(target, TMP_ROOT)['persona'] as Record<
       string,
       unknown
     >;
@@ -314,7 +322,7 @@ describe('analyzeFileImpl', () => {
     const target = join(root, 'tests', 'test_x.py');
     mkdirSync(join(root, 'tests'));
     writeFileSync(target, 'def test_thing(): pass\n');
-    const result = analyzeFileImpl(target);
+    const result = analyzeFileImpl(target, TMP_ROOT);
     expect(result['framework_source']).toBe('suffix');
     expect(result['framework']).toBe('pytest');
   });
@@ -328,7 +336,7 @@ describe('analyzeFileImpl', () => {
         'async def bar():\n    pass\n\n' +
         'class C:\n    def baz(self):\n        pass\n',
     );
-    const result = analyzeFileImpl(target);
+    const result = analyzeFileImpl(target, TMP_ROOT);
     expect(new Set(result['file_functions'] as string[])).toEqual(
       new Set(['foo', 'bar', 'baz']),
     );
@@ -346,7 +354,7 @@ describe('analyzeFileImpl', () => {
         'export const gamma = () => {};\n' +
         'const delta = async (x: number) => x;\n',
     );
-    const result = analyzeFileImpl(target);
+    const result = analyzeFileImpl(target, TMP_ROOT);
     expect(new Set(result['file_functions'] as string[])).toEqual(
       new Set(['alpha', 'beta', 'gamma', 'delta']),
     );
@@ -367,7 +375,7 @@ describe('analyzeFileImpl', () => {
     const target = join(root, 'src', 'thing.py');
     mkdirSync(join(root, 'src'));
     writeFileSync(target, 'def thing(): pass');
-    const result = analyzeFileImpl(target);
+    const result = analyzeFileImpl(target, TMP_ROOT);
     const existing = result['existing_tests'] as string[];
     expect(existing).toHaveLength(2);
     expect(existing.every((p) => p.includes('test_'))).toBe(true);
@@ -377,7 +385,7 @@ describe('analyzeFileImpl', () => {
     const root = gitRoot();
     const target = join(root, 'empty.ts');
     writeFileSync(target, '');
-    const result = analyzeFileImpl(target);
+    const result = analyzeFileImpl(target, TMP_ROOT);
     expect(result['context_snippets']).toEqual([]);
   });
 });
@@ -584,6 +592,19 @@ describe('writeTestFileImpl path containment', () => {
     expect(existsSync(join(elsewhere, 'pwned.spec.ts'))).toBe(false);
   });
 
+  // bug-fleet A1: the guard resolves a RELATIVE path against `root`, so the
+  // path it approves must be the path that gets written.
+  it('writes a relative path under the root it was checked against', () => {
+    const root = mkroot();
+    const relDir = `rel-containment-${randomUUID()}`;
+    try {
+      writeTestFileImpl(join(relDir, 'a.spec.ts'), 'x', 'playwright', root);
+      expect(existsSync(resolve(relDir))).toBe(false);
+    } finally {
+      rmSync(resolve(relDir), { recursive: true, force: true });
+    }
+  });
+
   it('still writes a legitimate path inside the root', () => {
     const root = mkroot();
     const inside = join(root, 'tests', 'ok.spec.ts');
@@ -707,7 +728,8 @@ describe('initSuiteImpl', () => {
       created_dirs: ['tests/e2e'],
       skipped_files: [],
     });
-    const result = initSuiteImpl('playwright', '/some/dir');
+    const root = mkroot();
+    const result = initSuiteImpl('playwright', root, root);
     expect(result['framework']).toBe('playwright');
     expect(result['status']).toBe('scaffolded');
     expect(result['files_created']).toEqual([
@@ -719,7 +741,7 @@ describe('initSuiteImpl', () => {
   it('surfaces guidance on the unsupported degrade path', () => {
     const root = mkroot();
     // schemathesis is a real registry framework with no scaffold template.
-    const result = initSuiteImpl('schemathesis', root);
+    const result = initSuiteImpl('schemathesis', root, root);
     expect(result['status']).toBe('unsupported');
     expect(result['guidance']).toBeTruthy();
     expect(String(result['execution_command'])).toContain('schemathesis');
@@ -752,7 +774,7 @@ describe('migrateImpl', () => {
         manual_followups: ['Remove harness.config.json'],
       }),
     );
-    const result = migrateImpl('/dir', false);
+    const result = migrateImpl('', false, mkroot());
     expect(result['dry_run']).toBe(true);
     expect(result['files_created']).toEqual([]);
     expect(result['manual_followups']).toEqual(['Remove harness.config.json']);
@@ -771,7 +793,7 @@ describe('migrateImpl', () => {
         manual_followups: [],
       }),
     );
-    const result = migrateImpl('/dir', true);
+    const result = migrateImpl('', true, mkroot());
     expect(result['dry_run']).toBe(false);
     expect(result['files_created']).toEqual([
       'playwright.config.ts',
@@ -781,7 +803,7 @@ describe('migrateImpl', () => {
 
   it('returns an error dict when no harness markers are found', () => {
     vi.spyOn(HarnessMigrator.prototype, 'detect').mockReturnValue(ctx(false));
-    const result = migrateImpl('/dir', false);
+    const result = migrateImpl('', false, mkroot());
     expect(result).toHaveProperty('error');
     expect(String(result['error'])).toContain('no harness.config.json');
   });
@@ -790,7 +812,7 @@ describe('migrateImpl', () => {
     vi.spyOn(HarnessMigrator.prototype, 'detect').mockReturnValue(
       ctx(false, 'skills overlay, not a test project'),
     );
-    const result = migrateImpl('/dir', false);
+    const result = migrateImpl('', false, mkroot());
     expect(result['error']).toBe('skills overlay, not a test project');
   });
 });
@@ -860,7 +882,7 @@ describe('tool registration', () => {
 
 describe('tool wrappers delegate to their impls', () => {
   it('analyze wrapper JSON-wraps the impl error dict', () => {
-    const out = analyzeFileTool({ file_path: '/does/not/exist.ts' });
+    const out = analyzeFileTool({ file_path: 'canary-does-not-exist.ts' });
     expect(out.content[0]!.type).toBe('text');
     const parsed = JSON.parse(out.content[0]!.text);
     expect(parsed.error).toContain('file not found');
@@ -900,8 +922,7 @@ describe('tool wrappers delegate to their impls', () => {
       skipped_files: [],
     });
     const parsed = JSON.parse(
-      initSuiteTool({ framework: 'pytest', target_dir: '/dir' }).content[0]!
-        .text,
+      initSuiteTool({ framework: 'pytest', target_dir: '' }).content[0]!.text,
     );
     expect(parsed.framework).toBe('pytest');
     expect(parsed.files_created).toEqual(['pytest.ini', 'tests']);
@@ -915,7 +936,7 @@ describe('tool wrappers delegate to their impls', () => {
   it('migrate wrapper forwards target_dir and apply', () => {
     vi.spyOn(HarnessMigrator.prototype, 'detect').mockReturnValue(ctx(false));
     const parsed = JSON.parse(
-      migrateTool({ target_dir: '/dir', apply: true }).content[0]!.text,
+      migrateTool({ target_dir: '', apply: true }).content[0]!.text,
     );
     expect(parsed.error).toContain('no harness.config.json');
   });

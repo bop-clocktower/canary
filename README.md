@@ -1,6 +1,6 @@
 # ![Canary](docs/assets/icon-gold.svg) Canary
 
-![version](https://img.shields.io/badge/version-9.2.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
+![version](https://img.shields.io/badge/version-9.3.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
 ![node](https://img.shields.io/badge/node-22+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
 ![tests](https://img.shields.io/badge/tests-passing-28C840?style=flat-square&labelColor=1C1C1C&color=1C1C1C&logoColor=28C840)
 ![frameworks](https://img.shields.io/badge/playwright_·_vitest_·_pytest-F0C040?style=flat-square&labelColor=C09018&color=F0C040)
@@ -236,12 +236,13 @@ Use, process, escalation) lives in
 
 ### I want to check CI readiness
 
-| Tool                                              | What it does                                                                                                                        |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `/canary-ci-ready [--threshold <depth>]`          | Claude Code — coverage depth, flakiness, assertion quality, critical-path coverage, runtime.                                        |
-| `canary-fail-fast` skill                          | Audits Playwright fail-fast config knobs and prints a loud, categorized CI failure digest.                                          |
-| `canary-test-reporter` skill                      | Playwright JSON results → Markdown + JSON report with pass/fail/flaky/skipped counts.                                               |
-| `canary history summary` / `canary history flaky` | CLI — recent-run summary / flake leaderboard for one suite, ranked on the worse of the retry-flake and cross-run flip rates (#604). |
+| Tool                                              | What it does                                                                                                                                                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/canary-ci-ready [--threshold <depth>]`          | Claude Code — coverage depth, flakiness, assertion quality, critical-path coverage, runtime.                                                                                                      |
+| `canary-fail-fast` skill                          | Audits Playwright fail-fast config knobs and prints a loud, categorized CI failure digest.                                                                                                        |
+| `canary-test-reporter` skill                      | Playwright JSON results → Markdown + JSON report with pass/fail/flaky/skipped counts.                                                                                                             |
+| `canary testtracker push --junit <file…>`         | CLI — push vitest / `node --test` / Newman / Maestro JUnit XML to the TestTracker ingest API (npm install required; see [Ingest Reporter](docs/wiki/Ingest-Reporter.md#other-runners-junit-xml)). |
+| `canary history summary` / `canary history flaky` | CLI — recent-run summary / flake leaderboard for one suite, ranked on the worse of the retry-flake and cross-run flip rates (#604).                                                               |
 
 ### I want to find what to test
 
