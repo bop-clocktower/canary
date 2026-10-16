@@ -43,6 +43,17 @@ under the project's former name) are documented in the
   `abstained: no source unit checked (only added tests were judged)`. A CI step
   that read exit 0 on such a PR as a pass must treat 3 as "not checked".
 
+### Added
+
+- **katana `pending-feature` ledger cause.** The quarantine ledger has a fifth
+  cause for a correct test whose feature has not shipped or is behind a flag
+  that is off. Before this, producers filed those rows as `blocked-data`, so
+  dashboards could not tell "waiting on the feature" from "waiting on test
+  data". Like `product-defect` and `blocked-data`, it requires an `issue`:
+  manhunter flags `out as pending-feature with no linked issue`. A new parity
+  test fails if manhunter's copy of the issue-requiring causes drifts from
+  katana's. No schema bump; existing rows are unchanged (#1330).
+
 ## [9.3.0] - 2026-10-12
 
 ### Added

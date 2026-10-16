@@ -17,8 +17,17 @@
 import { parseJsonSource, readSource, sourceRef } from './sources.js';
 import { darkSection, fedSection, isRecord, type Section } from './types.js';
 
-/** Mirrors CAUSES_REQUIRING_ISSUE in canary-katana's ledger.mjs. */
-const CAUSES_REQUIRING_ISSUE = ['product-defect', 'blocked-data'];
+/**
+ * Mirrors CAUSES_REQUIRING_ISSUE in canary-katana's ledger.mjs. It is a copy
+ * because the published package does not ship agents/skills.
+ * ts/test/manhunter-ledger-cause-parity.test.ts fails if the copy drifts
+ * from katana's list (#1330).
+ */
+const CAUSES_REQUIRING_ISSUE = [
+  'product-defect',
+  'blocked-data',
+  'pending-feature',
+];
 
 interface LedgerRow {
   test: string;
