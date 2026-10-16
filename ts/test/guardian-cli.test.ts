@@ -1445,9 +1445,9 @@ new file mode 100644
       .split('\n')
       .find((l) => l.startsWith('Canary PR Guardian'));
     expect(headline).toBe(
-      'Canary PR Guardian — abstained: no source unit checked (only test files changed)',
+      'Canary PR Guardian — abstained: no source unit checked (only added tests were judged)',
     );
-    expect(res.stdout).toContain('[LOW] tests/test_widget.py');
+    expect(res.stdout).toContain('[low] tests/test_widget.py');
     expect(res.stdout).toContain('asserts nothing');
   });
 
@@ -1458,7 +1458,7 @@ new file mode 100644
     );
     expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain(
-      'abstained: no source unit checked (only test files changed)',
+      'abstained: no source unit checked (only added tests were judged)',
     );
     expect(res.stdout).toContain('No source unit in this diff was checked');
     // Not the #761 coverage copy: that one claims a missing coverage report.

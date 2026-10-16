@@ -229,9 +229,14 @@ new file mode 100644
 // finding is about a test the diff adds; it is not a judged source unit, so it
 // cannot stand in for one and lift the run to a pass.
 describe('isWeakOnlyAbstention', () => {
-  const weak = new GuardianFinding({ path: 't.test.ts', kind: 'weak-test' });
+  const weak = new GuardianFinding({
+    path: 't.test.ts',
+    unit: 't.test.ts',
+    kind: 'weak-test',
+  });
   const gap = new GuardianFinding({
     path: 'src/a.ts',
+    unit: 'src/a.ts',
     kind: 'untested-new-code',
   });
 

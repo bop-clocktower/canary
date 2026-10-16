@@ -1,0 +1,15 @@
+{
+  "issues": [1305],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-cli.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Human decision F3 (a): checked 0 with only weak-test findings abstains (exit 3, abstained: true) under both soft and hard gates, keeping the weak-test findings visible; not re-asked.",
+    "The rule keys on the scored-unit count (`checked`, i.e. scoredResults.length), not on `kept`, so a diff whose source units were all consumed by the heuristic-noise filter and whose only findings are weak-test also abstains. That matches the asserting-test case, which abstains on the same denominator via the second abstain exit.",
+    "The headline distinguishes the two findings-keeping abstentions by `checked`: #761 always judged at least one unit heuristically (checked >= 1), so checked 0 on an abstained run is always the #1305 weak-only case. No new GateMeta field was added.",
+    "The #508 remediation lines printed by abstainPrCheck are not printed on the weak-only path: their advice (fetch-depth, skipGlobs) is about a collapsed denominator, while a test-only diff is a correctly scoped diff that simply contains no source.",
+    "The weak-test finding's own evidence text '(advisory — never blocks the gate)' stays: the finding still never gates; the exit 3 comes from checking zero units, and the same finding beside a checked source unit still exits 0 (pinned by a positive test).",
+    "The sticky comment's no-findings branch is unaffected: weak-test findings are never suppressed, so a weak-only abstention always renders the findings table."
+  ]
+}

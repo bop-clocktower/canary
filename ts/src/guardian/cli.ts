@@ -145,7 +145,7 @@ import {
   mutationExitCode,
   renderMutationReport,
 } from './mutation-report.js';
-import { buildWeakTestFindings } from './weak-test.js';
+import { buildWeakTestFindings, isWeakOnlyAbstention } from './weak-test.js';
 import {
   GitHubClient,
   RestGitHubClient,
@@ -1717,11 +1717,16 @@ async function prCheckCmd(
   // calls above make, and the one that consumer run needed. It does not exit
   // through `abstainPrCheck`: those findings are worth showing, so the run keeps
   // every surface and changes only its headline and its exit code.
-  const coverageAbstained = isCoverageAbstention(coverage, findings);
+  // #1305: likewise a run that checked no source unit and found only weak tests.
+  // Both exits above step aside for its weak-test findings, so it lands here;
+  // without this a worse test turned the same diff's abstention into exit 0.
+  const abstained =
+    isCoverageAbstention(coverage, findings) ||
+    isWeakOnlyAbstention(scoredResults.length, findings);
 
   // Compute the gate result once, up front: the emitted record carries it and it
   // is the process exit at the end (SC-4 -- emit never changes the exit logic).
-  const exitCode = coverageAbstained
+  const exitCode = abstained
     ? EXIT_ABSTAINED
     : computeExitCode(findings, effectiveGate);
 
@@ -1729,7 +1734,7 @@ async function prCheckCmd(
   // never saw a coverage report cannot present as one that checked and passed.
   const gateMeta: GateMeta = {
     checked: scoredResults.length,
-    abstained: coverageAbstained,
+    abstained,
     coverage,
     // #606: the delta's own denominator, so "no regressions" can never be read
     // as "compared and clean" on a run that compared nothing.
@@ -1772,10 +1777,10 @@ async function prCheckCmd(
       degraded_notice: resolution.degraded_notice,
       exit_code: exitCode,
       checked: scoredResults.length,
-      // #761: a coverage abstention DOES reach emit — unlike the
+      // #761/#1305: a coverage or weak-only abstention DOES reach emit — unlike the
       // findings-eligible abstention, it keeps its findings, so a machine
       // consumer must see the flag rather than infer a result from the array.
-      abstained: coverageAbstained,
+      abstained,
       coverage,
       skipped: allSkips,
       // #761: the archived artifact is where an inflated diff gets diagnosed

@@ -34,6 +34,14 @@ the design rationale.
   gating**, even under `gate: hard` — it surfaces the gap, never blocks the
   merge. Disable by setting `canary.guardian.pr.weakTests` to `false`.
 
+  Advisory does not mean it counts as a check, though ([#1305]). A test-only
+  diff checks no source unit, so it **abstains** (exit 3, `abstained: true`)
+  under either gate — and it still abstains when the added test is weak. The
+  weak-test findings stay on every surface, under the headline
+  `abstained: no source unit checked (only added tests were judged)`. Before
+  #1305 the weak finding lifted that run to exit 0, so a worse test turned an
+  abstention into a pass.
+
   The signal is tuned for precision over recall (it should not nag on correct
   tests): snapshot/table-driven tests and the common assertion styles (`expect`,
   `assert`, chai `.should`, `pytest.raises`, `assert_*` helpers in Python and
@@ -462,6 +470,7 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#738]: https://github.com/bop-clocktower/canary/issues/738
 [#747]: https://github.com/bop-clocktower/canary/issues/747
 [#761]: https://github.com/bop-clocktower/canary/issues/761
+[#1305]: https://github.com/bop-clocktower/canary/issues/1305
 
 Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
 config, which makes `canary guardian pr-check` exit non-zero on an unaddressed
