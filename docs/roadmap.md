@@ -94,16 +94,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#616
 
-### canary-huntress — targeted regression pursuit
-
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Ideation rank 12 (score 2.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Hunt one specific defect CLASS across the entire suite and its history, rather than exploring broadly. First attempt to give the previously reserved canary-huntress name a scope; it did not clear the bar, so the name remains reserved. Accepted risk to handle in spec: git bisect already finds WHEN a regression entered and canary-cry explores broadly, so the remaining slice (find every OTHER place this same bug shape exists) may be too narrow to justify a skill rather than a flag on an existing one - this is a reserved name looking for a job, which is the wrong direction of fit. Medium effort / medium confidence. Next: find a genuinely distinct scope before speccing, or leave the name reserved.
-- **Blockers:** —
-- **Plan:** —
-- **Priority:** P3
-- **External-ID:** github:bop-clocktower/canary#617
-
 ### canary-hawk-dove — gate threshold auto-tuner
 
 - **Status:** backlog
