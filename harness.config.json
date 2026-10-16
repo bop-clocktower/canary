@@ -320,6 +320,7 @@
       "ts/test/git-fixture-testkit.ts",
       "ts/test/required-checks-testkit.ts",
       "ts/test/fixtures/schedule-staleness/gh-stub.cjs",
+      "ts/test/fixtures/async-pipe-exit-probe.cjs",
       "ts/vitest.config.ts"
     ],
     "drift": {
@@ -477,6 +478,7 @@
       "ts/test/git-fixture-testkit.ts",
       "ts/test/required-checks-testkit.ts",
       "ts/test/fixtures/schedule-staleness/gh-stub.cjs",
+      "ts/test/fixtures/async-pipe-exit-probe.cjs",
       "ts/vitest.config.ts"
     ]
   },
