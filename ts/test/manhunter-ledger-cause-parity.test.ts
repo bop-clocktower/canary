@@ -46,7 +46,7 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
-function issuelessEyes(cause: string): string[] {
+function issueEyes(cause: string, issue: string): string[] {
   const path = join(tmp, `q-${cause}.json`);
   writeFileSync(
     path,
@@ -63,7 +63,7 @@ function issuelessEyes(cause: string): string[] {
           date: '2026-09-01',
           reason: 'r',
           cause,
-          issue: '',
+          issue,
           expiry: '',
         },
       ],
@@ -84,9 +84,16 @@ describe('manhunter mirrors katana CAUSES_REQUIRING_ISSUE (#1330)', () => {
 
   it('flags an issueless row iff katana requires an issue for its cause', () => {
     const mismatches = katana.CAUSES.filter((cause) => {
-      const flagged = issuelessEyes(cause).length > 0;
+      const flagged = issueEyes(cause, '').length > 0;
       return flagged !== katana.CAUSES_REQUIRING_ISSUE.includes(cause);
     });
     expect(mismatches).toEqual([]);
+  });
+
+  it('never flags a linked row, whatever its cause', () => {
+    const flagged = katana.CAUSES.filter(
+      (cause) => issueEyes(cause, 'acme/widgets#1').length > 0,
+    );
+    expect(flagged).toEqual([]);
   });
 });
