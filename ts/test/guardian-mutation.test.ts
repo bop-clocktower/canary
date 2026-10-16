@@ -382,3 +382,19 @@ describe('threadUnsafeTests', () => {
     ]);
   });
 });
+
+// bug-fleet A5: Stryker omits `coveredBy` unless coverageAnalysis is
+// perTest. An ABSENT field is "not measured", not "covered by nothing" -- a
+// Survived mutant was run against the suite and lived.
+describe('survivor with coveredBy absent (bug-fleet A5)', () => {
+  it('is not reported as all-killed', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 10, status: 'Killed' },
+        { line: 11, status: 'Survived' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.verdict).not.toBe('all-killed');
+  });
+});
