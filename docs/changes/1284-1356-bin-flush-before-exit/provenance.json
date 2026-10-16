@@ -1,0 +1,19 @@
+{
+  "issues": [1284, 1356],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": [
+    "ts/test/bin-exit-flushes-stdout.test.ts",
+    "npm/scripts/__tests__/bin-exit-drains.test.js"
+  ],
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "There are three forced exits, not two: ts/bin/canary.js (#1284), npm/bin/canary.js main() (#1356), and the generated dist/engine/cli.js runner (a copy of the ts bin). Every command the published bin forwards to the engine exits through the runner, so #1356 is only resolved if the runner is fixed too.",
+    "Exit mechanism per human fork F2: process.stdout.write('', cb) then process.stderr.write('', cb) then process.exit(code). An empty write's callback fires after all earlier queued writes, so it marks the drain point, and the forced exit keeps open handles from hanging a finished command.",
+    "stderr is drained too: usage errors and the crash path (console.error) write there, and stderr is an async pipe on the same platforms.",
+    "A reader that never reads would now block the exit until it reads or closes; that is the same behaviour as a natural Node exit and the cost of not losing output. A closed reader (EPIPE, e.g. | head) still exits promptly with the intended code (verified locally).",
+    "The runner source moved from build-engine.mjs to npm/scripts/engine-runner.mjs (exported string) so a test can execute it next to stub modules; the npm CI job does not build the engine.",
+    "The async-pipe probe preload lives once in ts/test/fixtures and the npm test references it by repo-relative path; CI checks out the whole repo for the npm package job.",
+    "The ts/bin success path already exits naturally (no process.exit) and is unchanged."
+  ]
+}

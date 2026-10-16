@@ -149,6 +149,25 @@ the report has nothing to say about it and the guardian abstains for that unit,
 falling through to the graph or heuristic tier rather than inventing either a
 pass or a finding.
 
+"No record" is not the same as "not executable" for a statement that spans lines
+([#1314]). lcov (v8 and istanbul alike) and coverage.py record a multi-line
+statement on **one** line, so a ternary's arms, the terms of a multi-line `a +`
+initializer, the links of a method chain and the properties of a multi-line
+object literal carry no record of their own, yet they run. The report tier reads
+the changed file's source at head and scores such a continuation line by its
+statement's recorded line: covered when that line was hit, a finding when it was
+not. The judgement is lexical: one linear pass that tracks open brackets, object
+literals versus blocks, trailing and leading operators, regex literals and
+multi-line template literals. A statement with no recorded line anywhere is one
+the instrumenter itself judged non-executable (a type, a signature, an import),
+and only it, blank lines and comments stay "not coverable". Everything else
+fails **closed**, toward "code", since a wrong "code" costs one noisy finding
+and a wrong "not code" hides untested code. If the brackets do not balance,
+every non-blank line is scored by the nearest recorded line above it. If the
+source is unreadable, larger than 2 MB, or shorter than the diff (not the source
+the diff describes), the file is scored as if the report never said what it
+measured: every changed line counts, and absence means uncovered.
+
 The rule is per-**report**, because absence only means "not coverable" where the
 report says what it measured. lcov and Cobertura say so by construction. The
 `coverage.json` contract does not: a line absent from both of its fields is
@@ -467,6 +486,7 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#553]: https://github.com/bop-clocktower/canary/issues/553
 [#655]: https://github.com/bop-clocktower/canary/issues/655
 [#657]: https://github.com/bop-clocktower/canary/issues/657
+[#1314]: https://github.com/bop-clocktower/canary/issues/1314
 [#738]: https://github.com/bop-clocktower/canary/issues/738
 [#747]: https://github.com/bop-clocktower/canary/issues/747
 [#761]: https://github.com/bop-clocktower/canary/issues/761
