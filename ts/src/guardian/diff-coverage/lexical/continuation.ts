@@ -15,6 +15,7 @@ import {
   matchFile,
   splitLines,
   type ChangedUnit,
+  type FileCoverage,
   type LineHits,
   type ReportIndex,
 } from '../types.js';
@@ -215,12 +216,14 @@ export function withContinuations(
     if (!file?.coverable || key === undefined) continue;
     const source = readSource(repoRoot, unit.path);
     const added = expandRanges(unit.added_ranges);
-    const at = attributeLines(added, file.coverable, source);
-    const hits: LineHits = Object.assign(Object.create(null), file.hits);
-    for (const [ln, m] of at ?? []) hits[ln] = file.hits[m] ?? 0;
-    // `null` coverable: every changed line is scored (fail closed).
-    const coverable = at && new Set([...file.coverable, ...at.keys()]);
-    out[key] = { hits, coverable };
+    out[key] = fold(file, attributeLines(added, file.coverable, source));
   }
   return out;
+}
+
+/** `file` with `at`'s lines folded in; `null` coverable fails closed. */
+function fold(file: FileCoverage, at: LineMap | null): FileCoverage {
+  const hits: LineHits = Object.assign(Object.create(null), file.hits);
+  for (const [ln, m] of at ?? []) hits[ln] = file.hits[m] ?? 0;
+  return { hits, coverable: at && new Set([...file.coverable!, ...at.keys()]) };
 }
