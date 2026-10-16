@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ledgerSection } from '../src/analysis/manhunter/ledger.js';
 
@@ -33,10 +33,11 @@ interface KatanaLedger {
   CAUSES_REQUIRING_ISSUE: string[];
 }
 
-let katana: KatanaLedger;
-beforeAll(async () => {
-  katana = (await import(pathToFileURL(KATANA_LEDGER).href)) as KatanaLedger;
-});
+// A module import, not per-test state, so it is loaded once at the top level
+// rather than in a beforeAll that would need a matching teardown.
+const katana = (await import(
+  pathToFileURL(KATANA_LEDGER).href
+)) as KatanaLedger;
 
 let tmp: string;
 beforeEach(() => {
