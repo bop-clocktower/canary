@@ -145,7 +145,8 @@ import {
   mutationExitCode,
   renderMutationReport,
 } from './mutation-report.js';
-import { buildWeakTestFindings, isWeakOnlyAbstention } from './weak-test.js';
+import { buildWeakTestFindings } from './weak-test.js';
+import { isWeakOnlyAbstention } from './weak-only-abstention.js';
 import {
   GitHubClient,
   RestGitHubClient,

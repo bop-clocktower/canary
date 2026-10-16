@@ -22,10 +22,8 @@ import {
   loadGuardianConfig,
   scopeDiff,
 } from '../src/guardian/pr-check.js';
-import {
-  buildWeakTestFindings,
-  isWeakOnlyAbstention,
-} from '../src/guardian/weak-test.js';
+import { isWeakOnlyAbstention } from '../src/guardian/weak-only-abstention.js';
+import { buildWeakTestFindings } from '../src/guardian/weak-test.js';
 
 const DIFF_WEAK_PY = `diff --git a/tests/test_widget.py b/tests/test_widget.py
 new file mode 100644
