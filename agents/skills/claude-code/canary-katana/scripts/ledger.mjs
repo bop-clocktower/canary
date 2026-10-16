@@ -37,15 +37,33 @@ const FIELDS = [
 ];
 
 /**
- * Why a test is out of the suite. The two middle values are the ones where the
- * TEST IS CORRECT and someone else owns the fix, so a producer must require an
- * `issue` for them -- an untracked "the product is broken" note decays into an
- * unexplained skip within a release.
+ * Why a test is out of the suite. The middle values (product-defect,
+ * blocked-data, pending-feature) are the ones where the TEST IS CORRECT and
+ * someone else owns the fix -- a product defect, missing test data, or a
+ * feature that has not shipped (or is flag-disabled). A producer must
+ * require an `issue` for them: an untracked "the product is broken" or "the
+ * feature isn't built" note decays into an unexplained skip within a
+ * release. Release rule for every cause: remove the row when the test
+ * passes live, not when the ticket closes (#1330).
+ *
+ * manhunter mirrors CAUSES_REQUIRING_ISSUE in
+ * ts/src/analysis/manhunter/ledger.ts; the parity test
+ * ts/test/manhunter-ledger-cause-parity.test.ts fails if they disagree.
  */
-export const CAUSES = ['flaky', 'product-defect', 'blocked-data', 'obsolete'];
+export const CAUSES = [
+  'flaky',
+  'product-defect',
+  'blocked-data',
+  'pending-feature',
+  'obsolete',
+];
 
 /** Causes for which a row without an `issue` is not a real record. */
-export const CAUSES_REQUIRING_ISSUE = ['product-defect', 'blocked-data'];
+export const CAUSES_REQUIRING_ISSUE = [
+  'product-defect',
+  'blocked-data',
+  'pending-feature',
+];
 
 /**
  * @typedef {{test: string, file: string, kind: string, marker: string,
