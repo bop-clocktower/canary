@@ -13,8 +13,8 @@
  * Worst first: C > B > A/E. A PR with any B or C unit is never ✅ (#554).
  */
 
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -36,8 +36,37 @@ import {
 let tmp: string;
 beforeEach(() => {
   tmp = mkTmp();
+  // Since #1314 the report tier reads the changed file's source, and a source
+  // it cannot read fails closed, so each case-A fixture needs one on disk.
+  writeSource('ts/src/guardian/diff-extractor.ts', 130, {
+    122: '// the doc comment #927 edited',
+    123: '// spans three lines',
+    124: '// and is not code',
+  });
+  writeSource('ts/src/cli-commands.ts', 600, {
+    585: '  print(JSON.stringify({',
+    591: '    // #841: a comment above the added keys',
+    596: '    existing: report.existing,',
+    597: '    workspace: report.workspace,',
+    598: '    shapes: report.shapes,',
+    599: '  }));',
+  });
 });
 afterEach(() => rmTmp(tmp));
+
+/** A synthesized `length`-line source: one statement per line, then `lines`. */
+function writeSource(
+  path: string,
+  length: number,
+  lines: Record<number, string>,
+): void {
+  const body = Array.from(
+    { length },
+    (_, i) => lines[i + 1] ?? `const v${i + 1} = ${i + 1};`,
+  );
+  mkdirSync(join(tmp, dirname(path)), { recursive: true });
+  writeFileSync(join(tmp, path), body.join('\n'), 'utf-8');
+}
 
 /** Write an lcov whose records are `{path: [lines measured]}`, all hit. */
 function lcov(records: Record<string, number[]>): string {
@@ -86,7 +115,7 @@ const DOC_COMMENT_UNIT: ChangedUnit = {
   added_ranges: [[122, 124]],
 };
 // #841: properties added inside a multi-line object literal. lcov records only
-// the statement's first line (585), so the continuation lines are not coverable.
+// the statement's first line (585); since #1314 the properties take its hits.
 const CONTINUATION_UNIT: ChangedUnit = {
   path: 'ts/src/cli-commands.ts',
   added_ranges: [[591, 598]],
@@ -121,13 +150,15 @@ describe('case A: non-coverable-only edits are recorded apart from absent ones',
     );
   });
 
-  it('#841 object-literal continuation lines are case A too', () => {
+  it('#841 object-literal properties are code since #1314, not case A', () => {
+    // #928 first pinned these as non-coverable; they are the same false green
+    // #1314 fixed, so the properties now take line 585's hits.
     const state = resolve([CONTINUATION_UNIT, DOC_COMMENT_UNIT], lcov(REPORT));
-    expect(state.unitsNonCoverable).toBe(2);
-    expect(headline(comment(state))).toContain(
-      'nothing to test: only non-executable lines changed (2 files)',
+    expect(state.unitsNonCoverable).toBe(1);
+    expect(state.unitsMatched).toBe(1);
+    expect(headline(comment(state))).toBe(
+      `${HEAD}\u{2705} no test-coverage gaps`,
     );
-    expect(comment(state)).not.toContain('coverage unavailable');
   });
 });
 

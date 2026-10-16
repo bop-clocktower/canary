@@ -55,7 +55,7 @@ export function isTypeOnlyModule(path: string, repoRoot: string): boolean {
 }
 
 /** Drop `//` and `/* *\/` comments so keywords inside prose never count. */
-function stripComments(source: string): string {
+export function stripComments(source: string): string {
   const out: string[] = [];
   let inBlock = false;
   for (const line of splitLines(source)) {
@@ -114,7 +114,7 @@ function commentStart(text: string): number {
   return -1;
 }
 
-const QUOTES: ReadonlySet<string> = new Set(["'", '"', '`']);
+export const QUOTES: ReadonlySet<string> = new Set(["'", '"', '`']);
 const COMMENT_SECOND: ReadonlySet<string> = new Set(['/', '*']);
 
 /** True if a `//` or `/*` begins at `text[i]`. */
@@ -219,7 +219,7 @@ const BRACKET_DELTA: Readonly<Record<string, number>> = {
 };
 
 /** Advance through a string literal: the new quote state and index. */
-function stepQuote(
+export function stepQuote(
   line: string,
   i: number,
   quote: string | null,

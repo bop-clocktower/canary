@@ -1,0 +1,18 @@
+{
+  "issues": [1314],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-multiline-continuation.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Root cause confirmed empirically with @vitest/coverage-v8: lcov emits one DA line per statement, so continuation lines of a multi-line statement are absent from the measured set; the fix scores them by that statement's recorded line instead of reading absence as non-executable.",
+    "The judgement is lexical (open ( [ or object-literal {, trailing/leading operators, multi-line template literals), not a TypeScript parse: the engine has no runtime typescript dependency. Errors lean toward 'executable' (a noisy finding) rather than 'non-executable' (a hidden gap).",
+    "The #841 object-literal shape that #928 pinned as non-coverable is the same false-green class and is reclassified when source is readable; the #928 fixture (no source on disk) still pins the no-source fallback.",
+    "Security-review hardening (conductor relay): a source that cannot be judged (unreadable, over 2,000,000 chars, or shorter than the diff) fails CLOSED: the file loses its measured set, so every changed line is scored and absence means uncovered. Unbalanced brackets fail closed too: every non-blank line is scored by the nearest recorded line above. The #928 case-A fixtures now write a synthesized source to disk for this reason.",
+    "Statement grouping is one linear forward pass (O(source chars), capped at 2,000,000 chars), replacing the bounded walk-back whose 80-line cap returned 'non-executable' (fail-open) and whose re-scans were quadratic.",
+    "A statement with no recorded line anywhere is treated as the instrumenter's own non-executable verdict (#655 rule) and stays not-coverable; that rule is pre-existing and was not flipped to fail-closed here, since flipping it would re-litigate #655 (reported to the conductor as a possible follow-up, not decided in this PR).",
+    "Python sources get no special comment handling: a '#' comment inside an open statement is scored with that statement (fail closed).",
+    "The lexer lives in a new sub-module ts/src/guardian/diff-coverage/lexical/ (precedent: diff-coverage/formats/) so diff-coverage/ stays under its 1800-LOC module-size ceiling; it reuses type-only.ts's stripComments/stepQuote/QUOTES, which are now exported.",
+    "report-tier.ts is left unchanged (it sits at the 300-line perf cap and its coupling ratio is at the limit): the orchestrator passes matchUnitsToIndex a copied index in which each continuation line is folded into the file's measured set, carrying the hits of its statement's recorded line."
+  ]
+}
