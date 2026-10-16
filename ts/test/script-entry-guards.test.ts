@@ -88,8 +88,8 @@ const NOT_ENTRY_GUARDED: Record<string, string> = {
   'scripts/roadmap-sync.mjs': 'runs unconditionally; import.meta finds files',
   'scripts/roadmap_comment_guard.mjs':
     'runs unconditionally; import.meta finds root',
-  'npm/scripts/build-engine.mjs':
-    'runs unconditionally; import.meta finds dirs',
+  'npm/scripts/engine-runner.mjs':
+    'never runs; exports the generated runner as a string',
 };
 
 interface Case {

@@ -31,14 +31,26 @@ function readVersion() {
   }
 }
 
+// Exit once stdout/stderr have drained: a bare process.exit discards queued
+// writes on an async pipe (macOS, Windows), truncating piped --json (#1284).
+function exitAfterDrain(code) {
+  process.stdout.write('', () => {
+    process.stderr.write('', () => process.exit(code));
+  });
+}
+
 const program = createCanaryCommand({ pkgVersion: () => readVersion() });
 
 try {
   await program.parseAsync(process.argv.slice(2), { from: 'user' });
 } catch (err) {
-  if (err instanceof CliExitError) process.exit(err.code);
-  if (err instanceof CommanderError) process.exit(err.exitCode);
-  console.error(err);
-  process.exit(1);
+  if (err instanceof CliExitError) {
+    exitAfterDrain(err.code);
+  } else if (err instanceof CommanderError) {
+    exitAfterDrain(err.exitCode);
+  } else {
+    console.error(err);
+    exitAfterDrain(1);
+  }
 }
 `;

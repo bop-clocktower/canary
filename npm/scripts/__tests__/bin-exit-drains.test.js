@@ -135,7 +135,10 @@ describe('bin/canary.js drains before process.exit (#1356)', () => {
         );
       });
       assert.equal(res.code, 0);
-      assert.doesNotThrow(() => JSON.parse(res.stdout));
+      // A one-line denominator summary precedes the payload on stdout.
+      const json = res.stdout.slice(res.stdout.indexOf('\n{') + 1);
+      assert.match(res.stdout, /^canary testtracker/);
+      assert.doesNotThrow(() => JSON.parse(json));
       // Guards the guard: a payload inside one pipe buffer proves nothing.
       assert.ok(res.stdout.length > 64 * 1024, `${res.stdout.length} bytes`);
     } finally {
