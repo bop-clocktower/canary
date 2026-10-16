@@ -47,7 +47,7 @@ export function parseCobertura(text: string): ReportIndex | null {
 }
 
 /**
- * The comment-stripped document, or `null` if it is not a Cobertura report we
+ * The markup-only document (comments, CDATA and PIs removed), or `null` if it is not a Cobertura report we
  * are willing to read: oversize, entity-bearing, malformed, or a different
  * format entirely.
  */
@@ -66,55 +66,31 @@ function coberturaBody(text: string): string | null {
   if (!isWellFormedXml(text)) return null;
 
   // Pin to the canonical (namespace-free) Cobertura root; anything else is a
-  // different XML format and is rejected rather than guessed at. Strip comments
-  // first so a `<foo>` inside a comment can't masquerade as the root element.
-  const withoutComments = stripComments(text);
-  const rootMatch = /<(?![?!])([A-Za-z_][\w.:-]*)/.exec(withoutComments);
+  // different XML format and is rejected rather than guessed at. Strip
+  // non-markup first so a `<foo>` inside a comment, CDATA section or PI can't
+  // masquerade as the root element (or, later, as a class).
+  const markup = stripNonMarkup(text);
+  const rootMatch = /<(?![?!])([A-Za-z_][\w.:-]*)/.exec(markup);
   if (rootMatch === null || rootMatch[1] !== 'coverage') return null;
-  return withoutComments;
+  return markup;
 }
 
-const CDATA_OPEN = '<![CDATA[';
-const CDATA_CLOSE = ']]>';
-const COMMENT_OPEN = '<!--';
-const COMMENT_CLOSE = '-->';
+// Comments, CDATA sections and processing instructions (the XML declaration
+// too): their content is character data, never markup.
+const NON_MARKUP_RE =
+  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>/g;
 
 /**
- * Drop every XML comment, leaving CDATA sections intact.
- *
- * Must not be a plain `/<!--[\s\S]*?-->/g` replace: inside CDATA those markers
- * are ordinary character data, so a document carrying `<!--` in one CDATA
- * section and `-->` in a later one would have every real element between them
- * deleted. The damage is worse than data loss — the surviving `</class>` then
- * rebinds the next class's `<line>` records to the previous class's filename,
- * so a crafted report can attribute one file's hit counts to another.
- *
- * Chunked with `indexOf` rather than scanned per character so the cost stays
- * proportional to the number of markers, not the size of the capped document.
+ * Drop every comment, CDATA section and PI, so a `<class` inside one is never
+ * read as a tag: paired with the next real `</class>` it would credit that
+ * class's hits to the fake filename (#1360). One alternation, so whichever
+ * construct opens first wins; inside it the others' markers are plain text (a
+ * `<!--` in CDATA opens no comment, which separate per-construct regexes would
+ * get wrong). The input has passed isWellFormedXml, so every opener has its
+ * close and each lazy match is linear in its own length.
  */
-function stripComments(text: string): string {
-  const out: string[] = [];
-  let i = 0;
-  for (;;) {
-    const cdata = text.indexOf(CDATA_OPEN, i);
-    const comment = text.indexOf(COMMENT_OPEN, i);
-    if (comment === -1) break;
-    // A CDATA section that opens first swallows this comment marker: copy the
-    // whole section verbatim and resume looking after it.
-    if (cdata !== -1 && cdata < comment) {
-      const end = text.indexOf(CDATA_CLOSE, cdata + CDATA_OPEN.length);
-      if (end === -1) break; // unterminated CDATA — nothing further is markup
-      out.push(text.slice(i, end + CDATA_CLOSE.length));
-      i = end + CDATA_CLOSE.length;
-      continue;
-    }
-    const end = text.indexOf(COMMENT_CLOSE, comment + COMMENT_OPEN.length);
-    if (end === -1) break; // unterminated comment — leave the tail as-is
-    out.push(text.slice(i, comment));
-    i = end + COMMENT_CLOSE.length;
-  }
-  out.push(text.slice(i));
-  return out.join('');
+function stripNonMarkup(text: string): string {
+  return text.replace(NON_MARKUP_RE, '');
 }
 
 const CLOSE_CLASS = '</class>';
@@ -150,7 +126,9 @@ function collectClasses(body: string, index: Record<string, LineHits>): void {
 
     const openEnd = classOpenRe.lastIndex;
     const closeIdx = body.indexOf(CLOSE_CLASS, openEnd);
-    if (closeIdx === -1) return; // no close (well-formed XML guarantees one)
+    // No close: unreachable once non-markup is stripped, since well-formed
+    // XML then pairs every real open tag. Stop rather than guess.
+    if (closeIdx === -1) return;
     classOpenRe.lastIndex = closeIdx + CLOSE_CLASS.length;
     if (!filename) continue;
     readClassLines(body.slice(openEnd, closeIdx), bucketFor(index, filename));
