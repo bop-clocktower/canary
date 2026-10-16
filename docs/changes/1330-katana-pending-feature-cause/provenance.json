@@ -1,0 +1,18 @@
+{
+  "issues": [1330],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan": "docs/changes/1330-katana-pending-feature-cause/plans/2026-10-16-katana-pending-feature-cause-plan.md",
+  "spec": "docs/changes/1330-katana-pending-feature-cause/proposal.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "DECIDED fork (human, F4=a): add ONLY pending-feature; blocked-dependency is not added.",
+    "pending-feature requires an issue and is in CAUSES_REQUIRING_ISSUE; the release rule is unchanged (remove the row when the test passes live).",
+    "Placed after blocked-data in both lists so the issue-requiring causes stay contiguous; nothing in-repo indexes CAUSES by position.",
+    "No schema version bump: additive, and load() never checks cause membership.",
+    "'A row with it but no issue is rejected' is proved at the existing rejection point, manhunter's quarantine eye ('out as pending-feature with no linked issue'), which canary-ci-ready's unlinked-quarantine rule also keys on. No new validateRow() export was added (no caller, would be a dead export).",
+    "The TS mirror in ts/src/analysis/manhunter/ledger.ts stays a copy because the published ts/ package does not ship agents/skills; a behavioural parity test now guards it (planted red against the old mirror: mismatches ['pending-feature']).",
+    "No roadmap row exists for #1330, so roadmap promote/sync was skipped (never `roadmap sync --apply`).",
+    "Worked in the .claude-nested isolated worktree (the isolation guard refuses a sibling worktree); the repo has no pre-push hook, so no check-docs gate was skipped."
+  ]
+}
