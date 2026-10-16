@@ -1,11 +1,9 @@
 /**
- * Multi-line statement continuation (#1314). lcov records a multi-line
- * statement on ONE line, so a ternary arm, a `+` term or a chain link has no
- * `DA:` record yet runs. One linear pass groups lines into statements; an
- * unrecorded line is scored by its statement's first recorded line, and a
- * statement recorded nowhere is one the instrumenter judged non-executable.
- * What the lexer cannot judge fails CLOSED, toward "executable": a wrong
- * "executable" is one noisy finding, a wrong "non-executable" hides a gap.
+ * #1314: lcov records a multi-line statement on ONE line, so a ternary arm or
+ * chain link has no `DA:` record yet runs. One linear pass groups lines into
+ * statements; an unrecorded line takes its statement's first recorded line,
+ * and a statement recorded nowhere is the instrumenter's non-executable. What
+ * cannot be judged fails CLOSED: a wrong "executable" is one noisy finding.
  */
 
 import { readFileSync } from 'node:fs';
@@ -38,11 +36,7 @@ const REGEX_BEFORE = /(?:^|[=([,:?!&|{};+\-*%<>~^]|\breturn|\btypeof)$/;
 /** An open bracket; `{` is split into object-literal (`expr`) vs block. */
 type Frame = '(' | '[' | 'expr' | 'block';
 
-/**
- * One statement sequence (the root, or one `{ }` block's inside): its open
- * `(`/`[`/object-literal depth, and the current statement's first recorded
- * line (`owner`) plus the unrecorded lines seen before it (`pending`).
- */
+/** The root or one block's inside; `owner`: current statement's first record. */
 interface Ctx {
   parent: Ctx | null;
   live: boolean;
@@ -59,8 +53,7 @@ interface Pass {
   ctx: Ctx;
   before: string;
   inTemplate?: boolean;
-  /** The lexer lost track (unbalanced brackets); its grouping is not trusted. */
-  lost: boolean;
+  lost: boolean; // unbalanced brackets: the grouping is not trusted
 }
 
 const FRESH = { live: true, exprDepth: 0, ended: false, owner: null };
@@ -160,8 +153,7 @@ function groupStatements(code: string[], measured: ReadonlySet<number>) {
       Object.assign(start, { ended: false, owner: null, pending: [] });
     }
     scanLine(code[ln]!, p);
-    // A line that closes its own block (`})`, `}).then(…)`, `} else {`)
-    // belongs to the statement that encloses the block.
+    // A line closing its own block (`})`, `} else {`) joins the enclosing one.
     let ctx = start;
     while (!ctx.live) ctx = ctx.parent!;
     place(ln, ctx, measured.has(ln), map);
@@ -181,11 +173,7 @@ function nearestRecordAbove(code: string[], measured: ReadonlySet<number>) {
   return map;
 }
 
-/**
- * Map each changed line to the line whose hits decide it; absent lines are
- * blank, comments, or in a statement recorded nowhere. `null`: the source is
- * missing, too large, or shorter than the diff, so the caller fails closed.
- */
+/** Changed line -> the line whose hits decide it; `null`: cannot judge at all. */
 export function attributeLines(
   added: number[],
   measured: ReadonlySet<number>,
@@ -214,11 +202,7 @@ function readSource(repoRoot: string, path: string): string | null {
   }
 }
 
-/**
- * `index` (copied) with each unit's continuation lines folded into its file's
- * measured set, carrying their statement line's hits. A file whose source
- * cannot be judged loses its measured set, so every changed line is scored.
- */
+/** `index` (copied) with continuation lines folded in; unjudgeable: unmeasured. */
 export function withContinuations(
   units: ChangedUnit[],
   index: ReportIndex,
@@ -232,13 +216,10 @@ export function withContinuations(
     const source = readSource(repoRoot, unit.path);
     const added = expandRanges(unit.added_ranges);
     const at = attributeLines(added, file.coverable, source);
-    if (at === null) {
-      out[key] = { hits: file.hits, coverable: null };
-      continue;
-    }
     const hits: LineHits = Object.assign(Object.create(null), file.hits);
-    for (const [ln, m] of at) hits[ln] = file.hits[m] ?? 0;
-    const coverable = new Set([...file.coverable, ...at.keys()]);
+    for (const [ln, m] of at ?? []) hits[ln] = file.hits[m] ?? 0;
+    // `null` coverable: every changed line is scored (fail closed).
+    const coverable = at && new Set([...file.coverable, ...at.keys()]);
     out[key] = { hits, coverable };
   }
   return out;
