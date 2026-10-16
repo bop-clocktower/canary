@@ -7,11 +7,13 @@
  * executable. Reading "absent from the measured set" as "not executable"
  * headlined such diffs "only non-executable lines changed" — a false green.
  *
- * This module attributes an unmeasured changed line to the measured line of
- * the statement it continues, judged lexically from the source at head. The
- * direction of error is chosen on purpose: a line wrongly judged a
- * continuation costs one noisy finding; a line wrongly judged non-executable
- * hides untested code, which is what the guardian exists to catch.
+ * One linear pass over the source groups lines into statements, and each
+ * unrecorded changed line is scored by the first recorded line of its
+ * statement. A statement with no recorded line at all is one the instrumenter
+ * itself judged non-executable (a type, a signature, an import). Everything
+ * the lexer cannot judge fails CLOSED, toward "executable": a wrong
+ * "executable" costs one noisy finding, a wrong "non-executable" hides
+ * untested code, which is what the guardian exists to catch.
  */
 
 import { readFileSync } from 'node:fs';
@@ -27,142 +29,205 @@ import {
   type ReportIndex,
 } from '../types.js';
 
+/** Sources larger than this are not scanned; the caller fails closed. */
+const MAX_SOURCE_CHARS = 2_000_000;
+
+/** A line ending in one of these hands its statement on to the next line. */
+const TRAILING_OP =
+  /(?:[=+\-*/%&|^?:,.<>!~\\]|\b(?:return|await|yield|new|typeof|in|of|instanceof|throw))$/;
+/** A line starting with one of these continues the previous line's statement. */
+const LEADING_OP =
+  /^(?:[.?:+\-*/%&|^=<>]|\?\?|&&|\|\||(?:as|in|instanceof|satisfies)\b)/;
+/** The token before a `{` that makes it an object literal, not a block. */
+const EXPR_BEFORE_BRACE = /(?:[=([,:?!&|+]|\breturn|\byield|\bawait)$/;
+/** The token before a `/` that makes it a regex literal, not division. */
+const REGEX_BEFORE = /(?:^|[=([,:?!&|{};+\-*%<>~^]|\breturn|\btypeof)$/;
+
 /** An open bracket; `{` is split into object-literal (`expr`) vs block. */
 type Frame = '(' | '[' | 'expr' | 'block';
 
-/** A line ending in one of these hands its statement on to the next line. */
-const TRAILING_OP = /(?:[=+\-*/%&|^?:,.<>!~\\]|\breturn)$/;
-/** A line starting with one of these continues the previous line's statement. */
-const LEADING_OP = /^(?:[.?:+\-*/%&|^=<>]|\?\?|&&|\|\|)/;
-/** The token before a `{` that makes it an object literal, not a block. */
-const EXPR_BEFORE_BRACE = /(?:[=([,:?!&|+]|\breturn|\byield|\bawait)$/;
-
-interface ScanState {
-  stack: Frame[];
-  /** The significant code consumed so far, for classifying a `{`. */
-  before: string;
-  /** A template literal open across a line break. */
-  inTemplate: boolean;
-  /** The scanned statement ended (`;` or a block close at depth 0). */
+/** One statement sequence: the root, or the inside of one `{ }` block. */
+interface Ctx {
+  parent: Ctx | null;
+  live: boolean;
+  /** Open `(`, `[` and object-literal `{` inside the current statement. */
+  exprDepth: number;
   ended: boolean;
+  /** The first recorded line of the current statement. */
+  owner: number | null;
+  /** Unrecorded lines of the current statement seen before its owner. */
+  pending: number[];
 }
 
-const fresh = (): ScanState => ({
-  stack: [],
-  before: '',
-  inTemplate: false,
+interface Pass {
+  frames: Frame[];
+  ctx: Ctx;
+  before: string;
+  inTemplate?: boolean;
+  /** The lexer lost track (unbalanced brackets); its grouping is not trusted. */
+  lost: boolean;
+}
+
+const newCtx = (parent: Ctx | null): Ctx => ({
+  parent,
+  live: true,
+  exprDepth: 0,
   ended: false,
+  owner: null,
+  pending: [],
 });
 
-/** Consume one line of comment-free code. False when it closes past the start. */
-function scanLine(code: string, st: ScanState): boolean {
-  let quote: string | null = st.inTemplate ? '`' : null;
-  for (let i = 0; i < code.length; i++) {
+/** Consume one line of comment-free code, updating nesting and statement end. */
+function scanLine(code: string, p: Pass): void {
+  let quote: string | null = p.inTemplate ? '`' : null;
+  for (let i = 0; i < code.length && !p.lost; i++) {
     const ch = code[i]!;
     if (quote !== null || QUOTES.has(ch)) {
       [quote, i] = stepQuote(code, i, quote);
-    } else if (!stepCode(ch, st)) {
-      return false;
-    } else if (ch.trim() !== '') {
-      st.before = (st.before + ch).slice(-8);
+    } else if (ch === '/' && REGEX_BEFORE.test(p.before)) {
+      i = skipRegex(code, i);
+    } else {
+      stepCode(ch, p);
+      if (ch.trim() !== '') p.before = (p.before + ch).slice(-8);
     }
   }
-  st.inTemplate = quote === '`';
-  return true;
+  p.inTemplate = quote === '`';
 }
 
-const CLOSERS: ReadonlySet<string> = new Set([')', ']', '}']);
+/** Index of a regex literal's closing `/` (or the line end) from its opening. */
+function skipRegex(code: string, start: number): number {
+  let inClass = false;
+  for (let i = start + 1; i < code.length; i++) {
+    const ch = code[i]!;
+    if (ch === '\\') i++;
+    else if (ch === '[' || ch === ']') inClass = ch === '[';
+    else if (ch === '/' && !inClass) return i;
+  }
+  return code.length;
+}
 
 /** Track one code character's effect on nesting and statement end. */
-function stepCode(ch: string, st: ScanState): boolean {
-  if (ch === '(' || ch === '[') st.stack.push(ch);
-  else if (ch === '{') st.stack.push(braceKind(st.before));
-  else if (CLOSERS.has(ch)) return close(ch, st);
-  else if (ch === ';' && st.stack.length === 0) st.ended = true;
-  return true;
+function stepCode(ch: string, p: Pass): void {
+  if (ch === '(' || ch === '[') open(ch, p);
+  else if (ch === '{') {
+    open(EXPR_BEFORE_BRACE.test(p.before) ? 'expr' : 'block', p);
+  } else if (ch === ')' || ch === ']' || ch === '}') close(ch, p);
+  else if (ch === ';' && p.ctx.exprDepth === 0) p.ctx.ended = true;
 }
 
-const braceKind = (before: string): Frame =>
-  EXPR_BEFORE_BRACE.test(before) ? 'expr' : 'block';
-
-/** Pop one frame; a block closed back to the start ends the statement. */
-function close(ch: string, st: ScanState): boolean {
-  if (st.stack.pop() === undefined) return false;
-  if (ch === '}' && st.stack.length === 0) st.ended = true;
-  return true;
+function open(frame: Frame, p: Pass): void {
+  p.frames.push(frame);
+  if (frame === 'block') p.ctx = newCtx(p.ctx);
+  else p.ctx.exprDepth++;
 }
 
-/** True if line `l` continues the statement that starts on measured line `m`. */
-function continues(code: string[], m: number, l: number): boolean {
-  const st = fresh();
-  let last = '';
-  for (let i = m; i < l; i++) {
-    if (!scanLine(code[i]!, st) || st.ended) return false;
-    if (code[i]!.trim() !== '') last = code[i]!.trim();
+const MATCHES: Readonly<Record<string, readonly Frame[]>> = {
+  ')': ['('],
+  ']': ['['],
+  '}': ['expr', 'block'],
+};
+
+/** Pop one frame; a block closed at statement level ends that statement. */
+function close(ch: string, p: Pass): void {
+  const frame = p.frames.pop();
+  if (frame === undefined || !MATCHES[ch]!.includes(frame)) {
+    p.lost = true;
+  } else if (frame !== 'block') {
+    p.ctx.exprDepth--;
+  } else {
+    p.ctx.live = false;
+    p.ctx = p.ctx.parent!;
+    if (p.ctx.exprDepth === 0) p.ctx.ended = true;
   }
-  const top = st.stack.at(-1);
-  if (st.inTemplate || (top !== undefined && top !== 'block')) return true;
-  return TRAILING_OP.test(last) || LEADING_OP.test(code[l]!.trim());
 }
 
-/** True if line `l` alone leaves its statement open onto the next line. */
-function opensInto(line: string): boolean {
-  const st = fresh();
-  if (!scanLine(line, st) || st.ended) return false;
-  const top = st.stack.at(-1);
-  if (top !== undefined) return top !== 'block';
-  return TRAILING_OP.test(line.trim());
+/** True if a line starting in `ctx` continues that context's open statement. */
+function continues(ctx: Ctx, p: Pass, prev: string, line: string): boolean {
+  if (ctx.ended) return false;
+  if (p.inTemplate || ctx.exprDepth > 0) return true;
+  return TRAILING_OP.test(prev) || LEADING_OP.test(line);
 }
 
-/** How far back (in lines) a continuation's statement start is looked for. */
-const MAX_SPAN = 80;
+/** Score line `ln` within `ctx`'s statement, recording it in `out` if wanted. */
+function place(
+  ln: number,
+  ctx: Ctx,
+  recorded: boolean,
+  out: Map<number, number>,
+) {
+  if (recorded && ctx.owner === null) {
+    ctx.owner = ln;
+    for (const q of ctx.pending) out.set(q, ln);
+    ctx.pending = [];
+  }
+  if (recorded) out.set(ln, ln);
+  else if (ctx.owner !== null) out.set(ln, ctx.owner);
+  else ctx.pending.push(ln);
+}
 
-/** The measured line whose statement unmeasured line `l` belongs to, or null. */
-function statementLine(
+/** One forward pass: every non-blank line mapped to its statement's owner. */
+function groupStatements(
   code: string[],
   measured: ReadonlySet<number>,
-  l: number,
-): number | null {
-  // Nearest recorded line first, then further back: the nearest can sit inside
-  // a callback or argument list that closed before `l` (`.map(…{…})` then
-  // `.filter()`). The span bounds the quadratic scan on a large diff.
-  for (let m = l - 1; m >= 1 && l - m <= MAX_SPAN; m--) {
-    if (measured.has(m) && continues(code, m, l)) return m;
+): { map: Map<number, number>; lost: boolean } {
+  const p: Pass = { frames: [], ctx: newCtx(null), before: '', lost: false };
+  const map = new Map<number, number>();
+  let prev = '';
+  for (let ln = 1; ln < code.length && !p.lost; ln++) {
+    const line = code[ln]!.trim();
+    if (line === '') continue;
+    const start = p.ctx;
+    if (!continues(start, p, prev, line)) {
+      Object.assign(start, { ended: false, owner: null, pending: [] });
+    }
+    scanLine(code[ln]!, p);
+    // A line that closes its own block (`})`, `}).then(…)`, `} else {`)
+    // belongs to the statement that encloses the block.
+    let ctx = start;
+    while (!ctx.live) ctx = ctx.parent!;
+    place(ln, ctx, measured.has(ln), map);
+    prev = line;
   }
-  let n = l + 1;
-  while (n < code.length && code[n]!.trim() === '') n++;
-  return measured.has(n) && opensInto(code[l]!) ? n : null;
+  return { map, lost: p.lost || p.frames.length > 0 || p.inTemplate === true };
 }
 
-/** Comment-free code lines, 1-based (index 0 unused). */
-function codeLines(source: string, path: string): string[] {
-  const lines = splitLines(stripComments(source));
-  // coverage.py sources: a whole-line `#` comment is never a continuation.
-  const hash = path.endsWith('.py');
-  return ['', ...lines.map((l) => (hash && /^\s*#/.test(l) ? '' : l))];
+/** Lost lexer: every non-blank line is code, scored by the nearest record above. */
+function nearestRecordAbove(
+  code: string[],
+  measured: ReadonlySet<number>,
+): Map<number, number> {
+  const map = new Map<number, number>();
+  let last = 0; // line 0 has no hits, so an orphan line reads as uncovered
+  for (let ln = 1; ln < code.length; ln++) {
+    if (measured.has(ln)) last = ln;
+    if (code[ln]!.trim() !== '') map.set(ln, last);
+  }
+  return map;
 }
 
 /**
- * Map each changed line the report can score to the measured line whose hits
- * decide it: a measured line maps to itself, a continuation line to its
- * statement's measured line (#1314). Lines absent from the map are
- * non-executable. With no source, only measured lines are scored — the
- * pre-#1314 behaviour, never a guess.
+ * Map each changed line the report can score to the line whose hits decide
+ * it: a recorded line maps to itself, an unrecorded line to its statement's
+ * first recorded line (#1314). Lines absent from the map are blank, comments,
+ * or in a statement the instrumenter recorded nowhere. `null` means the
+ * source cannot be judged at all — missing, too large, or shorter than the
+ * diff (so not the source the diff describes) — and the caller fails closed.
  */
 export function attributeLines(
   added: number[],
   measured: ReadonlySet<number>,
   source: string | null,
-  path: string,
-): Map<number, number> {
-  const code = source === null ? null : codeLines(source, path);
+): Map<number, number> | null {
+  if (source === null || source.length > MAX_SOURCE_CHARS) return null;
+  const code = ['', ...splitLines(stripComments(source))];
+  if (added.some((ln) => ln >= code.length)) return null;
+  const grouped = groupStatements(code, measured);
+  const all = grouped.lost ? nearestRecordAbove(code, measured) : grouped.map;
   const out = new Map<number, number>();
   for (const ln of added) {
-    if (measured.has(ln)) out.set(ln, ln);
-    else if (code !== null && (code[ln] ?? '').trim() !== '') {
-      const at = statementLine(code, measured, ln);
-      if (at !== null) out.set(ln, at);
-    }
+    // A recorded line always scores itself, whatever the grouping says.
+    const at = measured.has(ln) ? ln : all.get(ln);
+    if (at !== undefined) out.set(ln, at);
   }
   return out;
 }
@@ -179,8 +244,10 @@ function readSource(repoRoot: string, path: string): string | null {
 /**
  * `index` with each changed unit's continuation lines folded into its file's
  * measured set, each carrying its statement line's hits (#1314), so the report
- * tier scores them like any recorded line. Entries are copied, never mutated;
- * a file whose report never said what it measured is left as is.
+ * tier scores them like any recorded line. A file whose source cannot be
+ * judged loses its measured set instead: the report tier then scores every
+ * changed line and absence means uncovered (fail closed). Entries are copied,
+ * never mutated; a file whose report never said what it measured is left as is.
  */
 export function withContinuations(
   units: ChangedUnit[],
@@ -194,7 +261,11 @@ export function withContinuations(
     if (!file?.coverable || key === undefined) continue;
     const source = readSource(repoRoot, unit.path);
     const added = expandRanges(unit.added_ranges);
-    const at = attributeLines(added, file.coverable, source, unit.path);
+    const at = attributeLines(added, file.coverable, source);
+    if (at === null) {
+      out[key] = { hits: file.hits, coverable: null };
+      continue;
+    }
     const hits: LineHits = Object.assign(Object.create(null), file.hits);
     for (const [ln, m] of at) hits[ln] = file.hits[m] ?? 0;
     const coverable = new Set([...file.coverable, ...at.keys()]);

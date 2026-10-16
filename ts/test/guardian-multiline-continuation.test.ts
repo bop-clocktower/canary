@@ -127,14 +127,9 @@ describe('#1314: continuation lines of a multi-line statement are coverable', ()
 });
 
 describe('attributeLines: the lexical continuation judgement', () => {
-  const at = (
-    src: string[],
-    measured: number[],
-    added: number[],
-    path = 'a.ts',
-  ) =>
+  const at = (src: string[], measured: number[], added: number[]) =>
     Object.fromEntries(
-      attributeLines(added, new Set(measured), src.join('\n'), path),
+      attributeLines(added, new Set(measured), src.join('\n')) ?? [],
     );
 
   it('a type alias inside a block is not a continuation of the block opener', () => {
@@ -143,8 +138,30 @@ describe('attributeLines: the lexical continuation judgement', () => {
   });
 
   it('a line after a closed block is not a continuation', () => {
+    const src = [
+      'function f() {',
+      '  done();',
+      '}',
+      'interface X {',
+      '  a: string;',
+      '}',
+    ];
+    expect(at(src, [2], [4, 5])).toEqual({});
+  });
+
+  it('an unbalanced snippet (lexer lost) fails closed: every code line scored', () => {
     const src = ['  done();', '}', 'interface X {', '  a: string;', '}'];
-    expect(at(src, [1], [3, 4])).toEqual({});
+    expect(at(src, [1], [3, 4])).toEqual({ 3: 1, 4: 1 });
+  });
+
+  it('a regex literal with brackets does not throw the lexer off', () => {
+    const src = ['const re = /[})\\];,]+/;', 'type T = 1;'];
+    expect(at(src, [1], [2])).toEqual({});
+  });
+
+  it('a line that closes a callback and continues the chain is scored', () => {
+    const src = ['run(() => {', '  go();', '}).catch(log);'];
+    expect(at(src, [1, 2], [3])).toEqual({ 3: 1 });
   });
 
   it('a multi-line template literal carries its quote across lines', () => {
@@ -152,9 +169,9 @@ describe('attributeLines: the lexical continuation judgement', () => {
     expect(at(src, [1], [2, 3, 4])).toEqual({ 2: 1, 3: 1 });
   });
 
-  it('a Python whole-line # comment inside a call is never scored', () => {
+  it('an unrecognised comment form (Python #) inside a call fails closed', () => {
     const src = ['x = call(', '    # why', '    arg,', ')'];
-    expect(at(src, [1], [2, 3], 'm.py')).toEqual({ 3: 1 });
+    expect(at(src, [1], [2, 3])).toEqual({ 2: 1, 3: 1 });
   });
 
   it('a chain link after a multi-line callback continues the outer statement', () => {
@@ -165,7 +182,8 @@ describe('attributeLines: the lexical continuation judgement', () => {
       '  })',
       '  .filter(Boolean);',
     ];
-    expect(at(src, [1, 3], [4, 5])).toEqual({ 5: 1 });
+    // The `})` closer joins the outer statement too (closed direction).
+    expect(at(src, [1, 3], [4, 5])).toEqual({ 4: 1, 5: 1 });
   });
 
   it('a recorded line inside call arguments does not own the link after the call', () => {
@@ -173,10 +191,35 @@ describe('attributeLines: the lexical continuation judgement', () => {
     expect(at(src, [1, 2], [4])).toEqual({ 4: 1 });
   });
 
-  it('with no source, only measured lines are scored', () => {
-    expect(
-      Object.fromEntries(attributeLines([1, 2], new Set([1]), null, 'a.ts')),
-    ).toEqual({ 1: 1 });
+  it('cannot judge (null) with no source, so the caller fails closed', () => {
+    expect(attributeLines([1, 2], new Set([1]), null)).toBeNull();
+  });
+
+  it('cannot judge a source shorter than the diff (source/diff mismatch)', () => {
+    expect(attributeLines([1, 9], new Set([1]), 'a();\nb();')).toBeNull();
+  });
+
+  it('cannot judge a source over the scan cap', () => {
+    const huge = 'x();\n'.repeat(600_000);
+    expect(attributeLines([2], new Set([1]), huge)).toBeNull();
+  });
+
+  it('a statement longer than any fixed look-back window is still attributed', () => {
+    const args = Array.from({ length: 500 }, (_, i) => `  a${i},`);
+    const src = ['call(', ...args, ')', '  .then(done);'];
+    expect(at(src, [1], [503])).toEqual({ 503: 1 });
+  });
+
+  it('stays linear on adversarial input (nested open blocks, long lines)', () => {
+    const long = 'v'.repeat(1000);
+    const src = Array.from({ length: 600 }, (_, i) =>
+      i % 2 === 0 ? `if (a) { ${long}` : '  type T = 1;',
+    );
+    const measured = src.map((_, i) => i + 1).filter((n) => n % 2 === 1);
+    const added = src.map((_, i) => i + 1);
+    const t = performance.now();
+    attributeLines(added, new Set(measured), src.join('\n'));
+    expect(performance.now() - t).toBeLessThan(1000);
   });
 });
 
@@ -190,16 +233,34 @@ describe('#1314 positive controls: genuinely non-executable edits stay non-cover
     expect(coverage.unitsNonCoverable).toBe(1);
     expect(coverage.unitsMatched).toBe(0);
   });
+});
 
-  it('an unreadable source keeps the measured-set verdict (no guessing)', () => {
+describe('#1314 fail closed: what cannot be judged is never "non-executable"', () => {
+  it('an edit to an unhit statement, flagged before #1314, is still a finding', () => {
+    const { results, coverage } = resolve([[3, 5]], [3]);
+    expect(coverage.unitsNonCoverable).toBe(0);
+    expect(results[0]!.fidelity).toBe(Fidelity.CoverageVerified);
+    expect(results[0]!.covered).toBe(false);
+    expect(results[0]!.uncovered_lines).toEqual([3, 4, 5]);
+  });
+
+  it('an unreadable source scores every changed line (a finding, not ✅)', () => {
     const unit: ChangedUnit = { path: 'src/gone.ts', added_ranges: [[4, 4]] };
     const report = join(tmp, 'gone.info');
     writeFileSync(report, 'SF:src/gone.ts\nDA:3,1\nend_of_record\n');
-    const { coverage } = resolveCoverageWithInput([unit], {
+    const { results, coverage } = resolveCoverageWithInput([unit], {
       coveragePath: report,
       graphPath: join(tmp, 'missing-graph.json'),
       repoRoot: tmp,
     });
-    expect(coverage.unitsNonCoverable).toBe(1);
+    expect(coverage.unitsNonCoverable).toBe(0);
+    expect(results[0]!.covered).toBe(false);
+    expect(results[0]!.uncovered_lines).toEqual([4]);
+  });
+
+  it('a source that does not match the diff (too short) fails closed too', () => {
+    const { results, coverage } = resolve([[40, 40]]);
+    expect(coverage.unitsNonCoverable).toBe(0);
+    expect(results[0]!.covered).toBe(false);
   });
 });
