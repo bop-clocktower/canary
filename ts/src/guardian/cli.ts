@@ -146,7 +146,6 @@ import {
   renderMutationReport,
 } from './mutation-report.js';
 import { buildWeakTestFindings } from './weak-test.js';
-import { isWeakOnlyAbstention } from './weak-only-abstention.js';
 import {
   GitHubClient,
   RestGitHubClient,
@@ -1718,12 +1717,11 @@ async function prCheckCmd(
   // calls above make, and the one that consumer run needed. It does not exit
   // through `abstainPrCheck`: those findings are worth showing, so the run keeps
   // every surface and changes only its headline and its exit code.
-  // #1305: likewise a run that checked no source unit and found only weak tests.
-  // Both exits above step aside for its weak-test findings, so it lands here;
-  // without this a worse test turned the same diff's abstention into exit 0.
+  // #1305: so is checking no unit and finding only weak tests (findings > 0 here).
   const abstained =
     isCoverageAbstention(coverage, findings) ||
-    isWeakOnlyAbstention(scoredResults.length, findings);
+    (scoredResults.length === 0 &&
+      findings.every((f) => f.kind === 'weak-test'));
 
   // Compute the gate result once, up front: the emitted record carries it and it
   // is the process exit at the end (SC-4 -- emit never changes the exit logic).
@@ -1778,7 +1776,7 @@ async function prCheckCmd(
       degraded_notice: resolution.degraded_notice,
       exit_code: exitCode,
       checked: scoredResults.length,
-      // #761/#1305: a coverage or weak-only abstention DOES reach emit — unlike the
+      // #761: a coverage abstention DOES reach emit — unlike the
       // findings-eligible abstention, it keeps its findings, so a machine
       // consumer must see the flag rather than infer a result from the array.
       abstained,

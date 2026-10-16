@@ -1460,7 +1460,7 @@ new file mode 100644
     expect(res.stdout).toContain(
       'abstained: no source unit checked (only added tests were judged)',
     );
-    expect(res.stdout).toContain('No source unit in this diff was checked');
+    expect(res.stdout).toContain('No source unit in this diff was checked;');
     // Not the #761 coverage copy: that one claims a missing coverage report.
     expect(res.stdout).not.toContain('No coverage report reached this run');
     expect(res.stdout).toContain('`tests/test_widget.py`');

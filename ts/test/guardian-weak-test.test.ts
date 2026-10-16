@@ -16,13 +16,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type ChangedUnit } from '../src/guardian/coverage.js';
 import {
   GuardianConfig,
-  GuardianFinding,
   computeExitCode,
   filterTestUnits,
   loadGuardianConfig,
   scopeDiff,
 } from '../src/guardian/pr-check.js';
-import { isWeakOnlyAbstention } from '../src/guardian/weak-only-abstention.js';
 import { buildWeakTestFindings } from '../src/guardian/weak-test.js';
 
 const DIFF_WEAK_PY = `diff --git a/tests/test_widget.py b/tests/test_widget.py
@@ -220,40 +218,5 @@ new file mode 100644
 `;
     const findings = buildWeakTestFindings(testUnits(diff), diff);
     expect(findings.map((f) => f.added_ranges)).toEqual([[[1, 5]]]);
-  });
-});
-
-// #1305 (F3 a): checked 0 plus only weak-test findings is an abstention. The
-// finding is about a test the diff adds; it is not a judged source unit, so it
-// cannot stand in for one and lift the run to a pass.
-describe('isWeakOnlyAbstention', () => {
-  const weak = new GuardianFinding({
-    path: 't.test.ts',
-    unit: 't.test.ts',
-    kind: 'weak-test',
-  });
-  const gap = new GuardianFinding({
-    path: 'src/a.ts',
-    unit: 'src/a.ts',
-    kind: 'untested-new-code',
-  });
-
-  it('abstains when no unit was checked and every finding is weak-test', () => {
-    expect(isWeakOnlyAbstention(0, [weak])).toBe(true);
-    expect(isWeakOnlyAbstention(0, [weak, weak])).toBe(true);
-  });
-
-  it('does not abstain once a source unit was checked', () => {
-    expect(isWeakOnlyAbstention(1, [weak])).toBe(false);
-  });
-
-  it('does not abstain when any finding is not weak-test', () => {
-    expect(isWeakOnlyAbstention(0, [weak, gap])).toBe(false);
-  });
-
-  // No findings at all is the findings-eligible abstention's job, which exits
-  // before this predicate is reached; claiming it here would double-count.
-  it('does not claim the empty case', () => {
-    expect(isWeakOnlyAbstention(0, [])).toBe(false);
   });
 });
