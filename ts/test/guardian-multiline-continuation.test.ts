@@ -159,6 +159,10 @@ describe('attributeLines: the lexical continuation judgement', () => {
     expect(at(src, [1], [2])).toEqual({});
   });
 
+  it('an unterminated regex literal ends at the line end', () => {
+    expect(at(['const re = /a(b', 'type T = 1;'], [1], [2])).toEqual({});
+  });
+
   it('a line that closes a callback and continues the chain is scored', () => {
     const src = ['run(() => {', '  go();', '}).catch(log);'];
     expect(at(src, [1, 2], [3])).toEqual({ 3: 1 });

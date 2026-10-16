@@ -1,19 +1,11 @@
 /**
- * Multi-line statement continuation (#1314).
- *
- * v8/istanbul lcov (and coverage.py) record a multi-line statement on ONE line.
- * A ternary's arms, the terms of a multi-line `a +\n b` initializer and the
- * links of a method chain get no `DA:` record of their own, yet they are
- * executable. Reading "absent from the measured set" as "not executable"
- * headlined such diffs "only non-executable lines changed" — a false green.
- *
- * One linear pass over the source groups lines into statements, and each
- * unrecorded changed line is scored by the first recorded line of its
- * statement. A statement with no recorded line at all is one the instrumenter
- * itself judged non-executable (a type, a signature, an import). Everything
- * the lexer cannot judge fails CLOSED, toward "executable": a wrong
- * "executable" costs one noisy finding, a wrong "non-executable" hides
- * untested code, which is what the guardian exists to catch.
+ * Multi-line statement continuation (#1314). lcov records a multi-line
+ * statement on ONE line, so a ternary arm, a `+` term or a chain link has no
+ * `DA:` record yet runs. One linear pass groups lines into statements; an
+ * unrecorded line is scored by its statement's first recorded line, and a
+ * statement recorded nowhere is one the instrumenter judged non-executable.
+ * What the lexer cannot judge fails CLOSED, toward "executable": a wrong
+ * "executable" is one noisy finding, a wrong "non-executable" hides a gap.
  */
 
 import { readFileSync } from 'node:fs';
@@ -46,18 +38,21 @@ const REGEX_BEFORE = /(?:^|[=([,:?!&|{};+\-*%<>~^]|\breturn|\btypeof)$/;
 /** An open bracket; `{` is split into object-literal (`expr`) vs block. */
 type Frame = '(' | '[' | 'expr' | 'block';
 
-/** One statement sequence: the root, or the inside of one `{ }` block. */
+/**
+ * One statement sequence (the root, or one `{ }` block's inside): its open
+ * `(`/`[`/object-literal depth, and the current statement's first recorded
+ * line (`owner`) plus the unrecorded lines seen before it (`pending`).
+ */
 interface Ctx {
   parent: Ctx | null;
   live: boolean;
-  /** Open `(`, `[` and object-literal `{` inside the current statement. */
   exprDepth: number;
   ended: boolean;
-  /** The first recorded line of the current statement. */
   owner: number | null;
-  /** Unrecorded lines of the current statement seen before its owner. */
   pending: number[];
 }
+
+type LineMap = Map<number, number>;
 
 interface Pass {
   frames: Frame[];
@@ -68,14 +63,8 @@ interface Pass {
   lost: boolean;
 }
 
-const newCtx = (parent: Ctx | null): Ctx => ({
-  parent,
-  live: true,
-  exprDepth: 0,
-  ended: false,
-  owner: null,
-  pending: [],
-});
+const FRESH = { live: true, exprDepth: 0, ended: false, owner: null };
+const newCtx = (parent: Ctx | null): Ctx => ({ ...FRESH, parent, pending: [] });
 
 /** Consume one line of comment-free code, updating nesting and statement end. */
 function scanLine(code: string, p: Pass): void {
@@ -121,16 +110,14 @@ function open(frame: Frame, p: Pass): void {
   else p.ctx.exprDepth++;
 }
 
-const MATCHES: Readonly<Record<string, readonly Frame[]>> = {
-  ')': ['('],
-  ']': ['['],
-  '}': ['expr', 'block'],
-};
+/** The opener each closer pairs with; both kinds of brace frame read as `{`. */
+const OPENER: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+const opener = (f: Frame): string => (f === '(' || f === '[' ? f : '{');
 
 /** Pop one frame; a block closed at statement level ends that statement. */
 function close(ch: string, p: Pass): void {
   const frame = p.frames.pop();
-  if (frame === undefined || !MATCHES[ch]!.includes(frame)) {
+  if (frame === undefined || OPENER[ch] !== opener(frame)) {
     p.lost = true;
   } else if (frame !== 'block') {
     p.ctx.exprDepth--;
@@ -149,29 +136,21 @@ function continues(ctx: Ctx, p: Pass, prev: string, line: string): boolean {
 }
 
 /** Score line `ln` within `ctx`'s statement, recording it in `out` if wanted. */
-function place(
-  ln: number,
-  ctx: Ctx,
-  recorded: boolean,
-  out: Map<number, number>,
-) {
-  if (recorded && ctx.owner === null) {
+function place(ln: number, ctx: Ctx, rec: boolean, out: LineMap): void {
+  if (rec && ctx.owner === null) {
     ctx.owner = ln;
     for (const q of ctx.pending) out.set(q, ln);
     ctx.pending = [];
   }
-  if (recorded) out.set(ln, ln);
+  if (rec) out.set(ln, ln);
   else if (ctx.owner !== null) out.set(ln, ctx.owner);
   else ctx.pending.push(ln);
 }
 
 /** One forward pass: every non-blank line mapped to its statement's owner. */
-function groupStatements(
-  code: string[],
-  measured: ReadonlySet<number>,
-): { map: Map<number, number>; lost: boolean } {
+function groupStatements(code: string[], measured: ReadonlySet<number>) {
   const p: Pass = { frames: [], ctx: newCtx(null), before: '', lost: false };
-  const map = new Map<number, number>();
+  const map: LineMap = new Map();
   let prev = '';
   for (let ln = 1; ln < code.length && !p.lost; ln++) {
     const line = code[ln]!.trim();
@@ -192,11 +171,8 @@ function groupStatements(
 }
 
 /** Lost lexer: every non-blank line is code, scored by the nearest record above. */
-function nearestRecordAbove(
-  code: string[],
-  measured: ReadonlySet<number>,
-): Map<number, number> {
-  const map = new Map<number, number>();
+function nearestRecordAbove(code: string[], measured: ReadonlySet<number>) {
+  const map: LineMap = new Map();
   let last = 0; // line 0 has no hits, so an orphan line reads as uncovered
   for (let ln = 1; ln < code.length; ln++) {
     if (measured.has(ln)) last = ln;
@@ -206,12 +182,9 @@ function nearestRecordAbove(
 }
 
 /**
- * Map each changed line the report can score to the line whose hits decide
- * it: a recorded line maps to itself, an unrecorded line to its statement's
- * first recorded line (#1314). Lines absent from the map are blank, comments,
- * or in a statement the instrumenter recorded nowhere. `null` means the
- * source cannot be judged at all — missing, too large, or shorter than the
- * diff (so not the source the diff describes) — and the caller fails closed.
+ * Map each changed line to the line whose hits decide it; absent lines are
+ * blank, comments, or in a statement recorded nowhere. `null`: the source is
+ * missing, too large, or shorter than the diff, so the caller fails closed.
  */
 export function attributeLines(
   added: number[],
@@ -242,12 +215,9 @@ function readSource(repoRoot: string, path: string): string | null {
 }
 
 /**
- * `index` with each changed unit's continuation lines folded into its file's
- * measured set, each carrying its statement line's hits (#1314), so the report
- * tier scores them like any recorded line. A file whose source cannot be
- * judged loses its measured set instead: the report tier then scores every
- * changed line and absence means uncovered (fail closed). Entries are copied,
- * never mutated; a file whose report never said what it measured is left as is.
+ * `index` (copied) with each unit's continuation lines folded into its file's
+ * measured set, carrying their statement line's hits. A file whose source
+ * cannot be judged loses its measured set, so every changed line is scored.
  */
 export function withContinuations(
   units: ChangedUnit[],

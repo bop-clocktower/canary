@@ -23,8 +23,11 @@ under the project's former name) are documented in the
   was headlined `✅ nothing to test: only non-executable lines changed`, a false
   green on a required check. The report tier now reads the changed file's source
   and scores such a line by its statement's recorded line, so it gets a coverage
-  verdict or a finding. Comments, type declarations, signatures and closing
-  braces stay non-executable
+  verdict or a finding. Comments, blank lines and statements the instrumenter
+  recorded nowhere (types, signatures, imports) stay non-executable. A source
+  that cannot be judged (unreadable, over 2 MB, shorter than the diff, or with
+  unbalanced brackets) now fails closed and is scored, where before it read as
+  `nothing to test`
   ([#1314](https://github.com/bop-clocktower/canary/issues/1314)).
 
 ## [9.3.0] - 2026-10-12
