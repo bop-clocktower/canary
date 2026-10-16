@@ -502,6 +502,38 @@ describe('quarantine section', () => {
       'gone (tests/t.py): removed with no stated cause',
     ]);
   });
+
+  it('flags an untracked pending-feature row, not a linked one (#1330)', () => {
+    const row = (over: Record<string, string>) => ({
+      test: 't',
+      file: 'tests/t.py',
+      kind: 'skipped',
+      marker: 'skip',
+      commit: 'c',
+      author: 'Ada',
+      date: '2026-09-01',
+      reason: 'r',
+      cause: 'pending-feature',
+      issue: '#9',
+      expiry: '',
+      ...over,
+    });
+    const s = ledgerSection(
+      write('q.json', {
+        schema_version: 2,
+        entries: [
+          row({ test: 'untracked', issue: '' }),
+          row({ test: 'linked' }),
+        ],
+      }),
+      now,
+    );
+    expect(s.status).toBe('fed');
+    expect(s.denominator).toBe('2 ledger rows');
+    expect(s.eyes).toEqual([
+      'untracked (tests/t.py): out as pending-feature with no linked issue',
+    ]);
+  });
 });
 
 describe('sweep section', () => {
