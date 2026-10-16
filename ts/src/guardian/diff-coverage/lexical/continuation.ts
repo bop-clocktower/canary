@@ -114,15 +114,21 @@ function opensInto(line: string): boolean {
   return TRAILING_OP.test(line.trim());
 }
 
+/** How far back (in lines) a continuation's statement start is looked for. */
+const MAX_SPAN = 80;
+
 /** The measured line whose statement unmeasured line `l` belongs to, or null. */
 function statementLine(
   code: string[],
   measured: ReadonlySet<number>,
   l: number,
 ): number | null {
-  let m = l - 1;
-  while (m >= 1 && !measured.has(m)) m--;
-  if (m >= 1 && continues(code, m, l)) return m;
+  // Nearest recorded line first, then further back: the nearest can sit inside
+  // a callback or argument list that closed before `l` (`.map(…{…})` then
+  // `.filter()`). The span bounds the quadratic scan on a large diff.
+  for (let m = l - 1; m >= 1 && l - m <= MAX_SPAN; m--) {
+    if (measured.has(m) && continues(code, m, l)) return m;
+  }
   let n = l + 1;
   while (n < code.length && code[n]!.trim() === '') n++;
   return measured.has(n) && opensInto(code[l]!) ? n : null;

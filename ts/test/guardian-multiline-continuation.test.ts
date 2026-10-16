@@ -157,6 +157,22 @@ describe('attributeLines: the lexical continuation judgement', () => {
     expect(at(src, [1], [2, 3], 'm.py')).toEqual({ 3: 1 });
   });
 
+  it('a chain link after a multi-line callback continues the outer statement', () => {
+    const src = [
+      'return items',
+      '  .map((r) => {',
+      '    return r.x;',
+      '  })',
+      '  .filter(Boolean);',
+    ];
+    expect(at(src, [1, 3], [4, 5])).toEqual({ 5: 1 });
+  });
+
+  it('a recorded line inside call arguments does not own the link after the call', () => {
+    const src = ['foo(', '  a(),', ')', '  .b();'];
+    expect(at(src, [1, 2], [4])).toEqual({ 4: 1 });
+  });
+
   it('with no source, only measured lines are scored', () => {
     expect(
       Object.fromEntries(attributeLines([1, 2], new Set([1]), null, 'a.ts')),
