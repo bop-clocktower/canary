@@ -120,11 +120,22 @@ function run(argv, deps = {}) {
   return forwardToEngine(argv, deps);
 }
 
+/**
+ * Exit with `code` once stdout and stderr have drained (#1356). On an async
+ * pipe (macOS, Windows) a bare `process.exit` discards queued writes, so
+ * `canary testtracker push --dry-run | jq` got only the first pipe buffer. An
+ * empty write's callback fires only after everything queued before it. The
+ * exit stays forced so an open handle cannot hang a finished command.
+ */
+function exitAfterDrain(code) {
+  process.stdout.write('', () => {
+    process.stderr.write('', () => process.exit(code));
+  });
+}
+
 function main() {
   // `run` may return a number (sync commands) or a Promise<number> (doctor).
-  Promise.resolve(run(process.argv.slice(2))).then((code) =>
-    process.exit(code),
-  );
+  Promise.resolve(run(process.argv.slice(2))).then(exitAfterDrain);
 }
 
 module.exports = {

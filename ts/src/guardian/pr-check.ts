@@ -1192,6 +1192,9 @@ export function isCoverageAbstention(
  * count of findings, which is what reads as a measured result.
  */
 function abstentionHeadline(checked: number): string {
+  // #1305: #761 always judges >= 1 unit, so checked 0 is the weak-only case.
+  if (checked === 0)
+    return `${WARNING} abstained: no source unit checked (only added tests were judged)`;
   const noun = checked === 1 ? 'file' : 'files';
   return (
     `${WARNING} abstained: no coverage data ` +
@@ -1204,6 +1207,9 @@ const ABSTENTION_BODY =
   'No coverage report reached this run, so nothing below is a coverage ' +
   'verdict — every finding is a filename-level guess. A gate that verified ' +
   'zero items has abstained; this is not a pass.';
+const WEAK_ONLY_BODY = // #1305
+  'No source unit in this diff was checked; the findings are about the tests ' +
+  'it adds. A gate that checked zero units has abstained; this is not a pass.';
 
 const files = (n: number): string => `${n} file${n === 1 ? '' : 's'}`;
 type CauseEntry = [count: number, headline: string, label: string];
@@ -1327,6 +1333,7 @@ export function renderFindings(
 
   // #761: an abstained run never headlines a count, on any surface.
   const abstained = gateMeta?.abstained === true;
+  const checked = gateMeta?.checked ?? 0;
   // #554: the coverage ladder's own degradation, stated alongside the tier's.
   const coverageState = gateMeta?.coverage ?? null;
   const coverageNotice = coverageState
@@ -1445,12 +1452,7 @@ export function renderFindings(
 
     if (active.length === 0) {
       lines.push(
-        ...noGapsLines(
-          coverageState,
-          suppressed.length,
-          abstained,
-          gateMeta?.checked ?? 0,
-        ),
+        ...noGapsLines(coverageState, suppressed.length, abstained, checked),
       );
     } else {
       const noun = fileCount === 1 ? 'file needs' : 'files need';
@@ -1461,12 +1463,14 @@ export function renderFindings(
       lines.push(
         `## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ` +
           (abstained
-            ? abstentionHeadline(gateMeta?.checked ?? 0)
+            ? abstentionHeadline(checked)
             : `${fileCount} ${noun} test coverage`),
       );
       lines.push(
         abstained
-          ? ABSTENTION_BODY
+          ? checked
+            ? ABSTENTION_BODY
+            : WEAK_ONLY_BODY
           : 'These lines were changed by this PR but no test exercises them. Add or ' +
               'extend a test that covers them, or mark the line ' +
               '`// canary:allow-untested <reason>` if it is intentionally untested.',
@@ -1540,7 +1544,7 @@ export function renderFindings(
   // terminal line stays plain text.
   const textAbstention =
     `Canary PR Guardian — ` +
-    abstentionHeadline(gateMeta?.checked ?? 0).replace(`${WARNING} `, '');
+    abstentionHeadline(checked).replace(`${WARNING} `, '');
   const lines = [
     abstained
       ? textAbstention

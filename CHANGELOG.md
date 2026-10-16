@@ -14,6 +14,35 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Guardian no longer calls an edit inside a multi-line expression
+  "non-executable".** lcov records a multi-line statement on one line, so a
+  changed ternary arm, a term of a multi-line `a +` initializer, a method-chain
+  link or a property of a multi-line object literal had no record of its own and
+  was headlined `✅ nothing to test: only non-executable lines changed`, a false
+  green on a required check. The report tier now reads the changed file's source
+  and scores such a line by its statement's recorded line, so it gets a coverage
+  verdict or a finding. Comments, blank lines and statements the instrumenter
+  recorded nowhere (types, signatures, imports) stay non-executable. A source
+  that cannot be judged (unreadable, over 2 MB, shorter than the diff, or with
+  unbalanced brackets) now fails closed and is scored, where before it read as
+  `nothing to test`
+  ([#1314](https://github.com/bop-clocktower/canary/issues/1314)).
+
+### Changed
+
+- **`canary guardian pr-check` on a test-only diff whose added test asserts
+  nothing exits 3, not 0** (#1305). No source unit was checked, so the run
+  abstains, under both `--gate soft` and `--gate hard`. That matches the same
+  diff with an asserting test, or with `weakTests: false`. Before, the advisory
+  `weak-test` finding lifted the run past both abstain exits, so a worse test
+  turned an abstention into a pass. The `weak-test` findings are kept. The JSON
+  payload and the analysis record carry `abstained: true` (`checked: 0`). The
+  comment and text headline read
+  `abstained: no source unit checked (only added tests were judged)`. A CI step
+  that read exit 0 on such a PR as a pass must treat 3 as "not checked".
+
 ### Added
 
 - **katana `pending-feature` ledger cause.** The quarantine ledger has a fifth

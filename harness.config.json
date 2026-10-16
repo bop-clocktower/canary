@@ -221,6 +221,7 @@
       "hooks/quality-gate.mjs",
       "ts/src/guardian/mutation.ts",
       "ts/src/guardian/mutation-report.ts",
+      "ts/src/guardian/diff-coverage/lexical/continuation.ts",
       "npm/scripts/build-engine.mjs",
       "npm/scripts/sync-gate-result.mjs",
       "npm/src/doctor.ts",
@@ -319,6 +320,7 @@
       "ts/test/git-fixture-testkit.ts",
       "ts/test/required-checks-testkit.ts",
       "ts/test/fixtures/schedule-staleness/gh-stub.cjs",
+      "ts/test/fixtures/async-pipe-exit-probe.cjs",
       "ts/vitest.config.ts"
     ],
     "drift": {
@@ -377,6 +379,7 @@
       "hooks/quality-gate.mjs",
       "ts/src/guardian/mutation.ts",
       "ts/src/guardian/mutation-report.ts",
+      "ts/src/guardian/diff-coverage/lexical/continuation.ts",
       "npm/scripts/build-engine.mjs",
       "npm/scripts/sync-gate-result.mjs",
       "npm/src/doctor.ts",
@@ -475,6 +478,7 @@
       "ts/test/git-fixture-testkit.ts",
       "ts/test/required-checks-testkit.ts",
       "ts/test/fixtures/schedule-staleness/gh-stub.cjs",
+      "ts/test/fixtures/async-pipe-exit-probe.cjs",
       "ts/vitest.config.ts"
     ]
   },
