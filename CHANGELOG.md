@@ -30,6 +30,19 @@ under the project's former name) are documented in the
   `nothing to test`
   ([#1314](https://github.com/bop-clocktower/canary/issues/1314)).
 
+### Changed
+
+- **`canary guardian pr-check` on a test-only diff whose added test asserts
+  nothing exits 3, not 0** (#1305). No source unit was checked, so the run
+  abstains, under both `--gate soft` and `--gate hard`. That matches the same
+  diff with an asserting test, or with `weakTests: false`. Before, the advisory
+  `weak-test` finding lifted the run past both abstain exits, so a worse test
+  turned an abstention into a pass. The `weak-test` findings are kept. The JSON
+  payload and the analysis record carry `abstained: true` (`checked: 0`). The
+  comment and text headline read
+  `abstained: no source unit checked (only added tests were judged)`. A CI step
+  that read exit 0 on such a PR as a pass must treat 3 as "not checked".
+
 ## [9.3.0] - 2026-10-12
 
 ### Added

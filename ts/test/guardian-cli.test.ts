@@ -1405,6 +1405,106 @@ new file mode 100644
     ]);
   });
 
+  // bug-fleet A5 repro: with no source unit checked, the advisory weak-test
+  // finding lifted the run past both abstain exits -- a worse test turned an
+  // abstention (3) into a pass (0) with checked: 0.
+  it('a weak-test-only diff still abstains under --gate hard', async () => {
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'json', '--gate', 'hard'],
+      { input: DIFF_WEAK_TEST_ONLY, cwd: tmp },
+    );
+    expect(res.code).toBe(3);
+  });
+
+  // #1305 (F3 a): the abstention keeps its findings. A worse test must never
+  // turn an abstention into a pass, under either gate, and the weak-test
+  // finding stays visible rather than being dropped to make the run "clean".
+  it.each(['soft', 'hard'])(
+    'a weak-test-only diff abstains under --gate %s and keeps the finding in the JSON',
+    async (gate) => {
+      const res = await invokeGuardian(
+        ['pr-check', '--diff', '-', '--format', 'json', '--gate', gate],
+        { input: DIFF_WEAK_TEST_ONLY, cwd: tmp },
+      );
+      expect(res.code).toBe(ABSTAINED);
+      const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+      expect(data).toMatchObject({ checked: 0, abstained: true });
+      expect(data.findings.map((f: { kind: string }) => f.kind)).toEqual([
+        'weak-test',
+      ]);
+    },
+  );
+
+  it('a weak-test-only abstention headlines the abstention, not a count, and still lists the finding', async () => {
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'text'],
+      { input: DIFF_WEAK_TEST_ONLY, cwd: tmp },
+    );
+    expect(res.code).toBe(ABSTAINED);
+    const headline = res.stdout
+      .split('\n')
+      .find((l) => l.startsWith('Canary PR Guardian'));
+    expect(headline).toBe(
+      'Canary PR Guardian — abstained: no source unit checked (only added tests were judged)',
+    );
+    expect(res.stdout).toContain('[low] tests/test_widget.py');
+    expect(res.stdout).toContain('asserts nothing');
+  });
+
+  it('the sticky comment for a weak-test-only abstention says why, and keeps the table', async () => {
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'comment'],
+      { input: DIFF_WEAK_TEST_ONLY, cwd: tmp },
+    );
+    expect(res.code).toBe(ABSTAINED);
+    expect(res.stdout).toContain(
+      'abstained: no source unit checked (only added tests were judged)',
+    );
+    expect(res.stdout).toContain('No source unit in this diff was checked;');
+    // Not the #761 coverage copy: that one claims a missing coverage report.
+    expect(res.stdout).not.toContain('No coverage report reached this run');
+    expect(res.stdout).toContain('`tests/test_widget.py`');
+  });
+
+  // Plant a positive: a weak test next to a judged source unit is still the
+  // advisory finding it always was. The run checked a unit, so it does not
+  // abstain on this rule, and the soft gate passes as before.
+  it('a weak test beside a checked source unit does not abstain on the weak-only rule', async () => {
+    mkdirSync(join(tmp, 'pkg'));
+    writeFileSync(
+      join(tmp, 'pkg', 'widget.py'),
+      'def widget():\n    return 42\n',
+      'utf-8',
+    );
+    const lcov = join(tmp, 'lcov.info');
+    writeFileSync(
+      lcov,
+      'SF:pkg/widget.py\nDA:1,1\nDA:2,1\nend_of_record\n',
+      'utf-8',
+    );
+    const diff =
+      DIFF_WEAK_TEST_ONLY +
+      `diff --git a/pkg/widget.py b/pkg/widget.py
+new file mode 100644
+--- /dev/null
++++ b/pkg/widget.py
+@@ -0,0 +1,2 @@
++def widget():
++    return 42
+`;
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--coverage', lcov, '--format', 'json'],
+      { input: diff, cwd: tmp },
+    );
+    expect(res.code).toBe(0);
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data.checked).toBe(1);
+    expect(data.abstained).toBe(false);
+    expect(data.findings.map((f: { kind: string }) => f.kind)).toEqual([
+      'weak-test',
+    ]);
+  });
+
   it('weakTests: false drops that finding, so the run abstains', async () => {
     const cfg = writeConfig({ pr: { weakTests: false } });
     const res = await invokeGuardian(
