@@ -9,6 +9,7 @@
     "The judgement is lexical (open ( [ or object-literal {, trailing/leading operators, multi-line template literals), not a TypeScript parse: the engine has no runtime typescript dependency. Errors lean toward 'executable' (a noisy finding) rather than 'non-executable' (a hidden gap).",
     "The #841 object-literal shape that #928 pinned as non-coverable is the same false-green class and is reclassified when source is readable; the #928 fixture (no source on disk) still pins the no-source fallback.",
     "When the changed file's source cannot be read at repoRoot, only recorded lines are scored (pre-#1314 behaviour), rather than treating every unmeasured line as coverable.",
-    "The lexer lives in a new sub-module ts/src/guardian/diff-coverage/lexical/ (precedent: diff-coverage/formats/) so diff-coverage/ stays under its 1800-LOC module-size ceiling; it reuses type-only.ts's stripComments/stepQuote/QUOTES, which are now exported."
+    "The lexer lives in a new sub-module ts/src/guardian/diff-coverage/lexical/ (precedent: diff-coverage/formats/) so diff-coverage/ stays under its 1800-LOC module-size ceiling; it reuses type-only.ts's stripComments/stepQuote/QUOTES, which are now exported.",
+    "report-tier.ts is left unchanged (it sits at the 300-line perf cap and its coupling ratio is at the limit): the orchestrator passes matchUnitsToIndex a copied index in which each continuation line is folded into the file's measured set, carrying the hits of its statement's recorded line."
   ]
 }

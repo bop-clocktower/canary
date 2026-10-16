@@ -4,7 +4,7 @@
  * clean" from "never checked".
  */
 
-import { sourceReader } from './lexical/continuation.js';
+import { withContinuations } from './lexical/continuation.js';
 import { resolveFromGraph } from './graph-tier.js';
 import { resolveFromHeuristic } from './heuristic-tier.js';
 import {
@@ -200,11 +200,11 @@ export function resolveCoverageWithInput(
       read.index === null ? 0 : Object.keys(read.index).length;
     if (read.index !== null) {
       const nonCoverable: ChangedUnit[] = [];
+      // #1314: lcov records a multi-line statement on one line only.
       const report = matchUnitsToIndex(
         remaining,
-        read.index,
+        withContinuations(remaining, read.index, repoRoot),
         nonCoverable,
-        sourceReader(repoRoot),
       );
       for (const r of report) resolved.set(r.unit, r);
       coverage.unitsMatched = report.length;

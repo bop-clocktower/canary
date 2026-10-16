@@ -18,7 +18,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { QUOTES, stepQuote, stripComments } from '../type-only.js';
-import { splitLines } from '../types.js';
+import {
+  expandRanges,
+  matchFile,
+  splitLines,
+  type ChangedUnit,
+  type LineHits,
+  type ReportIndex,
+} from '../types.js';
 
 /** An open bracket; `{` is split into object-literal (`expr`) vs block. */
 type Frame = '(' | '[' | 'expr' | 'block';
@@ -154,13 +161,38 @@ export function attributeLines(
   return out;
 }
 
-/** A reader for repo-relative source at head; `null` when unreadable. */
-export function sourceReader(repoRoot: string) {
-  return (path: string): string | null => {
-    try {
-      return readFileSync(join(repoRoot, path), 'utf-8');
-    } catch {
-      return null;
-    }
-  };
+/** Repo-relative source at head; `null` when unreadable. */
+function readSource(repoRoot: string, path: string): string | null {
+  try {
+    return readFileSync(join(repoRoot, path), 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `index` with each changed unit's continuation lines folded into its file's
+ * measured set, each carrying its statement line's hits (#1314), so the report
+ * tier scores them like any recorded line. Entries are copied, never mutated;
+ * a file whose report never said what it measured is left as is.
+ */
+export function withContinuations(
+  units: ChangedUnit[],
+  index: ReportIndex,
+  repoRoot: string,
+): ReportIndex {
+  const out: ReportIndex = Object.assign(Object.create(null), index);
+  for (const unit of units) {
+    const file = matchFile(unit.path, out);
+    const key = Object.keys(out).find((k) => out[k] === file);
+    if (!file?.coverable || key === undefined) continue;
+    const source = readSource(repoRoot, unit.path);
+    const added = expandRanges(unit.added_ranges);
+    const at = attributeLines(added, file.coverable, source, unit.path);
+    const hits: LineHits = Object.assign(Object.create(null), file.hits);
+    for (const [ln, m] of at) hits[ln] = file.hits[m] ?? 0;
+    const coverable = new Set([...file.coverable, ...at.keys()]);
+    out[key] = { hits, coverable };
+  }
+  return out;
 }
