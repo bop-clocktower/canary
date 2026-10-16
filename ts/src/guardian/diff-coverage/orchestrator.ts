@@ -4,6 +4,7 @@
  * clean" from "never checked".
  */
 
+import { sourceReader } from './lexical/continuation.js';
 import { resolveFromGraph } from './graph-tier.js';
 import { resolveFromHeuristic } from './heuristic-tier.js';
 import {
@@ -199,7 +200,12 @@ export function resolveCoverageWithInput(
       read.index === null ? 0 : Object.keys(read.index).length;
     if (read.index !== null) {
       const nonCoverable: ChangedUnit[] = [];
-      const report = matchUnitsToIndex(remaining, read.index, nonCoverable);
+      const report = matchUnitsToIndex(
+        remaining,
+        read.index,
+        nonCoverable,
+        sourceReader(repoRoot),
+      );
       for (const r of report) resolved.set(r.unit, r);
       coverage.unitsMatched = report.length;
       coverage.unitsNonCoverable = nonCoverable.length;

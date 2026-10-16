@@ -16,6 +16,7 @@ import {
   sep,
 } from 'node:path';
 
+import { attributeLines } from './lexical/continuation.js';
 import { parseCobertura } from './formats/cobertura.js';
 import { parseCoverageJson } from './formats/coverage-json.js';
 import {
@@ -251,11 +252,14 @@ function parseByFormat(name: string, text: string): ReportIndex | null {
  * Resolve every unit the report index can speak to (COVERAGE_VERIFIED). Units
  * the report lists but whose changed lines are all non-coverable are pushed to
  * `nonCoverable`, so a caller can tell them from absent units (#928).
+ * `readSource` lets a continuation line of a multi-line statement be scored by
+ * its statement's measured line rather than read as non-executable (#1314).
  */
 export function matchUnitsToIndex(
   units: ChangedUnit[],
   index: ReportIndex,
   nonCoverable: ChangedUnit[] = [],
+  readSource: (path: string) => string | null = () => null,
 ): CoverageResult[] {
   const results: CoverageResult[] = [];
   for (const unit of units) {
@@ -268,16 +272,23 @@ export function matchUnitsToIndex(
     // The per-line form of the check above (#655/#657): where the report says
     // which lines it instrumented, a changed line outside that set could not
     // have been executed and is scored by neither side. Where it does not say,
-    // every changed line counts and absence means uncovered.
-    const coverable =
-      measured === null ? added : added.filter((ln) => measured.has(ln));
+    // every changed line counts and absence means uncovered. lcov measures a
+    // multi-line statement on one line, so a continuation line takes that
+    // line's hits (#1314).
+    const scoredBy =
+      measured === null
+        ? new Map(added.map((ln) => [ln, ln]))
+        : attributeLines(added, measured, readSource(unit.path), unit.path);
+    const coverable = added.filter((ln) => scoredBy.has(ln));
     if (coverable.length === 0) {
       // Nothing coverable changed: never a pass or a finding here, and it falls
       // through like an absent path — but it is recorded as its own cause.
       nonCoverable.push(unit);
       continue;
     }
-    const uncovered = coverable.filter((ln) => (hits[ln] ?? 0) <= 0);
+    const uncovered = coverable.filter(
+      (ln) => (hits[scoredBy.get(ln)!] ?? 0) <= 0,
+    );
     const covered = uncovered.length === 0;
     // State the denominator: "all covered" over 20 changed lines and over the 3
     // of them that were coverable are very different claims (#508).

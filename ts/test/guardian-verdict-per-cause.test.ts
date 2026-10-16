@@ -86,7 +86,10 @@ const DOC_COMMENT_UNIT: ChangedUnit = {
   added_ranges: [[122, 124]],
 };
 // #841: properties added inside a multi-line object literal. lcov records only
-// the statement's first line (585), so the continuation lines are not coverable.
+// the statement's first line (585). No source exists under `tmp`, so this pins
+// the no-source fallback: only recorded lines are scored. With the source on
+// disk those properties are continuation lines and DO get a verdict (#1314,
+// guardian-multiline-continuation.test.ts).
 const CONTINUATION_UNIT: ChangedUnit = {
   path: 'ts/src/cli-commands.ts',
   added_ranges: [[591, 598]],

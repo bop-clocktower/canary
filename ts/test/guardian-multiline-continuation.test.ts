@@ -24,6 +24,7 @@ import {
   Fidelity,
   resolveCoverageWithInput,
 } from '../src/guardian/coverage.js';
+import { attributeLines } from '../src/guardian/diff-coverage/lexical/continuation.js';
 import { renderFindings } from '../src/guardian/pr-check.js';
 import { mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
@@ -122,6 +123,44 @@ describe('#1314: continuation lines of a multi-line statement are coverable', ()
       coverage,
     });
     expect(body).not.toContain('non-executable');
+  });
+});
+
+describe('attributeLines: the lexical continuation judgement', () => {
+  const at = (
+    src: string[],
+    measured: number[],
+    added: number[],
+    path = 'a.ts',
+  ) =>
+    Object.fromEntries(
+      attributeLines(added, new Set(measured), src.join('\n'), path),
+    );
+
+  it('a type alias inside a block is not a continuation of the block opener', () => {
+    const src = ['if (a) {', '  type T = string;', '  run();', '}'];
+    expect(at(src, [1, 3], [2])).toEqual({});
+  });
+
+  it('a line after a closed block is not a continuation', () => {
+    const src = ['  done();', '}', 'interface X {', '  a: string;', '}'];
+    expect(at(src, [1], [3, 4])).toEqual({});
+  });
+
+  it('a multi-line template literal carries its quote across lines', () => {
+    const src = ['const s = `a {', '  b ${x} }', '  c`;', 'type T = 1;'];
+    expect(at(src, [1], [2, 3, 4])).toEqual({ 2: 1, 3: 1 });
+  });
+
+  it('a Python whole-line # comment inside a call is never scored', () => {
+    const src = ['x = call(', '    # why', '    arg,', ')'];
+    expect(at(src, [1], [2, 3], 'm.py')).toEqual({ 3: 1 });
+  });
+
+  it('with no source, only measured lines are scored', () => {
+    expect(
+      Object.fromEntries(attributeLines([1, 2], new Set([1]), null, 'a.ts')),
+    ).toEqual({ 1: 1 });
   });
 });
 

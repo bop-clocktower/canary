@@ -1,0 +1,14 @@
+{
+  "issues": [1314],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-multiline-continuation.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Root cause confirmed empirically with @vitest/coverage-v8: lcov emits one DA line per statement, so continuation lines of a multi-line statement are absent from the measured set; the fix scores them by that statement's recorded line instead of reading absence as non-executable.",
+    "The judgement is lexical (open ( [ or object-literal {, trailing/leading operators, multi-line template literals), not a TypeScript parse: the engine has no runtime typescript dependency. Errors lean toward 'executable' (a noisy finding) rather than 'non-executable' (a hidden gap).",
+    "The #841 object-literal shape that #928 pinned as non-coverable is the same false-green class and is reclassified when source is readable; the #928 fixture (no source on disk) still pins the no-source fallback.",
+    "When the changed file's source cannot be read at repoRoot, only recorded lines are scored (pre-#1314 behaviour), rather than treating every unmeasured line as coverable.",
+    "The lexer lives in a new sub-module ts/src/guardian/diff-coverage/lexical/ (precedent: diff-coverage/formats/) so diff-coverage/ stays under its 1800-LOC module-size ceiling; it reuses type-only.ts's stripComments/stepQuote/QUOTES, which are now exported."
+  ]
+}
