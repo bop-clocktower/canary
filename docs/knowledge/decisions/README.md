@@ -95,3 +95,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0036](0036-pillars-no-composite-health-score.md)                         | QA health is shown as pillars, never one composite score                  | accepted |
 | [0037](0037-mutation-report-counts-only-what-stryker-tested.md)           | The mutation report counts only what Stryker tested, and all of it        | accepted |
 | [0038](0038-mutation-advisory-exit-criterion.md)                          | Mutation findings are advisory until a measured exit criterion            | accepted |
+| [0039](0039-canary-ivy-report-only.md)                                    | canary-ivy reports suite overgrowth and never recommends deleting a test  | accepted |
