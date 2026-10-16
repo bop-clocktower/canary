@@ -1,9 +1,10 @@
 /**
  * The published package must not exit with output still queued (#1356, #1284).
  *
- * On an asynchronous pipe (macOS, Windows) `process.exit` discards the writes
- * that have not drained yet: `canary testtracker push --dry-run | jq` got the
- * first 64 KiB of a 330 KB payload. Two exits ship in this package:
+ * When stdout is a pipe, writes the kernel buffer cannot take at once queue in
+ * libuv, and `process.exit` discards the queue: `canary testtracker push
+ * --dry-run | jq` got the first 64 KiB of a 330 KB payload on macOS (Linux
+ * keeps ~146 KB, so only larger payloads show it). Two exits ship here:
  *
  *   - bin/canary.js `main()`, which exits on every run, success included. It
  *     carries the TS-routed commands (overlay, doctor, uninstall, testtracker).
@@ -13,7 +14,8 @@
  * Each runs under a preload that makes stdout/stderr asynchronous in-process
  * (ts/test/fixtures/async-pipe-exit-probe.cjs, shared with the engine's own
  * bin test), so the assertion "nothing was pending when process.exit ran"
- * fails before the fix on any OS, Linux CI included.
+ * fails before the fix on any OS, Linux CI included. The slow-reader case is
+ * the end-to-end repro, sized past every pipe buffer measured.
  */
 
 const { describe, it, before, after } = require('node:test');
@@ -63,6 +65,59 @@ function runProbed(script, args, { cwd, env = {} } = {}) {
   }
 }
 
+/** Larger than any platform's pipe/socket buffer seen so far (Linux 146176). */
+const PAST_PIPE_BUFFER = 256 * 1024;
+
+/**
+ * Spawn `node <args>` and read its stdout only after 500 ms, like a busy
+ * `| jq`, so the child's writes back up in the pipe.
+ *
+ * The `readable` listener is attached at once on purpose. A stream with no
+ * listener when the child exits is resumed and drained into the void by
+ * child_process itself, so an early-exiting child would read as 0 bytes
+ * whether or not it flushed: a harness artifact, not the bug.
+ */
+function readSlowly(args, env = process.env) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, {
+      env,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const chunks = [];
+    let reading = false;
+    const drain = () => {
+      if (!reading) return;
+      let chunk;
+      while ((chunk = child.stdout.read()) !== null) chunks.push(chunk);
+    };
+    child.stdout.on('readable', drain);
+    setTimeout(() => {
+      reading = true;
+      drain();
+    }, 500);
+    child.on('close', (code) =>
+      resolve({ code, stdout: Buffer.concat(chunks).toString('utf8') }),
+    );
+  });
+}
+
+describe('slow reader (guards the guard)', () => {
+  it('sees a truncation when a script exits without draining', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canary-exit-ctl-'));
+    try {
+      const script = path.join(dir, 'exit-at-once.cjs');
+      fs.writeFileSync(
+        script,
+        `process.stdout.write('x'.repeat(${PAST_PIPE_BUFFER * 2}));\nprocess.exit(1);\n`,
+      );
+      const res = await readSlowly([script]);
+      assert.ok(res.stdout.length < PAST_PIPE_BUFFER * 2, 'no truncation seen');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('bin/canary.js drains before process.exit (#1356)', () => {
   let home;
   before(() => {
@@ -90,13 +145,13 @@ describe('bin/canary.js drains before process.exit (#1356)', () => {
   });
 
   it('delivers a large testtracker push --dry-run payload to a slow pipe reader', async () => {
-    // The #1356 repro, end to end. Red on darwin before the fix (65536 of
-    // ~263 KB); Linux pipes are synchronous, so it is green on CI either way
-    // and the probe cases above carry the portable proof.
+    // The #1356 repro, end to end: ~440 KB, past the pipe buffer on every
+    // platform measured, so it is red before the fix on Linux CI too (darwin
+    // keeps 65536 bytes, Linux 146176).
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canary-exit-junit-'));
     try {
       const cases = [];
-      for (let i = 0; i < 600; i++) {
+      for (let i = 0; i < 1000; i++) {
         cases.push(
           `<testcase classname="suite/file-${i}.test.ts" name="case number ${i} with a reasonably long descriptive title" time="0.01"/>`,
         );
@@ -104,43 +159,34 @@ describe('bin/canary.js drains before process.exit (#1356)', () => {
       const junit = path.join(dir, 'junit.xml');
       fs.writeFileSync(
         junit,
-        `<?xml version="1.0"?><testsuites><testsuite name="s" tests="600">${cases.join('')}</testsuite></testsuites>`,
+        `<?xml version="1.0"?><testsuites><testsuite name="s" tests="1000">${cases.join('')}</testsuite></testsuites>`,
       );
       const env = { ...process.env, ...homeEnv() };
       delete env.CANARY_INGEST_URL;
       delete env.CANARY_INGEST_TOKEN;
-      const res = await new Promise((resolve) => {
-        const child = spawn(
-          process.execPath,
-          [
-            BIN,
-            'testtracker',
-            'push',
-            '--junit',
-            junit,
-            '--suite',
-            'x',
-            '--dry-run',
-          ],
-          { env, stdio: ['ignore', 'pipe', 'ignore'] },
-        );
-        const chunks = [];
-        child.stdout.pause();
-        setTimeout(() => {
-          child.stdout.on('data', (c) => chunks.push(c));
-          child.stdout.resume();
-        }, 500);
-        child.on('close', (code) =>
-          resolve({ code, stdout: Buffer.concat(chunks).toString('utf8') }),
-        );
-      });
+      const res = await readSlowly(
+        [
+          BIN,
+          'testtracker',
+          'push',
+          '--junit',
+          junit,
+          '--suite',
+          'x',
+          '--dry-run',
+        ],
+        env,
+      );
       assert.equal(res.code, 0);
       // A one-line denominator summary precedes the payload on stdout.
       const json = res.stdout.slice(res.stdout.indexOf('\n{') + 1);
       assert.match(res.stdout, /^canary testtracker/);
       assert.doesNotThrow(() => JSON.parse(json));
-      // Guards the guard: a payload inside one pipe buffer proves nothing.
-      assert.ok(res.stdout.length > 64 * 1024, `${res.stdout.length} bytes`);
+      // Guards the guard: a payload inside the pipe buffer proves nothing.
+      assert.ok(
+        res.stdout.length > PAST_PIPE_BUFFER,
+        `${res.stdout.length} bytes`,
+      );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

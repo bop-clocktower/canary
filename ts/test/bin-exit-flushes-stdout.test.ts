@@ -1,19 +1,23 @@
 /**
  * `ts/bin/canary.js` must not exit with output still queued (#1284).
  *
- * On an asynchronous pipe (macOS, Windows) `process.exit` discards the writes
- * that have not drained yet, so a large `--json` payload from a command that
- * exits non-zero reaches `| jq` cut off at the pipe buffer.
+ * When stdout is a pipe or socket, a write that the kernel buffer cannot take
+ * at once is queued in libuv, and `process.exit` discards the queue. A large
+ * `--json` payload from a command that exits non-zero then reaches `| jq` cut
+ * off. Measured with a slow reader: macOS keeps the first 65536 bytes, Linux
+ * the first 146176. A smaller payload fits the buffer, so CI saw nothing.
  *
- * Two layers, because CI runs on Linux, where pipes are synchronous:
- *   - The mechanism cases run every exit branch of the real bin file under a
+ * Two layers:
+ *   - Mechanism cases run every exit branch of the real bin file under a
  *     preload that makes stdout/stderr asynchronous in-process, and assert
- *     nothing was pending when `process.exit` ran. They fail before the fix on
- *     any OS. The bin is copied next to stub `dist/` modules, because CI runs
- *     the suite without building `ts/dist` (the bin's only import).
- *   - The real-dist cases, including the original slow-reader repro, run
- *     when `ts/dist` is built (`npm run build`). The slow reader is red on
- *     darwin before the fix and green on Linux either way.
+ *     nothing was pending when `process.exit` ran. That fails before the fix
+ *     whatever the payload size or platform buffer. The bin is copied next to
+ *     stub `dist/` modules, because the TS engine CI job runs the suite
+ *     without building `ts/dist` (the bin's only import).
+ *   - Slow-reader cases are the end-to-end repro: a 500 KB stub payload
+ *     always, and a real `flake-check --json` (~300 KB) when `ts/dist` is
+ *     built. Both are past the Linux buffer, so they are red before the fix on
+ *     CI as well as on macOS.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import {
@@ -36,6 +40,8 @@ const TS_ROOT = join(HERE, '..');
 const BIN = join(TS_ROOT, 'bin', 'canary.js');
 const PROBE = join(HERE, 'fixtures', 'async-pipe-exit-probe.cjs');
 const DIST_BUILT = existsSync(join(TS_ROOT, 'dist', 'cli.js'));
+/** Larger than any platform's pipe/socket buffer seen so far (Linux 146176). */
+const PAST_PIPE_BUFFER = 256 * 1024;
 
 interface ProbeRun {
   status: number | null;
@@ -61,10 +67,50 @@ function runProbed(script: string[], dir: string): ProbeRun {
 }
 
 /**
+ * Spawn `node <args>` and read its stdout only after 500 ms, like a busy
+ * `| jq`, so the child's writes back up in the pipe.
+ *
+ * The `readable` listener is attached at once on purpose. A stream with no
+ * listener when the child exits is resumed and drained into the void by
+ * child_process itself, so an early-exiting child would read as 0 bytes
+ * whether or not it flushed: a harness artifact, not the bug.
+ */
+function readSlowly(
+  args: string[],
+): Promise<{ code: number | null; stdout: string }> {
+  return new Promise((resolvePromise) => {
+    const child = spawn(process.execPath, args, {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const chunks: Buffer[] = [];
+    let reading = false;
+    const drain = (): void => {
+      if (!reading) return;
+      let chunk: Buffer | null;
+      while ((chunk = child.stdout.read() as Buffer | null) !== null) {
+        chunks.push(chunk);
+      }
+    };
+    child.stdout.on('readable', drain);
+    setTimeout(() => {
+      reading = true;
+      drain();
+    }, 500);
+    child.on('close', (code) =>
+      resolvePromise({
+        code,
+        stdout: Buffer.concat(chunks).toString('utf-8'),
+      }),
+    );
+  });
+}
+
+/**
  * The real bin file, copied into `<dir>/bin/` beside stub `<dir>/dist/`
- * modules whose command writes one JSON line and then leaves through the
- * branch named by argv[0]. node_modules is linked so the bin's `commander`
- * import is the same CommanderError class the stub throws.
+ * modules whose command writes a JSON document and then leaves through the
+ * branch named by argv[0] (`big` writes ~500 KB, then exits like `business`).
+ * node_modules is linked so the bin's `commander` import is the same
+ * CommanderError class the stub throws.
  */
 function stubbedBin(dir: string): string {
   mkdirSync(join(dir, 'bin'));
@@ -90,8 +136,9 @@ function stubbedBin(dir: string): string {
       '  return {\n' +
       '    async parseAsync(argv) {\n' +
       '      const mode = argv[0];\n' +
-      "      process.stdout.write(JSON.stringify({ mode }) + '\\n');\n" +
-      "      if (mode === 'business') throw new CliExitError(3);\n" +
+      "      const pad = mode === 'big' ? 'x'.repeat(500000) : undefined;\n" +
+      "      process.stdout.write(JSON.stringify({ mode, pad }) + '\\n');\n" +
+      "      if (mode === 'business' || mode === 'big') throw new CliExitError(3);\n" +
       "      if (mode === 'usage') throw new CommanderError(2, 'commander.unknownCommand', 'bad usage');\n" +
       "      if (mode === 'crash') throw new Error('boom');\n" +
       '    },\n' +
@@ -118,7 +165,7 @@ function flakyTests(dir: string, count: number): string {
 describe('async-pipe exit probe (guards the guard)', () => {
   it('reports pending writes when a script exits without draining', () => {
     // Positive control: the pre-fix shape, write then exit at once. If the
-    // probe stopped seeing this, every case below would pass vacuously.
+    // probe stopped seeing this, every mechanism case would pass vacuously.
     const dir = mkTmp();
     try {
       const script = join(dir, 'exit-at-once.cjs');
@@ -130,6 +177,25 @@ describe('async-pipe exit probe (guards the guard)', () => {
       const run = runProbed([script], dir);
       expect(run.report).toEqual({ pending: 1, code: 4 });
       expect(run.stdout).toBe('');
+    } finally {
+      rmTmp(dir);
+    }
+  });
+
+  it('the slow reader sees a truncation when a script exits without draining', async () => {
+    // Positive control for the end-to-end layer: a bare write-then-exit past
+    // the pipe buffer must come back short, on this platform, through this
+    // reader. If it stopped doing so, the slow-reader cases would be vacuous.
+    const dir = mkTmp();
+    try {
+      const script = join(dir, 'exit-at-once.cjs');
+      writeFileSync(
+        script,
+        `process.stdout.write('x'.repeat(${PAST_PIPE_BUFFER * 2}));\nprocess.exit(1);\n`,
+        'utf-8',
+      );
+      const res = await readSlowly([script]);
+      expect(res.stdout.length).toBeLessThan(PAST_PIPE_BUFFER * 2);
     } finally {
       rmTmp(dir);
     }
@@ -170,6 +236,13 @@ describe('canary bin drains stdout/stderr before process.exit (#1284)', () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toBe('{"mode":"ok"}\n');
   });
+
+  it('delivers a 500 KB payload whole to a slow pipe reader before exit 3', async () => {
+    const res = await readSlowly([bin, 'big']);
+    expect(res.code).toBe(3);
+    expect(() => JSON.parse(res.stdout)).not.toThrow();
+    expect(res.stdout.length).toBeGreaterThan(PAST_PIPE_BUFFER);
+  });
 });
 
 describe.skipIf(!DIST_BUILT)('real ts/dist (needs `npm run build`)', () => {
@@ -204,33 +277,13 @@ describe.skipIf(!DIST_BUILT)('real ts/dist (needs `npm run build`)', () => {
   it('delivers the whole flake-check --json payload to a slow pipe reader', async () => {
     const dir = mkTmp();
     try {
-      const tests = flakyTests(dir, 400);
-      const res = await new Promise<{ code: number | null; stdout: string }>(
-        (resolvePromise) => {
-          const child = spawn(
-            process.execPath,
-            [BIN, 'flake-check', tests, '--json'],
-            { stdio: ['ignore', 'pipe', 'ignore'] },
-          );
-          const chunks: Buffer[] = [];
-          child.stdout.pause();
-          setTimeout(() => {
-            child.stdout.on('data', (c: Buffer) => chunks.push(c));
-            child.stdout.resume();
-          }, 500);
-          child.on('close', (code) =>
-            resolvePromise({
-              code,
-              stdout: Buffer.concat(chunks).toString('utf-8'),
-            }),
-          );
-        },
-      );
+      const tests = flakyTests(dir, 1000);
+      const res = await readSlowly([BIN, 'flake-check', tests, '--json']);
       expect(res.code).not.toBe(0);
       expect(() => JSON.parse(res.stdout)).not.toThrow();
-      // Guards the guard: a whole payload that fits in one pipe buffer could
-      // never have been truncated, so this case would pass vacuously.
-      expect(res.stdout.length).toBeGreaterThan(64 * 1024);
+      // Guards the guard: a payload inside the pipe buffer could never have
+      // been truncated, so the parse above would pass vacuously.
+      expect(res.stdout.length).toBeGreaterThan(PAST_PIPE_BUFFER);
     } finally {
       rmTmp(dir);
     }
