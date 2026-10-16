@@ -97,3 +97,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0038](0038-mutation-advisory-exit-criterion.md)                          | Mutation findings are advisory until a measured exit criterion            | accepted |
 | [0039](0039-canary-ivy-report-only.md)                                    | canary-ivy reports suite overgrowth and never recommends deleting a test  | accepted |
 | [0040](0040-gen-data-schema-first-shape-source.md)                        | gen-data shapes come from a schema first; the compiler API is opt-in      | accepted |
+| [0041](0041-gen-data-no-model-in-value-path.md)                           | No model sits in gen-data's value path                                    | accepted |
