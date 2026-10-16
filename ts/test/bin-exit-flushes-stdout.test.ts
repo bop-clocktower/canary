@@ -6,24 +6,36 @@
  * exits non-zero reaches `| jq` cut off at the pipe buffer.
  *
  * Two layers, because CI runs on Linux, where pipes are synchronous:
- *   - The mechanism cases run every exit path under a preload that makes
- *     stdout/stderr asynchronous in-process, and assert nothing was pending
- *     when `process.exit` ran. They fail before the fix on any OS.
- *   - The slow-reader case is the original end-to-end repro. It is red on
+ *   - The mechanism cases run every exit branch of the real bin file under a
+ *     preload that makes stdout/stderr asynchronous in-process, and assert
+ *     nothing was pending when `process.exit` ran. They fail before the fix on
+ *     any OS. The bin is copied next to stub `dist/` modules, because CI runs
+ *     the suite without building `ts/dist` (the bin's only import).
+ *   - The real-dist cases, including the original slow-reader repro, run
+ *     when `ts/dist` is built (`npm run build`). The slow reader is red on
  *     darwin before the fix and green on Linux either way.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BIN = join(HERE, '..', 'bin', 'canary.js');
+const TS_ROOT = join(HERE, '..');
+const BIN = join(TS_ROOT, 'bin', 'canary.js');
 const PROBE = join(HERE, 'fixtures', 'async-pipe-exit-probe.cjs');
+const DIST_BUILT = existsSync(join(TS_ROOT, 'dist', 'cli.js'));
 
 interface ProbeRun {
   status: number | null;
@@ -41,17 +53,55 @@ function runProbed(script: string[], dir: string): ProbeRun {
     env: { ...process.env, CANARY_EXIT_PROBE_REPORT: reportPath },
     maxBuffer: 64 * 1024 * 1024,
   });
-  return {
-    status: res.status,
-    stdout: res.stdout,
-    stderr: res.stderr,
-    report: existsSync(reportPath)
-      ? JSON.parse(readFileSync(reportPath, 'utf-8'))
-      : null,
-  };
+  const report = existsSync(reportPath)
+    ? JSON.parse(readFileSync(reportPath, 'utf-8'))
+    : null;
+  rmTmp(reportPath);
+  return { status: res.status, stdout: res.stdout, stderr: res.stderr, report };
 }
 
-/** A tests/ directory whose one file trips flake-check, so it exits non-zero. */
+/**
+ * The real bin file, copied into `<dir>/bin/` beside stub `<dir>/dist/`
+ * modules whose command writes one JSON line and then leaves through the
+ * branch named by argv[0]. node_modules is linked so the bin's `commander`
+ * import is the same CommanderError class the stub throws.
+ */
+function stubbedBin(dir: string): string {
+  mkdirSync(join(dir, 'bin'));
+  mkdirSync(join(dir, 'dist'));
+  symlinkSync(
+    join(TS_ROOT, 'node_modules'),
+    join(dir, 'node_modules'),
+    'junction',
+  );
+  writeFileSync(join(dir, 'package.json'), '{"type":"module"}\n');
+  copyFileSync(BIN, join(dir, 'bin', 'canary.js'));
+  writeFileSync(
+    join(dir, 'dist', 'cli-common.js'),
+    'export class CliExitError extends Error {\n' +
+      '  constructor(code) { super(`exit ${code}`); this.code = code; }\n' +
+      '}\n',
+  );
+  writeFileSync(
+    join(dir, 'dist', 'cli.js'),
+    "import { CommanderError } from 'commander';\n" +
+      "import { CliExitError } from './cli-common.js';\n" +
+      'export function createCanaryCommand() {\n' +
+      '  return {\n' +
+      '    async parseAsync(argv) {\n' +
+      '      const mode = argv[0];\n' +
+      "      process.stdout.write(JSON.stringify({ mode }) + '\\n');\n" +
+      "      if (mode === 'business') throw new CliExitError(3);\n" +
+      "      if (mode === 'usage') throw new CommanderError(2, 'commander.unknownCommand', 'bad usage');\n" +
+      "      if (mode === 'crash') throw new Error('boom');\n" +
+      '    },\n' +
+      '  };\n' +
+      '}\n',
+  );
+  return join(dir, 'bin', 'canary.js');
+}
+
+/** A tests/ directory whose files trip flake-check, so it exits non-zero. */
 function flakyTests(dir: string, count: number): string {
   const tests = join(dir, 'tests');
   mkdirSync(tests, { recursive: true });
@@ -87,7 +137,43 @@ describe('async-pipe exit probe (guards the guard)', () => {
 });
 
 describe('canary bin drains stdout/stderr before process.exit (#1284)', () => {
-  it('CliExitError path: a non-zero flake-check --json exits with nothing pending', () => {
+  let dir: string;
+  let bin: string;
+  beforeAll(() => {
+    dir = mkTmp();
+    bin = stubbedBin(dir);
+  });
+  afterAll(() => rmTmp(dir));
+
+  it('CliExitError: exits with the business code and nothing pending', () => {
+    const run = runProbed([bin, 'business'], dir);
+    expect(run.report, run.stderr).toEqual({ pending: 0, code: 3 });
+    expect(run.status).toBe(3);
+    expect(run.stdout).toBe('{"mode":"business"}\n');
+  });
+
+  it('CommanderError: exits with the usage code and nothing pending', () => {
+    const run = runProbed([bin, 'usage'], dir);
+    expect(run.report, run.stderr).toEqual({ pending: 0, code: 2 });
+    expect(run.stdout).toBe('{"mode":"usage"}\n');
+  });
+
+  it('unexpected crash: the error reaches stderr before exit 1', () => {
+    const run = runProbed([bin, 'crash'], dir);
+    expect(run.report).toEqual({ pending: 0, code: 1 });
+    expect(run.stderr).toMatch(/boom/);
+  });
+
+  it('success: no forced exit, output delivered', () => {
+    const run = runProbed([bin, 'ok'], dir);
+    expect(run.report).toBeNull();
+    expect(run.status).toBe(0);
+    expect(run.stdout).toBe('{"mode":"ok"}\n');
+  });
+});
+
+describe.skipIf(!DIST_BUILT)('real ts/dist (needs `npm run build`)', () => {
+  it('a non-zero flake-check --json exits with nothing pending', () => {
     const dir = mkTmp();
     try {
       const tests = flakyTests(dir, 1);
@@ -95,61 +181,51 @@ describe('canary bin drains stdout/stderr before process.exit (#1284)', () => {
       expect(run.report, run.stderr).not.toBeNull();
       expect(run.report!.code).not.toBe(0);
       expect(run.report!.pending).toBe(0);
-      expect(run.status).toBe(run.report!.code);
       expect(() => JSON.parse(run.stdout)).not.toThrow();
     } finally {
       rmTmp(dir);
     }
   });
 
-  it('CommanderError path: --version exits 0 with the banner delivered', () => {
+  it('--version and an unknown command drain before exiting 0 and 2', () => {
     const dir = mkTmp();
     try {
-      const run = runProbed([BIN, '--version'], dir);
-      expect(run.report).toEqual({ pending: 0, code: 0 });
-      expect(run.stdout).toContain('canary');
+      const version = runProbed([BIN, '--version'], dir);
+      expect(version.report).toEqual({ pending: 0, code: 0 });
+      expect(version.stdout).toContain('canary');
+      const usage = runProbed([BIN, 'no-such-command'], dir);
+      expect(usage.report).toEqual({ pending: 0, code: 2 });
+      expect(usage.stderr).not.toBe('');
     } finally {
       rmTmp(dir);
     }
   });
 
-  it('usage error: stderr is drained too before exit 2', () => {
-    const dir = mkTmp();
-    try {
-      const run = runProbed([BIN, 'no-such-command'], dir);
-      expect(run.report).toEqual({ pending: 0, code: 2 });
-      expect(run.stderr).not.toBe('');
-    } finally {
-      rmTmp(dir);
-    }
-  });
-});
-
-function runSlowReader(
-  args: string[],
-): Promise<{ code: number | null; stdout: string }> {
-  return new Promise((resolvePromise) => {
-    const child = spawn(process.execPath, [BIN, ...args], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const chunks: Buffer[] = [];
-    child.stdout.pause();
-    setTimeout(() => {
-      child.stdout.on('data', (c: Buffer) => chunks.push(c));
-      child.stdout.resume();
-    }, 500);
-    child.on('close', (code) =>
-      resolvePromise({ code, stdout: Buffer.concat(chunks).toString('utf-8') }),
-    );
-  });
-}
-
-describe('canary bin: a non-zero exit does not truncate piped --json', () => {
   it('delivers the whole flake-check --json payload to a slow pipe reader', async () => {
     const dir = mkTmp();
     try {
       const tests = flakyTests(dir, 400);
-      const res = await runSlowReader(['flake-check', tests, '--json']);
+      const res = await new Promise<{ code: number | null; stdout: string }>(
+        (resolvePromise) => {
+          const child = spawn(
+            process.execPath,
+            [BIN, 'flake-check', tests, '--json'],
+            { stdio: ['ignore', 'pipe', 'ignore'] },
+          );
+          const chunks: Buffer[] = [];
+          child.stdout.pause();
+          setTimeout(() => {
+            child.stdout.on('data', (c: Buffer) => chunks.push(c));
+            child.stdout.resume();
+          }, 500);
+          child.on('close', (code) =>
+            resolvePromise({
+              code,
+              stdout: Buffer.concat(chunks).toString('utf-8'),
+            }),
+          );
+        },
+      );
       expect(res.code).not.toBe(0);
       expect(() => JSON.parse(res.stdout)).not.toThrow();
       // Guards the guard: a whole payload that fits in one pipe buffer could
