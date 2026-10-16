@@ -179,6 +179,11 @@ Each criterion is observable, so it can be checked from a PR or a local run.
    the same mutant reports `killed`.
 2. **Attribution.** Every `survived` finding has a non-empty `coveredBy`. A
    survivor with empty `coveredBy` is classified as `no-coverage` instead.
+   _Amended by
+   [ADR 0037](../../knowledge/decisions/0037-mutation-report-counts-only-what-stryker-tested.md):
+   attribution may be absent (Stryker without `coverageAnalysis: perTest`), and
+   that absence is reported, not demoted. Only an explicit empty `coveredBy: []`
+   demotes a survivor to `no-coverage`._
 3. **Budget.** Across the first 20 PRs that produce mutants, the p90 wall-clock
    time of the mutation job is ≤ 10 minutes, and no run exceeds the cap without
    reporting `sampled < generated`.
