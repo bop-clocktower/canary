@@ -93,4 +93,7 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0034](0034-route-labels-are-canarys-half-of-the-issue-fleet-contract.md) | A route:* label family is canary's half of the issue-fleet contract       | accepted |
 | [0035](0035-versioned-two-layer-qa-data-contract.md)                      | QA results travel in a versioned two-layer contract                       | accepted |
 | [0036](0036-pillars-no-composite-health-score.md)                         | QA health is shown as pillars, never one composite score                  | accepted |
+| [0037](0037-mutation-report-counts-only-what-stryker-tested.md)           | The mutation report counts only what Stryker tested, and all of it        | accepted |
+| [0038](0038-mutation-advisory-exit-criterion.md)                          | Mutation findings are advisory until a measured exit criterion            | accepted |
+| [0039](0039-canary-ivy-report-only.md)                                    | canary-ivy reports suite overgrowth and never recommends deleting a test  | accepted |
 | [0040](0040-gen-data-schema-first-shape-source.md)                        | gen-data shapes come from a schema first; the compiler API is opt-in      | accepted |
