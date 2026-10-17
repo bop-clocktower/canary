@@ -152,7 +152,18 @@ describe('release.yml (#1185)', () => {
     // fake `sleep` that only records its argument, so a 10-minute window
     // costs milliseconds and nothing touches the registry.
     describe('registry-visibility poll window (#1331)', () => {
-      function runPoll(visibleAt: number) {
+      /** Writes an executable fake into `bin`. */
+      function writeFake(bin: string, name: string, lines: string[]) {
+        const path = join(bin, name);
+        writeFileSync(path, ['#!/usr/bin/env bash', ...lines, ''].join('\n'));
+        chmodSync(path, 0o755);
+      }
+
+      /**
+       * A temp package dir plus fake `npm` (version visible from probe
+       * `visibleAt`, bins always complete) and `sleep` (records, never waits).
+       */
+      function fakeRegistry(visibleAt: number) {
         const dir = mkdtempSync(join(tmpdir(), 'release-poll-'));
         const bin = join(dir, 'fakebin');
         mkdirSync(bin);
@@ -166,24 +177,24 @@ describe('release.yml (#1185)', () => {
         );
         const probes = join(dir, 'probes');
         const sleeps = join(dir, 'sleeps');
-        writeFileSync(
-          join(bin, 'npm'),
-          [
-            '#!/usr/bin/env bash',
-            'if [ "$3" = "bin" ]; then echo \'{"canary":"bin/canary.js"}\'; exit 0; fi',
-            `echo x >> "${probes}"`,
-            `n=$(wc -l < "${probes}")`,
-            `[ "$n" -ge ${visibleAt} ] && echo 9.9.9`,
-            'exit 0',
-            '',
-          ].join('\n'),
-        );
-        writeFileSync(
-          join(bin, 'sleep'),
-          `#!/usr/bin/env bash\necho "$1" >> "${sleeps}"\n`,
-        );
-        chmodSync(join(bin, 'npm'), 0o755);
-        chmodSync(join(bin, 'sleep'), 0o755);
+        writeFake(bin, 'npm', [
+          'if [ "$3" = "bin" ]; then echo \'{"canary":"bin/canary.js"}\'; exit 0; fi',
+          `echo x >> "${probes}"`,
+          `n=$(wc -l < "${probes}")`,
+          `[ "$n" -ge ${visibleAt} ] && echo 9.9.9`,
+          'exit 0',
+        ]);
+        writeFake(bin, 'sleep', [`echo "$1" >> "${sleeps}"`]);
+        return { dir, bin, probes, sleeps };
+      }
+
+      const lines = (f: string) =>
+        existsSync(f)
+          ? readFileSync(f, 'utf8').split('\n').filter(Boolean)
+          : [];
+
+      function runPoll(visibleAt: number) {
+        const { dir, bin, probes, sleeps } = fakeRegistry(visibleAt);
         const r = spawnSync(
           'bash',
           // GitHub's default `run:` shell flags, so errexit/pipefail apply.
@@ -204,10 +215,6 @@ describe('release.yml (#1185)', () => {
             },
           },
         );
-        const lines = (f: string) =>
-          existsSync(f)
-            ? readFileSync(f, 'utf8').split('\n').filter(Boolean)
-            : [];
         return {
           status: r.status,
           out: `${r.stdout}${r.stderr}`,
