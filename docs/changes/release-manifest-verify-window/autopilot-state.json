@@ -1,0 +1,37 @@
+{
+  "item": "release-manifest-verify-window",
+  "issue": 1331,
+  "fleet": "cicd-fleet",
+  "cause": "infra-config",
+  "answers": { "window": "2A", "split": "3A", "verification": "5A" },
+  "scope": [
+    "widen the registry-visibility poll in release.yml to 20 probes 30 s apart",
+    "keep exit 3 when the version is still invisible after the window",
+    "execute the real step body in release-workflow.test.ts against a fake npm/sleep"
+  ],
+  "evidenceRuns": { "v9.3.0 release abstained": 38312805585 },
+  "base": "ab9abf39",
+  "phase": "VERIFY",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Failing tests: late-visible (probe 8), never-visible (20 probes, 19x30s, exit 3), immediate (no sleep)",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "title": "release.yml: ATTEMPTS=20, sleep 30 only while attempts remain; exit 3 unchanged",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "title": "Gates from ts/: build, typecheck, format:check, test",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "title": "File the #1332 job-split idea as a follow-up issue",
+      "status": "pending"
+    }
+  ]
+}

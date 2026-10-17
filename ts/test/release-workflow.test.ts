@@ -16,11 +16,21 @@
  * Plus re-run safety: once npm has a version, publishing it again is E403, so
  * re-running the workflow must skip that publish rather than fail on it.
  *
- * Offline: reads workflow YAML. Executes nothing.
+ * Offline: reads workflow YAML. The #1331 poll tests run the real step body
+ * under bash against a fake `npm` and `sleep`; nothing touches the registry.
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
@@ -133,6 +143,103 @@ describe('release.yml (#1185)', () => {
       const run = runOf(isCheckAfterPublish, 'published-manifest bin');
       expect(run).toMatch(/\bexit 3\b/);
       expect(run).toMatch(/::error::/);
+    });
+
+    // #1331: v9.3.0 published fine, but npm said "may take a few minutes to
+    // become available" and the old 6 x 10 s poll gave up at ~60 s, skipping
+    // the GitHub Release and the latest advance. These run the REAL step body
+    // against a fake `npm` (visible from the Nth `npm view ... version`) and a
+    // fake `sleep` that only records its argument, so a 10-minute window
+    // costs milliseconds and nothing touches the registry.
+    describe('registry-visibility poll window (#1331)', () => {
+      function runPoll(visibleAt: number) {
+        const dir = mkdtempSync(join(tmpdir(), 'release-poll-'));
+        const bin = join(dir, 'fakebin');
+        mkdirSync(bin);
+        writeFileSync(
+          join(dir, 'package.json'),
+          JSON.stringify({
+            name: 'canary-test-cli',
+            version: '9.9.9',
+            bin: { canary: 'bin/canary.js' },
+          }),
+        );
+        const probes = join(dir, 'probes');
+        const sleeps = join(dir, 'sleeps');
+        writeFileSync(
+          join(bin, 'npm'),
+          [
+            '#!/usr/bin/env bash',
+            'if [ "$3" = "bin" ]; then echo \'{"canary":"bin/canary.js"}\'; exit 0; fi',
+            `echo x >> "${probes}"`,
+            `n=$(wc -l < "${probes}")`,
+            `[ "$n" -ge ${visibleAt} ] && echo 9.9.9`,
+            'exit 0',
+            '',
+          ].join('\n'),
+        );
+        writeFileSync(
+          join(bin, 'sleep'),
+          `#!/usr/bin/env bash\necho "$1" >> "${sleeps}"\n`,
+        );
+        chmodSync(join(bin, 'npm'), 0o755);
+        chmodSync(join(bin, 'sleep'), 0o755);
+        const r = spawnSync(
+          'bash',
+          // GitHub's default `run:` shell flags, so errexit/pipefail apply.
+          [
+            '--noprofile',
+            '--norc',
+            '-eo',
+            'pipefail',
+            '-c',
+            runOf(isCheckAfterPublish, 'published-manifest bin'),
+          ],
+          {
+            cwd: dir,
+            encoding: 'utf-8',
+            env: {
+              ...process.env,
+              PATH: `${bin}${delimiter}${process.env.PATH}`,
+            },
+          },
+        );
+        const lines = (f: string) =>
+          existsSync(f)
+            ? readFileSync(f, 'utf8').split('\n').filter(Boolean)
+            : [];
+        return {
+          status: r.status,
+          out: `${r.stdout}${r.stderr}`,
+          probes: lines(probes).length,
+          sleeps: lines(sleeps).map(Number),
+        };
+      }
+
+      it('keeps polling past the old 60 s window and verifies a late version', () => {
+        // Visible on the 8th probe: the old 6-attempt loop abstained here.
+        const r = runPoll(8);
+        expect(r.status).toBe(0);
+        expect(r.out).toMatch(/published bins:/);
+        expect(r.probes).toBe(8);
+      });
+
+      it('spans 20 probes 30 s apart (~10 min) before abstaining with exit 3', () => {
+        const r = runPoll(9999);
+        expect(r.status).toBe(3);
+        expect(r.out).toMatch(/::error::.*NOT verified/);
+        expect(r.probes).toBe(20);
+        expect(r.sleeps.every((s) => s === 30)).toBe(true);
+        // No pointless sleep after the final probe: 19 gaps between 20 probes.
+        expect(r.sleeps.reduce((a, b) => a + b, 0)).toBe(19 * 30);
+      });
+
+      it('does not sleep at all when the version is visible on the first probe', () => {
+        const r = runPoll(1);
+        expect(r.status).toBe(0);
+        expect(r.probes).toBe(1);
+        expect(r.sleeps).toEqual([]);
+      });
     });
   });
 
