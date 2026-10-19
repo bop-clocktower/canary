@@ -178,6 +178,24 @@ all, so absence there counts as a miss. For the same reason the coverage delta
 covered, so its ratio is 100% on both sides whatever changed. Such a file is
 reported head-only, never as compared-and-clean.
 
+A report's paths are anchored to the repo before any changed file is matched to
+them ([#1291]). vitest run under `pkg-a/` writes `src/index.ts`, and matching
+that raw key by path suffix bound a changed `pkg-b/src/index.ts`, a file the
+report never instrumented, to `pkg-a`'s hit counts: a fabricated
+coverage-verified verdict, a falsely matched count, and a coverage delta drawn
+from the wrong package.
+[`report-anchor.ts`](../../ts/src/guardian/diff-coverage/report-anchor.ts)
+re-keys each relative entry under the nearest ancestor of the report's directory
+where its files exist, the repo root included, and an anchored entry then binds
+by exact path only, so neither a sibling's `pkg-b/src/index.ts` nor a root-level
+`src/index.ts` can claim it. A report rooted at the repo itself
+(`coverage/lcov.info` naming `src/index.ts`) anchors at the root the same way.
+The ladder, the delta and the instrumented-tree denominator all read that one
+anchoring. Only two kinds of entry keep the suffix fallback: absolute keys, and
+relative keys whose group has no file under any ancestor of the report's
+directory (for example a package's report written to a root `coverage/`
+directory, whose keys are relative to the package).
+
 A coverage-json producer can opt in to the lcov rule per file by declaring
 `instrumented_lines` ([#657]) — the set of lines its tool actually measured.
 Changed lines outside that set are then not coverable, exactly as for lcov. A
@@ -487,6 +505,7 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#655]: https://github.com/bop-clocktower/canary/issues/655
 [#657]: https://github.com/bop-clocktower/canary/issues/657
 [#1314]: https://github.com/bop-clocktower/canary/issues/1314
+[#1291]: https://github.com/bop-clocktower/canary/issues/1291
 [#738]: https://github.com/bop-clocktower/canary/issues/738
 [#747]: https://github.com/bop-clocktower/canary/issues/747
 [#761]: https://github.com/bop-clocktower/canary/issues/761

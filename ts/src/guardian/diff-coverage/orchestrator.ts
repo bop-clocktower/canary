@@ -8,6 +8,7 @@ import { withContinuations } from './lexical/continuation.js';
 import { resolveFromGraph } from './graph-tier.js';
 import { resolveFromHeuristic } from './heuristic-tier.js';
 import {
+  anchorIndex,
   countEligible,
   instrumentedTrees,
   matchUnitsToIndex,
@@ -200,10 +201,12 @@ export function resolveCoverageWithInput(
       read.index === null ? 0 : Object.keys(read.index).length;
     if (read.index !== null) {
       const nonCoverable: ChangedUnit[] = [];
+      // #1291: match against repo-anchored keys, never a sibling package's.
+      const anchored = anchorIndex(read.index, coveragePath, repoRoot);
       // #1314: lcov records a multi-line statement on one line only.
       const report = matchUnitsToIndex(
         remaining,
-        withContinuations(remaining, read.index, repoRoot),
+        withContinuations(remaining, anchored, repoRoot),
         nonCoverable,
       );
       for (const r of report) resolved.set(r.unit, r);

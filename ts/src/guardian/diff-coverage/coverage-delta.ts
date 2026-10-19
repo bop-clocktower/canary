@@ -28,6 +28,7 @@
  */
 
 import {
+  anchorIndex,
   countEligible,
   readReportIndex,
   zeroMatchClause,
@@ -243,10 +244,13 @@ export function resolveCoverageDelta(
   const headRead = readReportIndex(headCoveragePath);
   if (headRead.index === null) return { deltas: [], state };
 
+  // #1291: match against repo-anchored keys, never a sibling package's.
+  const baseIndex = anchorIndex(baseRead.index, baseCoveragePath, repoRoot);
+  const headIndex = anchorIndex(headRead.index, headCoveragePath, repoRoot);
   const deltas: UnitCoverageDelta[] = [];
   for (const unit of units) {
-    const base = ratioFor(unit.path, baseRead.index);
-    const head = ratioFor(unit.path, headRead.index);
+    const base = ratioFor(unit.path, baseIndex);
+    const head = ratioFor(unit.path, headIndex);
     if (base === null || head === null) continue;
     state.unitsCompared++;
     const dropPoints = percent(base) - percent(head);

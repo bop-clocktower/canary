@@ -225,5 +225,6 @@ export function withContinuations(
 function fold(file: FileCoverage, at: LineMap | null): FileCoverage {
   const hits: LineHits = Object.assign(Object.create(null), file.hits);
   for (const [ln, m] of at ?? []) hits[ln] = file.hits[m] ?? 0;
-  return { hits, coverable: at && new Set([...file.coverable!, ...at.keys()]) };
+  const coverable = at && new Set([...file.coverable!, ...at.keys()]);
+  return { ...file, hits, coverable };
 }
