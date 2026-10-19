@@ -14,6 +14,8 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [9.4.0] - 2026-10-19
+
 ### Security
 
 - **TestTracker no longer receives credentials echoed in failure text (#1354).**
@@ -79,6 +81,76 @@ under the project's former name) are documented in the
   `--adoption-report` `skills` piece still checks detected shapes only, and its
   zero-match detail now says so and points at
   `canary migrate --check --framework <name>`.
+- **Piped `canary` output is no longer cut off at the pipe buffer** (#1382;
+  #1284, #1356). Three forced-exit paths called `process.exit` while stdout
+  still had queued writes, so `canary … | jq` lost everything past 64 KiB on
+  macOS (about 143 KiB on Linux). Every forced exit now drains stdout and stderr
+  first.
+- **Guardian coverage matching no longer binds a file to the wrong report
+  entry.**
+  - A report written under one package (`pkg-a/` → `src/index.ts`) no longer
+    supplies hit counts for a same-named file in a sibling package or at the
+    root. Report keys are anchored to where the report is rooted before matching
+    (#1406; #1291).
+  - coverage-json keys written on Windows (`src\\x.ts`) are normalized to `/`,
+    as the lcov and Cobertura readers already did (#1340).
+  - Cobertura `filename` attributes have their XML references decoded, so
+    `src/a&amp;b.py` matches `src/a&b.py` (#1342).
+  - A `<class` inside a Cobertura CDATA section or processing instruction is no
+    longer read as a real tag, which let a crafted `coverage.xml` credit one
+    class's hits to a fake filename (#1391; #1360).
+
+  Each of these used to drop the unit silently to the graph/heuristic tier and
+  blame a stale report or scope gap.
+
+- **Guardian no longer proves a module type-only when a line holds runtime code
+  after a type.** `export type A = string; register('x');` and an interface
+  closed by `} register('y');` were read as type-only, suppressing a real "never
+  executed" finding (#1343).
+- **`guardian mutation --report` no longer reports all-killed for survivors
+  without `coveredBy`** (#1302). Stryker only writes `coveredBy` under
+  `coverageAnalysis: perTest`, so under `all` or `off` every survivor was
+  demoted to `no-coverage` and the run exited 0. Only an explicit empty
+  `coveredBy` demotes a survivor now; such runs will report their survivors.
+- **Guardian hard-gate and GitHub error handling.**
+  - Hard-gate context verification reads every page of check runs. A real
+    context past the first 30 was refused as a phantom, which pushed operators
+    toward `--force` (#1334).
+  - Branch names are percent-encoded in hard-gate REST paths, so `release#2` is
+    no longer cut off at the `#` (#1335).
+  - `pr-check --gate <value>` outside `soft`/`hard` prints a `WARNING:` and uses
+    the configured gate, matching the config rule, instead of silently running
+    soft (#1336).
+  - `precision --days` and `watch --interval` reject values their consumers
+    cannot hold: a huge `--days` crashed with `RangeError`, and an `--interval`
+    past setTimeout's ceiling polled every millisecond (#1337).
+  - A non-JSON GraphQL error (a 502 HTML page) reports
+    `GitHub GraphQL <status>: …` instead of a `SyntaxError` (#1338).
+  - A rate-limited 403 is reported as a rate limit, not as a token missing write
+    permission (#1339).
+- **`canary migrate` skill deployment.**
+  - A skill copy that fails part-way no longer leaves a partial tree that reads
+    as "local edits — not overwritten" on every later run. Copies are staged and
+    swapped in only when complete (#1348).
+  - A `~/.canary/skills` skill no longer overwrites an overlay skill that uses
+    the same directory name with a different skill name. The first tier to claim
+    a directory wins, as it already did for names (#1349).
+- **Python test linting.**
+  - `//` (floor division) before a `"""` opener is no longer read as a comment,
+    which hid the string and misread the code after it (#1344).
+  - A test body now ends at a dedented `def` or `class`, so a class method
+    followed by a top-level test no longer runs into it (#1345).
+- **The release workflow waits about 10 minutes for npm to show a publish**
+  (#1393; #1331). The 60 s window abstained on v9.3.0's good publish and skipped
+  the GitHub Release. It still exits 3 if the version never appears.
+
+### Performance
+
+- Guardian groups instrumented-tree paths in linear time; a 10k-entry report
+  spent about 0.3 s per call, run up to three times per check (#1341).
+- The vacuity scanner's declaration patterns run in linear time over
+  string-blanked fixtures; a 4,000-line template-literal fixture took 1.4 s
+  (#1346).
 
 ### Changed
 
@@ -4829,7 +4901,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.3.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.4.0...HEAD
+[9.4.0]: https://github.com/bop-clocktower/canary/compare/v9.3.0...v9.4.0
 [9.3.0]: https://github.com/bop-clocktower/canary/compare/v9.2.0...v9.3.0
 [9.2.0]: https://github.com/bop-clocktower/canary/compare/v9.1.0...v9.2.0
 [9.1.0]: https://github.com/bop-clocktower/canary/compare/v9.0.0...v9.1.0
