@@ -57,7 +57,7 @@ describe('report tier: cross-package suffix binding', () => {
     );
 
     // pkg-a's hit count says nothing about pkg-b's file.
-    expect(result!.fidelity).not.toBe(Fidelity.CoverageVerified);
+    expect(result!.fidelity).toBe(Fidelity.Heuristic);
   });
 
   it('counts the sibling-package unit as unmatched, not matched', () => {
@@ -146,7 +146,7 @@ describe('report tier: cross-package suffix binding', () => {
       },
     );
 
-    expect(result!.fidelity).not.toBe(Fidelity.CoverageVerified);
+    expect(result!.fidelity).toBe(Fidelity.Heuristic);
   });
 
   it('keeps an entry exact-only after continuation folding binds its owner', () => {
@@ -172,6 +172,29 @@ describe('report tier: cross-package suffix binding', () => {
     );
 
     expect(owner!.fidelity).toBe(Fidelity.CoverageVerified);
-    expect(rootFile!.fidelity).not.toBe(Fidelity.CoverageVerified);
+    expect(rootFile!.fidelity).toBe(Fidelity.Heuristic);
+  });
+
+  it("does not verify pkg-b/src/index.ts from a repo-root report's record", () => {
+    // A report rooted at the repo itself anchors at prefix '': its key is
+    // already the repo path, so it too must bind by exact match only.
+    write('src/index.ts', 'export const root = 0;\n');
+    write('pkg-b/src/index.ts', 'export const b = 2;\n');
+    write('coverage/lcov.info', 'SF:src/index.ts\nDA:1,5\nend_of_record\n');
+
+    const [rootFile, sibling] = resolveCoverage(
+      [
+        { path: 'src/index.ts', added_ranges: [[1, 1]] },
+        { path: 'pkg-b/src/index.ts', added_ranges: [[1, 1]] },
+      ],
+      {
+        coveragePath: join(root, 'coverage/lcov.info'),
+        graphPath: join(root, 'no-graph.json'),
+        repoRoot: root,
+      },
+    );
+
+    expect(rootFile!.fidelity).toBe(Fidelity.CoverageVerified);
+    expect(sibling!.fidelity).toBe(Fidelity.Heuristic);
   });
 });
