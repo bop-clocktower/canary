@@ -2,6 +2,7 @@
 import type { FullResult } from "@playwright/test/reporter";
 import crypto from "node:crypto";
 import type { ResolvedConfig } from "./config.js";
+import { redactCatalog, redactEntry, redactText } from "./redact.js";
 
 export interface ResultEntry {
   full_title: string;
@@ -220,10 +221,10 @@ export function buildPayload(
   fullResultStatus?: string,
   run: { shard?: Shard; collected?: CollectedEntry[] | null } = {},
 ): IngestPayload {
-  // Deduped before the totals are counted, so `totals` always describes the
-  // rows actually sent — a payload whose totals disagree with `results.length`
-  // would misreport the run on the dashboard.
-  const results = dedupeByFullTitle(rawResults);
+  // Redacted (#1354), then deduped before the totals are counted: titles that
+  // redact alike must be one row, and `totals` must describe the rows sent.
+  const results = dedupeByFullTitle(rawResults.map((r) => redactEntry(r, env)));
+  const collected = run.collected && redactCatalog(run.collected, env);
   const count = (s: string) => results.filter((r) => r.status === s).length;
   const passed = count("passed");
   // The ingest totals have no timed_out bucket; a timeout is a failure there.
@@ -243,7 +244,7 @@ export function buildPayload(
     totals: { passed, failed, flaky, skipped, total: results.length },
     results,
     // null/undefined = no catalog for this push → the key is omitted, never `[]`.
-    ...(run.collected ? { collected: run.collected } : {}),
+    ...(collected ? { collected } : {}),
   };
 }
 
@@ -289,9 +290,9 @@ export const MAX_ERROR_STACK = 8_000;
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
 
-/** Playwright errors carry ANSI colour and full diffs; send readable, bounded text. */
-export function errorField(text: string | undefined, max: number): string | undefined {
+/** Readable, bounded text; redacted BEFORE the cut (#1354) so no half-secret survives it. */
+export function errorField(text: string | undefined, max: number, env: NodeJS.ProcessEnv = process.env): string | undefined {
   if (text === undefined) return undefined;
-  const plain = text.replace(ANSI, "");
+  const plain = redactText(text.replace(ANSI, ""), env);
   return plain.length > max ? `${plain.slice(0, max)}… [truncated]` : plain;
 }
