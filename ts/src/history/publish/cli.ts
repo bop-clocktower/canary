@@ -68,17 +68,9 @@ const RESULT_FIELDS: readonly (keyof TestResultInput)[] = [
   'tags',
 ];
 
-function pick<T>(
-  src: Record<string, unknown>,
-  fields: readonly (keyof T)[],
-): T {
-  const out: Record<string, unknown> = {};
-  for (const f of fields) {
-    if (Object.prototype.hasOwnProperty.call(src, f as string)) {
-      out[f as string] = src[f as string];
-    }
-  }
-  return out as T;
+function pick<T>(src: Record<string, unknown>, fields: readonly string[]): T {
+  const kept = fields.filter((f) => Object.hasOwn(src, f));
+  return Object.fromEntries(kept.map((f) => [f, src[f]])) as T;
 }
 
 // --- push --------------------------------------------------------------------
@@ -97,8 +89,6 @@ async function pushCmd(
     deps.out(`${pc.red('Not found:')} ${historyFile}`);
     throw new CliExitError(1);
   }
-
-  const store = deps.makeStore(opts.dbUrl, historyFile);
 
   const records: Record<string, unknown>[] = [];
   for (const raw of readFileSync(historyFile, 'utf-8').split('\n')) {
@@ -125,7 +115,17 @@ async function pushCmd(
     throw new CliExitError(0);
   }
 
-  await store.pushRun(run, results);
+  // #1296: no db-url means a local store AT historyFile, whose run_id dedup
+  // makes this a guaranteed no-op -- `Pushed` over it would be a false green.
+  if (!(opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'])) {
+    const gate = gateOutcome({ checked: 0, findings: [] }, 'gate');
+    deps.out(
+      `${gate.summaryLine} Nothing was pushed: no remote store is configured ` +
+        `(pass --db-url or set CANARY_HISTORY_DB_URL).`,
+    );
+    throw new CliExitError(gate.exitCode);
+  }
+  await deps.makeStore(opts.dbUrl).pushRun(run, results);
   deps.out(
     `${pc.green('Pushed')} run ${pc.bold(run.run_id)} (${results.length} tests)`,
   );

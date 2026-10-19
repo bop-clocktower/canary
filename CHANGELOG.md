@@ -29,6 +29,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary history push` with no db-url now abstains instead of reporting
+  success (#1296).** With neither `--db-url` nor `CANARY_HISTORY_DB_URL` set,
+  the store fell back to a local NDJSON store at the very file being pushed,
+  whose run_id dedup made the push a guaranteed no-op, yet the command printed
+  `Pushed run ...` and exited 0. It now prints
+  `Abstained ... Nothing was pushed: no remote store is configured` and exits
+  **3** (the CLI-wide abstention code). `--dry-run` is unchanged. Scripts that
+  ran `history push` without a remote and relied on exit 0 will now see exit 3.
 - **One red gate in `validate` no longer skips the gates after it.** The docs,
   entropy and perf scan steps and the security-ledger check had no `if:`, so
   they ran only on success: a failed entropy ratchet skipped both perf scans,

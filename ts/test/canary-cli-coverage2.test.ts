@@ -131,7 +131,7 @@ describe('history tables + push', () => {
     }
   });
 
-  it('push (non-dry) pushes the latest run to the local store', async () => {
+  it('push (non-dry) with no db-url abstains instead of a local no-op (#1296)', async () => {
     const tmp = mkTmp();
     try {
       seed(tmp);
@@ -141,8 +141,8 @@ describe('history tables + push', () => {
           cwd: tmp,
         },
       );
-      expect(res.code).toBe(0);
-      expect(res.stdout).toContain('Pushed');
+      expect(res.code).toBe(3);
+      expect(res.stdout).toContain('Nothing was pushed');
     } finally {
       rmTmp(tmp);
     }

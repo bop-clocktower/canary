@@ -41,6 +41,9 @@ describe('history push without a remote store', () => {
       // The file is untouched: nothing was pushed anywhere.
       expect(readFileSync(path, 'utf-8')).toBe(before);
       expect(res.code).not.toBe(0);
+      // The repo-wide abstention code, not a generic failure (D4).
+      expect(res.code).toBe(3);
+      expect(res.stdout).not.toContain('Pushed run');
     } finally {
       rmTmp(tmp);
     }
