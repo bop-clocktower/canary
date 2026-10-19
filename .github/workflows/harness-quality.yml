@@ -82,7 +82,11 @@ jobs:
       # every gate after it — on #1398 a failed entropy ratchet skipped both
       # perf scans and the perf ratchet abstained on a baseline nobody wrote.
       # Each gate here must report on its own evidence, whatever came before.
-      # `ts/test/workflow-false-green.test.ts` fails on a step that drops it.
+      # A step that USES the CLI also requires
+      # `steps.harness-cli.outcome == 'success'`: without a resolved CLI every
+      # scan runs `npx -p ""`, `|| true` hides it, and one setup failure would
+      # fan out into a red abstention per ratchet.
+      # `ts/test/workflow-false-green.test.ts` fails on a step that drops either.
 
       # #1249. `agents/commands/gemini-cli/harness/*.toml` are generated from
       # each skill's SKILL.md and headed "Do not edit", yet nothing regenerated
@@ -94,7 +98,7 @@ jobs:
       # or emits nothing, the script abstains with exit 3, which fails this
       # step: a check that could not run is not a pass.
       - name: Gemini CLI commands drift gate (blocking)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.harness-cli.outcome == 'success' }}
         run: |
           npx --yes -p "$HARNESS_CLI_EXACT" -c 'node scripts/gemini-commands-drift.mjs'
 
@@ -138,13 +142,15 @@ jobs:
       # restamp of that file. `--cli-version` arms the instrument check; a
       # floor measured by a different CLI abstains (exit 3).
       - name: Harness Docs Coverage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.harness-cli.outcome == 'success' }}
         run:
           npx --yes -p "$HARNESS_CLI_EXACT" harness check-docs --json
           --min-coverage 0 > docs-report.json || true
 
       - name: Harness Docs Coverage (merge base)
-        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        if:
+          ${{ !cancelled() && steps.harness-cli.outcome == 'success' &&
+          github.event_name == 'pull_request' }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -156,7 +162,7 @@ jobs:
       # `!cancelled()` on all three ratchets (docs, entropy, perf): one red
       # ratchet must not skip the others, so a red build names every reason.
       - name: Docs coverage ratchet (blocking)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.harness-cli.outcome == 'success' }}
         env:
           # Empty on a push to `main`: no merge base, so the floor rule runs
           # alone. On a PR it also gets the base report (#865 identity rule)
@@ -199,7 +205,7 @@ jobs:
       # rather than passing — that is the property that stops a future startup
       # failure from going green again.
       - name: Harness Cleanup (Entropy Scan)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.harness-cli.outcome == 'success' }}
         run:
           npx --yes -p "$HARNESS_CLI_EXACT" harness cleanup --findings-json >
           entropy-report.txt || true
@@ -230,7 +236,9 @@ jobs:
       # An empty report is NOT silently tolerated — the ratchet abstains
       # (exit 3) on a base report with no contract line.
       - name: Harness Cleanup (Entropy Scan, merge base)
-        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        if:
+          ${{ !cancelled() && steps.harness-cli.outcome == 'success' &&
+          github.event_name == 'pull_request' }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -240,7 +248,7 @@ jobs:
             > "$GITHUB_WORKSPACE/entropy-base-report.txt" || true
 
       - name: Entropy ratchet (blocking)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.harness-cli.outcome == 'success' }}
         env:
           # Empty on a push to `main`, where there is no merge base to compare
           # against and the absolute ceiling is the only rule that applies. On
@@ -274,7 +282,7 @@ jobs:
       # over nothing. `ts/test/workflow-false-green.test.ts` asserts this line
       # stays flagless, and perf-ratchet.mjs abstains on an implausible zero.
       - name: Harness Performance Check
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.harness-cli.outcome == 'success' }}
         run:
           npx --yes -p "$HARNESS_CLI_EXACT" harness check-perf > perf-report.txt
           2>&1 || true
@@ -300,7 +308,9 @@ jobs:
       # the allowances (silently weaker). With no shared file at all it
       # abstains rather than reporting a number it cannot stand behind.
       - name: Harness Performance Check (merge base)
-        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        if:
+          ${{ !cancelled() && steps.harness-cli.outcome == 'success' &&
+          github.event_name == 'pull_request' }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -310,7 +320,7 @@ jobs:
             > "$GITHUB_WORKSPACE/perf-base-report.txt" 2>&1 || true
 
       - name: Performance ratchet (blocking)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.harness-cli.outcome == 'success' }}
         env:
           # Empty on a push to `main`, where there is no merge base to compare
           # against and the absolute ceiling is the only rule that applies. On

@@ -655,7 +655,7 @@ describe('the docs merge-base ratchet is wired (#865, #1241)', () => {
 
   it('gates the base scan on pull_request and hands it to the ratchet', () => {
     expect(yaml()).toMatch(
-      /Harness Docs Coverage \(merge base\)[\s\S]{0,200}?if:[^\n]*github\.event_name == 'pull_request'/,
+      /Harness Docs Coverage \(merge base\)[\s\S]{0,200}?if:[\s\S]{0,120}?&&\s*github\.event_name == 'pull_request'/,
     );
     expect(yaml()).toMatch(/docs-ratchet\.mjs[\s\S]{0,200}?\$DOCS_BASE_FLAG/);
   });
