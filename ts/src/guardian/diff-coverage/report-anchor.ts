@@ -7,6 +7,7 @@
  * the report cover?) and per-unit matching (which file does this key name?).
  */
 
+// canary:allow-untested fp: module-load imports/signature scored via line 0 (#1408)
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
