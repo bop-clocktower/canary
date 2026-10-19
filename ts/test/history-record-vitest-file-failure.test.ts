@@ -50,4 +50,48 @@ describe('vitest file-level failure', () => {
     const built = buildRunFromReport('vitest', REPORT, CTX);
     expect(built.run.failed).toBeGreaterThan(0);
   });
+
+  it('records the load failure as one failed row named after its file', () => {
+    const built = buildRunFromReport('vitest', REPORT, CTX);
+    expect(built.run).toMatchObject({ total: 2, passed: 1, failed: 1 });
+    const row = built.results.find((r) => r.status === 'failed');
+    expect(row).toMatchObject({
+      test_file: '/repo/src/c.test.ts',
+      test_name: '/repo/src/c.test.ts (file failed outside any test)',
+      error_text:
+        "Cannot find module './missing.js' imported from /repo/src/c.test.ts",
+    });
+  });
+
+  it('records a throwing file hook alongside the tests that passed', () => {
+    const hookThrew = {
+      testResults: [
+        {
+          name: '/repo/src/h.test.ts',
+          status: 'failed',
+          message: 'afterAll hook timed out',
+          assertionResults: [{ fullName: 'h works', status: 'passed' }],
+        },
+      ],
+    };
+    const built = buildRunFromReport('vitest', hookThrew, CTX);
+    expect(built.run).toMatchObject({ total: 2, passed: 1, failed: 1 });
+  });
+
+  it('does not add a row for a file whose only failures are its tests', () => {
+    const assertionFailed = {
+      testResults: [
+        {
+          name: '/repo/src/b.test.ts',
+          status: 'failed',
+          message: '',
+          assertionResults: [
+            { fullName: 'b breaks', status: 'failed', failureMessages: ['x'] },
+          ],
+        },
+      ],
+    };
+    const built = buildRunFromReport('vitest', assertionFailed, CTX);
+    expect(built.run).toMatchObject({ total: 1, failed: 1 });
+  });
 });

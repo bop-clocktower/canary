@@ -23,17 +23,12 @@
  * Any other encoding (e.g. retries written to separate report files) is
  * recorded per attempt, as whatever each file says.
  */
-import { makeRunId, type RunInput, type TestResultInput } from '../schema.js';
-
-/** The run-level facts the report cannot carry (a subset of RecordContext). */
-interface RunContext {
-  suite: string;
-  repo: string;
-  branch: string;
-  commitSha: string;
-  runId?: string;
-  nowMs: number;
-}
+import {
+  makeRunId,
+  type RecordContext,
+  type RunInput,
+  type TestResultInput,
+} from '../schema.js';
 
 /** One `<testcase>` as read: attributes plus which outcome children it had. */
 interface JunitCase {
@@ -270,7 +265,7 @@ function startedAt(xml: string, nowMs: number): number {
 /** Convert a JUnit XML report's text into a run + its per-test rows. */
 export function readJunitReport(
   parsed: unknown,
-  ctx: RunContext,
+  ctx: RecordContext,
 ): { run: RunInput; results: TestResultInput[] } {
   const xml = String(parsed);
   const startedMs = startedAt(xml, ctx.nowMs);
