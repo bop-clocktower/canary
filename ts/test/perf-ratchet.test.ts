@@ -825,7 +825,7 @@ describe('the perf merge-base delta gate is wired (#812)', () => {
 
   it('gates the base scan on pull_request, so pushes to main still run', () => {
     expect(yaml()).toMatch(
-      /Harness Performance Check \(merge base\)[\s\S]{0,200}?if:\s*github\.event_name == 'pull_request'/,
+      /Harness Performance Check \(merge base\)[\s\S]{0,200}?if:[\s\S]{0,120}?&&\s*github\.event_name == 'pull_request'/,
     );
   });
 
