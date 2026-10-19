@@ -1,0 +1,13 @@
+{
+  "issues": [1291],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-coverage-cross-package-suffix.test.ts",
+  "baseSha": "e02caf12d62b7777fdc571e66a722fceaaf9af63",
+  "reproFailure": "AssertionError: expected 'coverage-verified' not to be 'coverage-verified' // Object.is equality (red 3/3 at base; extended file also red on unitsMatched 'expected 1 to be +0' and delta unitsCompared 'expected 1 to be +0')",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "The two repro branches reproduce the same scenario; kept one file (the standalone ts/test/guardian-coverage-cross-package-suffix.test.ts from repro/coverage-cross-package-suffix) and ported the unitsMatched assertion from repro/bf-a3-cross-package-suffix-bind into it, so the bug's repro lives in one place instead of being appended to the 1400-line guardian-coverage.test.ts.",
+    "Added a same-package positive and a coverage-delta case to the same file, since the issue names the delta as a shared consumer of the matching semantics."
+  ]
+}

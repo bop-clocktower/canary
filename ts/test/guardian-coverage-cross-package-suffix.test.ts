@@ -14,7 +14,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Fidelity, resolveCoverage } from '../src/guardian/coverage.js';
+import {
+  Fidelity,
+  resolveCoverage,
+  resolveCoverageDelta,
+  resolveCoverageWithInput,
+} from '../src/guardian/coverage.js';
 
 let root: string;
 
@@ -53,5 +58,72 @@ describe('report tier: cross-package suffix binding', () => {
 
     // pkg-a's hit count says nothing about pkg-b's file.
     expect(result!.fidelity).not.toBe(Fidelity.CoverageVerified);
+  });
+
+  it('counts the sibling-package unit as unmatched, not matched', () => {
+    // Ported from repro/bf-a3-cross-package-suffix-bind: the false bind also
+    // inflated the report's matched count the gate reports to the operator.
+    write('ts/src/index.ts', 'x\n');
+    write('web/src/index.ts', 'y\n');
+    write('ts/coverage/lcov.info', 'SF:src/index.ts\nDA:1,1\nend_of_record\n');
+
+    const { coverage } = resolveCoverageWithInput(
+      [{ path: 'web/src/index.ts', added_ranges: [[1, 1]] }],
+      {
+        coveragePath: join(root, 'ts/coverage/lcov.info'),
+        graphPath: join(root, 'no-graph.json'),
+        repoRoot: root,
+      },
+    );
+
+    expect(coverage.unitsMatched).toBe(0);
+  });
+
+  it("still verifies the owning package's file from its own report", () => {
+    // The positive: anchoring must not cost the match the report is FOR.
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('pkg-b/src/index.ts', 'export const b = 2;\n');
+    write(
+      'pkg-a/coverage/lcov.info',
+      'SF:src/index.ts\nDA:1,5\nend_of_record\n',
+    );
+
+    const [result] = resolveCoverage(
+      [{ path: 'pkg-a/src/index.ts', added_ranges: [[1, 1]] }],
+      {
+        coveragePath: join(root, 'pkg-a/coverage/lcov.info'),
+        graphPath: join(root, 'no-graph.json'),
+        repoRoot: root,
+      },
+    );
+
+    expect(result!.fidelity).toBe(Fidelity.CoverageVerified);
+    expect(result!.covered).toBe(true);
+  });
+
+  it("never compares a sibling-package file against pkg-a's delta", () => {
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('pkg-b/src/index.ts', 'export const b = 2;\n');
+    write(
+      'pkg-a/coverage/base.info',
+      'SF:src/index.ts\nDA:1,5\nend_of_record\n',
+    );
+    write(
+      'pkg-a/coverage/head.info',
+      'SF:src/index.ts\nDA:1,0\nend_of_record\n',
+    );
+
+    const { deltas, state } = resolveCoverageDelta(
+      [{ path: 'pkg-b/src/index.ts', added_ranges: [[1, 1]] }],
+      {
+        baseCoveragePath: join(root, 'pkg-a/coverage/base.info'),
+        headCoveragePath: join(root, 'pkg-a/coverage/head.info'),
+        repoRoot: root,
+      },
+    );
+
+    // pkg-a's drop is not a regression in pkg-b.
+    expect(state.unitsCompared).toBe(0);
+    expect(deltas).toEqual([]);
   });
 });
