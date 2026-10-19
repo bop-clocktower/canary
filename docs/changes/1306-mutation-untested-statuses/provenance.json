@@ -11,7 +11,7 @@
     "A Stryker status the mapper does not name is counted as untested, not no-coverage (ADR 0037: a later status that never runs a test joins untested). NoCoverage is mapped explicitly and keeps no-coverage.",
     "When mapStrykerReport is not given options.generated, generated defaults to the Stryker report's mutant total (sampled + untested), so untested mutants never trigger the D7 'sampled N of M' cap note.",
     "The cap note compares sampled + untested against generated, so it fires only when the cap dropped mutants; its N is the mutants Stryker reported, not the tested sampled count.",
-    "The untested line is rendered on every non-abstained report, beside the timeout line. On an abstention, the abstain reason names the untested count when sampled is 0 and untested > 0 (ADR 0038); no separate untested line is added to abstained output.",
+    "The untested line is rendered on every non-abstained report, beside the timeout line. On an abstention, the abstain reason names the untested count when sampled is 0 and untested > 0 (ADR 0038); every abstention with untested > 0 also renders the untested line, so another abstain reason never hides the count (ADR 0037 F2 'unconditionally'; human decision at pr-fleet review-assist). An abstention with untested = 0 adds no line.",
     "The repro test was ported as an appended describe block, not a file checkout, so the #1302 regression test on main is kept."
   ]
 }

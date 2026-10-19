@@ -521,7 +521,8 @@ narrowed to the diff, so it is not described as diff-scoped.
   `Ignored`, `CompileError`, `RuntimeError` or `Pending` never ran a test. It is
   outside `sampled` and every tested tally, and counted in `untested`, which is
   on every `mutation-report.json`, zero included. `sampled + untested` is the
-  report's mutant total. Every non-abstained report renders the count.
+  report's mutant total. Every non-abstained report renders the count, zero
+  included, and an abstention renders it whenever it is not zero.
 - **Author obligation.** For each survivor, either strengthen a test until it
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,

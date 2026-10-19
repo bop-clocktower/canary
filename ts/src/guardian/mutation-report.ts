@@ -2,15 +2,14 @@
  * Mapping, suppression and rendering for the diff-scoped mutation report
  * (#486).
  *
- * Split from `mutation.ts` (the model, the diff scope and the runner guard)
- * only to keep both files inside the perf ratchet's 300-line budget; the model
- * lives there, the reading of a run lives here.
+ * Split from `mutation.ts` (model, diff scope, runner guard) only to keep both
+ * files inside the perf ratchet's 300-line budget.
  *
  * Every function in this file obeys one rule: a report that verified nothing
- * says so. There is no code path that renders "0 survived", and a run whose
- * mutants only timed out abstains rather than reporting `all-killed` -- a
- * timeout is excluded from the killed numerator, so it cannot count as a kill
- * in the verdict either. Every non-abstained report renders its timeout count.
+ * says so. No code path renders "0 survived", and a run whose mutants only
+ * timed out abstains (a timeout is excluded from the killed numerator, so it
+ * cannot be a kill in the verdict either). Every non-abstained report renders
+ * its timeout and untested counts; an abstention renders a non-zero untested.
  */
 
 import {
@@ -47,10 +46,7 @@ export function abstainedReport(
 
 const UNTESTED_KINDS = 'ignored, pending, failed to compile, or errored';
 
-/**
- * Stryker's status vocabulary, mapped onto guardian's. `null` = no test ever
- * ran (ADR 0037 F2: `untested`, never a coverage gap), as for unknown statuses.
- */
+/** Stryker status to guardian's; `null` = no test ran (untested, ADR 0037). */
 function toStatus(
   strykerStatus: string,
   coveredBy: readonly string[] | undefined,
@@ -253,10 +249,14 @@ function headlineLines(report: MutationReport): string[] {
   return [
     `${report.killed}/${report.sampled} mutants killed${scope}.`,
     `${report.timeout} mutant(s) timed out (not counted as killed).`,
-    `${report.untested} mutant(s) never ran a test (${UNTESTED_KINDS}), so ` +
-      'they are not counted above.',
+    untestedLine(report),
   ];
 }
+
+/** ADR 0037 F2: one wording, on every report that prints the untested count. */
+const untestedLine = (report: MutationReport): string =>
+  `${report.untested} mutant(s) never ran a test (${UNTESTED_KINDS}), so ` +
+  'they are not counted above.';
 
 /** Render the report as the `### Mutation` comment/summary section (D-Output). */
 export function renderMutationReport(report: MutationReport): string {
@@ -266,10 +266,11 @@ export function renderMutationReport(report: MutationReport): string {
       `Abstained ${'\u{2014}'} ${report.abstainReason ?? 'no reason given'}. ` +
         'This is not a pass.',
     );
+    // ADR 0037 F2: another abstain reason must not hide untested mutants.
+    if (report.untested > 0) lines.push(untestedLine(report));
     // Suppressions are listed even on an abstention: they are the reason the
     // denominator collapsed in the ONE case where it collapsed by choice.
-    lines.push(...suppressionLines(report));
-    lines.push('', excludedLine(report));
+    lines.push(...suppressionLines(report), '', excludedLine(report));
     return lines.join('\n');
   }
 
@@ -293,7 +294,6 @@ export function renderMutationReport(report: MutationReport): string {
   if (report.noCoverage > 0) {
     lines.push('', `${report.noCoverage} mutant(s) had no covering test.`);
   }
-  lines.push(...suppressionLines(report));
-  lines.push('', excludedLine(report));
+  lines.push(...suppressionLines(report), '', excludedLine(report));
   return lines.join('\n');
 }

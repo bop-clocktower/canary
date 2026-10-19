@@ -533,4 +533,43 @@ describe('bug-fleet A5: non-tested stryker statuses', () => {
   it('abstainedReport carries untested: 0', () => {
     expect(abstainedReport('why', NO_EXCLUSIONS).untested).toBe(0);
   });
+
+  // ADR 0037 F2: the untested line is printed unconditionally, so an
+  // abstention for another reason must not hide a non-zero count.
+  const UNTESTED_LINE = 'mutant(s) never ran a test';
+
+  it('renders the untested count on a timeout-only abstention', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 1, status: 'Timeout', coveredBy: ['t1'] },
+        { line: 2, status: 'CompileError' },
+        { line: 3, status: 'Ignored' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.verdict).toBe('abstained');
+    const text = renderMutationReport(mapped);
+    expect(text).toContain('1 timed out');
+    expect(text).toContain(
+      '2 mutant(s) never ran a test (ignored, pending, failed to compile, ' +
+        'or errored), so they are not counted above.',
+    );
+  });
+
+  it('renders the untested count on a no-covering-test abstention', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 1, status: 'NoCoverage' },
+        { line: 2, status: 'RuntimeError' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.abstainReason).toContain('no mutant was covered');
+    expect(renderMutationReport(mapped)).toContain(`1 ${UNTESTED_LINE}`);
+  });
+
+  it('adds no untested line to an abstention with untested = 0', () => {
+    const text = renderMutationReport(abstainedReport('why', NO_EXCLUSIONS));
+    expect(text).not.toContain(UNTESTED_LINE);
+  });
 });

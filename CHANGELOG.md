@@ -64,8 +64,10 @@ under the project's former name) are documented in the
   now the mutants a test ran against, and `sampled + untested` is the Stryker
   report's mutant total. `noCoverage` and `sampled` from earlier runs are not
   comparable. The `### Mutation` section prints the untested count on every
-  non-abstained report, and a run where no mutant ran a test abstains (exit 3)
-  with a reason that names the count instead of saying "zero mutants".
+  non-abstained report, zero included, and on every abstention where it is not
+  zero, so another abstain reason never hides it. A run where no mutant ran a
+  test abstains (exit 3) with a reason that names the count instead of saying
+  "zero mutants".
 - **`canary guardian pr-check` on a test-only diff whose added test asserts
   nothing exits 3, not 0** (#1305). No source unit was checked, so the run
   abstains, under both `--gate soft` and `--gate hard`. That matches the same
