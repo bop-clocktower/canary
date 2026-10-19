@@ -74,6 +74,20 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **The mutation report's `noCoverage` and `sampled` counts drop by the mutants
+  that never ran a test** (#1306, ADR 0037). Stryker mutants with status
+  `Ignored`, `CompileError`, `RuntimeError` or `Pending` (or a status Stryker
+  adds later) were counted as `no-coverage` and inside `sampled`, so the
+  `killed/sampled` headline had untested mutants in its denominator and a mutant
+  that failed to compile read as a coverage gap. They now go in a new `untested`
+  field on `mutation-report.json`, always present, zero included. `sampled` is
+  now the mutants a test ran against, and `sampled + untested` is the Stryker
+  report's mutant total. `noCoverage` and `sampled` from earlier runs are not
+  comparable. The `### Mutation` section prints the untested count on every
+  non-abstained report, zero included, and on every abstention where it is not
+  zero, so another abstain reason never hides it. A run where no mutant ran a
+  test abstains (exit 3) with a reason that names the count instead of saying
+  "zero mutants".
 - **`canary ticket-update` exits 1, not 0, when an attempted transition fails**
   ([#1283](https://github.com/bop-clocktower/canary/issues/1283)). The command
   printed `Transition failed` and still exited 0 unless the reason started with

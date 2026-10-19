@@ -398,3 +398,178 @@ describe('survivor with coveredBy absent (bug-fleet A5)', () => {
     expect(mapped.verdict).not.toBe('all-killed');
   });
 });
+
+// bug-fleet A5 repro: Ignored / CompileError / RuntimeError mutants were never
+// tested at all; counting them as "no covering test" misstates the run.
+describe('bug-fleet A5: non-tested stryker statuses', () => {
+  it('does not count Ignored/CompileError/RuntimeError as no-coverage', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 10, status: 'Killed', coveredBy: ['t1'] },
+        { line: 11, status: 'Ignored' },
+        { line: 12, status: 'CompileError' },
+        { line: 13, status: 'RuntimeError' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.noCoverage).toBe(0);
+    // ADR 0037 F2: counted apart, outside the tested denominator.
+    expect(mapped.untested).toBe(3);
+    expect(mapped.sampled).toBe(1);
+    expect(mapped.findings).toHaveLength(1);
+    expect(mapped.verdict).toBe('all-killed');
+  });
+
+  it('counts Pending, and a status Stryker adds later, as untested', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 10, status: 'Killed', coveredBy: ['t1'] },
+        { line: 11, status: 'Pending' },
+        { line: 12, status: 'SomeFutureStatus' },
+        { line: 13, status: 'NoCoverage' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.untested).toBe(2);
+    // NoCoverage keeps its mapping: it is the one real coverage gap here.
+    expect(mapped.noCoverage).toBe(1);
+    expect(mapped.sampled).toBe(2);
+  });
+
+  it('keeps generated as the Stryker total and sampled + untested = it', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 10, status: 'Killed', coveredBy: ['t1'] },
+        { line: 11, status: 'Survived', coveredBy: ['t2'] },
+        { line: 12, status: 'CompileError' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.generated).toBe(3);
+    expect(mapped.sampled + mapped.untested).toBe(3);
+    expect(mapped.sampled).toBe(
+      mapped.killed + mapped.survived + mapped.noCoverage + mapped.timeout,
+    );
+  });
+
+  it('abstains naming the untested count when nothing was tested', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 11, status: 'CompileError' },
+        { line: 12, status: 'RuntimeError' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.verdict).toBe('abstained');
+    expect(mapped.sampled).toBe(0);
+    expect(mapped.untested).toBe(2);
+    expect(mapped.abstainReason).toContain(
+      'none of the 2 mutant(s) ran a test',
+    );
+    expect(mapped.abstainReason).not.toContain('zero mutants');
+    expect(mutationExitCode(mapped)).toBe(3);
+  });
+
+  it('keeps untested through suppressions', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 1, status: 'Killed', coveredBy: ['t1'] },
+        { line: 2, status: 'Survived', coveredBy: ['t2'] },
+        { line: 3, status: 'Ignored' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    const sources = {
+      'ts/src/guardian/pr-check.ts': [
+        'a',
+        'b // canary:allow-mutant intentional',
+        'c',
+      ],
+    };
+    const after = applyMutantSuppressions(mapped, sources);
+    expect(after.untested).toBe(1);
+    expect(after.verdict).toBe('all-killed');
+  });
+
+  it('renders the untested line unconditionally, zero included', () => {
+    const clean = renderMutationReport(
+      mapStrykerReport(report([{ line: 1, status: 'Killed' }]), {
+        excludedTests: NO_EXCLUSIONS,
+      }),
+    );
+    expect(clean).toContain('0 mutant(s) never ran a test');
+
+    const text = renderMutationReport(
+      mapStrykerReport(
+        report([
+          { line: 1, status: 'Killed', coveredBy: ['t1'] },
+          { line: 2, status: 'CompileError' },
+          { line: 3, status: 'Ignored' },
+        ]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+    );
+    expect(text).toContain('1/1 mutants killed.');
+    expect(text).toContain('2 mutant(s) never ran a test');
+    // An untested gap is not the D7 cap, and not a coverage gap.
+    expect(text).not.toContain('sampled 1 of 3');
+    expect(text).not.toContain('had no covering test');
+  });
+
+  it('still attributes a real D7 cap to the cap, beside untested', () => {
+    const text = renderMutationReport(
+      mapStrykerReport(
+        report([
+          { line: 1, status: 'Killed', coveredBy: ['t1'] },
+          { line: 2, status: 'CompileError' },
+        ]),
+        { excludedTests: NO_EXCLUSIONS, generated: 10 },
+      ),
+    );
+    expect(text).toContain('(sampled 2 of 10)');
+    expect(text).toContain('1 mutant(s) never ran a test');
+  });
+
+  it('abstainedReport carries untested: 0', () => {
+    expect(abstainedReport('why', NO_EXCLUSIONS).untested).toBe(0);
+  });
+
+  // ADR 0037 F2: the untested line is printed unconditionally, so an
+  // abstention for another reason must not hide a non-zero count.
+  const UNTESTED_LINE = 'mutant(s) never ran a test';
+
+  it('renders the untested count on a timeout-only abstention', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 1, status: 'Timeout', coveredBy: ['t1'] },
+        { line: 2, status: 'CompileError' },
+        { line: 3, status: 'Ignored' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.verdict).toBe('abstained');
+    const text = renderMutationReport(mapped);
+    expect(text).toContain('1 timed out');
+    expect(text).toContain(
+      '2 mutant(s) never ran a test (ignored, pending, failed to compile, ' +
+        'or errored), so they are not counted above.',
+    );
+  });
+
+  it('renders the untested count on a no-covering-test abstention', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 1, status: 'NoCoverage' },
+        { line: 2, status: 'RuntimeError' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.abstainReason).toContain('no mutant was covered');
+    expect(renderMutationReport(mapped)).toContain(`1 ${UNTESTED_LINE}`);
+  });
+
+  it('adds no untested line to an abstention with untested = 0', () => {
+    const text = renderMutationReport(abstainedReport('why', NO_EXCLUSIONS));
+    expect(text).not.toContain(UNTESTED_LINE);
+  });
+});
