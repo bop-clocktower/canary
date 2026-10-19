@@ -1,4 +1,5 @@
 import type { FullConfig, Suite, TestCase } from "@playwright/test/reporter";
+import { redactText } from "./redact.js";
 // Ingest reporter: per-test identity, tags, catalog filters and result rows.
 
 /** Playwright reporter suites, innermost first, as far as the root. */
@@ -37,7 +38,9 @@ export function skipTags(annotations: ReadonlyArray<{ type: string; description?
   for (const a of annotations) {
     if (a.type !== "fixme" && a.type !== "skip") continue;
     if (a.type === "fixme") tags.push("fixme");
-    const reason = a.description?.replace(/\s+/g, " ").trim();
+    // Redacted before the cut (#1354), so a credential straddling MAX_REASON
+    // never leaves a fragment; buildPayload redacts again with the caller's env.
+    const reason = a.description === undefined ? undefined : redactText(a.description.replace(/\s+/g, " ").trim());
     if (reason) tags.push(`reason:${reason.slice(0, MAX_REASON)}`);
   }
   return tags;
