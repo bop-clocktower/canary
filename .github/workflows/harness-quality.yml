@@ -77,6 +77,13 @@ jobs:
           echo "version=$resolved" >> "$GITHUB_OUTPUT"
           echo "HARNESS_CLI_EXACT=${HARNESS_CLI%@*}@$resolved" >> "$GITHUB_ENV"
 
+      # EVERY step below runs `if: !cancelled()`. A step with no `if:` runs
+      # only on success, so one red gate silently skipped the measurements of
+      # every gate after it — on #1398 a failed entropy ratchet skipped both
+      # perf scans and the perf ratchet abstained on a baseline nobody wrote.
+      # Each gate here must report on its own evidence, whatever came before.
+      # `ts/test/workflow-false-green.test.ts` fails on a step that drops it.
+
       # #1249. `agents/commands/gemini-cli/harness/*.toml` are generated from
       # each skill's SKILL.md and headed "Do not edit", yet nothing regenerated
       # or checked them, so Gemini users read instructions months out of date.
@@ -87,6 +94,7 @@ jobs:
       # or emits nothing, the script abstains with exit 3, which fails this
       # step: a check that could not run is not a pass.
       - name: Gemini CLI commands drift gate (blocking)
+        if: ${{ !cancelled() }}
         run: |
           npx --yes -p "$HARNESS_CLI_EXACT" -c 'node scripts/gemini-commands-drift.mjs'
 
@@ -130,12 +138,13 @@ jobs:
       # restamp of that file. `--cli-version` arms the instrument check; a
       # floor measured by a different CLI abstains (exit 3).
       - name: Harness Docs Coverage
+        if: ${{ !cancelled() }}
         run:
           npx --yes -p "$HARNESS_CLI_EXACT" harness check-docs --json
           --min-coverage 0 > docs-report.json || true
 
       - name: Harness Docs Coverage (merge base)
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -190,6 +199,7 @@ jobs:
       # rather than passing — that is the property that stops a future startup
       # failure from going green again.
       - name: Harness Cleanup (Entropy Scan)
+        if: ${{ !cancelled() }}
         run:
           npx --yes -p "$HARNESS_CLI_EXACT" harness cleanup --findings-json >
           entropy-report.txt || true
@@ -220,7 +230,7 @@ jobs:
       # An empty report is NOT silently tolerated — the ratchet abstains
       # (exit 3) on a base report with no contract line.
       - name: Harness Cleanup (Entropy Scan, merge base)
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -264,6 +274,7 @@ jobs:
       # over nothing. `ts/test/workflow-false-green.test.ts` asserts this line
       # stays flagless, and perf-ratchet.mjs abstains on an implausible zero.
       - name: Harness Performance Check
+        if: ${{ !cancelled() }}
         run:
           npx --yes -p "$HARNESS_CLI_EXACT" harness check-perf > perf-report.txt
           2>&1 || true
@@ -289,7 +300,7 @@ jobs:
       # the allowances (silently weaker). With no shared file at all it
       # abstains rather than reporting a number it cannot stand behind.
       - name: Harness Performance Check (merge base)
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -338,6 +349,7 @@ jobs:
       # any workflow that invokes it while it is listed there.
 
       - name: Security Ledger Freshness
+        if: ${{ !cancelled() }}
         run: |
           node scripts/security_ledger.mjs
           if ! git diff --exit-code -- \

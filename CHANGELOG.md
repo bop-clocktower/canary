@@ -16,6 +16,13 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **One red gate in `validate` no longer skips the gates after it.** The docs,
+  entropy and perf scan steps and the security-ledger check had no `if:`, so
+  they ran only on success: a failed entropy ratchet skipped both perf scans,
+  and the perf ratchet then abstained on a merge-base baseline nobody wrote,
+  turning one real finding into two red gates and leaving the perf delta
+  unmeasured. Every step after the CLI resolves now runs `if: !cancelled()`, and
+  `workflow-false-green.test.ts` fails on a step that drops it.
 - **Guardian no longer calls an edit inside a multi-line expression
   "non-executable".** lcov records a multi-line statement on one line, so a
   changed ternary arm, a term of a multi-line `a +` initializer, a method-chain

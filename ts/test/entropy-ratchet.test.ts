@@ -822,7 +822,7 @@ describe('the merge-base delta gate is wired', () => {
 
   it('gates the base scan on pull_request, so pushes to main still run', () => {
     expect(yaml()).toMatch(
-      /Harness Cleanup \(Entropy Scan, merge base\)[\s\S]{0,200}?if:\s*github\.event_name == 'pull_request'/,
+      /Harness Cleanup \(Entropy Scan, merge base\)[\s\S]{0,200}?if:[^\n]*github\.event_name == 'pull_request'/,
     );
   });
 
