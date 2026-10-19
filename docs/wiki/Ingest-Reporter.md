@@ -121,6 +121,36 @@ On top of the test's own Playwright tags (sent once each, without the `@`):
 | `interrupted`      | The test was interrupted (see [Status semantics](#status-semantics)).                                                                                     |
 | `expected-failure` | A `test.fail()` test passed on some attempt: sent `failed`, or `flaky` if a retry then failed as expected (see [Status semantics](#status-semantics)).    |
 
+## Redaction
+
+Failure text is redacted before it leaves the run, **on by default** (#1354).
+Live-environment suites sign in as real test members, and their failures echo
+what a step typed or saw. The dashboard must not receive any of it. The same
+pass covers the Playwright reporter, `canary testtracker push`, and the
+`canary.run/1` file.
+
+| Field                                                | Rules applied                                             |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| `error_message`, `error_stack`, `reason:<text>` tags | emails, JWTs, named secrets, bare credentials             |
+| `full_title` (results and `collected`)               | emails, JWTs, named secrets only (never bare credentials) |
+
+- **Emails** become `<email>`, and **JWTs** (`eyJ….….…`) become `<token>`.
+- **Named secrets.** Set `CANARY_INGEST_REDACT_ENV=MEMBER_PASSWORD,API_KEY` and
+  the literal value of each named variable becomes `<secret:NAME>`. Values
+  shorter than 6 characters are skipped, because replacing them everywhere would
+  shred the text.
+- **Bare credentials.** A run of 32 or more of `A-Z a-z 0-9 _ - + =` that
+  contains both a digit and a letter becomes `<token>`. A long CamelCase
+  identifier or a long number survives. A 40-hex git SHA does **not**, because
+  many API keys are hex. `/` and `.` end a run, so stack-frame paths survive.
+  Titles never get this rule, so `full_title` keeps its shape.
+- Text is redacted **before** it is truncated. A credential that straddles the
+  4,000 / 8,000 / 100-character cut never leaves a fragment behind.
+- Two titles that redact to the same text, such as one test per member email,
+  are sent as **one** row (worst status wins), so the ingest API does not reject
+  the run on a duplicate `full_title`.
+- `CANARY_INGEST_REDACT=0` (or `false`) turns redaction off.
+
 ## What it sends besides results
 
 - **`collected`** — every test Playwright collected, whether or not it ran

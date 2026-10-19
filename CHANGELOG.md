@@ -14,6 +14,19 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Security
+
+- **TestTracker no longer receives credentials echoed in failure text (#1354).**
+  The Playwright ingest reporter and `canary testtracker push` redact emails
+  (`<email>`), JWTs (`<token>`), bare 32+-character credentials containing both
+  a digit and a letter (`<token>`) and the values of the env vars named in
+  `CANARY_INGEST_REDACT_ENV` (`<secret:NAME>`). The redaction applies to error
+  messages, stacks and skip reasons, before truncation, so a cut never leaves a
+  fragment. Test titles get only the email, JWT and named-secret rules, so
+  `full_title` keeps its shape. Titles that redact to the same text are sent as
+  one row. Redaction is **on by default**, and `CANARY_INGEST_REDACT=0` turns it
+  off. A 40-hex SHA in failure text now reads `<token>`.
+
 ### Fixed
 
 - **One red gate in `validate` no longer skips the gates after it.** The docs,
