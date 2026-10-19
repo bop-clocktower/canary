@@ -37,6 +37,8 @@ under the project's former name) are documented in the
   `Abstained ... Nothing was pushed: no remote store is configured` and exits
   **3** (the CLI-wide abstention code). `--dry-run` is unchanged. Scripts that
   ran `history push` without a remote and relied on exit 0 will now see exit 3.
+  The empty-store notices from `history flaky|timeline|summary` and `analyze`
+  now say `canary history record` instead of pointing at `push`.
 - **One red gate in `validate` no longer skips the gates after it.** The docs,
   entropy and perf scan steps and the security-ledger check had no `if:`, so
   they ran only on success: a failed entropy ratchet skipped both perf scans,

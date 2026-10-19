@@ -346,6 +346,23 @@ describe('history push', () => {
     }
   });
 
+  it('treats an EMPTY CANARY_HISTORY_DB_URL as unconfigured, as makeStore does', async () => {
+    // store.ts makeStore picks Supabase only on a truthy URL; "" falls back to
+    // the local NDJSON store, so push must abstain on "" too.
+    const tmp = mkTmp();
+    try {
+      const path = join(tmp, 'history.jsonl');
+      writeFileSync(path, `${JSON.stringify({ run_id: 'r1' })}\n`, 'utf-8');
+      const res = await runHistory(['push', path], {
+        env: { CANARY_HISTORY_DB_URL: '' },
+      });
+      expect(res.code).toBe(3);
+      expect(res.pushed).toEqual([]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('treats CANARY_HISTORY_DB_URL in the env as a configured remote', async () => {
     const tmp = mkTmp();
     try {
