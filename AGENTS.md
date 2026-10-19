@@ -509,9 +509,10 @@ narrowed to the diff, so it is not described as diff-scoped.
   measured evidence.
 - **Exit codes** follow ADR 0009: `0` every sampled mutant was killed, `1`
   survivors, `3` abstained.
-- **Abstention is not a pass.** Zero mutants, no mutant covered by any test, an
-  unreadable report, or a runner that cannot kill reports `abstained` with the
-  reason. It never renders "0 survived".
+- **Abstention is not a pass.** Zero mutants, no mutant that ran a test (every
+  one untested), no mutant covered by any test, an unreadable report, or a
+  runner that cannot kill reports `abstained` with the reason. It never renders
+  "0 survived".
 - **A timeout is not a kill.** Timeouts are excluded from the killed numerator,
   so a run that killed nothing and only timed out abstains rather than reporting
   `all-killed`; every non-abstained report renders its timeout count, zero

@@ -463,7 +463,9 @@ describe('bug-fleet A5: non-tested stryker statuses', () => {
     expect(mapped.verdict).toBe('abstained');
     expect(mapped.sampled).toBe(0);
     expect(mapped.untested).toBe(2);
-    expect(mapped.abstainReason).toContain('2');
+    expect(mapped.abstainReason).toContain(
+      'none of the 2 mutant(s) ran a test',
+    );
     expect(mapped.abstainReason).not.toContain('zero mutants');
     expect(mutationExitCode(mapped)).toBe(3);
   });
