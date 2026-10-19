@@ -83,8 +83,18 @@ export interface MutationReport {
   abstainReason?: string;
   /** Mutants Stryker generated, before the D7 cap. */
   generated: number;
-  /** Mutants actually run. Equal to `generated` unless the cap truncated. */
+  /**
+   * Mutants a test was run against: `killed + survived + noCoverage +
+   * timeout` before suppressions. Excludes {@link MutationReport.untested}.
+   */
   sampled: number;
+  /**
+   * Mutants Stryker reported but never ran a test against (`Ignored`,
+   * `CompileError`, `RuntimeError`, `Pending`, or a status Stryker adds later).
+   * Outside `sampled` and every tested tally; `sampled + untested` is the
+   * mutant total of the Stryker report (ADR 0037 F2). Always present.
+   */
+  untested: number;
   killed: number;
   survived: number;
   /** Reported apart from survivors: a coverage gap, not a weak assertion. */

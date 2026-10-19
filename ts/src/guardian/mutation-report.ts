@@ -34,6 +34,7 @@ export function abstainedReport(
     abstainReason: reason,
     generated: 0,
     sampled: 0,
+    untested: 0,
     killed: 0,
     survived: 0,
     noCoverage: 0,
@@ -44,11 +45,16 @@ export function abstainedReport(
   };
 }
 
-/** Stryker's status vocabulary, mapped onto guardian's. */
+const UNTESTED_KINDS = 'ignored, pending, failed to compile, or errored';
+
+/**
+ * Stryker's status vocabulary, mapped onto guardian's. `null` = no test ever
+ * ran (ADR 0037 F2: `untested`, never a coverage gap), as for unknown statuses.
+ */
 function toStatus(
   strykerStatus: string,
   coveredBy: readonly string[] | undefined,
-): MutationStatus {
+): MutationStatus | null {
   switch (strykerStatus) {
     case 'Killed':
       return 'killed';
@@ -62,8 +68,10 @@ function toStatus(
       // coverageAnalysis is perTest, and a survivor it ran the suite against
       // without recording per-test coverage is still a survivor.
       return coveredBy?.length === 0 ? 'no-coverage' : 'survived';
-    default:
+    case 'NoCoverage':
       return 'no-coverage';
+    default:
+      return null;
   }
 }
 
@@ -72,9 +80,14 @@ function verdictFor(
   report: Omit<MutationReport, 'verdict' | 'abstainReason'>,
 ): Pick<MutationReport, 'verdict' | 'abstainReason'> {
   if (report.sampled === 0) {
+    // ADR 0038: mutants were generated but none was tested, so name the count.
     return {
       verdict: 'abstained',
-      abstainReason: 'the run produced zero mutants, which is not a pass',
+      abstainReason:
+        report.untested > 0
+          ? `none of the ${report.untested} mutant(s) ran a test ` +
+            `(${UNTESTED_KINDS}), which is not a pass`
+          : 'the run produced zero mutants, which is not a pass',
     };
   }
   // A timeout is NOT a kill here. Stryker's own vocabulary counts one as a
@@ -125,26 +138,28 @@ export function mapStrykerReport(
   }
 
   const findings: MutantFinding[] = [];
+  let untested = 0;
   for (const [path, file] of Object.entries(strykerReport.files)) {
     for (const mutant of file.mutants) {
-      const coveredBy = (mutant.coveredBy ?? []).map(
-        (id) => names.get(id) ?? id,
-      );
-      findings.push({
-        path,
-        line: mutant.location.start.line,
-        mutator: mutant.mutatorName,
-        replacement: mutant.replacement ?? '',
-        status: toStatus(mutant.status, mutant.coveredBy),
-        coveredBy,
-      });
+      const status = toStatus(mutant.status, mutant.coveredBy);
+      if (status === null) untested += 1;
+      else
+        findings.push({
+          path,
+          line: mutant.location.start.line,
+          mutator: mutant.mutatorName,
+          replacement: mutant.replacement ?? '',
+          status,
+          coveredBy: (mutant.coveredBy ?? []).map((id) => names.get(id) ?? id),
+        });
     }
   }
 
   return recount({
     verdict: 'abstained',
-    generated: options.generated ?? findings.length,
+    generated: options.generated ?? findings.length + untested,
     sampled: findings.length,
+    untested,
     killed: 0,
     survived: 0,
     noCoverage: 0,
@@ -225,6 +240,24 @@ function excludedLine(report: MutationReport): string {
   );
 }
 
+/**
+ * The headline, then the counts it leaves out -- always, zero included, so a
+ * reader never assumes a clean run had none. Only the D7 cap makes a sample.
+ */
+function headlineLines(report: MutationReport): string[] {
+  const reported = report.sampled + report.untested;
+  const scope =
+    reported < report.generated
+      ? ` (sampled ${reported} of ${report.generated})`
+      : '';
+  return [
+    `${report.killed}/${report.sampled} mutants killed${scope}.`,
+    `${report.timeout} mutant(s) timed out (not counted as killed).`,
+    `${report.untested} mutant(s) never ran a test (${UNTESTED_KINDS}), so ` +
+      'they are not counted above.',
+  ];
+}
+
 /** Render the report as the `### Mutation` comment/summary section (D-Output). */
 export function renderMutationReport(report: MutationReport): string {
   const lines = ['### Mutation'];
@@ -240,15 +273,7 @@ export function renderMutationReport(report: MutationReport): string {
     return lines.join('\n');
   }
 
-  const scope =
-    report.sampled < report.generated
-      ? ` (sampled ${report.sampled} of ${report.generated})`
-      : '';
-  lines.push(`${report.killed}/${report.sampled} mutants killed${scope}.`);
-  // Rendered unconditionally, zero included: a timeout is a mutant this run
-  // did not verify, and it is absent from the numerator above. Printing it
-  // only when non-zero would let a reader assume a clean run had none.
-  lines.push(`${report.timeout} mutant(s) timed out (not counted as killed).`);
+  lines.push(...headlineLines(report));
   if (report.survived > 0) {
     lines.push('', `${report.survived} survived:`);
     for (const finding of report.findings.filter(
