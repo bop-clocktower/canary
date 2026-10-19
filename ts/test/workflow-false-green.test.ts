@@ -11,7 +11,7 @@
  * Offline: parses every `.github/workflows/*.yml` with js-yaml and reads run
  * blocks as text. Never executes a workflow.
  *
- * The three invariants:
+ * The invariants:
  *
  * 1. A path-filtered workflow lists its own file. Otherwise it is the one file
  *    in the repo it cannot gate — a change to it ships unverified and first
@@ -26,6 +26,12 @@
  *    is unreachable code by construction — there are zero github-actions[bot]
  *    commits on `main` in the repo's entire history. Ledger updates land as a
  *    rolling upsert PR instead.
+ *
+ * 4. One red gate in `validate` does not skip the gates after it. A step with
+ *    no `if:` runs only on success, so a failed entropy ratchet skipped both
+ *    perf scans and the perf ratchet then ABSTAINED on a missing baseline
+ *    (#1398, run 39291780288): the PR read as "entropy and perf both red" when
+ *    only one finding was real, and the perf delta was never measured at all.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -1496,4 +1502,57 @@ describe('workflow false-green invariants', () => {
       expect(at(/order --report --suite ts-engine/)).toBeGreaterThan(recordAt);
     });
   });
+});
+
+/**
+ * Invariant 4. Everything after the CLI resolves is a gate or the measurement
+ * one feeds, so each must survive an earlier gate failing. `!cancelled()` alone
+ * also survives a SETUP failure, though: with the CLI unresolved every scan
+ * runs `npx -p ""`, its `|| true` hides that, and each ratchet abstains — one
+ * cause, eight reds, the noise this invariant exists to remove. So a step that
+ * uses the CLI also requires the step that resolved it to have succeeded.
+ */
+describe('#1398 — one red gate in validate does not skip the gates after it', () => {
+  const RUNS_UNLESS_CANCELLED = /!cancelled\(\)|always\(\)/;
+  const steps =
+    (
+      loadYaml(
+        readFileSync(join(WORKFLOW_DIR, 'harness-quality.yml'), 'utf-8'),
+      ) as Workflow
+    ).jobs?.validate?.steps ?? [];
+  const firstGate =
+    steps.findIndex((s) => s.name === 'Resolve harness CLI version') + 1;
+  const gated = steps.slice(firstGate);
+
+  it('finds the steps to check (zero denominator is an abstention)', () => {
+    expect(firstGate).toBeGreaterThan(0);
+    expect(gated.length).toBeGreaterThan(5);
+  });
+
+  it.each(gated.map((s) => [s.name ?? s.uses ?? '<unnamed>', s] as const))(
+    '%s runs unless the job was cancelled',
+    (_name, step) => {
+      expect(step.if ?? '').toMatch(RUNS_UNLESS_CANCELLED);
+    },
+  );
+
+  const USES_CLI = /HARNESS_CLI|steps\.harness-cli/;
+  const cliSteps = gated.filter((s) =>
+    USES_CLI.test(
+      JSON.stringify({ run: s.run, env: (s as { env?: unknown }).env }),
+    ),
+  );
+
+  it('finds the CLI-dependent steps (zero denominator is an abstention)', () => {
+    expect(cliSteps.length).toBeGreaterThan(5);
+  });
+
+  it.each(cliSteps.map((s) => [s.name ?? '<unnamed>', s] as const))(
+    '%s halts with the CLI, not after it',
+    (_name, step) => {
+      expect(step.if ?? '').toMatch(
+        /&&\s*steps\.harness-cli\.outcome == 'success'/,
+      );
+    },
+  );
 });
