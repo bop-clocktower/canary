@@ -6,15 +6,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from 'node:path';
+import { basename } from 'node:path';
 
 import { parseCobertura } from './formats/cobertura.js';
 import { parseCoverageJson } from './formats/coverage-json.js';
@@ -32,6 +24,14 @@ import {
   type LineHits,
   type ReportIndex,
 } from './types.js';
+
+// The anchoring half (#883, #1291) lives in report-anchor.ts; re-exported so
+// the ladder reads one report-tier surface.
+export {
+  anchorIndex,
+  countEligible,
+  instrumentedTrees,
+} from './report-anchor.js';
 
 /**
  * Parse `lcov.info` into `{path: {line: hits}}`.
@@ -129,82 +129,6 @@ export function readReportIndex(reportPath: string): ReportRead {
   const index = parseByFormat(basename(reportPath).toLowerCase(), text);
   if (index === null || Object.keys(index).length === 0) return unusable(true);
   return { found: true, index };
-}
-
-/**
- * The repo-relative prefix a report's relative paths are rooted at (#883): the
- * nearest ancestor of the report's directory under which any of `samples`
- * exists (vitest under `ts/` writes `src/cli.ts`). Every sample is tried, since
- * a stale report names deleted files. No hit, or outside the repo: the root.
- */
-function anchorPrefix(
-  samples: string[],
-  reportPath: string,
-  root: string,
-): string {
-  const dir = relative(root, resolve(dirname(reportPath))).split(sep);
-  if (dir[0] === '..' || isAbsolute(dir.join('/'))) return '';
-  for (let i = dir.length; i > 0 && dir[0] !== ''; i--) {
-    const prefix = dir.slice(0, i).join('/');
-    if (samples.some((s) => existsSync(join(root, prefix, s)))) {
-      return `${prefix}/`;
-    }
-  }
-  return '';
-}
-
-/** The deepest directory shared by every path in `paths` ('' when none). */
-function commonDir(paths: string[]): string {
-  const dirs = paths.map((p) => p.split('/').slice(0, -1));
-  const first = dirs[0] ?? [];
-  let n = first.length;
-  for (const d of dirs) {
-    while (n > 0 && d.slice(0, n).join('/') !== first.slice(0, n).join('/'))
-      n--;
-  }
-  return first.slice(0, n).join('/');
-}
-
-/**
- * The repo-relative source trees a report instruments (#883): one per top-level
- * segment of its (anchored) paths, narrowed to the deepest shared directory.
- * `''` means the report is rooted at the repo itself and covers everything.
- */
-export function instrumentedTrees(
-  index: ReportIndex,
-  reportPath: string,
-  repoRoot: string,
-): string[] {
-  const root = resolve(repoRoot);
-  const groups = new Map<string, string[]>();
-  for (const raw of Object.keys(index)) {
-    const p = isAbsolute(raw) ? relative(root, raw).split(sep).join('/') : raw;
-    const clean = p.replace(/^\.\//, '');
-    const top = clean.split('/')[0]!;
-    (groups.get(top) ?? groups.set(top, []).get(top)!).push(clean);
-  }
-  return [...groups.values()].map((paths) => {
-    const tree = anchorPrefix(paths, reportPath, root) + commonDir(paths);
-    return tree.replace(/\/$/, '');
-  });
-}
-
-/**
- * How many changed `paths` lie inside a tree the report instruments (#883) —
- * the denominator a zero-match abstention needs. Zero eligible means the files
- * are outside the instrumentation scope, so no fresh report could match them;
- * eligible-but-unmatched means the report itself is stale.
- */
-export function countEligible(
-  paths: string[],
-  index: ReportIndex,
-  reportPath: string,
-  repoRoot: string,
-): number {
-  const trees = instrumentedTrees(index, reportPath, repoRoot);
-  const inside = (p: string) =>
-    trees.some((t) => t === '' || p.startsWith(`${t}/`));
-  return paths.filter(inside).length;
 }
 
 /**

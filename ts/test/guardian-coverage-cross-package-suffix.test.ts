@@ -126,4 +126,52 @@ describe('report tier: cross-package suffix binding', () => {
     expect(state.unitsCompared).toBe(0);
     expect(deltas).toEqual([]);
   });
+
+  it("does not verify a root-level src/index.ts from pkg-a's report record", () => {
+    // Before anchoring this bound by EXACT match (raw key `src/index.ts`);
+    // anchored to `pkg-a/src/index.ts` it must not bind by suffix instead.
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('src/index.ts', 'export const root = 0;\n');
+    write(
+      'pkg-a/coverage/lcov.info',
+      'SF:src/index.ts\nDA:1,5\nend_of_record\n',
+    );
+
+    const [result] = resolveCoverage(
+      [{ path: 'src/index.ts', added_ranges: [[1, 1]] }],
+      {
+        coveragePath: join(root, 'pkg-a/coverage/lcov.info'),
+        graphPath: join(root, 'no-graph.json'),
+        repoRoot: root,
+      },
+    );
+
+    expect(result!.fidelity).not.toBe(Fidelity.CoverageVerified);
+  });
+
+  it('keeps an entry exact-only after continuation folding binds its owner', () => {
+    // The owning unit's match folds continuation lines into its entry; the
+    // folded copy must stay anchored, or the next unit suffix-binds it.
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('src/index.ts', 'export const root = 0;\n');
+    write(
+      'pkg-a/coverage/lcov.info',
+      'SF:src/index.ts\nDA:1,5\nend_of_record\n',
+    );
+
+    const [owner, rootFile] = resolveCoverage(
+      [
+        { path: 'pkg-a/src/index.ts', added_ranges: [[1, 1]] },
+        { path: 'src/index.ts', added_ranges: [[1, 1]] },
+      ],
+      {
+        coveragePath: join(root, 'pkg-a/coverage/lcov.info'),
+        graphPath: join(root, 'no-graph.json'),
+        repoRoot: root,
+      },
+    );
+
+    expect(owner!.fidelity).toBe(Fidelity.CoverageVerified);
+    expect(rootFile!.fidelity).not.toBe(Fidelity.CoverageVerified);
+  });
 });
