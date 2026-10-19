@@ -9,7 +9,12 @@
  * Validation is the caller's job (`../run-recorder.ts` `validateBuiltRun`);
  * this module only imports the schema so the two files cannot form a cycle.
  */
-import { makeRunId, type RunInput, type TestResultInput } from '../schema.js';
+import {
+  makeRunId,
+  type RecordContext,
+  type RunInput,
+  type TestResultInput,
+} from '../schema.js';
 
 interface VitestAssertion {
   fullName?: string;
@@ -21,22 +26,14 @@ interface VitestAssertion {
 
 interface VitestFile {
   name?: string;
+  status?: string;
+  message?: string;
   assertionResults?: VitestAssertion[];
 }
 
 interface VitestReport {
   startTime?: number;
   testResults?: VitestFile[];
-}
-
-/** The run-level facts the report cannot carry (a subset of RecordContext). */
-interface RunContext {
-  suite: string;
-  repo: string;
-  branch: string;
-  commitSha: string;
-  runId?: string;
-  nowMs: number;
 }
 
 /** A top-level `testResults` array. Checked before the Playwright shape. */
@@ -46,11 +43,8 @@ export function isVitestReport(parsed: object): boolean {
 
 /** Per-test result count, before any run-level fact is resolved. */
 export function countVitestResults(parsed: unknown): number {
-  let n = 0;
-  for (const file of (parsed as VitestReport).testResults ?? []) {
-    n += file.assertionResults?.length ?? 0;
-  }
-  return n;
+  const files = (parsed as VitestReport).testResults ?? [];
+  return files.reduce((n, f) => n + (f.assertionResults?.length ?? 0), 0);
 }
 
 /** vitest status -> canary status. Anything not pass/fail is a skip. */
@@ -83,10 +77,20 @@ function toResultRow(
   };
 }
 
+// #1351: vitest sets a file's `message` only for a failure outside any test (a
+// load error, a file hook), so it becomes one failed row named after its file.
+function fileRows(file: VitestFile): VitestAssertion[] {
+  const tests = file.assertionResults ?? [];
+  if (file.status !== 'failed' || !file.message) return tests;
+  const fullName = `${file.name ?? ''} (file failed outside any test)`;
+  const failureMessages = [file.message];
+  return [...tests, { fullName, status: 'failed', failureMessages }];
+}
+
 /** Convert a parsed vitest JSON report into a run + its per-test rows. */
 export function readVitestReport(
   parsed: unknown,
-  ctx: RunContext,
+  ctx: RecordContext,
 ): { run: RunInput; results: TestResultInput[] } {
   const report = parsed as VitestReport;
   const startedMs =
@@ -97,9 +101,7 @@ export function readVitestReport(
   const ids = { runId, suite: ctx.suite, repo: ctx.repo };
   const results: TestResultInput[] = [];
   for (const file of report.testResults ?? []) {
-    for (const assertion of file.assertionResults ?? []) {
-      results.push(toResultRow(assertion, file, ids));
-    }
+    for (const row of fileRows(file)) results.push(toResultRow(row, file, ids));
   }
 
   const count = (status: string): number =>

@@ -17,7 +17,12 @@
  * Validation is the caller's job (`../run-recorder.ts` `validateBuiltRun`); this
  * module only imports the schema so the two files cannot form an import cycle.
  */
-import { makeRunId, type RunInput, type TestResultInput } from '../schema.js';
+import {
+  makeRunId,
+  type RecordContext,
+  type RunInput,
+  type TestResultInput,
+} from '../schema.js';
 
 interface PwAttempt {
   status?: string;
@@ -64,16 +69,6 @@ interface PwEntry {
   spec: PwSpec;
   suitePath: string[];
   suiteFile: string;
-}
-
-/** The run-level facts the report cannot carry (a subset of RecordContext). */
-interface RunContext {
-  suite: string;
-  repo: string;
-  branch: string;
-  commitSha: string;
-  runId?: string;
-  nowMs: number;
 }
 
 const ERROR_TEXT_LIMIT = 2000;
@@ -203,7 +198,7 @@ function runDuration(report: PwReport, results: TestResultInput[]): number {
 /** Convert a parsed Playwright JSON report into a run + its per-test rows. */
 export function buildRunFromPlaywrightReport(
   parsed: unknown,
-  ctx: RunContext,
+  ctx: RecordContext,
 ): { run: RunInput; results: TestResultInput[] } {
   const report = parsed as PwReport;
   const started = startedMs(report, ctx.nowMs);

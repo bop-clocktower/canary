@@ -31,6 +31,7 @@
 
 import {
   serializeLocalRecord,
+  type RecordContext,
   type RunInput,
   type TestResultInput,
 } from './schema.js';
@@ -56,17 +57,7 @@ const RECORD_STATUSES = ['passed', 'failed', 'flaky', 'skipped'] as const;
 /** Report formats `record` can convert. `unknown` is refused, never guessed. */
 export type ReportShape = 'vitest' | 'playwright' | 'junit' | 'unknown';
 
-/** The run-level facts the report itself cannot carry (repo, branch, commit). */
-export interface RecordContext {
-  suite: string;
-  repo: string;
-  branch: string;
-  commitSha: string;
-  /** Explicit run id; defaults to `makeRunId(suite, commit, epochSeconds)`. */
-  runId?: string;
-  /** Fallback clock for a report with no `startTime` (injected in tests). */
-  nowMs: number;
-}
+export type { RecordContext } from './schema.js';
 
 export interface BuiltRun {
   run: RunInput;
