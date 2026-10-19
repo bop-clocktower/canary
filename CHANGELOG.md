@@ -29,6 +29,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`migrate --check` honors `--framework` (#1353).** The freshness gate dropped
+  the flag, so a repo migrated with a scaffold-less framework (locust, stryker,
+  pact, axe-core, backstopjs) was checked against the empty detected shape set:
+  zero skills examined, exit 3, about skills that were deployed and current.
+  `--check` now resolves its shape set the way `--apply` did. The
+  `--adoption-report` `skills` piece still checks detected shapes only, and its
+  zero-match detail now says so and points at
+  `canary migrate --check --framework <name>`.
 - **One red gate in `validate` no longer skips the gates after it.** The docs,
   entropy and perf scan steps and the security-ledger check had no `if:`, so
   they ran only on success: a failed entropy ratchet skipped both perf scans,
