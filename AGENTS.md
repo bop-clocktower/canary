@@ -509,13 +509,20 @@ narrowed to the diff, so it is not described as diff-scoped.
   measured evidence.
 - **Exit codes** follow ADR 0009: `0` every sampled mutant was killed, `1`
   survivors, `3` abstained.
-- **Abstention is not a pass.** Zero mutants, no mutant covered by any test, an
-  unreadable report, or a runner that cannot kill reports `abstained` with the
-  reason. It never renders "0 survived".
+- **Abstention is not a pass.** Zero mutants, no mutant that ran a test (every
+  one untested), no mutant covered by any test, an unreadable report, or a
+  runner that cannot kill reports `abstained` with the reason. It never renders
+  "0 survived".
 - **A timeout is not a kill.** Timeouts are excluded from the killed numerator,
   so a run that killed nothing and only timed out abstains rather than reporting
   `all-killed`; every non-abstained report renders its timeout count, zero
   included.
+- **Untested mutants are counted apart (ADR 0037).** A mutant Stryker reports as
+  `Ignored`, `CompileError`, `RuntimeError` or `Pending` never ran a test. It is
+  outside `sampled` and every tested tally, and counted in `untested`, which is
+  on every `mutation-report.json`, zero included. `sampled + untested` is the
+  report's mutant total. Every non-abstained report renders the count, zero
+  included, and an abstention renders it whenever it is not zero.
 - **Author obligation.** For each survivor, either strengthen a test until it
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,

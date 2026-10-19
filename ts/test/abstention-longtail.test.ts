@@ -304,6 +304,34 @@ describe('history: zero runs abstains (#508 Wave 4a)', () => {
 });
 
 /**
+ * #1296: with no db-url, `history push` abstains and moves nothing, so an
+ * empty-store notice that says "record runs first (`canary history push`)"
+ * sends the reader to a command that cannot help them. `history record` writes
+ * the local store (or the remote one, when configured), so it is the hint.
+ */
+describe('empty-store notices name a command that records (#1296)', () => {
+  const EMPTY = [
+    ['history', 'flaky'],
+    ['history', 'timeline', 't1'],
+    ['history', 'summary', 'api'],
+    ['analyze', 'flaky'],
+  ];
+  for (const argv of EMPTY) {
+    it(`${argv.join(' ')} points at \`canary history record\``, async () => {
+      const base = mkTmp();
+      try {
+        const res = await invokeCanary(argv, { cwd: base });
+        expect(res.stdout).toContain('Abstained');
+        expect(res.stdout).toContain('`canary history record`');
+        expect(res.stdout).not.toContain('`canary history push`');
+      } finally {
+        rmTmp(base);
+      }
+    });
+  }
+});
+
+/**
  * `skills run` was audited, not changed. It already carries an exit ladder
  * (1 = no such skill ... 6 = import failure) whose exit 3 predates D4's
  * CLI-wide reservation of 3 for "abstained". The collision resolves in the

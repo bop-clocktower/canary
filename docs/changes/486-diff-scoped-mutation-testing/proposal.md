@@ -117,6 +117,13 @@ This describes the design only; nothing is built in this change.
   }
   ```
 
+  _Amended by
+  [ADR 0037](../../knowledge/decisions/0037-mutation-report-counts-only-what-stryker-tested.md):
+  `MutationReport` also carries `untested: number`, always present. It counts
+  mutants that never ran a test (`Ignored`, `CompileError`, `RuntimeError`,
+  `Pending`). They are outside `sampled`, which is the mutants a test was run
+  against, and `sampled + untested` is the Stryker report's mutant total._
+
 - **Verdict rules.** `abstained` if `generated === 0`, or if every mutant is
   `no-coverage` (guardian coverage already reports that gap), or if Stryker
   exits non-zero or hits the cap. `survivors` if any mutant survived after

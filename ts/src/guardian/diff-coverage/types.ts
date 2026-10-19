@@ -93,6 +93,12 @@ export type LineHits = Record<number, number>;
 export interface FileCoverage {
   hits: LineHits;
   coverable: ReadonlySet<number> | null;
+  /**
+   * The key is this file's verified repo-relative path (#1291), so only an
+   * exact match may bind it: a suffix match would be a same-named file
+   * elsewhere in the repo.
+   */
+  anchored?: boolean;
 }
 
 export type ReportIndex = Record<string, FileCoverage>;
@@ -183,7 +189,9 @@ export function matchFile(
   if (Object.hasOwn(index, path)) return index[path]!;
   const matches: FileCoverage[] = [];
   for (const [reportPath, file] of Object.entries(index)) {
-    if (pathBoundaryMatch(reportPath, path)) matches.push(file);
+    if (!file.anchored && pathBoundaryMatch(reportPath, path)) {
+      matches.push(file);
+    }
   }
   return matches.length === 1 ? matches[0]! : null;
 }

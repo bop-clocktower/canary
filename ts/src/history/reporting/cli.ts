@@ -87,7 +87,7 @@ async function abstainOnEmptyHistory(
   const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
   const notice =
     `${outcome.summaryLine} No runs recorded, so ${what} is unknown rather ` +
-    `than clean. Record runs first (\`canary history push\`), then re-run.`;
+    `than clean. Record runs first (\`canary history record\`), then re-run.`;
   if (json) {
     deps.out(jsonIndent2(emptyPayload));
     deps.err(notice);
@@ -215,7 +215,7 @@ async function summaryCmd(
     const notice =
       `${outcome.summaryLine} Suite ${suite} has no recorded runs, so its ` +
       `pass rate is unknown -- not 0%. Record runs first ` +
-      `(\`canary history push\`), then re-run.`;
+      `(\`canary history record\`), then re-run.`;
     if (opts.json) {
       deps.out(jsonIndent2({ ...result, abstained: true }));
       deps.err(notice);

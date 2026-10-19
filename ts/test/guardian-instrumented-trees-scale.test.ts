@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { instrumentedTrees } from '../src/guardian/diff-coverage/report-tier.js';
+import { instrumentedTrees } from '../src/guardian/diff-coverage/report-anchor.js';
 import {
   selfDescribing,
   type ReportIndex,
