@@ -55,9 +55,13 @@ canary history summary <suite> --runs 1
   falls back to the local NDJSON file at
   `test-results/reports/history-v2.jsonl`.
 - **No local file and no `CANARY_HISTORY_DB_URL`:** there is nothing to analyze
-  yet. Say so plainly — "No run history found. Push results with
-  `canary history push` after a CI run, or run `canary history migrate` if you
-  have v1 history.jsonl data." Do not fabricate a health summary from nothing.
+  yet. Say so plainly — "No run history found. Record a finished run with
+  `canary history record <report> --suite <name>` (it writes the local NDJSON
+  file above), or run `canary history migrate` if you have v1 history.jsonl
+  data." Only suggest `canary history push --db-url <url>` (or with
+  `CANARY_HISTORY_DB_URL` set) when a remote store exists: without one, push
+  abstains with exit 3 and moves nothing. Do not fabricate a health summary from
+  nothing.
 
 ### Phase 2: RUN THE RELEVANT ANALYSES
 
@@ -190,7 +194,7 @@ write down.
 
 | Situation                                                           | What To Do                                                                                                                                                                                                                                                   |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No history data at all (fresh repo)                                 | Say so; point at `canary history push` / `canary history migrate`. Don't run the analysis commands against nothing.                                                                                                                                          |
+| No history data at all (fresh repo)                                 | Say so; point at `canary history record` (or `canary history migrate` for v1 data), and at `canary history push --db-url <url>` only when a remote store is configured. Don't run the analysis commands against nothing.                                     |
 | `CANARY_HISTORY_DB_URL` set but Supabase unreachable                | `make_store` only guards against a missing `agent.history.supabase_store` import, not a live connection failure — a query error will surface as a CLI exception. Report the exception text, suggest checking connectivity/credentials, don't retry silently. |
 | `area-health` requested explicitly                                  | Explain the known limitation (Phase 2) rather than showing an empty table with no context.                                                                                                                                                                   |
 | Digest looks suspiciously all-zero with `CANARY_HISTORY_DB_URL` set | Flag the store-type caveat (Phase 2) before concluding the fleet is healthy.                                                                                                                                                                                 |
@@ -214,9 +218,10 @@ before chasing the individual flaky tests.
 
 **Action:** `history summary api --runs 1` returns `total_runs: 0` and no local
 NDJSON file exists. Report plainly: no run history is available yet; point at
-`canary history push` after the next CI run. Do not run `analyze digest` against
-an empty store and present an empty report as "all clear" — absence of data is
-not evidence of health.
+`canary history record <report> --suite api` after the next run (no
+`CANARY_HISTORY_DB_URL` is set, so `history push` would abstain). Do not run
+`analyze digest` against an empty store and present an empty report as "all
+clear" — absence of data is not evidence of health.
 
 ## Related Skills
 

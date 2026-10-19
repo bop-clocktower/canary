@@ -125,7 +125,7 @@ async function abstainOnEmptyHistory(
   const notice =
     `${outcome.summaryLine} No run history to analyze, so "${what}" is ` +
     `unknown rather than clean. Record runs first ` +
-    `(\`canary history push\`, or a reporter that writes ` +
+    `(\`canary history record\`, or a reporter that writes ` +
     `${DEFAULT_HISTORY_PATH}), then re-run.`;
   if (json) {
     deps.out(jsonIndent2(emptyPayload));

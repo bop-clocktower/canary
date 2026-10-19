@@ -29,6 +29,26 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary history push` with no db-url now abstains instead of reporting
+  success (#1296).** With neither `--db-url` nor `CANARY_HISTORY_DB_URL` set,
+  the store fell back to a local NDJSON store at the very file being pushed,
+  whose run_id dedup made the push a guaranteed no-op, yet the command printed
+  `Pushed run ...` and exited 0. It now prints
+  `Abstained ... Nothing was pushed: no remote store is configured` and exits
+  **3** (the CLI-wide abstention code). `--dry-run` is unchanged. Scripts that
+  ran `history push` without a remote and relied on exit 0 will now see exit 3.
+  The empty-store notices from `history flaky|timeline|summary` and `analyze`
+  now say `canary history record` instead of pointing at `push`.
+- **`canary history record` no longer stores a vitest run with a file that
+  failed to load as `failed: 0`.** A vitest file that fails outside any test (a
+  missing import, a syntax error, a throwing file-level hook) is written with
+  `status: "failed"` and the error in the file's `message`, and has no assertion
+  to carry it, so the recorder dropped it. Each such file is now one failed row
+  named `<file> (file failed outside any test)`, with the file as `test_file`
+  and vitest's `message` as `error_text`. A file whose only failures are its
+  tests is not counted twice. A report where every file fails to load still
+  abstains as empty
+  ([#1351](https://github.com/bop-clocktower/canary/issues/1351)).
 - **One red gate in `validate` no longer skips the gates after it.** The docs,
   entropy and perf scan steps and the security-ledger check had no `if:`, so
   they ran only on success: a failed entropy ratchet skipped both perf scans,

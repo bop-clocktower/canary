@@ -36,6 +36,8 @@ interface FakeStoreConfig {
   flaky?: FlakyQueryRow[];
   timeline?: TimelineEntry[];
   summary?: SummaryResult;
+  /** Injected `deps.env` (default: empty). */
+  env?: NodeJS.ProcessEnv;
 }
 
 interface PushedRun {
@@ -85,7 +87,7 @@ async function runHistory(
   const deps: Partial<HistoryDeps> = {
     out: (s) => out.push(s),
     err: (s) => err.push(s),
-    env: {},
+    env: cfg.env ?? {},
     makeStore: () => makeFakeStore(cfg, pushed),
   };
   let code = 0;
@@ -324,6 +326,59 @@ describe('history summary (populated store)', () => {
 });
 
 describe('history push', () => {
+  // Any value counts as "a remote store is configured"; the fake store
+  // stands in for Supabase, so it is never dialled.
+  const DB_URL = 'postgres://fake';
+
+  it('abstains (exit 3) and pushes nothing when no db-url is configured', async () => {
+    const tmp = mkTmp();
+    try {
+      const path = join(tmp, 'history.jsonl');
+      writeFileSync(path, `${JSON.stringify({ run_id: 'r1' })}\n`, 'utf-8');
+      const res = await runHistory(['push', path]);
+      expect(res.code).toBe(3);
+      expect(res.pushed).toEqual([]);
+      expect(res.stdout).toContain('Abstained');
+      expect(res.stdout).toContain('Nothing was pushed');
+      expect(res.stdout).not.toContain('Pushed');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('treats an EMPTY CANARY_HISTORY_DB_URL as unconfigured, as makeStore does', async () => {
+    // store.ts makeStore picks Supabase only on a truthy URL; "" falls back to
+    // the local NDJSON store, so push must abstain on "" too.
+    const tmp = mkTmp();
+    try {
+      const path = join(tmp, 'history.jsonl');
+      writeFileSync(path, `${JSON.stringify({ run_id: 'r1' })}\n`, 'utf-8');
+      const res = await runHistory(['push', path], {
+        env: { CANARY_HISTORY_DB_URL: '' },
+      });
+      expect(res.code).toBe(3);
+      expect(res.pushed).toEqual([]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('treats CANARY_HISTORY_DB_URL in the env as a configured remote', async () => {
+    const tmp = mkTmp();
+    try {
+      const path = join(tmp, 'history.jsonl');
+      writeFileSync(path, `${JSON.stringify({ run_id: 'r1' })}\n`, 'utf-8');
+      const res = await runHistory(['push', path], {
+        env: { CANARY_HISTORY_DB_URL: DB_URL },
+      });
+      expect(res.code).toBe(0);
+      expect(res.pushed).toHaveLength(1);
+      expect(res.stdout).toContain('Pushed run r1 (0 tests)');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('pushes the LAST record in the file and filters to known fields', async () => {
     const tmp = mkTmp();
     try {
@@ -358,7 +413,7 @@ describe('history push', () => {
         `${JSON.stringify(mkRecord('run-old'))}\n\n${JSON.stringify(mkRecord('run-new'))}\n`,
         'utf-8',
       );
-      const res = await runHistory(['push', path]);
+      const res = await runHistory(['push', path, '--db-url', DB_URL]);
       expect(res.code).toBe(0);
       expect(res.pushed).toHaveLength(1);
       expect(res.pushed[0]!.run.run_id).toBe('run-new');
@@ -379,7 +434,7 @@ describe('history push', () => {
     try {
       const path = join(tmp, 'history.jsonl');
       writeFileSync(path, `${JSON.stringify({ run_id: 'r1' })}\n`, 'utf-8');
-      const res = await runHistory(['push', path]);
+      const res = await runHistory(['push', path, '--db-url', DB_URL]);
       expect(res.code).toBe(0);
       expect(res.pushed[0]!.results).toEqual([]);
       expect(res.stdout).toContain('(0 tests)');

@@ -55,6 +55,21 @@ export interface TestResultInput {
   start_index?: number; // #461, local-only (no remote column)
 }
 
+/**
+ * The run-level facts a report cannot carry (repo, branch, commit). Lives here,
+ * not in `run-recorder.ts`, so every reader in `formats/` shares one copy.
+ */
+export interface RecordContext {
+  suite: string;
+  repo: string;
+  branch: string;
+  commitSha: string;
+  /** Explicit run id; defaults to `makeRunId(suite, commit, epochSeconds)`. */
+  runId?: string;
+  /** Fallback clock for a report with no `startTime` (injected in tests). */
+  nowMs: number;
+}
+
 /** `{suite}-{commit[:8]}-{epoch}` — identical to Python `make_run_id`. */
 export function makeRunId(
   suite: string,
