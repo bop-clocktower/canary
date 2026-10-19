@@ -6,6 +6,7 @@ import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push, ingestOutcome, retryWai
 import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config.js";
 import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload.js";
 import { clearRunFile, emitRunFile, toRunRecord, runFilePath, INTERRUPTED_PREFIX } from "./ingest/run-record.js";
+import { redactText, redactTitle } from "./ingest/redact.js";
 
 // Optional .env load — MUST NOT crash the suite if dotenv is absent.
 try {
@@ -15,8 +16,7 @@ try {
 }
 
 /** The public surface consumers import from `canary-test-cli/reporter`. */
-export { redactText, redactTitle } from "./ingest/redact.js";
-export { resolveConfig, resolveArea, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs, toRunRecord, runFilePath };
+export { redactText, redactTitle, resolveConfig, resolveArea, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs, toRunRecord, runFilePath };
 export type { IngestReporterOptions, TitleFormat, TestTrackerReporterOptions, ResolvedConfig } from "./ingest/config.js";
 export type { ResultEntry, CollectedEntry, IngestPayload, Shard } from "./ingest/payload.js";
 export type { IngestResponse } from "./ingest/transport.js";

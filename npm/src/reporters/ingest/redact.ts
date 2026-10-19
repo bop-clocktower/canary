@@ -90,10 +90,7 @@ export function redactTitle(
 }
 
 /** A `reason:<text>` tag carries a skip message, so it gets the full text rules. */
-export function redactTag(
-  tag: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
+function redactTag(tag: string, env: NodeJS.ProcessEnv = process.env): string {
   return tag.startsWith('reason:')
     ? `reason:${redactText(tag.slice('reason:'.length), env)}`
     : tag;
