@@ -39,7 +39,7 @@ import {
 import { frameworkForPath } from './core/static-linter.js';
 import { SCANNABLE_DESC, collectTestFiles, isDir } from './core/test-files.js';
 import type { LintFinding } from './core/static-linter.js';
-import { RunSummary } from './core/ticket-updater.js';
+import { RunSummary, type TransitionResult } from './core/ticket-updater.js';
 import { renderBanner } from './ui/banner.js';
 import {
   ARROW,
@@ -1363,9 +1363,21 @@ export async function ticketUpdateCmd(
     }
   }
 
-  if (updateResult.transition.reason.startsWith(WARN)) {
+  if (ticketUpdateFailed(updateResult.transition, opts.dryRun ?? false)) {
     throw new CliExitError(1);
   }
+}
+
+/**
+ * Whether `ticket-update` must exit 1 for this transition outcome (#1283). An
+ * attempted transition that did not succeed is a failed update, so a CI step
+ * gating on `$?` has to see it; keying the exit on the WARN glyph alone missed
+ * "transition API call failed". A dry run reports attempted-but-not-succeeded
+ * by design, so it never fails on that ground.
+ */
+function ticketUpdateFailed(tr: TransitionResult, dryRun: boolean): boolean {
+  if (tr.reason.startsWith(WARN)) return true;
+  return !dryRun && tr.attempted && !tr.succeeded;
 }
 
 /**

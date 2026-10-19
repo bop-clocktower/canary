@@ -37,6 +37,34 @@ describe('ticket-update: a failed transition is not a success', () => {
           ({ update: async () => failedTransition() }) as never,
       },
     });
-    expect(res.code).not.toBe(0);
+    // Exit 1, like the command's other failed-action exits (exit 2 is reserved
+    // for "the invocation has to change").
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain('Transition failed');
+  });
+
+  it('still exits 0 on --dry-run, where an attempted transition is never executed', async () => {
+    // transitionJira reports a dry run as attempted=true, succeeded=false.
+    const dryRun = new UpdateResult({
+      ticket_key: 'PROJ-1',
+      project_key: 'PROJ',
+      linkage_source: 'branch',
+      comment_posted: true,
+      transition: new TransitionResult(
+        true,
+        false,
+        'In Progress',
+        'Done',
+        'dry-run',
+      ),
+      dry_run: true,
+      messages: [],
+    });
+    const res = await invokeCanary(['ticket-update', '--dry-run'], {
+      deps: {
+        makeTicketUpdater: () => ({ update: async () => dryRun }) as never,
+      },
+    });
+    expect(res.code).toBe(0);
   });
 });
