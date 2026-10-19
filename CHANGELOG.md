@@ -74,6 +74,13 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **`canary ticket-update` exits 1, not 0, when an attempted transition fails**
+  ([#1283](https://github.com/bop-clocktower/canary/issues/1283)). The command
+  printed `Transition failed` and still exited 0 unless the reason started with
+  the warning glyph, so `transition API call failed` and an unreachable target
+  status read as success to a CI step gating on `$?`. Exit 1 matches the
+  command's other failed-action exits. `--dry-run` still exits 0, since a dry
+  run never executes the transition.
 - **`canary guardian pr-check` on a test-only diff whose added test asserts
   nothing exits 3, not 0** (#1305). No source unit was checked, so the run
   abstains, under both `--gate soft` and `--gate hard`. That matches the same

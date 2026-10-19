@@ -1,0 +1,18 @@
+{
+  "issues": [1283],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/ticket-update-failed-transition.test.ts",
+  "baseSha": "e02caf12d62b7777fdc571e66a722fceaaf9af63",
+  "reproFailure": "AssertionError: expected +0 not to be +0 // Object.is equality (3/3 runs at e02caf12, 'exits non-zero when an attempted transition did not succeed')",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Exit code 1 for a failed transition: every failed-action exit in ts/src/cli-commands.ts uses CliExitError(1), including ticket-update's own WARN-reason exit and its unreadable --result exit; exit 2 is reserved for 'the invocation has to change' (init unknown/unsupported framework).",
+    "'Failed transition' means transition.attempted && !transition.succeeded outside --dry-run. This also covers the 'target status not reachable from current status' case, which the command already renders as 'Transition failed'.",
+    "--dry-run keeps exit 0: transitionJira reports a dry run as attempted=true, succeeded=false, reason 'dry-run', so the dry-run guard is required; a second test pins it.",
+    "The existing WARN-glyph exit (no workflow mapping) is kept unchanged.",
+    "Out of scope, left as reported in the issue: comment_posted=false and missing-credentials paths still exit 0; help text for --result 'auto-detect' and --test-file 'last run' defaults is not implemented.",
+    "The exit-code change is user-visible, so it is recorded under CHANGELOG [Unreleased] > Changed; no other doc describes ticket-update exit codes (README has a one-line command description only).",
+    "No workflow, script or skill in the repo invokes ticket-update and depends on exit 0 (grep of .github, skills, npm, docs)."
+  ]
+}
