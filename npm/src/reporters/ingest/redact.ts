@@ -4,6 +4,7 @@
 // echo what a step typed or saw: emails, passwords, bearer tokens. TestTracker
 // is a management dashboard, so none of that may reach it. Redaction is ON by
 // default; `CANARY_INGEST_REDACT=0` (or `false`) turns it off.
+import type { CollectedEntry, ResultEntry } from './payload.js';
 
 /** `eyJ…` header, payload, signature: a JWT. Checked before the bare rule. */
 const JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
@@ -96,4 +97,50 @@ export function redactTag(
   return tag.startsWith('reason:')
     ? `reason:${redactText(tag.slice('reason:'.length), env)}`
     : tag;
+}
+
+/**
+ * The pass every pushed row goes through in buildPayload, whichever path built
+ * it. `errorField` already redacted message and stack before truncating, with
+ * `process.env`; this pass applies the caller's env, which
+ * `canary testtracker push` resolves on its own. Idempotent.
+ */
+export function redactEntry(
+  r: ResultEntry,
+  env: NodeJS.ProcessEnv = process.env,
+): ResultEntry {
+  return {
+    ...r,
+    full_title: redactTitle(r.full_title, env),
+    tags: r.tags.map((t) => redactTag(t, env)),
+    ...(r.error_message !== undefined
+      ? { error_message: redactText(r.error_message, env) }
+      : {}),
+    ...(r.error_stack !== undefined
+      ? { error_stack: redactText(r.error_stack, env) }
+      : {}),
+  };
+}
+
+/**
+ * Redacts the catalog and collapses titles that now read the same into one
+ * entry (tags merged): the dashboard keys the catalog by title too.
+ */
+export function redactCatalog(
+  entries: CollectedEntry[],
+  env: NodeJS.ProcessEnv = process.env,
+): CollectedEntry[] {
+  const byTitle = new Map<string, CollectedEntry>();
+  for (const c of entries) {
+    const full_title = redactTitle(c.full_title, env);
+    const tags = c.tags.map((t) => redactTag(t, env));
+    const prior = byTitle.get(full_title);
+    byTitle.set(
+      full_title,
+      prior
+        ? { ...prior, tags: [...new Set([...prior.tags, ...tags])] }
+        : { ...c, full_title, tags },
+    );
+  }
+  return [...byTitle.values()];
 }
