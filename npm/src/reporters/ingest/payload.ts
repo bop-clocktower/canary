@@ -2,6 +2,7 @@
 import type { FullResult } from "@playwright/test/reporter";
 import crypto from "node:crypto";
 import type { ResolvedConfig } from "./config.js";
+import { redactTag, redactText, redactTitle } from "./redact.js";
 
 export interface ResultEntry {
   full_title: string;
@@ -220,10 +221,13 @@ export function buildPayload(
   fullResultStatus?: string,
   run: { shard?: Shard; collected?: CollectedEntry[] | null } = {},
 ): IngestPayload {
-  // Deduped before the totals are counted, so `totals` always describes the
-  // rows actually sent — a payload whose totals disagree with `results.length`
-  // would misreport the run on the dashboard.
-  const results = dedupeByFullTitle(rawResults);
+  // Redacted first (#1354): two titles that differ only by an email collapse
+  // to one, and the dedupe below must see that or the ingest API rejects the
+  // whole run on the duplicate. Deduped before the totals are counted, so
+  // `totals` always describes the rows actually sent — a payload whose totals
+  // disagree with `results.length` would misreport the run on the dashboard.
+  const results = dedupeByFullTitle(rawResults.map((r) => redactEntry(r, env)));
+  const collected = run.collected ? dedupeCollected(run.collected.map((c) => redactCollected(c, env))) : run.collected;
   const count = (s: string) => results.filter((r) => r.status === s).length;
   const passed = count("passed");
   // The ingest totals have no timed_out bucket; a timeout is a failure there.
@@ -243,8 +247,38 @@ export function buildPayload(
     totals: { passed, failed, flaky, skipped, total: results.length },
     results,
     // null/undefined = no catalog for this push → the key is omitted, never `[]`.
-    ...(run.collected ? { collected: run.collected } : {}),
+    ...(collected ? { collected } : {}),
   };
+}
+
+/**
+ * The redaction pass every pushed row goes through (#1354), whichever path
+ * built it. `errorField` already redacted message and stack before truncating
+ * (so a cut never leaves half a secret), with `process.env`; this pass applies
+ * the caller's env, which `canary testtracker push` resolves on its own.
+ */
+function redactEntry(r: ResultEntry, env: NodeJS.ProcessEnv): ResultEntry {
+  return {
+    ...r,
+    full_title: redactTitle(r.full_title, env),
+    tags: r.tags.map((t) => redactTag(t, env)),
+    ...(r.error_message !== undefined ? { error_message: redactText(r.error_message, env) } : {}),
+    ...(r.error_stack !== undefined ? { error_stack: redactText(r.error_stack, env) } : {}),
+  };
+}
+
+function redactCollected(c: CollectedEntry, env: NodeJS.ProcessEnv): CollectedEntry {
+  return { ...c, full_title: redactTitle(c.full_title, env), tags: c.tags.map((t) => redactTag(t, env)) };
+}
+
+/** Same title, one row: redaction can make two catalog titles equal (see buildPayload). */
+function dedupeCollected(entries: CollectedEntry[]): CollectedEntry[] {
+  const byTitle = new Map<string, CollectedEntry>();
+  for (const c of entries) {
+    const prior = byTitle.get(c.full_title);
+    byTitle.set(c.full_title, prior ? { ...prior, tags: [...new Set([...prior.tags, ...c.tags])] } : c);
+  }
+  return [...byTitle.values()];
 }
 
 /** The subset of the ingest API's `POST /runs` response the reporter reads. */
@@ -289,9 +323,17 @@ export const MAX_ERROR_STACK = 8_000;
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
 
-/** Playwright errors carry ANSI colour and full diffs; send readable, bounded text. */
-export function errorField(text: string | undefined, max: number): string | undefined {
+/**
+ * Playwright errors carry ANSI colour and full diffs; send readable, bounded,
+ * redacted text. Redaction runs BEFORE truncation (#1354) so the cut can never
+ * land inside a credential and leave a fragment the rules no longer match.
+ */
+export function errorField(
+  text: string | undefined,
+  max: number,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
   if (text === undefined) return undefined;
-  const plain = text.replace(ANSI, "");
+  const plain = redactText(text.replace(ANSI, ""), env);
   return plain.length > max ? `${plain.slice(0, max)}… [truncated]` : plain;
 }

@@ -15,6 +15,7 @@ try {
 }
 
 /** The public surface consumers import from `canary-test-cli/reporter`. */
+export { redactText, redactTitle } from "./ingest/redact.js";
 export { resolveConfig, resolveArea, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs, toRunRecord, runFilePath };
 export type { IngestReporterOptions, TitleFormat, TestTrackerReporterOptions, ResolvedConfig } from "./ingest/config.js";
 export type { ResultEntry, CollectedEntry, IngestPayload, Shard } from "./ingest/payload.js";
