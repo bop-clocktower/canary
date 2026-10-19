@@ -39,7 +39,8 @@ import {
 import { frameworkForPath } from './core/static-linter.js';
 import { SCANNABLE_DESC, collectTestFiles, isDir } from './core/test-files.js';
 import type { LintFinding } from './core/static-linter.js';
-import { RunSummary, type TransitionResult } from './core/ticket-updater.js';
+import { RunSummary } from './core/ticket-updater.js';
+import type { TransitionResult } from './core/ticket-updater.js';
 import { renderBanner } from './ui/banner.js';
 import {
   ARROW,
