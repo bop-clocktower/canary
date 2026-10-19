@@ -40,7 +40,7 @@ import { frameworkForPath } from './core/static-linter.js';
 import { SCANNABLE_DESC, collectTestFiles, isDir } from './core/test-files.js';
 import type { LintFinding } from './core/static-linter.js';
 import { RunSummary } from './core/ticket-updater.js';
-import type { TransitionResult } from './core/ticket-updater.js';
+import type { TransitionResult } from './core/ticket-updater.js'; // canary:allow-untested type-only import, erased at compile time so no test can execute it
 import { renderBanner } from './ui/banner.js';
 import {
   ARROW,
