@@ -17,22 +17,22 @@ import type { ReportIndex } from './types.js';
  * The repo-relative prefix a report's relative paths are rooted at (#883): the
  * nearest ancestor of the report's directory under which any of `samples`
  * exists (vitest under `ts/` writes `src/cli.ts`). Every sample is tried, since
- * a stale report names deleted files. No hit, or outside the repo: the root.
+ * a stale report names deleted files. The repo root itself is tried last and
+ * yields `''` (#1291). No hit, or outside the repo: `null`, not anchored.
  */
 function anchorPrefix(
   samples: string[],
   reportPath: string,
   root: string,
-): string {
-  const dir = relative(root, resolve(dirname(reportPath))).split(sep);
-  if (dir[0] === '..' || isAbsolute(dir.join('/'))) return '';
-  for (let i = dir.length; i > 0 && dir[0] !== ''; i--) {
-    const prefix = dir.slice(0, i).join('/');
-    if (samples.some((s) => existsSync(join(root, prefix, s)))) {
-      return `${prefix}/`;
-    }
+): string | null {
+  const rel = relative(root, resolve(dirname(reportPath)));
+  const dir = rel === '' ? [] : rel.split(sep);
+  if (dir[0] === '..' || isAbsolute(rel)) return null;
+  for (let i = dir.length; i >= 0; i--) {
+    const prefix = i === 0 ? '' : `${dir.slice(0, i).join('/')}/`;
+    if (samples.some((s) => existsSync(join(root, prefix, s)))) return prefix;
   }
-  return '';
+  return null;
 }
 
 /** The deepest directory shared by every path in `paths` ('' when none). */
@@ -68,7 +68,7 @@ function anchoredGroups(
   return [...groups.values()].map((pairs) => {
     const paths = pairs.map(([, p]) => p);
     const prefix = anchorPrefix(paths, reportPath, root);
-    return pairs.map(([raw, p]) => [raw, prefix + p, prefix !== '']);
+    return pairs.map(([raw, p]) => [raw, (prefix ?? '') + p, prefix !== null]);
   });
 }
 

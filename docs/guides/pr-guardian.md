@@ -186,11 +186,15 @@ coverage-verified verdict, a falsely matched count, and a coverage delta drawn
 from the wrong package.
 [`report-anchor.ts`](../../ts/src/guardian/diff-coverage/report-anchor.ts)
 re-keys each relative entry under the nearest ancestor of the report's directory
-where its files exist, and an anchored entry then binds by exact path only, so
-neither a sibling's `pkg-b/src/index.ts` nor a root-level `src/index.ts` can
-claim it. The ladder, the delta and the instrumented-tree denominator all read
-that one anchoring. An entry that cannot be anchored, because it is absolute or
-none of its group's files exist, keeps the suffix fallback.
+where its files exist, the repo root included, and an anchored entry then binds
+by exact path only, so neither a sibling's `pkg-b/src/index.ts` nor a root-level
+`src/index.ts` can claim it. A report rooted at the repo itself
+(`coverage/lcov.info` naming `src/index.ts`) anchors at the root the same way.
+The ladder, the delta and the instrumented-tree denominator all read that one
+anchoring. Only two kinds of entry keep the suffix fallback: absolute keys, and
+relative keys whose group has no file under any ancestor of the report's
+directory (for example a package's report written to a root `coverage/`
+directory, whose keys are relative to the package).
 
 A coverage-json producer can opt in to the lcov rule per file by declaring
 `instrumented_lines` ([#657]) — the set of lines its tool actually measured.
