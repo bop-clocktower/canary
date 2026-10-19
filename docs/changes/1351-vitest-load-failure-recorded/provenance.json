@@ -1,0 +1,19 @@
+{
+  "issues": [1351],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/history-record-vitest-file-failure.test.ts",
+  "baseSha": "e02caf12d62b7777fdc571e66a722fceaaf9af63",
+  "reproFailure": "AssertionError: expected 0 to be greater than 0 (3 of 3 runs at e02caf12; the three added cases also failed before the fix and pass after)",
+  "closingKeyword": "Closes",
+  "historyLoc": { "before": 4877, "after": 4875 },
+  "assumptions": [
+    "Design choice: issue option 2 (one synthetic failed row per file that failed outside any test). It is the only option the approved reproducing test (`run.failed > 0`) admits without a schema change: option 1 (refuse) throws instead of counting, and option 3 (run-level field) cannot pass validateBuiltRun, which requires total == rows and the status counts to sum to total.",
+    "The synthetic row is named `<file> (file failed outside any test)`, not a shared constant: flake/timeline queries key on test_name alone, so a shared name would merge every file's load failures into one history. test_file is the file and error_text is vitest's file `message`.",
+    "Trigger is `status === 'failed'` AND a non-empty file `message`. vitest leaves the file message empty when only assertions failed, so an ordinary test failure is not double counted (covered by a test).",
+    "A report where EVERY file fails to load still abstains as an empty report (countVitestResults unchanged); that is pre-existing behavior and out of scope.",
+    "History LOC measured with `find ts/src/history -name '*.ts' | xargs cat | wc -l`: 4877 before, 4875 after (net -2; non-test files 3863 -> 3861). Paid down by moving the RecordContext type to schema.ts and deleting three identical RunContext copies in formats/, plus a reduce in countVitestResults. No imports added to history/cli.ts.",
+    "harness check-arch: 12 pre-existing complexity violations at base and after, 0 new (an interim version tripped cyclomaticComplexity 11 in readVitestReport; extracted fileRows to clear it). check-deps passes; entropy findings 140 before and after; check-perf shows no finding on any touched file.",
+    "Remote store: no change needed; the new row has the existing TestResultInput shape."
+  ]
+}
