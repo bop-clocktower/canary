@@ -356,6 +356,30 @@ function overlayPiece(input: AdoptionInput): AdoptionPiece {
       };
 }
 
+/**
+ * The `skills` piece when no overlay skill matched.
+ *
+ * #1353: this report checks detected shapes only. It cannot know a
+ * `--framework` the repo was migrated with, so a scaffold-less override
+ * (locust) lands here with its skills deployed. Say so, not just "zero".
+ */
+function zeroMatchSkillsPiece(label: string): AdoptionPiece {
+  return {
+    id: 'skills',
+    label,
+    status: 'unknown',
+    detail:
+      "zero overlay skills matched this repo's detected shapes, so nothing " +
+      'was verified (this check covers detected shapes only; a ' +
+      '`--framework` override used at migrate time is not applied)',
+    remedy:
+      "check the overlay's `deploy_to` lists against the resolved shape, " +
+      'or run `canary migrate --check --framework <name>` for an overridden ' +
+      'migrate',
+    skipReason: 'no skill matched the shape',
+  };
+}
+
 /** Overlay skills deployed under `.canary/skills/`. */
 function skillsPiece(input: AdoptionInput): AdoptionPiece {
   const label = 'Overlay skills deployed';
@@ -370,19 +394,7 @@ function skillsPiece(input: AdoptionInput): AdoptionPiece {
       skipReason: 'no overlay',
     };
   }
-  if (freshness.results.length === 0) {
-    return {
-      id: 'skills',
-      label,
-      status: 'unknown',
-      detail:
-        "zero overlay skills matched this repo's shape, so nothing was " +
-        'verified',
-      remedy:
-        "check the overlay's `deploy_to` lists against the resolved shape",
-      skipReason: 'no skill matched the shape',
-    };
-  }
+  if (freshness.results.length === 0) return zeroMatchSkillsPiece(label);
   const absent = freshness.results.filter((r) => r.status === 'missing');
   if (absent.length === 0) {
     return {

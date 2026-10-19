@@ -491,6 +491,7 @@ function migrateCheck(
   migrator: ReturnType<MainDeps['makeMigrator']>,
   root: string,
   overlayPath: string | null,
+  framework: string | null,
   json: boolean,
   deps: MainDeps,
 ): void {
@@ -515,7 +516,10 @@ function migrateCheck(
 
   let report;
   try {
-    report = migrator.checkFreshness(root, { overlayPath });
+    // #1353: forward --framework so the gate examines the shape set an
+    // overridden `--apply` deployed to -- a scaffold-less framework (locust)
+    // leaves nothing detection can find, so dropping it checks zero skills.
+    report = migrator.checkFreshness(root, { overlayPath, framework });
   } catch (e) {
     deps.err(
       `\n${pc.bold(pc.red(CROSS))} ${e instanceof Error ? e.message : String(e)}`,
@@ -551,7 +555,14 @@ function migrateReportOnly(
     migrateAdoption(migrator, root, overlayPath, json, deps);
   }
   if (opts.check) {
-    migrateCheck(migrator, root, overlayPath, json, deps);
+    migrateCheck(
+      migrator,
+      root,
+      overlayPath,
+      opts.framework || null,
+      json,
+      deps,
+    );
   }
 }
 
