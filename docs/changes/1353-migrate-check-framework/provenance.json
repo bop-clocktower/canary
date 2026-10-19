@@ -1,0 +1,15 @@
+{
+  "issues": [1353],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/migrate-check-framework-cli.test.ts",
+  "baseSha": "e02caf12d62b7777fdc571e66a722fceaaf9af63",
+  "reproFailure": "3/3 runs at base: (1) `#1353 migrate --check honors --framework` -> AssertionError: expected [] to deeply equal [ [ 'sample-skill', 'current' ] ]; (2) `#1353 adoption report discloses detected-shapes-only scope` -> AssertionError: expected 'zero overlay skills matched this repo's shape, so nothing was verified' to contain 'detected shapes only'",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "DECIDED (human): 'CLI forward + disclose' -- migrate --check forwards --framework to checkFreshness; adoption.ts does NOT infer the framework from the deploy manifest, and instead its zero-match skills piece states the check covers detected shapes only and points at `canary migrate --check --framework <name>`.",
+    "`--adoption-report --framework <name>` still ignores the flag; per the decision, adoption discloses the scope rather than consuming the override.",
+    "The disclosure is attached only to the zero-match (abstaining) skills piece, which is the case where detected-shapes-only scope changes the reading; present/missing verdicts are unchanged.",
+    "skipReason 'no skill matched the shape' is kept verbatim so gate-result consumers see no grain change."
+  ]
+}

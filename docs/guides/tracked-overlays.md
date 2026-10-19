@@ -296,6 +296,12 @@ for, so `--check` can never report in sync about skills it never examined. The
 scalar `shape` is unchanged and keeps its meaning; `shapes` is purely additive,
 so an existing consumer of this payload is unaffected.
 
+If you migrated with `--framework`, pass the same `--framework` to `--check`.
+The gate resolves its shape set the way `--apply` did. This matters for a
+framework with no scaffold template (locust, stryker, pact, axe-core,
+backstopjs). Its `--apply` writes no config that detection can find later, so a
+`--check` without the flag sees zero matching skills and abstains (#1353).
+
 ### `migrate --apply` abstains on the same tree
 
 `--apply` uses the same denominator as `--check`: the overlay skills whose
@@ -443,6 +449,12 @@ Three properties are deliberate:
   that differs from the template was adopted and then tuned — that is a
   freshness question for `--check`, not an adoption gap. Only a declared
   template with no file at all is `missing`.
+
+The `skills` piece checks **detected shapes only**. The report has no way to
+know which `--framework` the repo was migrated with. A repo migrated with a
+scaffold-less framework override can therefore show `skills` as `unknown` with
+zero matches while its skills are deployed. The piece's detail says so. Use
+`canary migrate --check --framework <name>` to verify those skills.
 
 Exit codes: `0` every piece present, `1` at least one piece missing, `3` nothing
 was verifiable (an abstention, never a pass — see
