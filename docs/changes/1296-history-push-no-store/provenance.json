@@ -11,6 +11,7 @@
     "Design choice to confirm: with neither --db-url nor CANARY_HISTORY_DB_URL set, `history push` abstains (gateOutcome 'gate' -> exit 3, `Abstained ... Nothing was pushed: no remote store is configured`) rather than refusing with exit 1 like `history trim`, or warning and exiting 0. Matches the CLI-wide D4 abstention code and the abstain branch `history migrate` already uses in the same module.",
     "--dry-run is left unchanged (still exits 0 with `would push run ...` when no remote is configured); the issue's false green is the non-dry path only.",
     "A local push can never move anything: the store would be the source file itself and the pushed run is its own last record, so the run_id dedup always skips it. No caller relies on pushing to a local store.",
+    "Doc drift caused by this PR fixed in the same PR: agents/skills/claude-code/canary-fleet-health/SKILL.md (3 spots) now points at `canary history record` for local history and at `canary history push --db-url` only when a remote store is configured. A grep of docs/ and agents/skills/ found no other `history push` advice.",
     "History LOC held at net 0 by compacting the `pick` field filter in the same file (Object.hasOwn + Object.fromEntries; identical semantics: own keys only, field order kept). No #1405 file touched, no import added."
   ]
 }
