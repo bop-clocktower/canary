@@ -56,7 +56,7 @@ permissions:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@12'
+  HARNESS_CLI: '@harness-engineering/cli@13'
 
 jobs:
   # The job id IS the check context GitHub reports (no `name:` is set), so this

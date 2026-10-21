@@ -52,10 +52,11 @@ filtered out of that list by the CLI.
 
 `harness.yml` runs `harness check-arch --json > arch-report.json || true`, and
 on main that command exits 1 on every run (#1208; 12 pre-existing violations, 0
-new, on harness 12.10.1). The swallow is deliberate: the absolute exit is the
-verdict the summariser reinterprets. A later step in the same job reads the file
-and fails the job itself, with exit 1 on any `newViolations` and exit 3 when the
-report is missing, empty or has no `newViolations` field.
+new, on harness 12.10.1 and unchanged on 13.0.0). The swallow is deliberate: the
+absolute exit is the verdict the summariser reinterprets. A later step in the
+same job reads the file and fails the job itself, with exit 1 on any
+`newViolations` and exit 3 when the report is missing, empty or has no
+`newViolations` field.
 
 That holds only while the pairing does. The summariser must stay in the same
 job, be invoked in command position, and read the same file via `--arch`. It
@@ -74,31 +75,39 @@ fail-closed consumer meeting these rules.
 The red absolute exit itself is a stale baseline, not a defect: refreshing it is
 the human, label-gated `refresh-arch-baseline.yml` step.
 
-## Three metrics are 0 by construction: no layer or cycle evidence
+## Three metrics were 0 by construction until harness 13
 
-In harness 12.10.1, three of the seven arch metrics cannot report anything,
-whatever the code does (#1164, Intense-Visions/harness-engineering#2235):
+Through harness 12.x, three of the seven arch metrics could not report anything,
+whatever the code did (#1164, Intense-Visions/harness-engineering#2235):
 
-- **`circular-deps`** builds its graph with a stub parser whose `parseFile`
-  always fails, so the graph has zero edges and no cycle can be found in any
-  file.
-- **`layer-violations`** and **`forbidden-imports`** call `validateDependencies`
-  with `layers: []`, so no file resolves to a layer and every edge is skipped.
+- **`circular-deps`** built its graph with a stub parser whose `parseFile`
+  always failed, so the graph had zero edges and no cycle could be found.
+- **`layer-violations`** and **`forbidden-imports`** called
+  `validateDependencies` with `layers: []`, so no file resolved to a layer.
 
 The `0` recorded for each in `.harness/arch/baselines.json` and
-`.harness/arch/timeline.json` is an abstention, not a measurement. A planted
-cycle and a planted wrong-layer import both left `check-arch` reporting
-`newViolations: []`. A green arch verdict therefore covers `complexity`,
-`coupling`, `module-size` and `dependency-depth` only.
+`.harness/arch/timeline.json` before the `@13` pin is an abstention, not a
+measurement.
 
-Layer direction, forbidden imports and cycles are gated by `harness check-deps`,
-which reads the configured `layers`. It runs in two required checks: the
-`deps-and-validate` job (`harness-architecture.yml`) and the `deps` step inside
-`harness ci check` (`harness.yml`). `ts/test/import-graph-acyclic.test.ts`
-repeats the `ts/src` cycle check at desk speed. `scripts/arch-verdict.mjs`
-prints a `NOT MEASURED` line naming the three metrics under every verdict; the
-list is the `UNMEASURED_ARCH_METRICS` constant, to be revisited when canary
-picks up the harness release that fixes #2235.
+harness 13.0.0 fixed all three. On the bump (2026-10-21) planted positives
+proved each one live — a `ui -> core` import read `layer-violations: 1`, a
+`util -> guardian` import added one to both `layer-violations` and
+`forbidden-imports` — and `circular-deps` found two real cycles that had been
+there all along, in `npm/src` (`doctor.ts` and its check producers;
+`reporters/ingest/payload.ts` and `redact.ts`). Both closed through
+`import type` edges and were broken by moving the shared types into leaf
+modules. Neither was caught by `harness check-deps`, which analyzes 468 modules
+against the 858 files the arch collector walks, nor by
+`ts/test/import-graph-acyclic.test.ts`, which covers `ts/src` only.
+
+So layer direction and cycles are now gated twice: by the arch ratchet, and by
+`harness check-deps` in the `deps-and-validate` job (`harness-architecture.yml`)
+and the `deps` step of `harness ci check` (`harness.yml`). The arch ratchet is
+the wider of the two. `scripts/arch-verdict.mjs` no longer assumes the
+abstention: it reads the `measurements` block harness 13 emits and prints a
+`NOT MEASURED` line only for a dependency metric whose denominator is zero,
+which reports `skipped`, or which is missing — and for all three when the report
+has no `measurements` at all, as every 12.x report does.
 
 ## Optional markers in inline type literals cost branches
 

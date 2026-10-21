@@ -64,6 +64,7 @@ function archReport(
     preExisting: string[];
     regressions: unknown[];
     thresholdViolations: Violation[];
+    measurements: unknown[];
   }> = {},
 ) {
   const thresholdViolations = overrides.thresholdViolations ?? [];
@@ -76,6 +77,7 @@ function archReport(
     preExisting: overrides.preExisting ?? [],
     regressions: overrides.regressions ?? [],
     thresholdViolations,
+    ...(overrides.measurements ? { measurements: overrides.measurements } : {}),
   };
 }
 
@@ -90,6 +92,13 @@ function ratchetTrip() {
     preExisting: violations.map((v) => v.id),
   });
 }
+
+/** No `measurements` block (harness <= 12.x): all three dependency metrics unmeasured. */
+const PRE_13_UNMEASURED = [
+  'circular-deps',
+  'layer-violations',
+  'forbidden-imports',
+];
 
 let dir: string;
 
@@ -140,6 +149,7 @@ describe('classifyArchReport decision table (#905)', () => {
       mode: 'unknown',
       newViolations: [],
       regressions: [],
+      unmeasured: PRE_13_UNMEASURED,
       verdict: 'unknown',
       reason: REASON,
     });
@@ -156,6 +166,7 @@ describe('classifyArchReport decision table (#905)', () => {
       mode: 'm1',
       newViolations: [],
       regressions: [{ metric: 'm' }],
+      unmeasured: PRE_13_UNMEASURED,
       verdict: 'unknown',
       reason: REASON,
     });
@@ -188,6 +199,7 @@ describe('classifyArchReport decision table (#905)', () => {
       mode: 'baseline',
       newViolations: [v1],
       regressions: [],
+      unmeasured: PRE_13_UNMEASURED,
       verdict: 'regression',
     });
   });
@@ -206,6 +218,7 @@ describe('classifyArchReport decision table (#905)', () => {
       mode: 'unknown',
       newViolations: [],
       regressions: [{ metric: 'module-size' }],
+      unmeasured: PRE_13_UNMEASURED,
       verdict: 'regression',
     });
   });
@@ -620,20 +633,92 @@ describe('#1164 — the arch ratchet abstains on layers, imports and cycles', ()
     expect(output).not.toMatch(/(layer-violations|circular-deps)[^\n]*: 0\b/);
   }
 
-  // Not exported: a test-only consumer reads as a dead export to the entropy
-  // ratchet. The source is the contract — one named list, pointing at #2235.
-  it('keys the unmeasured set to one named constant to revisit on a harness bump', () => {
-    const source = readFileSync(VERDICT, 'utf-8');
-    const decl =
-      /const UNMEASURED_ARCH_METRICS = Object\.freeze\(\[([^\]]*)\]/.exec(
-        source,
-      );
-    expect(decl).not.toBeNull();
-    const names = [...(decl?.[1] ?? '').matchAll(/'([^']+)'/g)].map(
-      (m) => m[1],
+  // harness 13 (#2235 fixed) reports a `measurements` block with each
+  // collector's denominator, so the abstention is read off the report rather
+  // than assumed. A report with no `measurements` (CLI <= 12.x) still gets the
+  // full caveat — the tests above and below use that shape.
+  function measured(
+    overrides: Record<string, Record<string, unknown>> = {},
+  ): unknown[] {
+    const base: Record<string, Record<string, unknown>> = {
+      'circular-deps': { filesAnalyzed: 858, edgeCount: 1615 },
+      'layer-violations': { layersConfigured: 13, modulesAnalyzed: 468 },
+      'forbidden-imports': { rulesConfigured: 2, filesAnalyzed: 69 },
+    };
+    return Object.entries(base).map(([category, metadata]) => ({
+      category,
+      scope: 'project',
+      value: 0,
+      metadata: { ...metadata, ...overrides[category] },
+    }));
+  }
+
+  it('drops the caveat when harness 13 shows all three collectors ran', () => {
+    const r = runVerdict(
+      writeJson(
+        'arch.json',
+        archReport({ passed: true, measurements: measured() }),
+      ),
     );
-    expect(names.sort()).toEqual([...UNMEASURED].sort());
-    expect(source).toContain('harness-engineering#2235');
+    expect(r.status).toBe(0);
+    expect(r.output).toMatch(/arch — clean/);
+    expect(r.output).not.toMatch(/NOT MEASURED/);
+  });
+
+  it('names only the collector whose denominator is zero', () => {
+    const r = runVerdict(
+      writeJson(
+        'arch.json',
+        archReport({
+          passed: true,
+          measurements: measured({ 'circular-deps': { filesAnalyzed: 0 } }),
+        }),
+      ),
+    );
+    const line = r.output.split('\n').find((l) => l.includes('NOT MEASURED'));
+    expect(line).toContain('circular-deps');
+    expect(line).not.toContain('layer-violations');
+    expect(line).not.toContain('forbidden-imports');
+    expect(line).toContain('check-deps');
+  });
+
+  it('treats a collector that reports skipped as unmeasured', () => {
+    const r = runVerdict(
+      writeJson(
+        'arch.json',
+        archReport({
+          passed: true,
+          measurements: measured({ 'forbidden-imports': { skipped: true } }),
+        }),
+      ),
+    );
+    expect(r.output).toMatch(/NOT MEASURED: forbidden-imports\b/);
+  });
+
+  it('treats a category missing from measurements as unmeasured', () => {
+    const r = runVerdict(
+      writeJson(
+        'arch.json',
+        archReport({ passed: true, measurements: measured().slice(1) }),
+      ),
+    );
+    expect(r.output).toMatch(/NOT MEASURED: circular-deps\b/);
+  });
+
+  it('reads an unconfigured layers/rules block as not-applicable, not abstained', () => {
+    const r = runVerdict(
+      writeJson(
+        'arch.json',
+        archReport({
+          passed: true,
+          measurements: measured({
+            'layer-violations': { layersConfigured: 0, modulesAnalyzed: 0 },
+            'forbidden-imports': { rulesConfigured: 0, filesAnalyzed: 0 },
+          }),
+        }),
+      ),
+    );
+    expect(r.output).not.toMatch(/NOT MEASURED/);
   });
 
   it('a clean verdict says the three metrics were not measured, and still exits 0', () => {
