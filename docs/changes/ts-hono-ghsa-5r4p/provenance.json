@@ -1,0 +1,27 @@
+{
+  "issues": [],
+  "advisory": "GHSA-5r4p-p66f-jhc7",
+  "dependabotAlert": 50,
+  "route": "security",
+  "fleet": "security-fleet",
+  "evidenceClass": "advisory-match",
+  "evidenceStrength": "lockfile-only",
+  "severity": "moderate",
+  "scope": "ts/ only; the npm/ copy is handled by Dependabot PR #1419",
+  "stages": ["debugging"],
+  "baseSha": "4608f963853f6ba586b48ea480888a23426779bd",
+  "package": "hono",
+  "affectedRange": ">=4.12.4 <4.13.11",
+  "dependencyPath": "@modelcontextprotocol/sdk@1.32.1 -> hono (and -> @hono/node-server@2.0.12 -> hono, deduped)",
+  "before": {
+    "resolved": "4.13.7",
+    "audit": "1 moderate (GHSA-5r4p-p66f-jhc7, hono)"
+  },
+  "after": { "resolved": "4.13.13", "audit": "0 vulnerabilities" },
+  "regressionCheck": "cd ts && npm audit --package-lock-only reports 0 hono advisories; full test suite green (335 files, 6386 passed, 2 skipped)",
+  "assumptions": [
+    "No code-side sink: no import of hono or serveStatic in ts/src, npm/src or agents/skills, and the MCP server uses the stdio transport, so the regression test degrades to the audit check plus the full suite.",
+    "Only the hono entry in ts/package-lock.json changes. 'npm update hono --package-lock-only' under npm 10.9.8 also stripped unrelated 'libc' fields from optional platform packages, so that output was discarded and the hono entry was set by hand to the registry's 4.13.13 tarball and integrity; 'npm ci' then installed and verified it without rewriting the lock.",
+    "4.13.13 is the newest 4.x patch at the time of the change and is within the existing ^4 ranges of @modelcontextprotocol/sdk and @hono/node-server, so no manifest change is needed."
+  ]
+}

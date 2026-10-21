@@ -22,22 +22,28 @@
  * green while the pipeline goes red, which is the same false-confidence shape
  * #543 is about. Matching the gate beats being theoretically tidy.
  *
+ * `npm/src` TOO (#1422). `check-deps` reports value and type-only cycles in
+ * `ts/src` but reads no file in `npm/src` (no layer pattern matches it), so it
+ * missed two real `import type` cycles there that the arch ratchet caught.
+ *
  * Offline: reads source text, resolves relative specifiers by path. It never
  * imports project code, so a cycle here cannot break the test that detects it.
  */
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SOURCE_ROOT = 'ts/src';
 
-/** Tracked `.ts` files under the source root, repo-relative. */
-function sourceFiles(): string[] {
-  return execFileSync('git', ['ls-files', '-z', SOURCE_ROOT], {
+/** Tracked `.ts` files under `root`, repo-relative. */
+function sourceFiles(root: string = SOURCE_ROOT): string[] {
+  return execFileSync('git', ['ls-files', '-z', root], {
     cwd: REPO_ROOT,
     encoding: 'utf-8',
     maxBuffer: 32 * 1024 * 1024,
@@ -79,12 +85,17 @@ function relativeSpecifiers(source: string): string[] {
 }
 
 /**
- * Resolve a specifier to a repo-relative `.ts` path, or null when it leaves the
- * source tree. NodeNext specifiers carry a `.js` suffix that maps back to the
- * `.ts` on disk; directory specifiers resolve through `index.ts`.
+ * Resolve a specifier to a `baseDir`-relative `.ts` path, or null when it
+ * leaves `root`. NodeNext and node16 specifiers carry a `.js` suffix that maps
+ * back to the `.ts` on disk; directory specifiers resolve through `index.ts`.
  */
-function resolveSpecifier(fromFile: string, spec: string): string | null {
-  const base = resolve(REPO_ROOT, dirname(fromFile), spec);
+function resolveSpecifier(
+  fromFile: string,
+  spec: string,
+  root: string,
+  baseDir: string,
+): string | null {
+  const base = resolve(baseDir, dirname(fromFile), spec);
   const candidates = [
     base.replace(/\.js$/, '.ts'),
     `${base}.ts`,
@@ -92,19 +103,19 @@ function resolveSpecifier(fromFile: string, spec: string): string | null {
   ];
   for (const c of candidates) {
     if (existsSync(c)) {
-      const rel = relative(REPO_ROOT, c).split('\\').join('/');
-      if (rel.startsWith(`${SOURCE_ROOT}/`)) return rel;
+      const rel = relative(baseDir, c).split('\\').join('/');
+      if (rel.startsWith(`${root}/`)) return rel;
     }
   }
   return null;
 }
 
-function buildGraph(files: string[]): Map<string, string[]> {
+function buildGraph(files: string[], root: string, baseDir = REPO_ROOT) {
   const graph = new Map<string, string[]>();
   for (const file of files) {
-    const text = readFileSync(join(REPO_ROOT, file), 'utf-8');
+    const text = readFileSync(join(baseDir, file), 'utf-8');
     const edges = relativeSpecifiers(text)
-      .map((s) => resolveSpecifier(file, s))
+      .map((s) => resolveSpecifier(file, s, root, baseDir))
       .filter((t): t is string => t !== null && t !== file);
     graph.set(file, [...new Set(edges)]);
   }
@@ -164,8 +175,10 @@ function findCycles(graph: Map<string, string[]>): string[] {
   return [...walk.cycles.values()].sort();
 }
 
+const graphOf = (root: string) => buildGraph(sourceFiles(root), root);
+
 const FILES = sourceFiles();
-const GRAPH = buildGraph(FILES);
+const GRAPH = buildGraph(FILES, SOURCE_ROOT);
 
 /**
  * Self-checks on the detector.
@@ -235,5 +248,49 @@ describe('ts/src import graph (#543)', () => {
   it('contains no circular dependencies', () => {
     // Named in the failure so the fix is the chain, not a bisect.
     expect(findCycles(GRAPH)).toEqual([]);
+  });
+});
+
+// Planted positives (#1422), written to a temp dir: committed, they would be
+// counted by the arch and entropy ratchets, which walk ts/test/fixtures/ too.
+const PLANTED: Record<string, string> = {
+  'value/a.ts': "import { b } from './b.js';\nexport const a = b;\n",
+  'value/b.ts': "import { a } from './a.js';\nexport const b = a;\n",
+  'type/a.ts': "import type { B } from './b.js';\nexport type A = B[];\n",
+  'type/b.ts': "import type { A } from './a.js';\nexport type B = A[];\n",
+};
+
+describe('planted cycles through the real file pipeline (#1422)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'import-cycles-'));
+  for (const [file, source] of Object.entries(PLANTED)) {
+    mkdirSync(join(dir, dirname(file)), { recursive: true });
+    writeFileSync(join(dir, file), source);
+  }
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const plantedGraph = (shape: string) =>
+    buildGraph([`${shape}/a.ts`, `${shape}/b.ts`], shape, dir);
+
+  it.each([
+    { shape: 'value', via: 'value imports' },
+    { shape: 'type', via: 'only `import type` edges' },
+  ])('reports a two-file cycle closed through $via', ({ shape }) => {
+    expect(findCycles(plantedGraph(shape))).toEqual([
+      `${shape}/a.ts -> ${shape}/b.ts -> ${shape}/a.ts`,
+    ]);
+  });
+});
+
+describe('npm/src import graph (#1422)', () => {
+  const NPM_GRAPH = graphOf('npm/src');
+  it('has a non-vacuous denominator (files and resolved edges)', () => {
+    // Either zero makes the acyclic check below pass over nothing.
+    expect(NPM_GRAPH.size, 'npm/src: no .ts files').toBeGreaterThan(0);
+    const edges = [...NPM_GRAPH.values()].reduce((n, e) => n + e.length, 0);
+    expect(edges, 'npm/src: no import resolved').toBeGreaterThan(0);
+  });
+
+  it('contains no circular dependencies', () => {
+    const why = 'npm/src import cycles; move the shared types to a leaf module';
+    expect(findCycles(NPM_GRAPH), why).toEqual([]);
   });
 });

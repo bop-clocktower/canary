@@ -249,6 +249,85 @@ describe('harness-report-summary', () => {
     });
   });
 
+  /**
+   * #1369 — `--arch` was requested but the CI report carries no `arch` entry.
+   *
+   * The summariser returned exit 0 here: the arch section looked the check up,
+   * found nothing, and said nothing. A caller that asked for the arch verdict
+   * and got none was told "fine". A missing result is an abstention, not a
+   * pass. Without `--arch` nothing was asked for, so the exit stays 0.
+   */
+  describe('#1369 — a requested arch result that is missing abstains', () => {
+    const noArch = () =>
+      report({ checks: report().checks.filter((c) => c.name !== 'arch') });
+
+    function archDetail(newViolations: unknown[] = []): string {
+      const path = join(dir, 'arch-report.json');
+      writeFileSync(
+        path,
+        JSON.stringify({
+          passed: newViolations.length === 0,
+          mode: 'baseline',
+          totalViolations: newViolations.length,
+          newViolations,
+          resolvedViolations: [],
+          preExisting: [],
+          regressions: [],
+          thresholdViolations: newViolations,
+        }),
+        'utf-8',
+      );
+      return path;
+    }
+
+    function runArch(path: string, archPath: string) {
+      return runCapture(
+        'node',
+        [SCRIPT, path, '--arch', archPath, '--traceability', writeTrace()],
+        { env: { ...process.env } },
+      );
+    }
+
+    it('exits 3 and says the arch result is missing when --arch is passed', () => {
+      const r = runArch(write(noArch()), archDetail());
+      expect(r.status).toBe(3);
+      expect(r.output).toMatch(/::error title=harness arch::[^\n]*missing/i);
+      // The rest of the summary still renders before the verdict.
+      expect(r.output).toContain('validate');
+    });
+
+    it('still exits 1 when the detail report shows a new violation', () => {
+      // Exit 1 outranks exit 3: the known failure is the actionable one.
+      const r = runArch(
+        write(noArch()),
+        archDetail([
+          {
+            id: 'v1',
+            file: 'ts/src/new.ts',
+            category: 'complexity',
+            detail: 'cyclomaticComplexity=31',
+            severity: 'error',
+          },
+        ]),
+      );
+      expect(r.status).toBe(1);
+      expect(r.output).toMatch(/missing/i);
+      expect(r.output).toContain('ts/src/new.ts');
+    });
+
+    it('still exits 3 when the detail report is unreadable too', () => {
+      const r = runArch(write(noArch()), join(dir, 'absent-arch.json'));
+      expect(r.status).toBe(3);
+      expect(r.output).toMatch(/missing/i);
+    });
+
+    it('exits 0 without --arch, because no arch result was requested', () => {
+      const r = run(write(noArch()));
+      expect(r.status).toBe(0);
+      expect(r.output).not.toMatch(/harness arch::/);
+    });
+  });
+
   describe('step summary', () => {
     it('mirrors the summary into GITHUB_STEP_SUMMARY when set', () => {
       const summaryPath = join(dir, 'step-summary.md');

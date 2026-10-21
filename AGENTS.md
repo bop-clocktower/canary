@@ -664,7 +664,9 @@ before lowering a ceiling to match it.
 Every scan, at head and at merge base, runs `"$HARNESS_CLI_EXACT"`, so the
 version passed as `--cli-version` is the version that produced the report. A
 scan that re-resolved `@13` could land on a different 13.x mid-run.
-`ts/test/harness-cli-exact-pin.test.ts` parses the workflow and fails on any
+`harness-security.yml` follows the same pattern (#1401). It also runs on the
+`.nvmrc` Node, because a CLI dependency requires `node >=22.19.0`.
+`ts/test/harness-cli-exact-pin.test.ts` parses both workflows and fails on any
 scan that floats or runs before the resolve step.
 
 **The entropy ceiling only falls, and only the merge base can prove it
@@ -1036,9 +1038,12 @@ no file, and `layer-violations` and `forbidden-imports` ran with `layers: []`
 on the bump `circular-deps` found two real `import type` cycles in `npm/src`
 that `harness check-deps` (the `deps-and-validate` job and the `deps` step of
 `harness ci check`) had never reported. Layer direction and cycles are now gated
-by both, and the arch ratchet is the wider. `scripts/arch-verdict.mjs` prints
-`NOT MEASURED` only for a dependency metric the report's `measurements` block
-cannot show ran. See
+by both, and the arch ratchet is the wider: `check-deps` reads only files its
+layer patterns match, so a value or `import type` cycle planted in `npm/src`
+passes it and fails only the ratchet (#1422). At desk speed,
+`ts/test/import-graph-acyclic.test.ts` checks both `ts/src` and `npm/src`.
+`scripts/arch-verdict.mjs` prints `NOT MEASURED` only for a dependency metric
+the report's `measurements` block cannot show ran. See
 [arch-baseline-semantics](docs/knowledge/gates/arch-baseline-semantics.md).
 
 **A metric that silently improves is a finding (#688).** The arch analyzer skips
