@@ -15,7 +15,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import type { CheckResult } from './doctor.js';
+import type { CheckResult } from './doctor-types.js';
 
 const CHECK_TYPES = [
   'file-exists',

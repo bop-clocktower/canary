@@ -4,7 +4,7 @@
 // echo what a step typed or saw: emails, passwords, bearer tokens. TestTracker
 // is a management dashboard, so none of that may reach it. Redaction is ON by
 // default; `CANARY_INGEST_REDACT=0` (or `false`) turns it off.
-import type { CollectedEntry, ResultEntry } from './payload.js';
+import type { CollectedEntry, ResultEntry } from './types.js';
 
 /** `eyJ…` header, payload, signature: a JWT. Checked before the bare rule. */
 const JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
