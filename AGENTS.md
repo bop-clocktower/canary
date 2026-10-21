@@ -1038,9 +1038,12 @@ no file, and `layer-violations` and `forbidden-imports` ran with `layers: []`
 on the bump `circular-deps` found two real `import type` cycles in `npm/src`
 that `harness check-deps` (the `deps-and-validate` job and the `deps` step of
 `harness ci check`) had never reported. Layer direction and cycles are now gated
-by both, and the arch ratchet is the wider. `scripts/arch-verdict.mjs` prints
-`NOT MEASURED` only for a dependency metric the report's `measurements` block
-cannot show ran. See
+by both, and the arch ratchet is the wider: `check-deps` reads only files its
+layer patterns match, so a value or `import type` cycle planted in `npm/src`
+passes it and fails only the ratchet (#1422). At desk speed,
+`ts/test/import-graph-acyclic.test.ts` checks both `ts/src` and `npm/src`.
+`scripts/arch-verdict.mjs` prints `NOT MEASURED` only for a dependency metric
+the report's `measurements` block cannot show ran. See
 [arch-baseline-semantics](docs/knowledge/gates/arch-baseline-semantics.md).
 
 **A metric that silently improves is a finding (#688).** The arch analyzer skips
