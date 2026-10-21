@@ -1,0 +1,18 @@
+{
+  "issues": [1400],
+  "route": "security",
+  "fleet": "security-fleet",
+  "evidenceClass": "reachable-sink",
+  "cwe": "CWE-1333",
+  "scope": "part 1 only (JWT redaction ReDoS); part 2 (redactEntry idempotency) handed to the build pipeline",
+  "stages": ["debugging"],
+  "reproducingTest": "npm/scripts/__tests__/ingest-redact.test.js",
+  "baseSha": "4608f963853f6ba586b48ea480888a23426779bd",
+  "reproFailure": "At base: '#1400 the JWT rule stays linear on a long run of eyJ- with no dot (CWE-1333)' -> took 16282 ms (bound 500 ms); '#1400 the JWT rule stays linear when the run ends in a single dotted segment' -> took 8842 ms. Raw regex timings at base: 8 KB 7 ms, 64 KB 456 ms, 256 KB 13552 ms. After fix: 8 KB 0.2 ms, 64 KB 0.3 ms, 256 KB 1.0 ms.",
+  "closingKeyword": "Refs",
+  "assumptions": [
+    "The fix preserves the old regex's match set exactly rather than switching to a plain (?<![A-Za-z0-9_-]) lookbehind, which would have stopped redacting a JWT preceded by '-' (a weakening of a security control). Equivalence is pinned by a seeded 5000-case differential test against the old regex (and was checked ad hoc on 300k random inputs, 0 differences).",
+    "A JWT glued to a word character ('xeyJ...', '_eyJ...') is still not a JWT start, as under the old \\b; this PR does not widen the rule. The bare-credential rule still catches long segments in failure text.",
+    "Timing bounds of 500 ms at 256 KB leave ~500x headroom over the fixed cost (~1 ms) and fail at base by ~16x, so they are not expected to flake on slow CI runners."
+  ]
+}
