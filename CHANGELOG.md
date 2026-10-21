@@ -29,6 +29,17 @@ under the project's former name) are documented in the
   ratchets are re-stamped to 13.0.0; their counts were identical on 12.10.1 and
   13.0.0.
 
+### Fixed
+
+- **The engine's lockfile moves hono to 4.13.13**
+  ([GHSA-5r4p-p66f-jhc7](https://github.com/advisories/GHSA-5r4p-p66f-jhc7)).
+  `ts/package-lock.json` resolved hono 4.13.7, pulled in by
+  `@modelcontextprotocol/sdk`, and hono 4.12.4 to 4.13.10 has a `serveStatic`
+  double-decode that can bypass middleware on static paths. Canary never imports
+  hono or `serveStatic`, and its MCP server runs over stdio, so nothing was
+  reachable. The bump only clears the audit finding. It changes the lockfile and
+  nothing else: no manifest edit, no other package moves.
+
 ### Removed
 
 - `ts/test/harness-complexity-eof.test.ts`, the #587 characterization pin. The
