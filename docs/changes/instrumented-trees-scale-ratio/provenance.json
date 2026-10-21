@@ -1,0 +1,15 @@
+{
+  "issues": [1402],
+  "route": "cicd",
+  "stages": ["debugging", "tdd"],
+  "reproducingTest": "ts/test/guardian-instrumented-trees-scale.test.ts",
+  "baseSha": "4608f963",
+  "reproFailure": "Mutation probe (quadratic spread in anchoredGroups, not committed): final test FAILS at 165.9x plain and 164.9x under vitest --coverage (bound 15x). Real implementation: 10/10 plain (10.33-10.85x), 12/12 coverage (10.06-10.57x), 2/2 full npm test (10.33, 11.07x).",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "DECIDED (human): fork (a) -- complexity-ratio assertion time(100k)/time(10k) <= 15; no absolute millisecond bound remains.",
+    "Estimator: one warm-up per size, then 7 interleaved repetitions, minimum per size.",
+    "120s per-test timeout kept; a quadratic regression may trip it before the assertion on slow runners, which is still red.",
+    "Test-only change: no CHANGELOG entry (matches #1358)."
+  ]
+}
