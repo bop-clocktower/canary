@@ -98,4 +98,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0039](0039-canary-ivy-report-only.md)                                    | canary-ivy reports suite overgrowth and never recommends deleting a test  | accepted |
 | [0040](0040-gen-data-schema-first-shape-source.md)                        | gen-data shapes come from a schema first; the compiler API is opt-in      | accepted |
 | [0041](0041-gen-data-no-model-in-value-path.md)                           | No model sits in gen-data's value path                                    | accepted |
-| [0043](0043-route-roadmap-issues-get-a-roadmap-row-at-routing.md)         | `route:roadmap` issues get a roadmap row at routing time                  | proposed |
+| [0043](0043-route-roadmap-issues-get-a-roadmap-row-at-routing.md)         | `route:roadmap` issues get a roadmap row at routing time                  | accepted |

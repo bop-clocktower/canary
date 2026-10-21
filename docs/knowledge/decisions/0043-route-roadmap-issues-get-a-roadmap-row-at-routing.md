@@ -2,7 +2,7 @@
 number: 0043
 title: route:roadmap issues get a roadmap row at routing time
 date: 2026-10-21
-status: proposed
+status: accepted
 tier: medium
 source: https://github.com/bop-clocktower/canary/issues/1387
 ---
@@ -11,7 +11,7 @@ source: https://github.com/bop-clocktower/canary/issues/1387
 
 # ADR 0043 — `route:roadmap` issues get a roadmap row at routing time
 
-**Status:** proposed **Date:** 2026-10-21 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-10-21 **Deciders:** Bri Stevenski
 (maintainer) **Related:**
 [#1387](https://github.com/bop-clocktower/canary/issues/1387); ADR 0034
 (`route:*` labels are canary's half of the issue-fleet contract); ADR 0009 (exit
