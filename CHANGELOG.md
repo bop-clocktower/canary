@@ -14,6 +14,28 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **CI tracks harness 13 (`@harness-engineering/cli@13`).** All six workflow
+  pins move from `@12`. harness 13 makes the arch ratchet measure
+  `circular-deps`, `layer-violations` and `forbidden-imports` for the first time
+  (Intense-Visions/harness-engineering#2235), and it found two `import type`
+  cycles in `npm/src` that no gate had reported. Both are broken by moving the
+  shared types into leaf modules (`npm/src/doctor-types.ts`,
+  `npm/src/reporters/ingest/types.ts`), with the original modules re-exporting
+  them, so the published types are unchanged. `scripts/arch-verdict.mjs` now
+  prints its `NOT MEASURED` caveat from the report's `measurements` block rather
+  than for all three metrics unconditionally. The entropy, perf and docs
+  ratchets are re-stamped to 13.0.0; their counts were identical on 12.10.1 and
+  13.0.0.
+
+### Removed
+
+- `ts/test/harness-complexity-eof.test.ts`, the #587 characterization pin. The
+  upstream `functionLength`-to-EOF defect no longer reproduces on 12.10.1 or
+  13.0.0 (string-brace, comment-brace and one-line-arrow shapes, each beside a
+  live 62-line positive control).
+
 ## [9.4.0] - 2026-10-19
 
 ### Security
