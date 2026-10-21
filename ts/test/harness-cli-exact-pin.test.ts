@@ -187,3 +187,60 @@ describe('harness-quality.yml pins every scan to the resolved CLI (#1248)', () =
 function stepsOf(wf: Workflow): Step[] {
   return wf.jobs.validate!.steps!;
 }
+
+/**
+ * #1401: the required `security` check ran `npx -p "$HARNESS_CLI"` in each of
+ * its three steps, so one job re-resolved the floating major three times. Run
+ * 39298544259 failed `harness validate` with exit 1 and no output, then went
+ * green on rerun at the same SHA. That cause was never reproduced. Pinning the
+ * job to one resolved version removes one source of run-to-run variance and
+ * puts the exact version in the log.
+ */
+describe('harness-security.yml pins every scan to the resolved CLI (#1401)', () => {
+  const SECURITY = join(
+    REPO_ROOT,
+    '.github',
+    'workflows',
+    'harness-security.yml',
+  );
+  const securityText = (): string => readFileSync(SECURITY, 'utf8');
+
+  it('finds every scan it guards (denominator, not a vacuous pass)', () => {
+    const wf = load(securityText());
+    const resolve = wf.jobs.security!.steps!.findIndex(
+      (s) => s.id === RESOLVE_ID,
+    );
+    const subs = scans(wf)
+      .filter((s) => s.index !== resolve)
+      .map((s) => s.sub)
+      .sort();
+    expect(subs).toEqual(['check-deps', 'check-security', 'validate']);
+  });
+
+  it('runs no scan on the floating pin, and none before the resolve step', () => {
+    expect(violations(load(securityText()))).toEqual([]);
+  });
+
+  it('exports the exact version from the resolve step', () => {
+    const resolve = load(securityText()).jobs.security!.steps!.find(
+      (s) => s.id === RESOLVE_ID,
+    )!;
+    expect(resolve.run).toMatch(
+      /npx --yes -p "\$HARNESS_CLI" harness --version/,
+    );
+    expect(resolve.run).toMatch(
+      /echo "HARNESS_CLI_EXACT=\$\{HARNESS_CLI%@\*\}@\$resolved" >> "\$GITHUB_ENV"/,
+    );
+  });
+
+  it('catches a planted scan back on the floating $HARNESS_CLI', () => {
+    const planted = securityText().replace(
+      /"\$HARNESS_CLI_EXACT" harness check-deps/,
+      '"$HARNESS_CLI" harness check-deps',
+    );
+    expect(planted).not.toBe(securityText());
+    expect(violations(load(planted))).toEqual([
+      expect.stringMatching(/Check dependencies .*uses \$HARNESS_CLI/),
+    ]);
+  });
+});

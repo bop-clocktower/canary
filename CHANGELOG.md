@@ -29,6 +29,18 @@ under the project's former name) are documented in the
   ratchets are re-stamped to 13.0.0; their counts were identical on 12.10.1 and
   13.0.0.
 
+### Fixed
+
+- **The required `security` check runs on the pinned Node and one resolved CLI,
+  and a red `harness validate` explains itself (#1401).** `harness-security.yml`
+  ran Node 20, below a CLI dependency's `node >=22.19.0`, and re-resolved the
+  floating harness major in every step. It now uses `.nvmrc` and the #1248
+  `HARNESS_CLI_EXACT` pin, runs `harness validate --json`, and on failure logs
+  the exit code and the result (or says the result was empty) and uploads it as
+  an artifact. The original no-output failure was never reproduced. This change
+  removes the nondeterministic inputs and adds diagnostics. It does not prove a
+  root cause.
+
 ### Removed
 
 - `ts/test/harness-complexity-eof.test.ts`, the #587 characterization pin. The
