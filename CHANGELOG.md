@@ -41,21 +41,19 @@ under the project's former name) are documented in the
   removes the nondeterministic inputs and adds diagnostics. It does not prove a
   root cause.
 
-### Removed
-
-- `ts/test/harness-complexity-eof.test.ts`, the #587 characterization pin. The
-  upstream `functionLength`-to-EOF defect no longer reproduces on 12.10.1 or
-  13.0.0 (string-brace, comment-brace and one-line-arrow shapes, each beside a
-  live 62-line positive control).
-
-### Fixed
-
 - **The ingest reporter's JWT redaction rule is linear-time (#1400, CWE-1333).**
   The old `\beyJ…` regex retried from every `eyJ` in a run of token characters,
   so a test failure echoing `eyJ-eyJ-…` stalled the run before truncation (256
   KB took ~13 s). The rule now scans each dot-separated run once (256 KB: ~1 ms)
   and redacts exactly what the old regex did, pinned by a differential test
   against it.
+
+### Removed
+
+- `ts/test/harness-complexity-eof.test.ts`, the #587 characterization pin. The
+  upstream `functionLength`-to-EOF defect no longer reproduces on 12.10.1 or
+  13.0.0 (string-brace, comment-brace and one-line-arrow shapes, each beside a
+  live 62-line positive control).
 
 ## [9.4.0] - 2026-10-19
 
