@@ -63,8 +63,10 @@ job, be invoked in command position, and read the same file via `--arch`. It
 must be able to fail: no `||` fallback, pipe, `set +e` or trailing `; true`, and
 no `continue-on-error` at step or job level. Its condition must be exactly
 `!cancelled()` or `always()`, so a failed earlier step cannot skip it. And
-`harness ci check` must not `--skip arch`, because the summariser consults the
-arch detail only when the CI report has an `arch` entry.
+`harness ci check` must not `--skip arch`. Since #1369 the summariser abstains
+(exit 3) when `--arch` is passed and the CI report has no `arch` entry. A new
+violation in the detail report still exits 1. So a skip turns the job red rather
+than green, and that red is noise, not a verdict.
 
 `refresh-arch-baseline.yml` swallows the same capture, and its consumer,
 `scripts/refresh-arch-baseline.mjs`, also exits 3 on a missing, empty or
@@ -98,7 +100,22 @@ there all along, in `npm/src` (`doctor.ts` and its check producers;
 `import type` edges and were broken by moving the shared types into leaf
 modules. Neither was caught by `harness check-deps`, which analyzes 468 modules
 against the 858 files the arch collector walks, nor by
-`ts/test/import-graph-acyclic.test.ts`, which covers `ts/src` only.
+`ts/test/import-graph-acyclic.test.ts`, which then covered `ts/src` only.
+
+Planting both shapes in a throwaway tree (#1422, harness 13.0.0) located the
+`check-deps` miss in scope, not in edge kinds:
+
+| planted 2-file cycle     | `check-deps` | arch `circular-deps` |
+| ------------------------ | ------------ | -------------------- |
+| value, `ts/src`          | fails        | 1                    |
+| `import type`, `ts/src`  | fails        | 1                    |
+| value, `npm/src`         | passes       | 1                    |
+| `import type`, `npm/src` | passes       | 1                    |
+
+`check-deps` counts type-only edges but reads only files its layer patterns
+match, and no pattern matches `npm/src`, so its module count does not move.
+`import-graph-acyclic.test.ts` now also checks `npm/src`, and plants both shapes
+in a temp dir at test time (committed, they would trip these same ratchets).
 
 So layer direction and cycles are now gated twice: by the arch ratchet, and by
 `harness check-deps` in the `deps-and-validate` job (`harness-architecture.yml`)
