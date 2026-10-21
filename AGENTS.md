@@ -664,7 +664,9 @@ before lowering a ceiling to match it.
 Every scan, at head and at merge base, runs `"$HARNESS_CLI_EXACT"`, so the
 version passed as `--cli-version` is the version that produced the report. A
 scan that re-resolved `@13` could land on a different 13.x mid-run.
-`ts/test/harness-cli-exact-pin.test.ts` parses the workflow and fails on any
+`harness-security.yml` follows the same pattern (#1401). It also runs on the
+`.nvmrc` Node, because a CLI dependency requires `node >=22.19.0`.
+`ts/test/harness-cli-exact-pin.test.ts` parses both workflows and fails on any
 scan that floats or runs before the resolve step.
 
 **The entropy ceiling only falls, and only the merge base can prove it

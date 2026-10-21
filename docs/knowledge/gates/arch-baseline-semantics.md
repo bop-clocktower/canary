@@ -63,8 +63,10 @@ job, be invoked in command position, and read the same file via `--arch`. It
 must be able to fail: no `||` fallback, pipe, `set +e` or trailing `; true`, and
 no `continue-on-error` at step or job level. Its condition must be exactly
 `!cancelled()` or `always()`, so a failed earlier step cannot skip it. And
-`harness ci check` must not `--skip arch`, because the summariser consults the
-arch detail only when the CI report has an `arch` entry.
+`harness ci check` must not `--skip arch`. Since #1369 the summariser abstains
+(exit 3) when `--arch` is passed and the CI report has no `arch` entry. A new
+violation in the detail report still exits 1. So a skip turns the job red rather
+than green, and that red is noise, not a verdict.
 
 `refresh-arch-baseline.yml` swallows the same capture, and its consumer,
 `scripts/refresh-arch-baseline.mjs`, also exits 3 on a missing, empty or
