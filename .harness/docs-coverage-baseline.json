@@ -12,5 +12,5 @@
   "measuredScanned": 416,
   "measuredPercent": 18.27,
   "harnessCli": "13.0.0",
-  "$restamp2": "2026-10-21, the @12 -> @13 pin bump (12.10.1 -> 13.0.0): CLI-INDEPENDENT. Measured in a fresh worktree of origin/main 6d516138 under both 12.10.1 and 13.0.0 with every consumed subcommand captured to a file: `harness check-docs --json` reads 75/414 on main under both CLIs; the bump branch reads 76/416. The floor moves up to the value docs-ratchet.mjs itself recommended (coverage sat 1.41 points above it, past maxHeadroom)."
+  "$restamp2": "2026-10-21, the @12 -> @13 pin bump (12.10.1 -> 13.0.0): CLI-INDEPENDENT. Measured in a fresh worktree of origin/main 5d74d92c under both 12.10.1 and 13.0.0 with every consumed subcommand captured to a file: `harness check-docs --json` reads 75/414 on main under both CLIs; the bump branch reads 76/416. The floor moves up to the value docs-ratchet.mjs itself recommended (coverage sat 1.41 points above it, past maxHeadroom)."
 }
