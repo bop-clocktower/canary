@@ -72,6 +72,8 @@ const GIT_ID = [
   'user.email=canary-test@example.invalid',
   '-c',
   'commit.gpgsign=false',
+  '-c',
+  'core.hooksPath=/dev/null',
 ];
 
 /**
@@ -79,6 +81,17 @@ const GIT_ID = [
  * guardian cannot parse: no `a/`/`b/` prefixes and forced ANSI colour.
  */
 function hostileRepo(): string {
+  // Inside a git hook (pre-commit, pre-push, rebase exec) these are exported
+  // and point at the canary checkout; left set, `git config` below would write
+  // the hostile settings into the real repo instead of the temp one.
+  for (const k of [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_CONFIG_PARAMETERS',
+  ]) {
+    setEnv(k, undefined);
+  }
   const dir = mkTmp('guardian-default-deps-git-');
   const git = defaultDeps().runGit;
   expect(git(['init', '-q'], dir)?.code).toBe(0);
