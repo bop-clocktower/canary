@@ -2,7 +2,7 @@
 number: 0042
 title: Bin verification gates the latest advance, not the GitHub Release
 date: 2026-10-21
-status: proposed
+status: accepted
 tier: small
 source: https://github.com/bop-clocktower/canary/issues/1392
 ---
@@ -11,7 +11,7 @@ source: https://github.com/bop-clocktower/canary/issues/1392
 
 # ADR 0042 — Bin verification gates the latest advance, not the GitHub Release
 
-**Status:** proposed **Date:** 2026-10-21 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-10-21 **Deciders:** Bri Stevenski
 (maintainer) **Related:**
 [#1392](https://github.com/bop-clocktower/canary/issues/1392) (this decision);
 [#1332](https://github.com/bop-clocktower/canary/issues/1332) (original
