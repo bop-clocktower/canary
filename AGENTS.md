@@ -608,7 +608,7 @@ neither run directly nor left inside `ci check` (`--skip phase-gate`).
 must be run by each workflow it names, and an abstaining gate may not reappear.
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
-workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@12'` — rather
+workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@13'` — rather
 than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
 silent CI break with nothing to roll back to.
@@ -663,8 +663,10 @@ before lowering a ceiling to match it.
 `HARNESS_CLI` once and exports `HARNESS_CLI_EXACT` (`<package>@<resolved>`).
 Every scan, at head and at merge base, runs `"$HARNESS_CLI_EXACT"`, so the
 version passed as `--cli-version` is the version that produced the report. A
-scan that re-resolved `@12` could land on a different 12.x mid-run.
-`ts/test/harness-cli-exact-pin.test.ts` parses the workflow and fails on any
+scan that re-resolved `@13` could land on a different 13.x mid-run.
+`harness-security.yml` follows the same pattern (#1401). It also runs on the
+`.nvmrc` Node, because a CLI dependency requires `node >=22.19.0`.
+`ts/test/harness-cli-exact-pin.test.ts` parses both workflows and fails on any
 scan that floats or runs before the resolve step.
 
 **The entropy ceiling only falls, and only the merge base can prove it
@@ -704,20 +706,21 @@ before you push. It is, but only from a clean tree:
 ```bash
 git worktree add ../canary-entropy origin/main --detach
 cd ../canary-entropy
-npx --yes -p '@harness-engineering/cli@12' harness cleanup --findings-json \
+npx --yes -p '@harness-engineering/cli@13' harness cleanup --findings-json \
   > /tmp/entropy-report.txt || true
 node scripts/entropy-ratchet.mjs --report /tmp/entropy-report.txt \
-  --cli-version "$(npx --yes -p '@harness-engineering/cli@12' harness --version)"
+  --cli-version "$(npx --yes -p '@harness-engineering/cli@13' harness --version)"
 ```
 
 `--cli-version` is not optional in practice (#744). The pin is a floating major,
 so the analyzer behind this absolute count changes with no commit here — it
 moved three times, most recently 147 -> 135 on the @11 -> @12 bump — the first
-one the abstention caught before it landed — and the ratchet abstains rather
-than compare a count to a ceiling calibrated against a different instrument.
-Omitting the flag is itself an abstention: "cannot verify" is a finding, not a
-skip. If it fires, re-measure and move `measuredCount` and `harnessCli`
-together; do not silence it by deleting `harnessCli` from the baseline.
+one the abstention caught before it landed (the @12 -> @13 bump left it at 140)
+— and the ratchet abstains rather than compare a count to a ceiling calibrated
+against a different instrument. Omitting the flag is itself an abstention:
+"cannot verify" is a finding, not a skip. If it fires, re-measure and move
+`measuredCount` and `harnessCli` together; do not silence it by deleting
+`harnessCli` from the baseline.
 
 No `npm ci` — the gates run on a bare checkout, and so should you. Verified at
 `97bb15f`: CI reported **282** and a fresh worktree reported **282**, an exact
@@ -1027,17 +1030,21 @@ issue #678. Issue #698 renamed both, to **Dependency & project validation** and
 `scripts/arch-verdict.mjs` classifies). Do not put "architecture" back in that
 job's name unless it actually runs `check-arch`.
 
-**The arch ratchet is not the layer or cycle gate (#1164).** In harness 12.10.1
-three of its seven metrics are 0 by construction: `circular-deps` parses no file
-(stub parser, zero edges), and `layer-violations` and `forbidden-imports` run
-with `layers: []` (Intense-Visions/harness-engineering#2235). Their `0` in
-`baselines.json` and `timeline.json` is an abstention, and a planted cycle and a
-planted wrong-layer import both left `newViolations` empty. Layer direction,
-forbidden imports and cycles are enforced by `harness check-deps` only, in the
-`deps-and-validate` job above and the `deps` step of `harness ci check`.
-`scripts/arch-verdict.mjs` says so under every verdict (`NOT MEASURED: …`), from
-the `UNMEASURED_ARCH_METRICS` constant. Revisit that constant when canary picks
-up the harness release that fixes #2235.
+**The arch ratchet measures layers and cycles from harness 13 (#1164).** Through
+12.x three of its seven metrics were 0 by construction: `circular-deps` parsed
+no file, and `layer-violations` and `forbidden-imports` ran with `layers: []`
+(Intense-Visions/harness-engineering#2235), so their `0` in `baselines.json` and
+`timeline.json` before the `@13` pin is an abstention. 13.0.0 fixed all three;
+on the bump `circular-deps` found two real `import type` cycles in `npm/src`
+that `harness check-deps` (the `deps-and-validate` job and the `deps` step of
+`harness ci check`) had never reported. Layer direction and cycles are now gated
+by both, and the arch ratchet is the wider: `check-deps` reads only files its
+layer patterns match, so a value or `import type` cycle planted in `npm/src`
+passes it and fails only the ratchet (#1422). At desk speed,
+`ts/test/import-graph-acyclic.test.ts` checks both `ts/src` and `npm/src`.
+`scripts/arch-verdict.mjs` prints `NOT MEASURED` only for a dependency metric
+the report's `measurements` block cannot show ran. See
+[arch-baseline-semantics](docs/knowledge/gates/arch-baseline-semantics.md).
 
 **A metric that silently improves is a finding (#688).** The arch analyzer skips
 55 directory names outright (`coverage`, `dist`, `build`, `bin`, `out`,
@@ -1329,8 +1336,8 @@ preservation, filed upstream.
 the architecture time-series that feeds `harness snapshot trends`, alongside the
 `.harness/security/timeline.json` ledger refreshed by `harness-security.yml`.
 Its `circular-deps`, `layer-violations` and `forbidden-imports` series are flat
-zeros under harness 12.10.1 because nothing is measured (#1164); read them as
-missing data, not as a clean trend.
+zeros through harness 12.x because nothing was measured (#1164); read the
+pre-`@13` points as missing data, not as a clean trend.
 
 **A missed cron run turns red.** A schedule that stops firing produces no failed
 run, so it makes no sound. `arch-snapshot.yml` and the weekly leg of

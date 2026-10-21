@@ -14,6 +14,64 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **CI tracks harness 13 (`@harness-engineering/cli@13`).** All six workflow
+  pins move from `@12`. harness 13 makes the arch ratchet measure
+  `circular-deps`, `layer-violations` and `forbidden-imports` for the first time
+  (Intense-Visions/harness-engineering#2235), and it found two `import type`
+  cycles in `npm/src` that no gate had reported. Both are broken by moving the
+  shared types into leaf modules (`npm/src/doctor-types.ts`,
+  `npm/src/reporters/ingest/types.ts`), with the original modules re-exporting
+  them, so the published types are unchanged. `scripts/arch-verdict.mjs` now
+  prints its `NOT MEASURED` caveat from the report's `measurements` block rather
+  than for all three metrics unconditionally. The entropy, perf and docs
+  ratchets are re-stamped to 13.0.0; their counts were identical on 12.10.1 and
+  13.0.0.
+
+### Fixed
+
+- **The required `security` check runs on the pinned Node and one resolved CLI,
+  and a red `harness validate` explains itself (#1401).** `harness-security.yml`
+  ran Node 20, below a CLI dependency's `node >=22.19.0`, and re-resolved the
+  floating harness major in every step. It now uses `.nvmrc` and the #1248
+  `HARNESS_CLI_EXACT` pin, runs `harness validate --json`, and on failure logs
+  the exit code and the result (or says the result was empty) and uploads it as
+  an artifact. The original no-output failure was never reproduced. This change
+  removes the nondeterministic inputs and adds diagnostics. It does not prove a
+  root cause.
+
+- **The ingest reporter's JWT redaction rule is linear-time (#1400, CWE-1333).**
+  The old `\beyJ…` regex retried from every `eyJ` in a run of token characters,
+  so a test failure echoing `eyJ-eyJ-…` stalled the run before truncation (256
+  KB took ~13 s). The rule now scans each dot-separated run once (256 KB: ~1 ms)
+  and redacts exactly what the old regex did, pinned by a differential test
+  against it.
+
+- **The engine's lockfile moves hono to 4.13.13**
+  ([GHSA-5r4p-p66f-jhc7](https://github.com/advisories/GHSA-5r4p-p66f-jhc7)).
+  `ts/package-lock.json` resolved hono 4.13.7, pulled in by
+  `@modelcontextprotocol/sdk`, and hono 4.12.4 to 4.13.10 has a `serveStatic`
+  double-decode that can bypass middleware on static paths. Canary never imports
+  hono or `serveStatic`, and its MCP server runs over stdio, so nothing was
+  reachable. The bump only clears the audit finding. It changes the lockfile and
+  nothing else: no manifest edit, no other package moves.
+
+- **`scripts/harness-report-summary.mjs --arch` abstains when the CI report has
+  no `arch` entry (#1369).** It exited 0, so a skipped or unrun arch check read
+  as green to a caller that had asked for the arch verdict. It now exits 3 with
+  an `::error title=harness arch::` annotation saying the result is missing. A
+  new violation in the supplied `--arch` detail report still exits 1, which
+  outranks the abstention; before this, that case also exited 0. Without
+  `--arch`, a missing entry still exits 0.
+
+### Removed
+
+- `ts/test/harness-complexity-eof.test.ts`, the #587 characterization pin. The
+  upstream `functionLength`-to-EOF defect no longer reproduces on 12.10.1 or
+  13.0.0 (string-brace, comment-brace and one-line-arrow shapes, each beside a
+  live 62-line positive control).
+
 ## [9.4.0] - 2026-10-19
 
 ### Security

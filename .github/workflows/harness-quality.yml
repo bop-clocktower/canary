@@ -8,7 +8,7 @@ on:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@12'
+  HARNESS_CLI: '@harness-engineering/cli@13'
 
 jobs:
   validate:
@@ -32,7 +32,7 @@ jobs:
 
       # #744. The ratchets below carry a number produced by this CLI (the docs
       # floor since #1241, entropy and perf an ABSOLUTE count),
-      # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@12`),
+      # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@13`),
       # so the analyzer behind those counts changes with no commit to this repo.
       # It moved three times. The first two caught nobody's eye until days
       # later: 11.1.1 -> 11.2.0 took entropy 281 -> 257 (#694), and 11.2.0 ->
@@ -47,7 +47,7 @@ jobs:
       # version below made the ratchet abstain, and the MAJOR guard in
       # `ts/test/entropy-ratchet.test.ts` went red the moment this pin changed.
       # The floating-major hazard is unchanged in kind; what changed is that it
-      # is now loud. A future @12 MINOR can still move these counts silently.
+      # is now loud. A future @13 MINOR can still move these counts silently.
       #
       # Resolving the version here and handing it to the ratchets is what turns
       # that silent drift into a loud abstention. An unresolvable version fails

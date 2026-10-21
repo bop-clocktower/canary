@@ -54,31 +54,45 @@ const ALLOWANCE_DIR = '.harness/arch/allowances/';
 const ALLOWANCE_MIN_MAJOR = 11;
 
 /**
- * Arch metrics that harness 12.10.1 reports as 0 by construction (#1164,
- * Intense-Visions/harness-engineering#2235). `circular-deps` builds its graph
- * with a stub parser whose `parseFile` always fails, so the graph has zero
- * edges; `layer-violations` and `forbidden-imports` call
- * `validateDependencies({ layers: [] })`, so no file resolves to a layer.
- * A planted cycle and a planted wrong-layer import both left `newViolations`
- * empty. Their 0 in `baselines.json` and `timeline.json` is an abstention.
+ * The three arch metrics that harness <= 12.x reported as 0 by construction
+ * (#1164, Intense-Visions/harness-engineering#2235): `circular-deps` built its
+ * graph with a stub parser (zero edges), and `layer-violations` /
+ * `forbidden-imports` validated against `layers: []`. harness 13 fixed all
+ * three and added a `measurements` block carrying each collector's
+ * denominator, so the abstention is now read off the report instead of
+ * assumed: a report with no `measurements` (an older CLI) is treated as all
+ * three unmeasured, exactly as before.
  *
- * This is a named constant rather than a probe on purpose: `check-arch --json`
- * carries no per-metric values to detect the abstention from. REVISIT on the
- * first harness bump that ships the #2235 fix — drop each metric from this
- * list once a planted positive shows it reported.
+ * Each probe returns true when the collector ran over something. An
+ * unconfigured `layers` / `forbiddenImports` block (`*Configured: 0`) is
+ * not-applicable rather than an abstention, matching harness's own warning.
  */
-const UNMEASURED_ARCH_METRICS = Object.freeze([
-  'circular-deps',
-  'layer-violations',
-  'forbidden-imports',
-]);
+const ARCH_DENOMINATORS = Object.freeze({
+  'circular-deps': (m) => m.filesAnalyzed > 0,
+  'layer-violations': (m) => m.layersConfigured === 0 || m.modulesAnalyzed > 0,
+  'forbidden-imports': (m) => m.rulesConfigured === 0 || m.filesAnalyzed > 0,
+});
+
+/** The dependency metrics this report cannot vouch for. */
+function unmeasuredArchMetrics(measurements) {
+  const byCategory = new Map(
+    listOrEmpty(measurements).map((m) => [m?.category, m?.metadata ?? {}]),
+  );
+  return Object.entries(ARCH_DENOMINATORS)
+    .filter(([category, ran]) => {
+      const metadata = byCategory.get(category);
+      return !metadata || metadata.skipped === true || !ran(metadata);
+    })
+    .map(([category]) => category);
+}
 
 /** Says what the verdict above it did NOT cover, and where that is gated. */
-function unmeasuredLines() {
+function unmeasuredLines(unmeasured) {
+  if (unmeasured.length === 0) return [];
   return [
-    `  NOT MEASURED: ${UNMEASURED_ARCH_METRICS.join(', ')} — harness 12.10.1 records these as 0 whatever the code` +
-      ` does (Intense-Visions/harness-engineering#2235), so this verdict says nothing about layers, forbidden imports` +
-      ` or cycles. Those are gated by \`harness check-deps\` (the deps-and-validate check and the \`deps\` step of \`harness ci check\`).`,
+    `  NOT MEASURED: ${unmeasured.join(', ')} — this report shows no analysis behind these (no \`measurements\` from` +
+      ` harness <= 12.x, Intense-Visions/harness-engineering#2235, or a zero denominator), so this verdict says nothing about` +
+      ` them. Layers, forbidden imports and cycles are also gated by \`harness check-deps\` (the deps-and-validate check and the \`deps\` step of \`harness ci check\`).`,
   ];
 }
 
@@ -153,6 +167,7 @@ function readArchShape(fields) {
     mode: String(fields.mode ?? 'unknown'),
     newViolations,
     regressions,
+    unmeasured: unmeasuredArchMetrics(fields.measurements),
   };
 }
 
@@ -303,12 +318,13 @@ const LINES_BY_VERDICT = {
 
 /**
  * Human-readable lines for a verdict. `unknown` is rendered by the caller.
- * Every verdict ends with the #1164 caveat: a reader of `clean` must not take
- * it as evidence about layers or cycles.
+ * Every verdict ends with the #1164 caveat whenever the report cannot show
+ * its dependency collectors ran: a reader of `clean` must not take an
+ * unmeasured 0 as evidence about layers or cycles.
  */
 export function archVerdictLines(v) {
   const render = LINES_BY_VERDICT[v.verdict] ?? LINES_BY_VERDICT.clean;
-  return [...render(v), ...unmeasuredLines()];
+  return [...render(v), ...unmeasuredLines(v.unmeasured ?? [])];
 }
 
 /** GitHub annotations — one per verdict, since the arch check emits none. */

@@ -18,7 +18,7 @@ permissions:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@12'
+  HARNESS_CLI: '@harness-engineering/cli@13'
 
 jobs:
   security:
@@ -26,19 +26,73 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # #1401: run on the Node the repo pins. On Node 20 the CLI install
+      # warned EBADENGINE (a dependency declares node >=22.19.0), and run
+      # 39298544259 failed `harness validate` with exit 1 and no output.
+      # That failure was never reproduced; this removes one variable from it.
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
 
+      # #1401, copying #1248 in harness-quality.yml: resolve the floating major
+      # ONCE, then every scan below runs `"$HARNESS_CLI_EXACT"`. Before this,
+      # each step re-ran `npx -p "$HARNESS_CLI"`, so one job resolved `@13`
+      # three times and the log never said which version ran. The float stays
+      # at the workflow level on purpose: CI tracks upstream, just not mid-run.
+      # `ts/test/harness-cli-exact-pin.test.ts` fails on a scan that floats.
+      - name: Resolve harness CLI version
+        id: harness-cli
+        run: |
+          resolved="$(npx --yes -p "$HARNESS_CLI" harness --version 2>/dev/null \
+            | tail -n 1 | tr -d '[:space:]')"
+          if ! printf '%s' "$resolved" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "Could not resolve a version from '$HARNESS_CLI' (got '$resolved')." >&2
+            exit 1
+          fi
+          echo "Resolved $HARNESS_CLI to $resolved"
+          echo "HARNESS_CLI_EXACT=${HARNESS_CLI%@*}@$resolved" >> "$GITHUB_ENV"
+
+      # #1401: a red validate must explain itself. `--json` gives a result to
+      # print. On failure the log gets the exit code, the CLI version and the
+      # result, or a line saying the result was empty. An empty result means
+      # the CLI died before it reported, which is not an architecture
+      # violation. The exit code is kept, so the gate stays red.
+      # `ts/test/harness-security-workflow.test.ts` runs this script under a
+      # stub npx. The result is also uploaded below (#588): the log copy is
+      # for reading, the artifact is the record.
       - name: Validate architecture
-        run: npx --yes -p "$HARNESS_CLI" harness validate
+        run: |
+          rc=0
+          npx --yes -p "$HARNESS_CLI_EXACT" harness validate --json \
+            > harness-validate.json || rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "harness validate passed ($HARNESS_CLI_EXACT)"
+            exit 0
+          fi
+          echo "::error title=harness validate failed::harness validate exited $rc ($HARNESS_CLI_EXACT, node $(node --version 2>/dev/null || echo unknown))"
+          if [ -s harness-validate.json ]; then
+            echo "harness validate result:"
+            cat harness-validate.json
+            echo
+          else
+            echo "harness validate wrote no JSON result: the CLI exited before reporting (install or runtime failure, not a validation finding). See npm output above."
+          fi
+          exit "$rc"
+
+      - name: Upload harness validate result
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: harness-validate
+          path: harness-validate.json
+          if-no-files-found: warn
 
       - name: Check dependencies
-        run: npx --yes -p "$HARNESS_CLI" harness check-deps
+        run: npx --yes -p "$HARNESS_CLI_EXACT" harness check-deps
 
       - name: Run security scan
         run: |
-          npx --yes -p "$HARNESS_CLI" harness check-security \
+          npx --yes -p "$HARNESS_CLI_EXACT" harness check-security \
             --severity error
 
       - name: Refresh security ledger

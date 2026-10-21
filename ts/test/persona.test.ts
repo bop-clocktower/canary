@@ -24,6 +24,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { detectUserLevel } from '../src/core/environment-detect.js';
@@ -158,7 +159,14 @@ describe('shipped persona registry', () => {
   it('agrees with the live detector on a code-shaped project', () => {
     // Contract test across the #341 seam: the detector's own output must be a
     // resolvable input, not merely a string that happens to look like one.
-    const [level, signals] = detectUserLevel(process.cwd(), ['src/thing.ts']);
+    //
+    // Anchored on the `ts/` package (derived from this file, not
+    // `process.cwd()`): its `package.json` and `vitest.config.ts` supply the
+    // second and third independent signal kinds the persona floor requires.
+    // From any other cwd — e.g. the repo root, which has neither — only the
+    // open-file signal fires and resolution correctly falls back (#1370).
+    const tsPackageDir = fileURLToPath(new URL('..', import.meta.url));
+    const [level, signals] = detectUserLevel(tsPackageDir, ['src/thing.ts']);
     const resolved = resolvePersona({
       detected: { level, confidence: 1, signals },
       home: BARE,

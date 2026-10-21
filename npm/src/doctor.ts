@@ -40,21 +40,10 @@ import {
   type SkipEntry,
 } from './gate-result.js';
 
+import type { CheckResult, CheckStatus } from './doctor-types.js';
+
 export { EXIT_ABSTAINED };
-
-/** Outcome of a single doctor check. */
-export type CheckStatus = 'pass' | 'fail' | 'skip' | 'info';
-
-/** A single doctor check result, rendered as one output line. */
-export interface CheckResult {
-  /** Stable identifier (engine check id, or the manifest check's `id`). */
-  id: string;
-  status: CheckStatus;
-  /** Human-readable label for the check line. */
-  label: string;
-  /** Shown indented under the line when the check does not pass. */
-  remedy?: string;
-}
+export type { CheckResult, CheckStatus } from './doctor-types.js';
 
 /** Dependencies for `doctor`, injectable for tests (real ones by default). */
 export interface DoctorDeps extends CommandDeps {

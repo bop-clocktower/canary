@@ -4,10 +4,42 @@
 // echo what a step typed or saw: emails, passwords, bearer tokens. TestTracker
 // is a management dashboard, so none of that may reach it. Redaction is ON by
 // default; `CANARY_INGEST_REDACT=0` (or `false`) turns it off.
-import type { CollectedEntry, ResultEntry } from './payload.js';
+import type { CollectedEntry, ResultEntry } from './types.js';
 
-/** `eyJ…` header, payload, signature: a JWT. Checked before the bare rule. */
-const JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
+/**
+ * A maximal run of dot-separated token segments. `.` is not a segment
+ * character, so the pattern has one way to match and stays linear.
+ */
+const DOTTED_RUN = /[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/g;
+/** A JWT may start a segment or follow a `-` in it (the old `\b`), never a word char. */
+const JWT_START = /(?:^|-)(eyJ[A-Za-z0-9_-])/;
+
+/**
+ * `eyJ…` header, payload, signature: a JWT. Checked before the bare rule.
+ *
+ * Same matches as `/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g`,
+ * which was quadratic (#1400, CWE-1333): it retried from every `eyJ` in a run
+ * and rescanned the run each time. Every start in one segment shares the same
+ * tail, so only the leftmost start per segment is tried, once per dotted run.
+ */
+function redactJwts(text: string): string {
+  return text.replace(DOTTED_RUN, (run) => {
+    const segs = run.split('.');
+    const out: string[] = [];
+    let i = 0;
+    while (i < segs.length) {
+      const start = i + 2 < segs.length ? JWT_START.exec(segs[i]) : null;
+      if (!start) {
+        out.push(segs[i++]);
+        continue;
+      }
+      const at = start.index + start[0].length - start[1].length;
+      out.push(`${segs[i].slice(0, at)}<token>`);
+      i += 3;
+    }
+    return out.join('.');
+  });
+}
 // The lookbehind starts a match only at the beginning of a run, which keeps a
 // long run with no `@` linear instead of quadratic (8 KB stacks go through it).
 const EMAIL =
@@ -56,9 +88,7 @@ function replaceNamed(text: string, env: NodeJS.ProcessEnv): string {
 
 /** The rules a test title gets: named secrets, JWTs and emails. Never the bare rule. */
 function titleRules(text: string, env: NodeJS.ProcessEnv): string {
-  return replaceNamed(text, env)
-    .replace(JWT, '<token>')
-    .replace(EMAIL, '<email>');
+  return redactJwts(replaceNamed(text, env)).replace(EMAIL, '<email>');
 }
 
 /**

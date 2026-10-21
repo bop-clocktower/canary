@@ -3,26 +3,9 @@ import type { FullResult } from "@playwright/test/reporter";
 import crypto from "node:crypto";
 import type { ResolvedConfig } from "./config.js";
 import { redactCatalog, redactEntry, redactText } from "./redact.js";
+import type { CollectedEntry, ResultEntry } from "./types.js";
 
-export interface ResultEntry {
-  full_title: string;
-  test_file: string;
-  status: string;
-  duration_ms?: number;
-  error_message?: string;
-  error_stack?: string;
-  retries: number;
-  tags: string[];
-  area?: string;
-}
-
-/** One test the run collected, whether or not it ran (the suite's denominator). */
-export interface CollectedEntry {
-  full_title: string;
-  test_file: string;
-  tags: string[];
-  area?: string;
-}
+export type { CollectedEntry, ResultEntry } from "./types.js";
 
 /**
  * The wire contract POSTed to `/api/ingest/runs`. Declared explicitly (rather
