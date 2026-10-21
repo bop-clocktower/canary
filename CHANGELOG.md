@@ -57,6 +57,14 @@ under the project's former name) are documented in the
   reachable. The bump only clears the audit finding. It changes the lockfile and
   nothing else: no manifest edit, no other package moves.
 
+- **`scripts/harness-report-summary.mjs --arch` abstains when the CI report has
+  no `arch` entry (#1369).** It exited 0, so a skipped or unrun arch check read
+  as green to a caller that had asked for the arch verdict. It now exits 3 with
+  an `::error title=harness arch::` annotation saying the result is missing. A
+  new violation in the supplied `--arch` detail report still exits 1, which
+  outranks the abstention; before this, that case also exited 0. Without
+  `--arch`, a missing entry still exits 0.
+
 ### Removed
 
 - `ts/test/harness-complexity-eof.test.ts`, the #587 characterization pin. The

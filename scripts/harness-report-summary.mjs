@@ -47,7 +47,12 @@
 //       this script cannot see (below), and when an `--arch` report WAS
 //       supplied but is unreadable or lacks `newViolations` — now that this
 //       script gates new violations, a crashed `check-arch` must not read as
-//       "none new".
+//       "none new". And when `--arch` WAS passed but the CI report has no
+//       `arch` check entry at all (#1369): the arch verdict was asked for and
+//       the report holds none, so a skipped or unrun arch check cannot read as
+//       green. A new violation in the supplied detail report still exits 1
+//       there, per the precedence above. Without `--arch` a missing entry
+//       stays exit 0 — nothing was requested.
 //
 // The `traceability` check gets the same treatment, for a harder reason. It is
 // a pure function of `.harness/graph/graph.json`, which is gitignored and
@@ -202,7 +207,7 @@ function annotations(report) {
  */
 function archSection(report, archPath) {
   const check = report.checks.find((c) => c.name === 'arch');
-  if (!check) return { lines: [], annotations: [], exitCode: 0 };
+  if (!check) return missingArchSection(report, archPath);
   const failing = check.status === 'fail' || check.status === 'warn';
 
   if (archPath === undefined) {
@@ -239,6 +244,38 @@ function archSection(report, archPath) {
     lines: archVerdictLines(verdict),
     annotations: archAnnotations(verdict),
     exitCode: verdict.newCount > 0 ? 1 : 0,
+  };
+}
+
+/**
+ * `--arch` was passed but the CI report has no `arch` entry (#1369).
+ *
+ * The caller asked for an arch verdict and the report holds none, so this is an
+ * abstention (exit 3), not a quiet pass. The supplied detail report is still
+ * read: a new violation in it is a known failure, and exit 1 outranks exit 3
+ * here as everywhere else in this file. Without `--arch`, nothing was asked
+ * for and the section stays silent.
+ */
+function missingArchSection(report, archPath) {
+  if (archPath === undefined)
+    return { lines: [], annotations: [], exitCode: 0 };
+  const message =
+    `arch — RESULT MISSING: \`--arch\` was requested but the CI report has no \`arch\` check entry ` +
+    `(${report.checks.length} check(s) present), so the arch result was not verified. ` +
+    'A skipped or unrun arch check is an abstention, not a pass.';
+  const missing = {
+    lines: [message],
+    annotations: [`::error title=harness arch::${message}`],
+  };
+  const loaded = loadArchReport(archPath);
+  const verdict = loaded.ok ? classifyArchReport(loaded.report) : undefined;
+  if (verdict === undefined || verdict.verdict === 'unknown') {
+    return { ...missing, exitCode: 3 };
+  }
+  return {
+    lines: [...missing.lines, ...archVerdictLines(verdict)],
+    annotations: [...missing.annotations, ...archAnnotations(verdict)],
+    exitCode: verdict.newCount > 0 ? 1 : 3,
   };
 }
 
@@ -379,7 +416,8 @@ function main() {
  * A new arch violation (1) outranks an abstention (3): both fail the job, and
  * the known failure is the one a reader can act on. A traceability status
  * reported over an unknown denominator is this script failing to verify a
- * check, which is exit 3, as is a supplied arch report it could not read.
+ * check, which is exit 3, as is a supplied arch report it could not read, and
+ * a requested arch result the CI report does not contain (#1369).
  */
 function exitCodeFor(arch, trace) {
   if (arch.exitCode === 1) return 1;

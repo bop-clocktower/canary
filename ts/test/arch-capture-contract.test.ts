@@ -32,9 +32,12 @@
  *      default (absent) condition is accepted only when the capture has no
  *      condition either and the consumer runs immediately after it, so that
  *      the capture having run (and swallowed) implies the consumer runs.
- *   4. For the summariser, the job's `harness ci check` does not skip `arch`:
- *      the summariser only consults the arch detail when the CI report carries
- *      an `arch` entry, and exits 0 over a planted new violation without it.
+ *   4. For the summariser, the job's `harness ci check` does not skip `arch`.
+ *      Before #1369 the summariser consulted the arch detail only when the CI
+ *      report carried an `arch` entry, and exited 0 over a planted new
+ *      violation without it. It now abstains (exit 3) on a missing entry, so a
+ *      skip would turn every run red rather than green. This rule catches the
+ *      skip at test time, before it can reach CI.
  *
  * Fail-closed on parse problems: a workflow YAML that does not parse, or parses
  * to something without a `jobs` map, throws. A job with neither `steps` nor a
