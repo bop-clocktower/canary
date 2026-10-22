@@ -31,6 +31,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Every workflow's Node comes from `.nvmrc` (#1428).** Seven `setup-node`
+  steps in `batwoman.yml`, `docs-lint.yml`, `harness-architecture.yml`,
+  `harness-quality.yml` and `leak-gate.yml` still hard-coded
+  `node-version: '20'`, below the harness CLI's engine floor (the `EBADENGINE`
+  mismatch behind the #1401 flake). They now read `node-version-file: .nvmrc`.
+  `ts/test/workflow-hygiene.test.ts` fails on any literal `node-version:`; only
+  a `matrix.*` or `steps.*.outputs.*` expression is allowed, for jobs that
+  deliberately run another runtime.
 - **Overlapping runs no longer overwrite each other's force-pushed ledger
   (#1427).** `harness-security.yml` force-pushes `chore/security-ledger` and had
   no `concurrency:` group, so two push-to-`main` runs raced and the last writer
