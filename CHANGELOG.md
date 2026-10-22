@@ -31,6 +31,18 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`harness check-deps` reads `npm/src`, and test fixtures no longer move the
+  arch and entropy ratchets (#1443).** No layer pattern matched `npm/src`, so
+  `check-deps` analysed 468 modules and passed with a cycle planted there. Two
+  layers now cover it, `npm-cli` over the published `npm-reporter` leaf, and the
+  count is 501. Separately, `**/test/fixtures/**` (dot-directories included) is
+  excluded from both analyzers, so a deliberately broken fixture no longer
+  counts against the ratchets; the entropy count falls 140 to 114, all 26 of
+  them fixture files. The two fixture entry points that only existed to keep
+  fixtures from reading as dead are removed from both `entryPoints` lists.
+  `ts/test/analysis-scope-rehearsal.test.ts` plants both cases against the real
+  CLI on a throwaway project.
+
 - **The required `security` check runs on the pinned Node and one resolved CLI,
   and a red `harness validate` explains itself (#1401).** `harness-security.yml`
   ran Node 20, below a CLI dependency's `node >=22.19.0`, and re-resolved the

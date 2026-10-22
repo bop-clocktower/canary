@@ -115,6 +115,16 @@
       "name": "skills-lib",
       "pattern": "agents/skills/lib/**",
       "allowedDependencies": []
+    },
+    {
+      "name": "npm-reporter",
+      "pattern": "npm/src/reporters/**",
+      "allowedDependencies": []
+    },
+    {
+      "name": "npm-cli",
+      "pattern": "npm/src/**",
+      "allowedDependencies": ["npm-reporter"]
     }
   ],
   "forbiddenImports": [
@@ -139,6 +149,7 @@
     }
   ],
   "architecture": {
+    "excludePatterns": ["**/test/fixtures/**", "**/test/fixtures/**/.*/**"],
     "thresholds": {
       "module-size": {
         "maxLoc": 1800,
@@ -180,7 +191,9 @@
       "**/*.spec.jsx",
       "**/*.spec.mjs",
       "**/*.spec.cjs",
-      "tests/generated/**"
+      "tests/generated/**",
+      "**/test/fixtures/**",
+      "**/test/fixtures/**/.*/**"
     ],
     "entryPoints": [
       "agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs",
@@ -320,8 +333,6 @@
       "ts/test/doc-links-testkit.ts",
       "ts/test/git-fixture-testkit.ts",
       "ts/test/required-checks-testkit.ts",
-      "ts/test/fixtures/schedule-staleness/gh-stub.cjs",
-      "ts/test/fixtures/async-pipe-exit-probe.cjs",
       "ts/vitest.config.ts"
     ],
     "drift": {
@@ -479,8 +490,6 @@
       "ts/test/doc-links-testkit.ts",
       "ts/test/git-fixture-testkit.ts",
       "ts/test/required-checks-testkit.ts",
-      "ts/test/fixtures/schedule-staleness/gh-stub.cjs",
-      "ts/test/fixtures/async-pipe-exit-probe.cjs",
       "ts/vitest.config.ts"
     ]
   },
