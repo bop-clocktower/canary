@@ -31,6 +31,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Overlapping runs no longer overwrite each other's force-pushed ledger
+  (#1427).** `harness-security.yml` force-pushes `chore/security-ledger` and had
+  no `concurrency:` group, so two push-to-`main` runs raced and the last writer
+  silently dropped the other's ledger write. Those runs now queue in one group
+  keyed on the ledger branch (`cancel-in-progress: false`); PR runs keep a group
+  of their own and never queue. `release.yml`'s `advance-latest` job, which
+  force-pushes the `latest` tag, gets the same treatment.
+  `ts/test/workflow-hygiene.test.ts` now fails on any force push outside a
+  non-cancelling concurrency group.
 - **The required `security` check runs on the pinned Node and one resolved CLI,
   and a red `harness validate` explains itself (#1401).** `harness-security.yml`
   ran Node 20, below a CLI dependency's `node >=22.19.0`, and re-resolved the

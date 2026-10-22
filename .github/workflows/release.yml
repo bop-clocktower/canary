@@ -136,6 +136,13 @@ jobs:
     runs-on: ubuntu-latest
     # Only advance for stable vX.Y.Z tags, never pre-releases (e.g. v1.2.0-rc1).
     if: ${{ !contains(github.ref_name, '-') }}
+    # #1427: this job force-pushes the `latest` tag. Two releases close
+    # together would race, and the slower run could move `latest` backwards.
+    # One group keyed on the tag makes them queue; cancel-in-progress: false
+    # so a running tag move is never killed mid-push.
+    concurrency:
+      group: latest-tag
+      cancel-in-progress: false
 
     permissions:
       contents: write # needed to push the floating tag

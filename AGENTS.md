@@ -1371,6 +1371,13 @@ with `|| echo`, reporting success while delivering nothing.
 `ts/test/workflow-false-green.test.ts` fails the build if any of those patterns
 return, including a side-branch push that does not announce itself.
 
+A force push is last-writer-wins, so every job that force-pushes runs under a
+`concurrency:` group with `cancel-in-progress: false` (#1427). Overlapping runs
+queue instead of silently overwriting each other's write. `harness-security.yml`
+scopes its group to push-to-`main` runs only, so PR runs of the required
+`security` check never queue. `ts/test/workflow-hygiene.test.ts` fails on a
+force push with no group.
+
 ## Agent Behavior
 
 ### Branch Hygiene Before Code Changes
