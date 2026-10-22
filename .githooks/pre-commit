@@ -104,10 +104,24 @@ if echo "$STAGED_ALL" | grep -q '^agents/skills/'; then
   fmt_gate agents/skills "agents/skills/"
 fi
 
-# 4. Security ledger — regenerate if source files changed, then stage
-LEDGER_SOURCES=$(git diff --cached --name-only | grep -Ev '^(\.harness/security/timeline\.json|docs/SECURITY_LEDGER\.md)$' || true)
-if [ -n "$LEDGER_SOURCES" ] && [ -f "scripts/security_ledger.mjs" ]; then
-  echo "[pre-commit] refreshing security ledger..."
-  node scripts/security_ledger.mjs 2>/dev/null || true
-  git add .harness/security/timeline.json docs/SECURITY_LEDGER.md 2>/dev/null || true
+# 4. Security ledger — refresh ONLY when this commit stages the ledger's own
+#    inputs (#1446). `scripts/security_ledger.mjs` derives both outputs from
+#    one data input, the timeline, plus its own source; the ledger is listed
+#    so a hand edit is re-rendered rather than committed. Any other commit
+#    leaves both files alone: refreshing on every commit used to drag the
+#    ledger, and any snapshot a local `harness check-security` run had
+#    appended to the timeline, into unrelated diffs. It also skipped the one
+#    case that needs it, a commit staging the timeline alone.
+#
+#    CI is the canonical writer: harness-security.yml refreshes the ledger
+#    after each scan on main, and harness-quality.yml's freshness guard fails
+#    a PR whose committed timeline and ledger disagree.
+LEDGER_INPUTS=$(git diff --cached --name-only | grep -E '^(\.harness/security/timeline\.json|docs/SECURITY_LEDGER\.md|scripts/security_ledger\.mjs)$' || true)
+if [ -n "$LEDGER_INPUTS" ] && [ -f "scripts/security_ledger.mjs" ]; then
+  echo "[pre-commit] refreshing security ledger (ledger inputs staged)..."
+  if node scripts/security_ledger.mjs; then
+    git add .harness/security/timeline.json docs/SECURITY_LEDGER.md 2>/dev/null || true
+  else
+    echo "[pre-commit] security ledger: refresh FAILED — ledger NOT restaged. CI's freshness guard will flag a stale pair."
+  fi
 fi
