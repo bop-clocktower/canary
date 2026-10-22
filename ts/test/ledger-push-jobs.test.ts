@@ -21,6 +21,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -262,6 +263,18 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
     git(work, 'remote', 'set-url', 'origin', join(dir!, 'missing.git'));
     const r = runJob(work, src);
     expect(r.status).not.toBe(0);
+  });
+
+  it('refuses a symlink in the artifact rather than copying its target', () => {
+    const { work, origin, src } = setup();
+    const secret = join(dir!, 'secret');
+    writeFileSync(secret, 'token\n');
+    rmSync(join(src, c.paths[0]!));
+    symlinkSync(secret, join(src, c.paths[0]!));
+    const r = runJob(work, src);
+    expect(r.status).not.toBe(0);
+    expect(r.log).toMatch(/not a regular file/);
+    expect(git(origin, 'branch', '--list', c.branch)).toBe('');
   });
 
   it('fails when the artifact is missing a pushed path', () => {

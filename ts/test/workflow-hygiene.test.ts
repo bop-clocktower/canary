@@ -80,12 +80,42 @@ function effectiveContents(wf: Workflow, job: Job): string {
   );
 }
 
-/** Whether a job runs registry code: `npx` / `npm exec` resolve and execute it. */
+/**
+ * Launchers that resolve and run package code, or run repo scripts that may
+ * import it: `npx`, `npm exec|ci|i|install|run`, `pnpm|yarn dlx`, `bunx`,
+ * and `node <script>`. A blocklist, so it is paired with the action allowlist
+ * in `ledger-push-jobs.test.ts`.
+ */
+const REGISTRY_CODE =
+  /(?:^|[\s;&|(])(?:(?:npx|bunx|npm\s+(?:exec|ci|i|install|run)|(?:pnpm|yarn)\s+dlx)\b|node\s+\S)/m;
+
+/** Whether a job runs registry code. */
 function runsRegistryCode(job: Job): boolean {
-  return (job.steps ?? []).some((s) =>
-    /(?:^|[\s;&|(])(?:npx|npm\s+exec)\b/m.test(s.run ?? ''),
-  );
+  return (job.steps ?? []).some((s) => REGISTRY_CODE.test(s.run ?? ''));
 }
+
+describe('#1426 the registry-code detector', () => {
+  it.each([
+    'npx --yes -p x harness validate',
+    'npm exec x',
+    'npm ci',
+    'npm run build',
+    'pnpm dlx x',
+    'yarn dlx x',
+    'bunx x',
+    'node scripts/security_ledger.mjs',
+    'set -e; npx x',
+  ])('flags %s', (run) => {
+    expect(runsRegistryCode({ steps: [{ run }] })).toBe(true);
+  });
+
+  it.each(['git push --force origin "HEAD:$BRANCH"', 'cp -- "$SRC/$f" "$f"'])(
+    'does not flag %s',
+    (run) => {
+      expect(runsRegistryCode({ steps: [{ run }] })).toBe(false);
+    },
+  );
+});
 
 /**
  * #1426 (CWE-250 / CWE-272). `harness-security.yml` and `arch-snapshot.yml`

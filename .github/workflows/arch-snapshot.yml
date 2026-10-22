@@ -87,8 +87,15 @@ jobs:
       - name: Restore the captured timeline
         env:
           SRC: ${{ runner.temp }}/arch-timeline
-        run:
-          cp -- "$SRC/.harness/arch/timeline.json" .harness/arch/timeline.json
+        # Regular files only: `cp` follows a symlink, and a link planted in the
+        # artifact could copy the persisted token into a file this job pushes.
+        run: |
+          f=.harness/arch/timeline.json
+          if [ ! -f "$SRC/$f" ] || [ -L "$SRC/$f" ]; then
+            echo "::error::artifact entry $f is missing or not a regular file" >&2
+            exit 1
+          fi
+          cp -- "$SRC/$f" "$f"
 
       # Two stacked false greens lived here (#548). First, the guard used
       # `git diff` against a path git had never tracked — git cannot report a
