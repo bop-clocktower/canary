@@ -1,0 +1,108 @@
+{
+  "github_repo": "acme/loyalty-suite",
+  "github": {
+    "acme/loyalty-suite": {
+      "501": {
+        "state": "closed",
+        "title": "finding: a full return does not reverse points",
+        "state_reason": "completed",
+        "body": "",
+        "assignees": [],
+        "comments": [
+          "Read the design doc before raising the ticket.",
+          "Filed as **TRK-1001** -- https://acme.atlassian.net/browse/TRK-1001\n\nStays quarantined until it goes green."
+        ]
+      },
+      "505": {
+        "state": "closed",
+        "title": "finding: card series is gateway-blocked",
+        "state_reason": "completed",
+        "body": "",
+        "assignees": [],
+        "comments": [
+          "Access group granted; this should pass now."
+        ]
+      },
+      "506": {
+        "state": "closed",
+        "title": "finding: event_data answers HTTP 520",
+        "state_reason": "completed",
+        "body": "",
+        "assignees": [],
+        "comments": [
+          "Filed as **CORE-101** -- https://acme.atlassian.net/browse/CORE-101"
+        ]
+      },
+      "502": {
+        "state": "open",
+        "title": "No verified contract for placing a line item in a category",
+        "state_reason": null,
+        "body": "",
+        "assignees": [
+          {
+            "login": "grace"
+          }
+        ],
+        "comments": []
+      },
+      "503": {
+        "state": "open",
+        "title": "No communication surface for TC-030",
+        "state_reason": null,
+        "body": "",
+        "assignees": [
+          {
+            "login": "ada"
+          }
+        ],
+        "comments": []
+      },
+      "504": {
+        "state": "open",
+        "title": "enablement: model a promotions read surface",
+        "state_reason": null,
+        "body": "",
+        "assignees": [],
+        "comments": []
+      },
+      "507": {
+        "state": "closed",
+        "title": "TC-065 cannot read a points expiry",
+        "state_reason": "completed",
+        "body": "",
+        "assignees": [],
+        "comments": [
+          "Checked on Demo: no expiry on this surface either.",
+          "Closing: the question this issue asked is answered.\n\nWhat's left has moved:\n- **#508:** point the expiry readers at those surfaces and release the parked cases.\n- **#509:** the bonus points have no expiry schedule entry. TC-065 is parked there.\n- **#514:** the probe that found both."
+        ]
+      },
+      "508": {
+        "state": "open",
+        "title": "point couponExpiry at validTill",
+        "state_reason": null,
+        "body": "",
+        "assignees": [],
+        "comments": []
+      },
+      "509": {
+        "state": "open",
+        "title": "bonus points have no expiry schedule entry",
+        "state_reason": null,
+        "body": "",
+        "assignees": [
+          {
+            "login": "grace"
+          }
+        ],
+        "comments": []
+      }
+    }
+  },
+  "jira": {
+    "CORE-101": {
+      "statusCategory": "done",
+      "summary": "event_data edge 520",
+      "assignee": null
+    }
+  }
+}

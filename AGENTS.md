@@ -379,6 +379,13 @@ via slash commands.
     validated `canary.site/1` feed (index.html + site.json + kit/). An invalid
     feed builds nothing; a non-empty out dir is refused; zero runs reports
     ABSTAINED.
+  - `canary-unquarantine` (#1455): the release half of katana's quarantine
+    ledger. `audit` resolves each row's blocker (v2 `issue`, else the comment
+    above the marker, the reason, the title), follows hand-offs from closed
+    GitHub issues to the upstream ticket — closed-to-upstream is not fixed —
+    and classifies candidate / blocked / stale / unlinked / abstain. Needs the
+    network (`gh`; Jira only for company.json `jira_projects`). Zero rows read
+    or any unreadable tracker abstains, never reads as clear.
 - **Slash commands:** `commands/*.md`, loaded by the default `commands/` scan.
 - **Activate:** load the repo root as a Claude Code plugin.
 
