@@ -31,7 +31,10 @@ const CLASSES = [
   'removed',
 ];
 
-/** How far a chain of hand-offs is followed before the audit gives up on it. */
+/**
+ * How many issues a hand-off chain may hold before the audit gives up on it:
+ * 4 issues is 3 hops (A -> B -> C -> D). SKILL.md states the hop count.
+ */
 export const MAX_HANDOFF_DEPTH = 4;
 
 /**
@@ -100,7 +103,7 @@ export function resolveRef(ref, lookup, ctx, via = [], depth = 0) {
       {
         ...leaf,
         state: 'unknown',
-        why: `hand-off chain longer than ${MAX_HANDOFF_DEPTH}: ${qualified.join(' -> ')}`,
+        why: `hand-off chain of more than ${MAX_HANDOFF_DEPTH - 1} hops: ${qualified.join(' -> ')}`,
       },
     ];
   }
@@ -254,15 +257,15 @@ function findUnledgered(repo, rows, results, tags, jiraProjects) {
   const byLine = new Set(
     results.filter((r) => r.markerLine).map((r) => `${r.file}:${r.markerLine}`),
   );
-  const titles = rows.map((r) => [r.file, r.test]);
+  // A row accounts for a marker it located (byLine), or one whose title it
+  // names EXACTLY. Containment is not enough: a row titled `login` must not
+  // hide an unledgered `test.skip('login retries forever')`.
+  const titles = new Set(
+    rows.filter((r) => r.test).map((r) => pairKey(r.file, r.test)),
+  );
   return scanMarkers(repo, tags)
     .filter((m) => !byLine.has(`${m.file}:${m.markerLine}`))
-    .filter(
-      (m) =>
-        !titles.some(
-          ([f, t]) => f === m.file && (m.test === t || m.test.includes(t)),
-        ),
-    )
+    .filter((m) => !titles.has(pairKey(m.file, m.test)))
     .map((m) => ({
       ...m,
       names: extractRefs(m.context, {

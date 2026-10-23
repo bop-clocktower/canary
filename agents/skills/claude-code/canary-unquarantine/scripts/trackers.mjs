@@ -10,41 +10,13 @@
 // Jira project company.json does not configure: every one is a row the audit
 // could not decide, reported with the reason, never folded into a result.
 //
-// GitHub is built in (through `gh`). Jira is enabled only when company.json
-// lists the ticket's project in `jira_projects` AND credentials are in the
-// environment; anything else abstains for that row.
-//
-// The command runner is injected so tests drive both adapters with no network.
+// This module is GitHub, built in through `gh`. Jira lives in jira.mjs and is
+// enabled only when company.json lists the ticket's project in
+// `jira_projects` AND credentials are in the environment; anything else
+// abstains for that row.
 
-import { spawnSync } from 'node:child_process';
-
+import { failure, parseJson } from './exec.mjs';
 import { handoffRefs } from './refs.mjs';
-
-/** Default runner: a synchronous spawn, never through a shell. */
-export function spawnRunner(cmd, args, { input, cwd } = {}) {
-  const r = spawnSync(cmd, args, {
-    encoding: 'utf8',
-    input,
-    cwd,
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return {
-    status: r.status,
-    stdout: r.stdout ?? '',
-    stderr: r.stderr ?? '',
-    error: r.error ? r.error.message : '',
-  };
-}
-
-const firstLine = (s) =>
-  String(s ?? '')
-    .trim()
-    .split('\n')[0];
-
-function failure(r, what) {
-  if (r.error) return `${what}: ${r.error}`;
-  return `${what} exited ${r.status}: ${firstLine(r.stderr) || firstLine(r.stdout) || 'no output'}`;
-}
 
 /**
  * The repository `#N` refers to: --github-repo, else the target's own remote.
@@ -101,20 +73,14 @@ export function githubTracker({ run, gh = 'gh', defaultRepo }) {
           ? { ...r, repo, id: `${repo}#${r.number}` }
           : r,
       );
-    return { ...issue, id, raw: undefined, handoff };
+    // Closed without a fix and not handed anywhere: nothing says the defect
+    // is gone, so the row cannot be released on this issue's word.
+    if (issue.notFixed && !handoff.length)
+      return { state: 'unknown', why: issue.notFixed, url: issue.url, id };
+    return { ...issue, id, raw: undefined, notFixed: undefined, handoff };
   }
   lookup.repo = () => (fallback ? fallback.repo : null);
   return lookup;
-}
-
-/** Parse a `gh` JSON answer, or explain why it could not be. */
-function parseJson(r, what) {
-  if (r.status !== 0) return { why: failure(r, what) };
-  try {
-    return { value: JSON.parse(r.stdout) };
-  } catch (exc) {
-    return { why: `${what} returned unparseable JSON: ${exc.message}` };
-  }
 }
 
 /** A closed issue's comments (NDJSON from `--jq '.[] | {body}'`), or why not. */
@@ -167,102 +133,25 @@ function fetchIssue(run, gh, repo, number) {
     state: 'resolved',
     title,
     url,
+    notFixed: notFixedReason(issue, `${repo}#${number}`),
     raw: { body: String(issue.body ?? ''), comments: read.comments },
   };
 }
 
-/**
- * Whether a Jira ticket may be read, and where. `projects` is company.json
- * `jira_projects`; credentials come from the environment (CANARY_JIRA_EMAIL /
- * CANARY_JIRA_API_TOKEN, or the JIRA_* spellings), and the site from the
- * ref's own URL or CANARY_JIRA_BASE_URL.
- *
- * @returns {(ref: {key?: string, project?: string, base?: string|null}) =>
- *           {base: string, auth: string} | {why: string}}
- */
-function jiraAccess({ projects = [], env = process.env }) {
-  const configured = new Set(projects);
-  const email = env.CANARY_JIRA_EMAIL || env.JIRA_EMAIL || '';
-  const token = env.CANARY_JIRA_API_TOKEN || env.JIRA_API_TOKEN || '';
-  const fallbackBase = env.CANARY_JIRA_BASE_URL || env.JIRA_BASE_URL || '';
-  // A curl config line, handed over on stdin so the token is never in argv.
-  const quote = (v) => v.replace(/["\\]/g, '\\$&');
-  const auth = `user = "${quote(email)}:${quote(token)}"\n`;
-  return (ref) => {
-    if (!configured.size) {
-      return {
-        why: `Jira is not configured: company.json has no jira_projects, so ${ref.key} cannot be read`,
-      };
-    }
-    if (!configured.has(ref.project ?? '')) {
-      return {
-        why: `Jira project ${ref.project} is not in company.json jira_projects (${[...configured].join(', ')}), so ${ref.key} cannot be read`,
-      };
-    }
-    const base = (ref.base || fallbackBase).replace(/\/+$/, '');
-    if (!base)
-      return { why: `no Jira site for ${ref.key}: set CANARY_JIRA_BASE_URL` };
-    if (!email || !token) {
-      return {
-        why: `Jira is unreachable for ${ref.key}: set CANARY_JIRA_EMAIL and CANARY_JIRA_API_TOKEN`,
-      };
-    }
-    return { base, auth };
-  };
-}
+/** Close reasons that mean the work was done. `null` is GitHub's legacy spelling of completed. */
+const FIXED_REASONS = new Set(['completed', null, undefined]);
 
 /**
- * Jira adapter: reads a ticket's status category. Enabled per project by
- * company.json; anything `jiraAccess` refuses abstains with its reason.
- *
- * @param {{run: Function, projects?: string[], env?: Record<string, string|undefined>,
- *          curl?: string}} opts
+ * Why a closed issue or pull request is NOT evidence of a fix, or '' when it
+ * is. A pull request counts only once merged; an issue only when closed as
+ * completed. Not planned, duplicate, or any reason this audit does not know
+ * is closed-without-a-fix -- the defect may well still be there.
  */
-export function jiraTracker({
-  run,
-  projects = [],
-  env = process.env,
-  curl = 'curl',
-}) {
-  const access = jiraAccess({ projects, env });
-  const cache = new Map();
-  return function lookup(ref) {
-    const ok = access(ref);
-    if ('why' in ok) return { state: 'unknown', why: ok.why };
-    if (!cache.has(ref.key))
-      cache.set(ref.key, fetchJira(run, curl, ok, ref.key));
-    return cache.get(ref.key);
-  };
-}
-
-/** Jira's status categories, as this audit reads them. */
-const JIRA_STATE = { done: 'resolved', new: 'open', indeterminate: 'open' };
-
-function jiraState(fields, url) {
-  const state = JIRA_STATE[fields.status?.statusCategory?.key];
-  const title = String(fields.summary ?? '');
-  if (state === 'resolved') return { state, title, url, handoff: [] };
-  if (state === 'open')
-    return {
-      state,
-      owner: fields.assignee?.displayName ?? 'unassigned',
-      title,
-      url,
-    };
-  return {
-    state: 'unknown',
-    why: `Jira ticket at ${url} has no recognisable status category`,
-    url,
-  };
-}
-
-function fetchJira(run, curl, { base, auth }, key) {
-  const url = `${base}/browse/${key}`;
-  const api = `${base}/rest/api/2/issue/${encodeURIComponent(key)}?fields=status,assignee,summary`;
-  const parsed = parseJson(
-    run(curl, ['-sS', '--fail', '-K', '-', api], { input: auth }),
-    `Jira ${key}`,
-  );
-  if (parsed.why) return { state: 'unknown', why: parsed.why, url };
-  return jiraState(parsed.value.fields ?? {}, url);
+function notFixedReason(issue, id) {
+  if (issue.pull_request)
+    return issue.pull_request.merged_at
+      ? ''
+      : `${id} is a pull request closed without merging, which fixes nothing`;
+  if (FIXED_REASONS.has(issue.state_reason)) return '';
+  return `${id} was closed as ${String(issue.state_reason).replace(/_/g, ' ')}, not as completed, and names no hand-off`;
 }

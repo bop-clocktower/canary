@@ -26,12 +26,9 @@ import * as ledger from '../../canary-katana/scripts/ledger.mjs';
 import { audit } from './audit.mjs';
 import { DEFAULT_TAGS } from './markers.mjs';
 import { jsonPayload, renderText } from './report.mjs';
-import {
-  githubTracker,
-  jiraTracker,
-  resolveGithubRepo,
-  spawnRunner,
-} from './trackers.mjs';
+import { spawnRunner } from './exec.mjs';
+import { jiraTracker } from './jira.mjs';
+import { githubTracker, resolveGithubRepo } from './trackers.mjs';
 
 const PREFIX = 'canary-unquarantine:';
 

@@ -72,30 +72,72 @@ export function jsDeclarations(masked) {
   }));
 }
 
-/** Every python test function, with the skip decorators stacked on it. */
+/**
+ * One python line with its `#` comment blanked (a `#` inside a string is
+ * kept), and the net bracket depth of what is left.
+ */
+function pyLine(text) {
+  let quote = '';
+  let depth = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (quote) {
+      if (c === '\\') i += 1;
+      else if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '#') return { code: text.slice(0, i), depth };
+    else if ('([{'.includes(c)) depth += 1;
+    else if (')]}'.includes(c)) depth -= 1;
+  }
+  return { code: text, depth };
+}
+
+/**
+ * Every python test function, with the skip decorators stacked on it. Read
+ * top-down so a decorator whose arguments span lines
+ * (`@pytest.mark.skipif(\n  cond,\n  reason=...)`) is joined into one.
+ */
 export function pyDeclarations(source) {
   const lines = source.split('\n');
   const out = [];
-  lines.forEach((text, i) => {
-    const def = PY_DEF.exec(text);
-    if (!def) return;
-    const decorators = [];
-    let top = i;
-    for (let j = i - 1; j >= 0 && /^\s*@/.test(lines[j]); j -= 1) {
-      const skip = PY_SKIP.exec(lines[j]);
-      if (skip) decorators.push(skip[1]);
-      top = j;
-    }
-    out.push({
-      callee: 'def',
-      title: def[2],
-      line: i + 1,
-      markerLine: top + 1,
-      decorators,
-    });
-  });
+  let stack = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const def = PY_DEF.exec(lines[i]);
+    if (def) {
+      out.push({
+        callee: 'def',
+        title: def[2],
+        line: i + 1,
+        markerLine: stack.length ? stack[0].line : i + 1,
+        decorators: stack.flatMap((d) => {
+          const skip = PY_SKIP.exec(d.text);
+          return skip ? [skip[1]] : [];
+        }),
+      });
+      stack = [];
+    } else if (/^\s*@/.test(lines[i])) {
+      const at = i;
+      let { code, depth } = pyLine(lines[i]);
+      const parts = [code.trim()];
+      while (depth > 0 && i + 1 < lines.length) {
+        i += 1;
+        const next = pyLine(lines[i]);
+        parts.push(next.code.trim());
+        depth += next.depth;
+      }
+      stack.push({ line: at + 1, text: joinArgs(parts) });
+    } else stack = [];
+  }
   return out;
 }
+
+/** `['f(', 'a,', 'b', ')']` -> `f(a, b)`: a wrapped call read as one line. */
+const joinArgs = (parts) =>
+  parts
+    .filter(Boolean)
+    .join(' ')
+    .replace(/([([{])\s+/g, '$1')
+    .replace(/,?\s+([)\]}])/g, '$1');
 
 /**
  * The comment block directly above line `n` (1-based), top to bottom, plus
@@ -142,13 +184,24 @@ export function readSource(repo, file) {
   }
   const lines = source.split('\n');
   if (PY_EXT.test(file)) {
-    return { file, lines, lang: 'py', decls: pyDeclarations(source) };
+    // `code` is the source with comments blanked: what actually runs.
+    const code = lines.map((l) => pyLine(l).code);
+    return { file, lines, code, lang: 'py', decls: pyDeclarations(source) };
   }
-  return { file, lines, lang: 'js', decls: jsDeclarations(maskJs(source)) };
+  const masked = maskJs(source);
+  return {
+    file,
+    lines,
+    code: masked.split('\n'),
+    lang: 'js',
+    decls: jsDeclarations(masked),
+  };
 }
 
 /** The declarations whose title is the row's test: exact first, then contains. */
 function findByTitle(src, title) {
+  // An empty title is contained in every title: it names no test at all.
+  if (!title) return { decls: [], match: null };
   const exact = src.decls.filter((d) => d.title === title);
   if (exact.length) return { decls: exact, match: 'exact' };
   const contains = src.decls.filter((d) => d.title.includes(title));
@@ -178,11 +231,15 @@ export function staticMarkerLine(src, decl, tags) {
   return 0;
 }
 
-/** The first line in `decl`'s body that calls `callee(`, or 0. */
+/**
+ * The first line in `decl`'s body that calls `callee(`, or 0. Read from the
+ * comment-blanked source: `// test.skip(cond)` is a skip someone turned off.
+ */
 function runtimeMarkerLine(src, decl, callee) {
   const [from, to] = bodyRange(src, src.decls.indexOf(decl));
+  const code = src.code ?? src.lines;
   for (let i = from; i < to; i += 1) {
-    if (src.lines[i].includes(`${callee}(`)) return i + 1;
+    if (code[i].includes(`${callee}(`)) return i + 1;
   }
   return 0;
 }
