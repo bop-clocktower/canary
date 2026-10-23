@@ -799,7 +799,7 @@ describe('results', () => {
 
   it('reads JUnit XML (pytest --junitxml)', () => {
     const xml =
-      '<testsuite><testcase classname="tests.py.test_orders" name="test_refund_reverses_points" file="tests/py/test_orders.py">' +
+      '<testsuite><testcase classname="tests.py.test_orders" name="test_refund_restocks_items" file="tests/py/test_orders.py">' +
       '<failure message="x"/></testcase><testcase classname="tests.py.test_orders" name="test_order_total"/>' +
       '<testcase classname="tests.py.test_orders" name="test_s"><skipped/></testcase></testsuite>';
     const cases = junitCases(xml);
@@ -807,7 +807,7 @@ describe('results', () => {
     expect(
       judge(
         {
-          test: 'test_refund_reverses_points',
+          test: 'test_refund_restocks_items',
           file: 'tests/py/test_orders.py',
         },
         cases,
