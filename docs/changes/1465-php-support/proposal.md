@@ -85,6 +85,15 @@ is a false green. Only the vendor's advisory can answer, so the gate abstains
 Abandoned packages are findings. An abandoned framework gets no security
 releases, and that is the risk this gate exists to surface.
 
+## Where it lives
+
+- [ts/src/core/php-floor.ts](../../../ts/src/core/php-floor.ts): the advisory
+  table and the per-runtime judge (D5).
+- [ts/src/core/composer-audit.ts](../../../ts/src/core/composer-audit.ts): the
+  lockfile denominator and the audit-report parser (D6).
+- [ts/src/php/php-cli.ts](../../../ts/src/php/php-cli.ts): `canary php floor`
+  and `canary php audit`, the binary probe and the gate output.
+
 ## Out of scope
 
 - Static analysis (Psalm/PHPStan taint) is a separate shape.
