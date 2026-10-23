@@ -298,7 +298,7 @@ config, payload builder, size budget and push (#1320):
 
 ```bash
 canary testtracker push --junit <file…> --suite <name> \
-  [--workflow <label>] [--no-collected] [--dry-run]
+  [--workflow <label>] [--no-collected] [--[no-]strict-budget] [--dry-run]
 ```
 
 One adapter covers each runner's JUnit output:
@@ -361,10 +361,24 @@ so the dashboard has the suite's denominator. Pass `--no-collected` (or
 `CANARY_INGEST_COLLECTED=false`) when the reports are a subset of the suite,
 such as a shard or a name filter: JUnit cannot say so itself.
 
+**The size budget.** The body is fitted under 4,000,000 bytes as in the
+reporter: `collected` goes first, then stacks are cut to 1 KB. Dropping the
+catalog lands the run with its suite unmeasured, so with a strict budget the
+command refuses instead (#1355): when fitting would drop `collected` or still
+leave the body over budget, it exits `1` before sending anything and names the
+measured size, the budget and how to opt out. The strict budget is **on by
+default when `CI` is set** (to anything but `false` or `0`) and off otherwise,
+where the warn-and-push behaviour stays. `--strict-budget` turns it on outside
+CI; `--no-strict-budget` turns it off under CI. Cutting stacks alone is not
+refused. With the catalog, the budget holds roughly 7,600 tests; split a larger
+run into several suites (chunked push is tracked on #1355). `--dry-run` prints
+the unfitted payload and is not checked.
+
 **Exit codes.** `0` pushed (or printed). `1` a report is missing, unreadable or
-not JUnit, or the run was not ingested (a rejected push, or a duplicate whose
-results were discarded). `2` usage. `3` abstained: a report holds zero
-testcases, so nothing was pushed rather than a smaller, greener run.
+not JUnit, the run was not ingested (a rejected push, or a duplicate whose
+results were discarded), or the strict budget refused a lossy fit (nothing was
+pushed). `2` usage. `3` abstained: a report holds zero testcases, so nothing was
+pushed rather than a smaller, greener run.
 
 ## The `canary.run/1` file
 
