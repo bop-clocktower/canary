@@ -16,6 +16,9 @@
  * Plus re-run safety: once npm has a version, publishing it again is E403, so
  * re-running the workflow must skip that publish rather than fail on it.
  *
+ * And the job graph (#1439, ADR 0042): bin verification is its own job that
+ * gates the git `latest` advance but never the GitHub Release.
+ *
  * Offline: reads workflow YAML. The #1331 poll tests run the real step body
  * under bash against a fake `npm` and `sleep`; nothing touches the registry.
  */
@@ -42,13 +45,19 @@ const RAW = readFileSync(
 );
 
 interface Step {
+  id?: string;
   name?: string;
+  'continue-on-error'?: unknown;
   uses?: string;
   run?: string;
   env?: Record<string, string>;
   with?: Record<string, unknown>;
 }
 interface Job {
+  needs?: string | string[];
+  if?: string;
+  'continue-on-error'?: unknown;
+  outputs?: Record<string, string>;
   permissions?: Record<string, string>;
   steps: Step[];
 }
@@ -76,6 +85,48 @@ function runOf(pred: (s: Step) => boolean, label: string): string {
 const isNpmPublish = (s: Step) => /\bnpm publish\b/.test(s.run ?? '');
 const isGhRelease = (s: Step) =>
   (s.uses ?? '').startsWith('softprops/action-gh-release');
+const isBinCheck = (s: Step) =>
+  /\bnpm view\b/.test(s.run ?? '') &&
+  /\bbin\b/.test(s.run ?? '') &&
+  !isNpmPublish(s);
+
+/** The job named `name`, or a thrown error naming what is missing. */
+function job(name: string): Job {
+  const j = wf.jobs[name];
+  if (!j) throw new Error(`release.yml has no \`${name}\` job`);
+  return j;
+}
+
+/** A job's `needs:` as a list (GitHub accepts a string or a list). */
+function needsOf(name: string): string[] {
+  const n = job(name).needs;
+  return n === undefined ? [] : Array.isArray(n) ? n : [n];
+}
+
+/** Every job `name` waits on, directly or through another job. */
+function ancestorsOf(name: string, seen = new Set<string>()): Set<string> {
+  for (const n of needsOf(name)) {
+    if (!seen.has(n)) {
+      seen.add(n);
+      ancestorsOf(n, seen);
+    }
+  }
+  return seen;
+}
+
+/** Names of the jobs that hold a step matching `pred`. */
+function jobsWith(pred: (s: Step) => boolean): string[] {
+  return Object.entries(wf.jobs)
+    .filter(([, j]) => (j.steps ?? []).some(pred))
+    .map(([n]) => n);
+}
+
+/** The bin-check step's `run` script, read from the `verify-bins` job. */
+function binCheckRun(): string {
+  const s = job('verify-bins').steps.find(isBinCheck);
+  if (!s) throw new Error('release.yml verify-bins job has no bin-check step');
+  return s.run ?? '';
+}
 
 describe('release.yml (#1185)', () => {
   it('publishes to npm before creating the GitHub Release', () => {
@@ -123,26 +174,80 @@ describe('release.yml (#1185)', () => {
   // printed "bin ... was invalid and removed" on every release. The registry's
   // manifest is the only proof the bins shipped, so read it back.
   describe('published-manifest bin check (#1252)', () => {
-    const isBinCheck = (s: Step) =>
-      /\bnpm view\b/.test(s.run ?? '') && /\bbin\b/.test(s.run ?? '');
-    const isCheckAfterPublish = (s: Step) => isBinCheck(s) && !isNpmPublish(s);
+    // ADR 0042 / #1439: the check lives in its own `verify-bins` job. It gates
+    // the git `latest` advance but not the GitHub Release, because the npm
+    // publish the Release announces has already happened.
+    describe('job graph (ADR 0042, #1439)', () => {
+      it('runs in exactly one job, verify-bins, and never inside publish', () => {
+        expect(jobsWith(isBinCheck)).toEqual(['verify-bins']);
+      });
 
-    it('sits between the npm publish step and the GitHub Release step', () => {
-      const check = indexOf(isCheckAfterPublish, 'published-manifest bin');
-      expect(check).toBeGreaterThan(indexOf(isNpmPublish, 'npm publish'));
-      expect(check).toBeLessThan(indexOf(isGhRelease, 'GitHub Release'));
+      it('verify-bins needs publish', () => {
+        expect(needsOf('verify-bins')).toContain('publish');
+      });
+
+      it('the GitHub Release never waits on verify-bins', () => {
+        const releaseJobs = jobsWith(isGhRelease);
+        expect(releaseJobs).toHaveLength(1);
+        const rel = releaseJobs[0] as string;
+        expect(rel).not.toBe('verify-bins');
+        expect([...ancestorsOf(rel)]).not.toContain('verify-bins');
+        // ...but it still waits on the npm publish (#1185).
+        expect(rel === 'publish' || ancestorsOf(rel).has('publish')).toBe(true);
+      });
+
+      it('advance-latest needs both publish and verify-bins', () => {
+        expect(needsOf('advance-latest')).toEqual(
+          expect.arrayContaining(['publish', 'verify-bins']),
+        );
+      });
+
+      it('advance-latest does not override the implicit success() gate', () => {
+        // An `if:` with always()/failure()/!cancelled() would run the job
+        // after verify-bins failed or abstained, moving latest unverified.
+        expect(job('advance-latest').if ?? '').not.toMatch(
+          /always\(\)|failure\(\)|cancelled\(\)/,
+        );
+      });
+
+      it('never lets the check fail soft (ADR 0009: exit 3 is not a pass)', () => {
+        const vb = job('verify-bins');
+        expect(vb['continue-on-error']).toBeUndefined();
+        for (const s of vb.steps) {
+          expect(s['continue-on-error'], s.name).toBeUndefined();
+        }
+      });
+
+      it('verify-bins only reads the repo: no write, no OIDC token', () => {
+        expect(job('verify-bins').permissions).toEqual({ contents: 'read' });
+        expect(wf.permissions?.['id-token']).not.toBe('write');
+        expect(wf.permissions?.contents).not.toBe('write');
+      });
+
+      it('verifies the version publish reports, passed as a job output', () => {
+        const outputs = job('publish').outputs ?? {};
+        expect(Object.keys(outputs)).toEqual(
+          expect.arrayContaining(['name', 'version']),
+        );
+        const step = job('verify-bins').steps.find(isBinCheck);
+        expect(step?.env?.NAME).toMatch(/needs\.publish\.outputs\.name/);
+        expect(step?.env?.VERSION).toMatch(/needs\.publish\.outputs\.version/);
+      });
     });
 
     it('checks every bin the local manifest declares, not a hardcoded subset', () => {
-      const run = runOf(isCheckAfterPublish, 'published-manifest bin');
+      const run = binCheckRun();
       expect(run).toMatch(/require\(['"]\.\/package\.json['"]\)\.bin/);
       expect(run).toMatch(/exit 1|process\.exit\(1\)/);
     });
 
     it('abstains with exit 3 (not a pass) when the version is not visible yet', () => {
-      const run = runOf(isCheckAfterPublish, 'published-manifest bin');
+      const run = binCheckRun();
       expect(run).toMatch(/\bexit 3\b/);
       expect(run).toMatch(/::error::/);
+      // No `exit 0` path anywhere in the check: a pass is only the bin
+      // comparison falling through.
+      expect(run).not.toMatch(/\bexit 0\b/);
     });
 
     // #1331: v9.3.0 published fine, but npm said "may take a few minutes to
@@ -163,7 +268,10 @@ describe('release.yml (#1185)', () => {
        * A temp package dir plus fake `npm` (version visible from probe
        * `visibleAt`, bins always complete) and `sleep` (records, never waits).
        */
-      function fakeRegistry(visibleAt: number) {
+      function fakeRegistry(
+        visibleAt: number,
+        publishedBins = '{"canary":"bin/canary.js"}',
+      ) {
         const dir = mkdtempSync(join(tmpdir(), 'release-poll-'));
         const bin = join(dir, 'fakebin');
         mkdirSync(bin);
@@ -178,7 +286,7 @@ describe('release.yml (#1185)', () => {
         const probes = join(dir, 'probes');
         const sleeps = join(dir, 'sleeps');
         writeFake(bin, 'npm', [
-          'if [ "$3" = "bin" ]; then echo \'{"canary":"bin/canary.js"}\'; exit 0; fi',
+          `if [ "$3" = "bin" ]; then echo '${publishedBins}'; exit 0; fi`,
           `echo x >> "${probes}"`,
           `n=$(wc -l < "${probes}")`,
           `[ "$n" -ge ${visibleAt} ] && echo 9.9.9`,
@@ -193,25 +301,30 @@ describe('release.yml (#1185)', () => {
           ? readFileSync(f, 'utf8').split('\n').filter(Boolean)
           : [];
 
-      function runPoll(visibleAt: number) {
-        const { dir, bin, probes, sleeps } = fakeRegistry(visibleAt);
+      /**
+       * Runs the real step body. NAME/VERSION arrive through env, as the
+       * workflow passes them from `needs.publish.outputs`; the step summary
+       * goes to a temp file standing in for `$GITHUB_STEP_SUMMARY`.
+       */
+      function runPoll(
+        visibleAt: number,
+        opts: { bins?: string; name?: string; version?: string } = {},
+      ) {
+        const { dir, bin, probes, sleeps } = fakeRegistry(visibleAt, opts.bins);
+        const summary = join(dir, 'step-summary.md');
         const r = spawnSync(
           'bash',
           // GitHub's default `run:` shell flags, so errexit/pipefail apply.
-          [
-            '--noprofile',
-            '--norc',
-            '-eo',
-            'pipefail',
-            '-c',
-            runOf(isCheckAfterPublish, 'published-manifest bin'),
-          ],
+          ['--noprofile', '--norc', '-eo', 'pipefail', '-c', binCheckRun()],
           {
             cwd: dir,
             encoding: 'utf-8',
             env: {
               ...process.env,
               PATH: `${bin}${delimiter}${process.env.PATH}`,
+              NAME: opts.name ?? 'canary-test-cli',
+              VERSION: opts.version ?? '9.9.9',
+              GITHUB_STEP_SUMMARY: summary,
             },
           },
         );
@@ -220,8 +333,41 @@ describe('release.yml (#1185)', () => {
           out: `${r.stdout}${r.stderr}`,
           probes: lines(probes).length,
           sleeps: lines(sleeps).map(Number),
+          summary: existsSync(summary) ? readFileSync(summary, 'utf8') : '',
         };
       }
+
+      // #1439: the verdict has to be readable on the run page, not only in
+      // the step log. An abstention must say the bins were NOT verified.
+      it('writes "NOT verified" to the step summary when it abstains', () => {
+        const r = runPoll(9999);
+        expect(r.status).toBe(3);
+        expect(r.summary).toMatch(/NOT verified/);
+        expect(r.summary).toMatch(/latest.*not.*advance|not advance/i);
+      });
+
+      it('abstains (exit 3, no registry probe) when publish passed no version', () => {
+        const r = runPoll(1, { version: '' });
+        expect(r.status).toBe(3);
+        expect(r.probes).toBe(0);
+        expect(r.out).toMatch(/::error::.*NOT verified/);
+        expect(r.summary).toMatch(/NOT verified/);
+      });
+
+      it('fails with exit 1 and names the bin when the manifest lost one', () => {
+        const r = runPoll(1, { bins: '{}' });
+        expect(r.status).toBe(1);
+        expect(r.out).toMatch(/missing bin\(s\): canary/);
+        expect(r.summary).toMatch(/missing/i);
+        expect(r.summary).toMatch(/canary/);
+      });
+
+      it('records the verified bins in the step summary on a pass', () => {
+        const r = runPoll(1);
+        expect(r.status).toBe(0);
+        expect(r.summary).toMatch(/verified/i);
+        expect(r.summary).not.toMatch(/NOT verified/);
+      });
 
       it('keeps polling past the old 60 s window and verifies a late version', () => {
         // Visible on the 8th probe: the old 6-attempt loop abstained here.
