@@ -105,6 +105,22 @@ describe('canary php audit', () => {
     expect(r.stdout).toContain('1 finding(s) across 2 checked');
   });
 
+  it('reads an advisory list composer wrote as a keyed object', async () => {
+    // PHP array_filter keeps keys; json_encode then emits an object.
+    lockfile(['acme/a']);
+    const composer = fakeComposer(
+      {
+        advisories: {
+          'acme/a': { '2': { advisoryId: 'PKSA-2', cve: 'CVE-2026-0002' } },
+        },
+      },
+      1,
+    );
+    const r = await audit(composer.runSubprocess);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain('CVE-2026-0002');
+  });
+
   it('falls back to the advisory id when a finding has no CVE', async () => {
     lockfile(['acme/a']);
     const composer = fakeComposer(
@@ -131,6 +147,13 @@ describe('canary php audit', () => {
     expect(r.code).toBe(1);
     expect(r.stdout).toContain('abandoned');
     expect(r.stdout).toContain('laminas/laminas-mvc');
+  });
+
+  it('--composer runs the named binary', async () => {
+    lockfile(['acme/a']);
+    const composer = fakeComposer(CLEAN);
+    await audit(composer.runSubprocess, ['--composer', '/opt/composer.phar']);
+    expect(composer.calls[0]?.[0]).toBe('/opt/composer.phar');
   });
 
   it('--json carries checked, abstained and the findings', async () => {

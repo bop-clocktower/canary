@@ -108,8 +108,9 @@ function floorAction(opts: FloorOpts, deps: MainDeps): void {
       extra: { advisory: id, cves },
     },
     (f: FloorFinding) => `${f.version}: ${f.detail}`,
-    'Pass --php <binary> to probe a runtime, or --php-version <x.y.z> for ' +
-      'each one reported by the hosts (php -r "echo PHP_VERSION;").',
+    'Act on each skip reason above: probe a runtime with --php <binary>, ' +
+      'pass --php-version <x.y.z> per host (php -r "echo PHP_VERSION;"), and ' +
+      "check a vendor build against its vendor's security advisory.",
     deps,
   );
 }

@@ -251,8 +251,9 @@ export function probeFramework(
       () =>
         probePyproject(dir) ??
         probeRequirements(dir) ??
-        probeComposer(dir) ??
-        probeScripts(dir, (key) => key === 'test'),
+        probeScripts(dir, (key) => key === 'test') ??
+        // After scripts.test, so a mixed repo keeps its pre-#1465 answer.
+        probeComposer(dir),
     ],
     ['nested-config', () => probeNestedConfig(dir)],
     ['scripts', () => probeScripts(dir, isOtherScript)],

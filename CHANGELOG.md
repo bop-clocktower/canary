@@ -14,6 +14,28 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **PHP support (#1465).** `phpunit` and `pest` join the framework registry and
+  run through the project's own `vendor/bin`. `phpunit.xml(.dist)` and
+  `composer.json` (`phpunit/phpunit`, `pestphp/pest`) are detected, and a
+  `phpunit.xml` next to `tests/Pest.php` is read as Pest, nested packages
+  included. `canary init phpunit` scaffolds `phpunit.xml.dist` and `tests/`.
+  `phpunit` is `supported`, not `preferred`, so language-blind `api`
+  recommendations for Python and JS projects are unchanged. `pest` is not a
+  classifier hint, because the English word would steal prompts.
+- **`canary php floor`, a gate.** It fails a PHP runtime below its branch's
+  PHP2Shell patched floor (CVE-2026-109618, CVE-2026-109619: 8.2.35, 8.3.36,
+  8.4.27, 8.5.12). 7.4 through 8.1 have no upstream fix, so an upstream build
+  there fails. A distro build such as `8.3.6-1ubuntu…` exits 3 instead of
+  failing, because distros backport under their own suffix and the number cannot
+  tell. It takes `--php-version` for hosts it cannot reach, and reports the
+  `session.upload_progress.enabled` stopgap when it probes a binary.
+- **`canary php audit`, a gate.** It runs `composer audit --locked` and fails on
+  advisories or abandoned packages. Its denominator is the `composer.lock`
+  package count, so a missing, empty, unreadable or unparseable lockfile, or a
+  composer that cannot run, exits 3 instead of reading as clean.
+
 ### Changed
 
 - **CI tracks harness 13 (`@harness-engineering/cli@13`).** All six workflow

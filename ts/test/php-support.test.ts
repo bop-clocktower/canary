@@ -123,6 +123,17 @@ describe('detection probes', () => {
     expect(probeFramework(root, {}, [...PKG])[0]).toBe('pest');
   });
 
+  it('a package.json test script still wins in a mixed JS + PHP repo', () => {
+    // Pre-#1465 answer for e.g. a framework app with a vitest frontend.
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ scripts: { test: 'vitest run' } }),
+      'utf-8',
+    );
+    composer({ 'require-dev': { 'phpunit/phpunit': '^12.0' } });
+    expect(probeFramework(root, {}, [...PKG])[0]).toBe('vitest');
+  });
+
   it('a composer.json with no test runner detects nothing', () => {
     composer({ require: { 'laminas/laminas-mvc': '^3.8' } });
     expect(probeFramework(root, {}, [...PKG])).toEqual([

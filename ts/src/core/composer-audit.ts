@@ -69,16 +69,26 @@ function entries(v: unknown): Array<[string, unknown]> {
   return isRecord(v) ? Object.entries(v) : [];
 }
 
+// A filtered advisory list keeps PHP's array keys, which json_encode writes as
+// an object (`{"0": {...}, "2": {...}}`). Reading only arrays would turn that
+// into zero findings: a silent false clean.
+function listValues(v: unknown): unknown[] {
+  if (Array.isArray(v)) return v;
+  return isRecord(v) ? Object.values(v) : [];
+}
+
 function advisoryFindings(report: Record<string, unknown>): AuditFinding[] {
   return entries(report['advisories']).flatMap(([pkg, list]) =>
-    (Array.isArray(list) ? list : []).filter(isRecord).map((a) => ({
-      package: pkg,
-      kind: 'advisory' as const,
-      id: str(a['cve']) ?? str(a['advisoryId']),
-      detail: [str(a['title']), str(a['affectedVersions'])]
-        .filter((s) => s !== null)
-        .join(' -- affected: '),
-    })),
+    listValues(list)
+      .filter(isRecord)
+      .map((a) => ({
+        package: pkg,
+        kind: 'advisory' as const,
+        id: str(a['cve']) ?? str(a['advisoryId']),
+        detail: [str(a['title']), str(a['affectedVersions'])]
+          .filter((s) => s !== null)
+          .join(' -- affected: '),
+      })),
   );
 }
 
