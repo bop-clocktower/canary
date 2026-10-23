@@ -14,6 +14,21 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **guardian: a transient GitHub error no longer fails the check (#1467).** The
+  sticky-comment client now retries a 5xx, a 429, or a rate-limited 403 up to 3
+  attempts in total, waiting 1s then 2s or the `retry-after` the response names
+  (capped at 60s). This covers both the comment lookup and the write. A post
+  that still fails degrades to a `::warning::` naming the HTTP status. The
+  rendered verdict then goes to the job log and the step summary, and
+  `pr-check --post-comment` exits with the computed verdict's code. Before this,
+  a single `GitHub API 500` from the comment POST replaced that code with exit 1
+  on the required `guardian` check. Any other 4xx (404, 422) is still not
+  retried and still fails loudly. A 403 or rate-limit degrade now also prints
+  the verdict to the log and summary. `canary briefing --comment` no longer
+  reports a GitHub 5xx as a missing write permission.
+
 ## [9.5.0] - 2026-10-23
 
 ### Added

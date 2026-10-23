@@ -413,6 +413,17 @@ present so the guardian can engage Tiers 1/2.
 emits a notice — `⚠ degraded: tier N unavailable — ran tier 0` — on both the PR
 comment and the Actions step summary. Never a silent under-delivery.
 
+**A failed comment post is not a failed check.** The comment client retries a
+GitHub 5xx, a 429, or a rate-limited 403 up to 3 attempts in total, waiting 1s
+then 2s, or the `retry-after` the response names (capped at 60s). Both the
+comment lookup and the write retry. If the post still fails, or the token cannot
+write at all (a plain 403, as on a fork), `pr-check` prints a `::warning::`
+naming the HTTP status. It then writes the rendered verdict to the job log and
+the step summary and exits with the **computed verdict's** code, so a GitHub
+outage cannot turn a passing gate red. Any other 4xx, such as a 404 or a 422, is
+not retried and fails the run loudly, because it says the request itself is
+wrong ([#1467]).
+
 ## Suppression
 
 To accept an untested unit deliberately, annotate it in the diff:
@@ -510,6 +521,7 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#747]: https://github.com/bop-clocktower/canary/issues/747
 [#761]: https://github.com/bop-clocktower/canary/issues/761
 [#1305]: https://github.com/bop-clocktower/canary/issues/1305
+[#1467]: https://github.com/bop-clocktower/canary/issues/1467
 
 Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
 config, which makes `canary guardian pr-check` exit non-zero on an unaddressed
