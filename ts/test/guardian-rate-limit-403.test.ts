@@ -38,7 +38,15 @@ function stubFetch(createResponse: () => Response): void {
 
 /** The notice a degraded upsert reports, or the error text it threw. */
 async function upsertOutcome(): Promise<string> {
-  const client = new RestGitHubClient('owner/repo', 1, 'tok');
+  // #1467: a rate-limited 403 is now retried; the no-op sleep keeps the
+  // retry (and a `retry-after: 60`) out of real time.
+  const client = new RestGitHubClient(
+    'owner/repo',
+    1,
+    'tok',
+    undefined,
+    async () => {},
+  );
   return upsertStickyComment(client, '<!-- canary-pr-guardian -->\nbody').then(
     (r) => r.notice ?? r.action,
     (err: unknown) => String(err),

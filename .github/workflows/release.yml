@@ -5,18 +5,37 @@ on:
     tags:
       - 'v*'
 
+# Least privilege by default; each job below grants only what its steps use
+# (#1439). Only `publish` gets the OIDC token, and `verify-bins` stays
+# read-only.
 permissions:
-  contents: write # needed to create/upload release assets
-  id-token: write # needed for npm provenance
+  contents: read
 
 jobs:
   # canary v6: the npm package bundles and runs the TypeScript engine
   # (ts/ -> npm/dist/engine/), so there is no per-OS binary and no PyPI package.
   # The Python engine, PyInstaller spec, and PyPI publish job were removed in the
   # stage-2 cutover; npm is the sole distribution channel.
+  #
+  # Job graph (ADR 0042, #1439):
+  #
+  #   publish (npm publish -> GitHub Release) --> verify-bins --> advance-latest
+  #                                          \______________________/
+  #
+  # The GitHub Release depends only on the npm publish it announces. Bin
+  # verification gates the git `latest` advance, never the Release.
   publish:
-    name: Build engine + publish (GitHub Release + npm)
+    name: Build engine + publish (npm + GitHub Release)
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # needed to create the GitHub Release
+      id-token: write # needed for npm trusted publishing + provenance
+
+    # What was published, so verify-bins checks exactly this name@version.
+    outputs:
+      name: ${{ steps.pkg.outputs.name }}
+      version: ${{ steps.pkg.outputs.version }}
 
     steps:
       - uses: actions/checkout@v7
@@ -48,6 +67,15 @@ jobs:
       - name: Upgrade npm for trusted publishing
         run: npm install -g npm@^11.5.1
 
+      - name: Read the package name and version
+        id: pkg
+        working-directory: npm
+        run: |
+          {
+            echo "name=$(node -p "require('./package.json').name")"
+            echo "version=$(node -p "require('./package.json').version")"
+          } >> "$GITHUB_OUTPUT"
+
       # Publish BEFORE the GitHub Release (#1185). npm is the distribution
       # channel; the release is the announcement. The old order created the
       # v9.0.0 release, then failed to publish, leaving a version nobody
@@ -78,17 +106,61 @@ jobs:
           echo "publishing $NAME@$VERSION under dist-tag: $DIST_TAG"
           npm publish --access public --provenance --tag "$DIST_TAG"
 
-      # #1252: a green publish step is not proof the CLI shipped. npm used to
-      # print `"bin[canary]" ... was invalid and removed` on every release
-      # (noise from a `./`-prefixed bin path), so a release that really lost
-      # its bins would have looked like every other one. Read the registry's
-      # manifest back and require every bin the local package.json declares.
-      # Exit 3 = abstain: the version is not visible yet, so nothing was checked.
+      # ADR 0042: the Release records a publish that really happened, so it
+      # does not wait on bin verification. A bin failure or abstention still
+      # turns the run red, in verify-bins, and holds `latest` back.
+      - name: Create GitHub Release (changelog only)
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          # A tag containing a hyphen (e.g. v6.0.0-rc.1) is a pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # #1252: a green publish step is not proof the CLI shipped. npm used to
+  # print `"bin[canary]" ... was invalid and removed` on every release
+  # (noise from a `./`-prefixed bin path), so a release that really lost
+  # its bins would have looked like every other one. Read the registry's
+  # manifest back and require every bin the local package.json declares.
+  #
+  # Exit 3 = abstain (ADR 0009): the version is not visible, so nothing was
+  # checked. That fails this job, so advance-latest is skipped; it is never a
+  # pass. Recovery after a slow registry: re-run this job, then
+  # advance-latest. Nothing has to be re-published.
+  verify-bins:
+    name: Verify the published manifest ships every bin
+    needs: publish
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
       - name: Verify the published manifest ships every bin
         working-directory: npm
+        env:
+          NAME: ${{ needs.publish.outputs.name }}
+          VERSION: ${{ needs.publish.outputs.version }}
         run: |
-          NAME=$(node -p "require('./package.json').name")
-          VERSION=$(node -p "require('./package.json').version")
+          SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
+          abstain() {
+            echo "::error::$1; its bins were NOT verified (abstaining, exit 3)"
+            {
+              echo "### Bin verification: abstained (exit 3)"
+              echo ""
+              echo "$1. The published bins were **NOT verified**, so \`latest\` will not advance."
+              echo "Re-run this job once the version is visible on the registry, then re-run advance-latest."
+            } >> "$SUMMARY"
+            exit 3
+          }
+          if [ -z "$NAME" ] || [ -z "$VERSION" ]; then
+            abstain "publish reported no package name/version (name='$NAME' version='$VERSION')"
+          fi
           # #1331: npm now warns a publish "may take a few minutes to become
           # available"; the old 6 x 10 s window abstained on v9.3.0 after a
           # good publish. 20 probes 30 s apart (~10 min) covers that, and the
@@ -102,12 +174,13 @@ jobs:
             [ "$attempt" -lt "$ATTEMPTS" ] && sleep 30
           done
           if [ "$VISIBLE" != "$VERSION" ]; then
-            echo "::error::$NAME@$VERSION is not visible on the registry; its bins were NOT verified (abstaining, exit 3)"
-            exit 3
+            abstain "$NAME@$VERSION is not visible on the registry"
           fi
           # Empty or unreadable output parses as {} and fails closed below.
           # shellcheck disable=SC2016 # single quotes on purpose: ${...} below is a JS template literal, not shell
-          npm view "$NAME@$VERSION" bin --json | node -e '
+          npm view "$NAME@$VERSION" bin --json | SUMMARY="$SUMMARY" SPEC="$NAME@$VERSION" node -e '
+            const fs = require("fs");
+            const say = (md) => fs.appendFileSync(process.env.SUMMARY, md + "\n");
             let raw = "";
             process.stdin.on("data", (c) => (raw += c));
             process.stdin.on("end", () => {
@@ -117,29 +190,33 @@ jobs:
               const missing = want.filter((b) => !got[b]);
               if (missing.length) {
                 console.log(`::error::published manifest is missing bin(s): ${missing.join(", ")}`);
+                say(`### Bin verification: FAILED (exit 1)\n\n${process.env.SPEC} is missing bin(s): ${missing.join(", ")}. \`latest\` will not advance.`);
                 process.exit(1);
               }
               console.log(`published bins: ${JSON.stringify(got)}`);
+              say(`### Bin verification: verified\n\n${process.env.SPEC} ships every declared bin: ${want.join(", ")}.`);
             });
           '
 
-      - name: Create GitHub Release (changelog only)
-        uses: softprops/action-gh-release@v3
-        with:
-          generate_release_notes: true
-          # A tag containing a hyphen (e.g. v6.0.0-rc.1) is a pre-release.
-          prerelease: ${{ contains(github.ref_name, '-') }}
-
   advance-latest:
     name: Advance latest → ${{ github.ref_name }}
-    needs: publish
+    # ADR 0042: never move `latest` over an unverified (exit 3) or failed
+    # (exit 1) bin check. A job whose needs did not succeed is skipped; the
+    # `if:` below has no status function, so success() is implied.
+    needs: [publish, verify-bins]
     runs-on: ubuntu-latest
     # Only advance for stable vX.Y.Z tags, never pre-releases (e.g. v1.2.0-rc1).
     if: ${{ !contains(github.ref_name, '-') }}
-    # #1427: this job force-pushes the `latest` tag. Two releases close
-    # together would race, and the slower run could move `latest` backwards.
-    # One group keyed on the tag makes them queue; cancel-in-progress: false
-    # so a running tag move is never killed mid-push.
+    # #1427: this job force-pushes the `latest` tag. The group only
+    # serialises runs (cancel-in-progress: false, so a running tag move is
+    # never killed mid-push). It does NOT order them: runs queue in the order
+    # their publish and verify-bins finish, not tag order, and a force push
+    # is last-writer-wins. What stops `latest` moving backwards is the guard
+    # in the step below, which advances only for the highest stable tag.
+    # GitHub keeps one pending run per group, so with three releases close
+    # together a pending advance can be cancelled; that run shows as
+    # cancelled, and re-running it is safe (the guard makes it a no-op
+    # unless it is still the highest).
     concurrency:
       group: latest-tag
       cancel-in-progress: false
@@ -152,11 +229,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The tag ranking below runs under node; use the pinned one.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # #1427: advance only for the highest stable vX.Y.Z tag on origin. An
+      # older release whose run lands after a newer one's is a logged no-op,
+      # so `latest` never moves backwards. Tags are re-fetched because a newer
+      # release may have been tagged after this run started.
+      # `ts/test/release-advance-latest.test.ts` runs this script against a
+      # local bare remote.
       - name: Move latest tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
+          git fetch --force --tags --quiet origin
+          if ! HIGHEST="$(git tag --list 'v*' | node scripts/highest-stable-tag.mjs)"; then
+            echo "::error::could not rank the stable release tags; latest not moved"
+            exit 1
+          fi
+          if [ "$HIGHEST" != "$RELEASE_TAG" ]; then
+            echo "::notice::${RELEASE_TAG} is not the highest stable tag (${HIGHEST}); latest not moved"
+            echo "Left latest alone: ${RELEASE_TAG} is older than ${HIGHEST}." >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -fa latest "$RELEASE_SHA" -m "latest → ${RELEASE_TAG}"

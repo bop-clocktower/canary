@@ -966,3 +966,13 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
 - **Plan:** —
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#617
+
+### PHP support — phpunit/pest detection and PHP security gates
+
+- **Status:** done
+- **Spec:** docs/changes/1465-php-support/proposal.md
+- **Summary:** Issue #1465. `phpunit` (supported) and `pest` join the framework registry and run through the project's own `vendor/bin`; `phpunit.xml(.dist)`, `composer.json` (after `package.json` `scripts.test`, so mixed repos keep their answer) and `language: php` are detected, a `phpunit.xml` beside `tests/Pest.php` is refined to Pest (nested packages too), and `canary init phpunit` scaffolds. Two new gates: `canary php floor` fails a runtime below its branch's PHP2Shell patched floor (CVE-2026-109618/109619) and abstains on vendor builds whose number cannot prove a backport; `canary php audit` wraps `composer audit --locked` with the lockfile's package count as its denominator, so a missing/empty/unreadable lockfile or an unrunnable composer exits 3. Verified end to end against real PHP 8.5.12 and real composer audit output.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#1465

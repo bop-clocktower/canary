@@ -21,6 +21,7 @@ const FRAMEWORK_HINTS: ReadonlyArray<readonly [string, TestShape]> = [
   ['vitest', 'frontend_unit'],
   ['jest', 'frontend_unit'],
   ['pytest', 'api'],
+  ['phpunit', 'api'],
   ['hurl', 'api'],
   ['k6', 'performance'],
   ['axe', 'accessibility'],
