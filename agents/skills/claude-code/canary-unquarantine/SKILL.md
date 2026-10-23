@@ -242,6 +242,12 @@ that passed. A restored marker comes back byte for byte, however many lifts
 share its file. The rewrite is one commit pushed to the trial branch. A person
 reviews and merges it.
 
+The trial manifest lives in the PR body, so anyone who can edit the PR can
+change it. Before anything is written, every path it names (the lifted files and
+the ledger) must resolve, symlinks included, strictly inside the trial worktree,
+and its `base` must be a commit id. Any escape refuses the whole `--apply`: it
+exits non-zero and writes, pushes and comments nothing.
+
 `verdict` abstains (`--strict` exit `3`) when there is no per-test result. That
 covers four cases: no `--results` or `--artifact`, CI not finished, no such
 artifact, or a document with no test cases. It never falls back to the run's

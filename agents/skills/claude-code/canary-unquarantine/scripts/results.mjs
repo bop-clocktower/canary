@@ -189,9 +189,15 @@ export function downloadResults(
   );
   if (list.status !== 0)
     return { why: `gh run list failed: ${(list.stderr || '').trim()}` };
-  const runs = JSON.parse(list.stdout || '[]').filter(
-    (r) => r.headSha === headRefOid,
-  );
+  let listed;
+  try {
+    listed = JSON.parse(list.stdout || '[]');
+  } catch (exc) {
+    return { why: `gh run list returned unparseable JSON: ${exc.message}` };
+  }
+  if (!Array.isArray(listed))
+    return { why: 'gh run list returned JSON that is not a list of runs' };
+  const runs = listed.filter((r) => r.headSha === headRefOid);
   const sha = headRefOid.slice(0, 7);
   if (!runs.length) return { why: `no CI run on the trial commit ${sha} yet` };
   const done = runs.find((r) => r.status === 'completed');
