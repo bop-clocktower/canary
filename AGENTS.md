@@ -1406,6 +1406,19 @@ outside its allowlist (`release.yml`, `wiki-sync.yml`), and on `npx` in a write
 job of either workflow. `ts/test/ledger-push-jobs.test.ts` runs the push jobs'
 own scripts against a local bare remote.
 
+A force push is last-writer-wins, so every job that force-pushes runs under a
+`concurrency:` group with `cancel-in-progress: false` (#1427). Overlapping runs
+queue, and a running push is never killed. A group serialises runs but does not
+order them, so it is enough only where the newest run is also the right writer.
+The push jobs above run only on push to `main` and regenerate from it. The
+required `security` scan job carries no group, so its PR runs never queue.
+`release.yml`'s `advance-latest` is different: its runs queue in the order their
+publish finishes, not tag order, so its step also moves `latest` only when the
+release is the highest stable `vX.Y.Z` tag (`scripts/highest-stable-tag.mjs`)
+and is otherwise a logged no-op. `ts/test/workflow-hygiene.test.ts` fails on a
+force push with no group, and `ts/test/release-advance-latest.test.ts` runs the
+`latest` step against a local bare remote.
+
 ## Agent Behavior
 
 ### Branch Hygiene Before Code Changes
@@ -1685,8 +1698,8 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 
 - Runs `markdownlint` on staged `.md` files — catches MD040 and other violations
   before they reach CI.
-- Re-runs `node scripts/security_ledger.mjs` and restages its outputs only
-  when the commit stages a ledger input (`.harness/security/timeline.json`,
+- Re-runs `node scripts/security_ledger.mjs` and restages its outputs only when
+  the commit stages a ledger input (`.harness/security/timeline.json`,
   `docs/SECURITY_LEDGER.md`, or the script itself). Unrelated commits leave the
   ledger alone; CI (`harness-security.yml`) is its canonical writer (#1446).
 

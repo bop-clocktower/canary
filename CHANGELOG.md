@@ -34,6 +34,19 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Overlapping workflow runs no longer overwrite a force-pushed ref, and
+  `latest` never moves backwards (#1427).** `release.yml`'s `advance-latest` job
+  force-pushes the `latest` tag, and its runs queue in the order their publish
+  finishes, not tag order, so an older release that finished later moved
+  `latest` back to itself. The step now advances only when the release is the
+  highest stable `vX.Y.Z` tag on origin (`scripts/highest-stable-tag.mjs`, which
+  ranks numerically and ignores pre-releases); otherwise it logs a notice and
+  leaves `latest` alone. The job's `latest-tag` concurrency group stays, to keep
+  tag moves from overlapping. `ts/test/workflow-hygiene.test.ts` now fails on
+  any force push outside a non-cancelling concurrency group, and on a group on
+  the required `security` job. `ts/test/release-advance-latest.test.ts` runs the
+  step against a local bare remote.
+
 - **`overlay list` no longer reports a bare `up to date` from a stale cache
   (#1324).** The freshness check never asks the remote, so a zero "behind" count
   only means the clone matched its remote at the last fetch. The status now says

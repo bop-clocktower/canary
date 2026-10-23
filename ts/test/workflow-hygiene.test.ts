@@ -12,6 +12,9 @@
  * - #1238: shellcheck findings piled up in `run:` scripts, because nothing ran
  *   actionlint. The `$*_BASE_FLAG` expansions are deliberately unquoted, so
  *   this file also guards them against a well-meant "fix" that quotes them.
+ * - #1427: `harness-security.yml` force-pushed its ledger branch with no
+ *   `concurrency:` group, so overlapping runs silently lost a write.
+ *   `release-advance-latest.test.ts` covers the `latest` tag's ordering.
  *
  * Offline: every assertion reads the YAML or JSON as data.
  */
@@ -28,12 +31,18 @@ interface Step {
   run?: string;
   env?: Record<string, string>;
 }
+interface Concurrency {
+  group?: string;
+  'cancel-in-progress'?: unknown;
+}
 interface Job {
   permissions?: unknown;
+  concurrency?: string | Concurrency;
   steps?: Step[];
 }
 interface Workflow {
   permissions?: unknown;
+  concurrency?: string | Concurrency;
   jobs?: Record<string, Job>;
 }
 
@@ -273,4 +282,72 @@ describe('#1238 the *_BASE_FLAG expansions stay unquoted', () => {
       expect(step!.run).toMatch(/# shellcheck disable=SC2086/);
     },
   );
+});
+
+describe('#1427 a workflow that force-pushes declares a concurrency group', () => {
+  // A force push is last-writer-wins. Two overlapping runs that force-update
+  // the same ref lose one run's write, and nothing goes red. A `concurrency:`
+  // group (workflow-level, or on the pushing job) makes them queue instead.
+  // `cancel-in-progress: true` would not help: it kills the earlier run,
+  // which drops the same write by a different route.
+  const FORCE_PUSH =
+    /\bgit\s+push\b[^\n]*?(?:\s--force(?:-with-lease)?\b|\s-f\b|\s\+[^\s]+)/;
+
+  it.each([
+    ['git push --force origin "HEAD:$BRANCH"', true],
+    ['git push origin latest --force', true],
+    ['git push --force-with-lease origin HEAD:x', true],
+    ['git push -f origin HEAD:x', true],
+    ['git push origin +HEAD:x', true],
+    ['git push origin "HEAD:$BRANCH"', false],
+    ['git push origin HEAD:master', false],
+    ['git push --follow-tags origin main', false],
+  ])('the detector classifies %s as force=%s', (line, force) => {
+    expect(FORCE_PUSH.test(line)).toBe(force);
+  });
+
+  const forcePushers = readdirSync(WORKFLOW_DIR)
+    .filter((f) => f.endsWith('.yml'))
+    .flatMap((file) => {
+      const wf = workflow(file);
+      return Object.entries(wf.jobs ?? {})
+        .filter(([, job]) =>
+          (job.steps ?? []).some((s) => s.run && FORCE_PUSH.test(s.run)),
+        )
+        .map(([id, job]) => ({
+          where: `${file} job ${id}`,
+          concurrency: job.concurrency ?? wf.concurrency,
+        }));
+    });
+
+  // A zero denominator would make the next test pass vacuously, e.g. after a
+  // detector regression. These three are known force-pushers. Since #1426 the
+  // push lives in a write job apart from the scan.
+  it('finds the known force-pushing workflows', () => {
+    const wheres = forcePushers.map((p) => p.where);
+    expect(wheres).toContain('arch-snapshot.yml job push');
+    expect(wheres).toContain('harness-security.yml job ledger');
+    expect(wheres).toContain('release.yml job advance-latest');
+  });
+
+  // `security` is a required check. It no longer pushes (#1426 moved that to
+  // `ledger`, which holds the ledger group), so a group on it only queues or
+  // supersedes required-check runs. A static group there would make PR runs
+  // wait behind `main` or be cancelled as superseded pending runs.
+  it('the required security job carries no concurrency group', () => {
+    const wf = workflow('harness-security.yml');
+    expect(wf.concurrency).toBeUndefined();
+    expect(wf.jobs?.security?.concurrency).toBeUndefined();
+  });
+
+  it('every force-pushing job is under a non-cancelling concurrency group', () => {
+    const bad = forcePushers
+      .filter(({ concurrency }) => {
+        if (concurrency === undefined) return true;
+        if (typeof concurrency === 'string') return concurrency.length === 0;
+        return !concurrency.group || concurrency['cancel-in-progress'] === true;
+      })
+      .map((p) => p.where);
+    expect(bad).toEqual([]);
+  });
 });
