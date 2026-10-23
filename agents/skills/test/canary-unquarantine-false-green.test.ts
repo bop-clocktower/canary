@@ -20,7 +20,14 @@ import {
   pyDeclarations,
   readSource,
 } from '../claude-code/canary-unquarantine/scripts/markers.mjs';
-import { jiraTracker } from '../claude-code/canary-unquarantine/scripts/jira.mjs';
+import {
+  jiraCommenter,
+  jiraTracker,
+} from '../claude-code/canary-unquarantine/scripts/jira.mjs';
+import {
+  judge,
+  junitCases,
+} from '../claude-code/canary-unquarantine/scripts/results.mjs';
 import { githubTracker } from '../claude-code/canary-unquarantine/scripts/trackers.mjs';
 
 type Result = { status: number; stdout: string; stderr: string; error: string };
@@ -395,5 +402,104 @@ describe('hand-off chain boundary', () => {
       'utf8',
     );
     expect(skill).toMatch(new RegExp(`up to ${HOPS} hops`));
+  });
+});
+
+// --- a trial only releases a test that proved itself (#1457) -----------------
+
+describe('a retry pass is not a pass', () => {
+  const xml = (child: string) =>
+    `<testsuite><testcase classname="tests.a" name="t" file="tests/a.py">${child}</testcase></testsuite>`;
+
+  it.each([
+    ['surefire flakyFailure', '<flakyFailure message="x"/>'],
+    ['surefire flakyError', '<flakyError message="x"></flakyError>'],
+    ['pytest-rerunfailures rerun', '<rerun message="x"/>'],
+  ])('%s reads as flaky, never pass', (_name, child) => {
+    expect(junitCases(xml(child))[0].outcome).toBe('flaky');
+  });
+
+  it('a rerun that never passed is still a fail', () => {
+    expect(
+      junitCases(xml('<rerunFailure/><failure message="x"/>'))[0].outcome,
+    ).toBe('fail');
+  });
+});
+
+describe('a test missing from the run is never judged on a sibling', () => {
+  const FILE = 'tests/cart.spec.ts';
+  const cases = (outcome: string) => [
+    { file: FILE, titlePath: ['cart', 'adds item twice'], outcome },
+  ];
+
+  it('a passing sibling whose title contains the lifted one is missing, not pass', () => {
+    expect(judge({ test: 'adds item', file: FILE }, cases('pass'))).toEqual({
+      outcome: 'missing',
+      cases: 0,
+    });
+  });
+
+  it('containment may still keep a test quarantined: a failing match demotes', () => {
+    expect(
+      judge({ test: 'adds item', file: FILE }, cases('fail')).outcome,
+    ).toBe('fail');
+  });
+
+  it('an exact segment still passes', () => {
+    expect(
+      judge({ test: 'adds item twice', file: FILE }, cases('pass')),
+    ).toEqual({ outcome: 'pass', cases: 1 });
+  });
+});
+
+describe('the Jira commenter sends credentials only to the configured site', () => {
+  const ENV = {
+    CANARY_JIRA_EMAIL: 'qa@example.com',
+    CANARY_JIRA_API_TOKEN: 'not-a-real-token',
+    CANARY_JIRA_BASE_URL: 'https://acme.atlassian.net',
+  };
+  const recorder = () => {
+    const calls: Call[] = [];
+    const run = (
+      cmd: string,
+      args: string[],
+      opts: { input?: string } = {},
+    ) => {
+      calls.push({ cmd, args, input: opts.input });
+      return ok('{}');
+    };
+    return { run, calls };
+  };
+  const ref = (base: string | null) => ({
+    tracker: 'jira',
+    key: 'CORE-7',
+    project: 'CORE',
+    base,
+    id: 'CORE-7',
+  });
+
+  it('a ticket linked on a foreign host gets no comment and no credentials', () => {
+    const r = recorder();
+    const comment = jiraCommenter({ run: r.run, projects: ['CORE'], env: ENV });
+    const out = comment(ref('https://attacker.example'), 'released');
+    expect(out.ok).toBe(false);
+    expect(out.why).toMatch(/not the configured Jira site/);
+    expect(r.calls).toEqual([]);
+  });
+
+  it('posts to the configured site over https, credentials on stdin only', () => {
+    const r = recorder();
+    const comment = jiraCommenter({ run: r.run, projects: ['CORE'], env: ENV });
+    expect(comment(ref(null), 'say "hi"').ok).toBe(true);
+    const [call] = r.calls;
+    expect(call.args.at(-1)).toBe(
+      'https://acme.atlassian.net/rest/api/2/issue/CORE-7/comment',
+    );
+    expect(call.args).toEqual(expect.arrayContaining(['--proto', '=https']));
+    expect(call.args.join(' ')).not.toContain('not-a-real-token');
+    expect(call.input).toContain('not-a-real-token');
+    expect(call.input).toContain(
+      `data = ${JSON.stringify(JSON.stringify({ body: 'say "hi"' }))}`,
+    );
   });
 });

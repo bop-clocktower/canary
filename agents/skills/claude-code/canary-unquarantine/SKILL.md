@@ -223,7 +223,12 @@ canary skills run canary-unquarantine -- verdict --pr 77 --artifact playwright-r
 Results come from the newest **completed** CI run on the trial commit, through
 `--artifact` (downloaded with `gh run download`). `--results PATH` takes a local
 file or directory instead. Both read a Playwright JSON report or JUnit XML. A
-lifted describe is judged on every case under it.
+lifted describe is judged on every case under it. A JUnit case carrying a retry
+record (surefire `<flakyFailure>`/`<flakyError>`, pytest-rerunfailures
+`<rerun>`) is flaky, not a pass. A lifted test is matched in the run by its
+title as a whole segment; a case whose title only contains it can keep the row
+quarantined (fail, flaky, skipped) but never release it, so a passing look-alike
+such as `adds item twice` for `adds item` reads as missing.
 
 | Outcome in the run      | `--apply` does                                                                                                                                                                                                                           |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
