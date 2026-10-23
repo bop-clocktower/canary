@@ -22,9 +22,9 @@
  * green while the pipeline goes red, which is the same false-confidence shape
  * #543 is about. Matching the gate beats being theoretically tidy.
  *
- * `npm/src` TOO (#1422). `check-deps` reports value and type-only cycles in
- * `ts/src` but reads no file in `npm/src` (no layer pattern matches it), so it
- * missed two real `import type` cycles there that the arch ratchet caught.
+ * `npm/src` TOO (#1422). `check-deps` read no file in `npm/src` until #1443
+ * gave it layers, so it missed two real `import type` cycles there that the
+ * arch ratchet caught. This stays as the desk-speed check for both roots.
  *
  * Offline: reads source text, resolves relative specifiers by path. It never
  * imports project code, so a cycle here cannot break the test that detects it.
@@ -251,8 +251,8 @@ describe('ts/src import graph (#543)', () => {
   });
 });
 
-// Planted positives (#1422), written to a temp dir: committed, they would be
-// counted by the arch and entropy ratchets, which walk ts/test/fixtures/ too.
+// Planted positives (#1422), written to a temp dir. Since #1443 the arch and
+// entropy analyzers skip test/fixtures/, but a temp dir keeps the tree clean.
 const PLANTED: Record<string, string> = {
   'value/a.ts': "import { b } from './b.js';\nexport const a = b;\n",
   'value/b.ts': "import { a } from './a.js';\nexport const b = a;\n",
