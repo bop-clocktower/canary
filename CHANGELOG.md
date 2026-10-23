@@ -14,6 +14,16 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`overlay list` no longer reports a bare `up to date` from a stale cache
+  (#1324).** The freshness check never asks the remote, so a zero "behind" count
+  only means the clone matched its remote at the last fetch. The status now says
+  `up to date as of <last fetch time>` (from `.git/FETCH_HEAD`, or the clone's
+  own reflog entry when it was never re-fetched) and `unknown (never fetched)`
+  when nothing records a fetch. `canary doctor`'s overlay freshness label
+  carries the same wording.
+
 ## [9.5.0] - 2026-10-23
 
 ### Added
