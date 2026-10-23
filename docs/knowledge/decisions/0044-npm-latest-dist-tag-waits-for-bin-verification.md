@@ -2,7 +2,7 @@
 number: 0044
 title: The npm latest dist-tag waits for bin verification
 date: 2026-10-23
-status: proposed
+status: accepted
 tier: small
 source: https://github.com/bop-clocktower/canary/issues/1440
 ---
@@ -11,7 +11,7 @@ source: https://github.com/bop-clocktower/canary/issues/1440
 
 # ADR 0044 — The npm `latest` dist-tag waits for bin verification
 
-**Status:** proposed **Date:** 2026-10-23 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-10-23 **Deciders:** Bri Stevenski
 (maintainer) **Related:**
 [#1440](https://github.com/bop-clocktower/canary/issues/1440) (this decision);
 ADR 0042 (bin verification gates the git `latest` tag, and defers this
