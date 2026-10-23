@@ -14,6 +14,13 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`analyze_file` existing-test paths (#1371).** A root-level test file whose
+  name starts with `..` (for example `..foo.test.ts`) is now listed in
+  `existing_tests` as a project-relative path instead of an absolute one. Only a
+  leading `..` path segment counts as leaving the project root now.
+
 ## [9.5.0] - 2026-10-23
 
 ### Added

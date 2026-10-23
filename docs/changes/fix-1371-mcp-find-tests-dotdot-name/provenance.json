@@ -1,0 +1,18 @@
+{
+  "fleet": "roadmap-fleet",
+  "runId": "fc1023",
+  "issues": [1371],
+  "route": "bug",
+  "routeSignal": "label",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/mcp-server-edges.test.ts",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "The fix and its regression test fully resolve the issue as scoped: findExistingTests now returns a project-relative path for a root-level file whose name starts with '..'.",
+  "assumptions": [
+    "Fix scoped to findExistingTests only, as the issue specifies; the same string-prefix shape in resolveInsideRoot (mcp-server.ts) and resolveCliPath (core/skill-registry.ts) fails closed (over-refuses a '..'-named entry) and is flagged for follow-up rather than changed here.",
+    "The escape predicate also keeps an isAbsolute(rel) check so a cross-drive relative() result on Windows still falls back to the absolute path, matching Python relative_to semantics.",
+    "Regression test added to the existing ts/test/mcp-server-edges.test.ts rather than a new file, so no new module needs an entropy.entryPoints declaration."
+  ],
+  "answeredForks": {},
+  "baseSha": "7f1c23644e7f1b0c71dae0e5f53c170118bf35fc"
+}

@@ -53,6 +53,7 @@ import {
   join,
   relative,
   resolve,
+  sep,
 } from 'node:path';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -449,9 +450,13 @@ export function findExistingTests(
   const out: string[] = [];
   for (const f of files.slice(0, MAX_EXISTING_TESTS)) {
     // Python `f.relative_to(project_root)` raises for a non-descendant and
-    // falls back to the absolute path; a `..` prefix is the JS analog.
+    // falls back to the absolute path. The JS analog is a leading `..`
+    // SEGMENT (or an absolute result across drives), not a `..` string
+    // prefix: a root file named `..foo.test.ts` is a descendant (#1371).
     const rel = relative(projectRoot, f);
-    out.push(rel.startsWith('..') ? f : rel);
+    const escapes =
+      rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+    out.push(escapes ? f : rel);
   }
   return out;
 }
