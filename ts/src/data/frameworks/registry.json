@@ -650,6 +650,59 @@
         "no LLM under test (this is not a general functional-testing tool)"
       ],
       "provider_access_note": "Route provider access through the agent-plugin path — never embed raw API keys in the eval config or CI."
+    },
+    {
+      "name": "phpunit",
+      "display_name": "PHPUnit",
+      "category": "api",
+      "categories": ["api", "integration"],
+      "languages": ["php"],
+      "file_extensions": ["php"],
+      "file_patterns": ["*Test.php"],
+      "ecosystems": ["php", "composer"],
+      "license": "BSD-3-Clause",
+      "execution_command": "vendor/bin/phpunit {file}",
+      "ci_flags": ["--colors=never", "--do-not-cache-result"],
+      "status": "supported",
+      "maturity": "very_high",
+      "community_size": "massive",
+      "recommended_for": [
+        "php unit and integration testing",
+        "legacy and framework PHP apps (Laravel, Symfony, Laminas)"
+      ],
+      "strengths": [
+        "The de-facto PHP runner; every PHP framework ships against it",
+        "Runs the project-local Composer install, so the version matches the lockfile",
+        "JUnit XML output for CI"
+      ],
+      "avoid_when": ["the suite is already written in Pest (use pest)"]
+    },
+    {
+      "name": "pest",
+      "display_name": "Pest",
+      "category": "api",
+      "categories": ["api", "integration"],
+      "languages": ["php"],
+      "file_extensions": ["php"],
+      "file_patterns": ["*Test.php"],
+      "ecosystems": ["php", "composer"],
+      "license": "MIT",
+      "execution_command": "vendor/bin/pest {file}",
+      "ci_flags": ["--colors=never", "--do-not-cache-result"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "expressive PHP tests in repos that already use Pest",
+        "Laravel projects"
+      ],
+      "strengths": [
+        "Runs on PHPUnit, so existing PHPUnit tests keep working",
+        "Concise closure-based syntax"
+      ],
+      "avoid_when": [
+        "the repo has no Pest install (use phpunit; pest --init owns the scaffold)"
+      ]
     }
   ]
 }

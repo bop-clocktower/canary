@@ -101,6 +101,14 @@ and does not gate the GitHub Release** (#1392 option (c), hybrid).
 This ADR records the decision only. The `release.yml` edit is separate build
 work.
 
+**Implemented** in #1439: the check is the `verify-bins` job (`needs: publish`),
+the GitHub Release stays a step in `publish` after the npm publish, and
+`advance-latest` has `needs: [publish, verify-bins]`. `verify-bins` reads the
+name and version from `publish`'s job outputs and writes its verdict (verified,
+FAILED, or NOT verified) to the step summary. `ts/test/release-workflow.test.ts`
+asserts this job graph. The `release.yml:N` line references in the Context
+section describe the file before that change.
+
 ## Alternatives Considered
 
 - **(a) Full split: neither the Release nor `latest` waits on bin

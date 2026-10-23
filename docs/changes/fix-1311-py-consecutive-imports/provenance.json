@@ -1,0 +1,21 @@
+{
+  "fleet": "roadmap-fleet",
+  "runId": "fc1023",
+  "issues": [1311],
+  "route": "bug",
+  "routeSignal": "label",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/pattern-matcher.test.ts",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "The fix addresses the whole issue: consecutive bare-import lines and an import followed by a from-import are each counted, and the parity golden is re-baselined in the same PR per answered fork F2.",
+  "assumptions": [
+    "Fix only the bare-import branch of PY_IMPORT (`import[ \\t]+([\\w., \\t]+)`); the `from\\s+` branch is left as-is because a `from` keyword alone on its line is not valid Python, so it cannot swallow a following import.",
+    "A comma list on one line (`import os, sys`) keeps its existing behavior of counting only the first module; widening that is a separate behavior change outside this issue.",
+    "Reused the repro branch test shape (repro/bf-py-consecutive-imports, 7b4df314) and added a second case for the golden's own pattern (`import pytest` then `from myapp import auth`).",
+    "Kept pattern.json's original (non-prettier) formatting so the golden diff is only the re-ordered values; format:check does not cover JSON fixtures."
+  ],
+  "answeredForks": {
+    "F2": "a: re-baseline ts/test/fixtures/core-golden/pattern.json in the same PR; contract change stated in PR body"
+  },
+  "baseSha": "7f1c23644e7f1b0c71dae0e5f53c170118bf35fc"
+}

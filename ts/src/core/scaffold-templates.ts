@@ -74,6 +74,25 @@ python_functions = test_*
     },
     dirs: ['tests'],
   },
+  phpunit: {
+    files: {
+      'phpunit.xml.dist': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         failOnRisky="true"
+         failOnWarning="true">
+  <testsuites>
+    <testsuite name="default">
+      <directory>tests</directory>
+    </testsuite>
+  </testsuites>
+</phpunit>
+`,
+    },
+    dirs: ['tests'],
+  },
   k6: {
     files: {
       'k6.config.js': `export const options = {
