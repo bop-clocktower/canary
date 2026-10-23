@@ -83,6 +83,19 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Registry code no longer runs under a write token in `harness-security.yml`
+  or `arch-snapshot.yml` (#1426).** Both workflows granted `contents: write` to
+  every job. Their scans ran a floating `@harness-engineering/cli` through `npx`
+  while `actions/checkout` held that token in `.git/config` (CWE-250, CWE-272).
+  Only the final standing-branch push needs write. Each workflow is now
+  `contents: read` at the top. The scan job uploads what it refreshed, and a
+  separate push job (`ledger`, `push`) with `contents: write` and no `npx`
+  downloads it under `runner.temp`, copies only the named files and pushes. The
+  required `security` check keeps its name, and the new `ledger` job is listed
+  as advisory. `ts/test/workflow-hygiene.test.ts` now fails on a top-level
+  `contents: write` outside an allowlist with stated reasons, and on `npx` in a
+  write job of either workflow.
+
 - **The pre-commit hook no longer drags the security ledger into unrelated
   commits (#1446).** It regenerated and staged
   `.harness/security/timeline.json` and `docs/SECURITY_LEDGER.md` whenever any

@@ -13,8 +13,13 @@ on:
     branches:
       - main
 
+# #1426 (CWE-250 / CWE-272): read-only by default. The scans below run a
+# floating `@harness-engineering/cli` through `npx`, and `actions/checkout`
+# leaves the job's token in `.git/config`, so a write scope here handed that
+# token to registry code on every run. Only the `ledger` job writes, and it
+# runs no registry code. `ts/test/workflow-hygiene.test.ts` holds both halves.
 permissions:
-  contents: write
+  contents: read
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
@@ -98,6 +103,63 @@ jobs:
       - name: Refresh security ledger
         run: node scripts/security_ledger.mjs
 
+      # #1426: hand the two refreshed files to the `ledger` job instead of
+      # pushing from here. `.harness/` is a dot-path, which upload-artifact
+      # skips unless told otherwise, and a missing file is an error: an
+      # artifact without the timeline would read as "ledger unchanged".
+      - name: Upload security ledger outputs (push to main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-ledger
+          path: |
+            .harness/security/timeline.json
+            docs/SECURITY_LEDGER.md
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # #1426: the only job that holds `contents: write`, and it runs no registry
+  # code: checkout, download, copy, git. The artifact was written by a job
+  # that ran `npx`, so it is extracted under runner.temp rather than over the
+  # checkout (where it could plant any file, `.git/config` included), and only
+  # the two ledger files are copied across.
+  #
+  # Not a required check: it is skipped on every PR. `.github/required-checks.json`
+  # lists it as advisory with that reason.
+  ledger:
+    needs: security
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Two pushes to `main` close together would otherwise race their
+    # force-pushes to the one standing branch, and the older scan could win.
+    concurrency:
+      group: ledger-chore/security-ledger
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: security-ledger
+          path: ${{ runner.temp }}/security-ledger
+
+      - name: Restore the refreshed ledger files
+        env:
+          SRC: ${{ runner.temp }}/security-ledger
+        # Regular files only: `cp` follows a symlink, and a link planted in the
+        # artifact could copy the persisted token into a file this job pushes.
+        run: |
+          for f in .harness/security/timeline.json docs/SECURITY_LEDGER.md; do
+            if [ ! -f "$SRC/$f" ] || [ -L "$SRC/$f" ]; then
+              echo "::error::artifact entry $f is missing or not a regular file" >&2
+              exit 1
+            fi
+            cp -- "$SRC/$f" "$f"
+          done
+
       # The bot cannot push to `main`: ruleset 16189198 carries a
       # `pull_request` rule with `bypass_actors: []`, so every direct push is
       # rejected with GH013. This step used to do exactly that and swallow the
@@ -109,8 +171,7 @@ jobs:
       # `can_approve_pull_request_reviews: false`, so `gh pr create` from a
       # workflow is refused outright (run 30976556644). Opening the PR is a
       # human step; the step summary below carries the compare link.
-      - name: Push the security-ledger branch (push to main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Push the security-ledger branch
         env:
           BRANCH: chore/security-ledger
         run: |
