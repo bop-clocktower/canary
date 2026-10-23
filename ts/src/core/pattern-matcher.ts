@@ -158,7 +158,11 @@ function readText(path: string): string | null {
 
 // --- Python analysis -------------------------------------------------------
 
-const PY_IMPORT = /^(?:from\s+([\w.]+)\s+import|import\s+([\w.,\s]+))/gm;
+// The bare-`import` clause is horizontal whitespace only (`[ \t]`, never `\s`):
+// a Python import statement ends at the newline, and `\s` let one match run on
+// through every following `import`/`from` line, so only the first module of a
+// block was ever counted (#1311).
+const PY_IMPORT = /^(?:from\s+([\w.]+)\s+import|import[ \t]+([\w., \t]+))/gm;
 const PY_TEST_FN = /^\s*def\s+(test_\w+)/gm;
 const PY_CLASS = /^\s*class\s+Test\w+/m;
 const PY_FIXTURE = /@pytest\.fixture|conftest/;
