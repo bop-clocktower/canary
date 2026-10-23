@@ -1,4 +1,4 @@
-// git -- the filesystem and git plumbing `trial` and `verdict` share.
+// git -- the filesystem and git plumbing `trial`, `verdict` and `quarantine` share.
 //
 // Every write happens in a throwaway `git worktree` under the OS temp
 // directory, created and removed here, so the user's own checkout is never
@@ -18,6 +18,32 @@ export function must(r, what) {
     throw new Error(`${what} failed (exit ${r.status}): ${first}`);
   }
   return r.stdout.trim();
+}
+
+/**
+ * `file` as a repo-relative POSIX path, or why it is refused. The path is
+ * resolved, symlinks included, and must land strictly inside `repo`: a
+ * `--file ../x` or an absolute path elsewhere would otherwise be edited.
+ *
+ * @returns {{rel: string, abs: string} | {why: string}}
+ */
+export function insideRepo(repo, file) {
+  const outside = { why: `--file ${file} is outside --repo ${repo}` };
+  const root = path.resolve(repo);
+  const abs = path.resolve(root, file);
+  const within = (base, p) => {
+    const rel = path.relative(base, p);
+    const up = rel === '..' || rel.startsWith(`..${path.sep}`);
+    return rel && !up && !path.isAbsolute(rel) ? rel : null;
+  };
+  const rel = within(root, abs);
+  if (!rel) return outside;
+  try {
+    if (!within(fs.realpathSync(root), fs.realpathSync(abs))) return outside;
+  } catch {
+    // A file that does not exist is reported by locate, with its own reason.
+  }
+  return { rel: rel.split(path.sep).join('/'), abs };
 }
 
 /** A fresh temp directory. */

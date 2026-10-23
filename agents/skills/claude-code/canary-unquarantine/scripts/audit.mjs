@@ -255,12 +255,9 @@ function findUnledgered(markers, rows, results, jiraProjects) {
   const byLine = new Set(
     results.filter((r) => r.markerLine).map((r) => `${r.file}:${r.markerLine}`),
   );
-  // A row accounts for a marker it located (byLine), or one whose title it
-  // names EXACTLY. Containment is not enough: a row titled `login` must not
-  // hide an unledgered `test.skip('login retries forever')`.
-  const titles = new Set(
-    rows.filter((r) => r.test).map((r) => pairKey(r.file, r.test)),
-  );
+  // A row accounts for a marker it located, or one it names EXACTLY: a row
+  // `login` must not hide an unledgered `test.skip('login retries forever')`.
+  const titles = new Set(rows.map((r) => r.test && pairKey(r.file, r.test)));
   return markers
     .filter((m) => !byLine.has(`${m.file}:${m.markerLine}`))
     .filter((m) => !titles.has(pairKey(m.file, m.test)))

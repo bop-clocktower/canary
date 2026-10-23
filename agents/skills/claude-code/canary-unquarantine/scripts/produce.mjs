@@ -11,10 +11,8 @@
 // migration turns each unledgered marker into a row, keeping every ticket
 // reference it carried exactly as written, so the audit can then chase it.
 
-import fs from 'node:fs';
-import path from 'node:path';
-
 import * as ledgerIo from '../../canary-katana/scripts/ledger.mjs';
+import { insideRepo, writeAt } from './git.mjs';
 import { applyEdits, planQuarantine } from './lift.mjs';
 import { locate, readSource } from './markers.mjs';
 
@@ -95,32 +93,6 @@ function refusal({ file, test, cause, issue }) {
 }
 
 /**
- * `file` as a repo-relative POSIX path, or why it is refused. The path is
- * resolved, symlinks included, and must land strictly inside `repo`: a
- * `--file ../x` or an absolute path elsewhere would otherwise be edited.
- *
- * @returns {{rel: string, abs: string} | {why: string}}
- */
-function insideRepo(repo, file) {
-  const outside = { why: `--file ${file} is outside --repo ${repo}` };
-  const root = path.resolve(repo);
-  const abs = path.resolve(root, file);
-  const within = (base, p) => {
-    const rel = path.relative(base, p);
-    const up = rel === '..' || rel.startsWith(`..${path.sep}`);
-    return rel && !up && !path.isAbsolute(rel) ? rel : null;
-  };
-  const rel = within(root, abs);
-  if (!rel) return outside;
-  try {
-    if (!within(fs.realpathSync(root), fs.realpathSync(abs))) return outside;
-  } catch {
-    // A file that does not exist is reported by locate, with its own reason.
-  }
-  return { rel: rel.split(path.sep).join('/'), abs };
-}
-
-/**
  * Switch one test off and record it: the marker (with a comment naming the
  * ticket) and the ledger row are written together, or neither is.
  *
@@ -172,15 +144,11 @@ function quarantineTest({
   });
   // Marker first, then the row; if the row cannot be written, the marker is
   // taken back out, so a failure never leaves a skip the ledger cannot see.
-  fs.writeFileSync(
-    where.abs,
-    applyEdits(src.lines, plan.edits).join('\n'),
-    'utf8',
-  );
+  writeAt(repo, file, applyEdits(src.lines, plan.edits).join('\n'));
   try {
     ledgerIo.appendEntries(ledgerPath, [row]);
   } catch (err) {
-    fs.writeFileSync(where.abs, src.lines.join('\n'), 'utf8');
+    writeAt(repo, file, src.lines.join('\n'));
     throw err;
   }
   return { row, markerLine: loc.line + 1 };
