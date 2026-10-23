@@ -6,7 +6,8 @@
  * The three concerns every command tree needs:
  *
  *   - {@link CliExitError} -- the business-exit signal thrown from a handler
- *     (Python `typer.Exit(code)`). Re-exported from `guardian/cli.ts` so the
+ *     (Python `typer.Exit(code)`). Re-exported from the leaf
+ *     `util/exit-error.ts` (which `guardian/cli.ts` also re-exports) so the
  *     ENTIRE command tree (main program, its sub-apps, AND the already-ported
  *     guardian sub-app it mounts) throws ONE class. `bin/canary.js` catches one
  *     `CliExitError` regardless of which sub-app raised it.
@@ -28,7 +29,7 @@ import { CommanderError } from 'commander';
 
 import { ensureAscii } from './util/ensure-ascii.js';
 
-export { CliExitError } from './guardian/cli.js';
+export { CliExitError } from './util/exit-error.js';
 
 /**
  * Map commander's usage-error exit code to typer/click's `2`. Commander defaults

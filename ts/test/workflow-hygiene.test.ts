@@ -40,6 +40,10 @@ interface Concurrency {
   group?: string;
   'cancel-in-progress'?: unknown;
 }
+interface Concurrency {
+  group?: string;
+  'cancel-in-progress'?: unknown;
+}
 interface Job {
   permissions?: unknown;
   concurrency?: string | Concurrency;
