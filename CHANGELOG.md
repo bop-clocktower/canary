@@ -14,10 +14,37 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [9.5.0] - 2026-10-23
+
+### Added
+
+- **PHP support (#1465).** `phpunit` and `pest` join the framework registry and
+  run through the project's own `vendor/bin`. `phpunit.xml(.dist)` and
+  `composer.json` (`phpunit/phpunit`, `pestphp/pest`) are detected, and a
+  `phpunit.xml` next to `tests/Pest.php` is read as Pest, nested packages
+  included. `canary init phpunit` scaffolds `phpunit.xml.dist` and `tests/`.
+  `phpunit` is `supported`, not `preferred`, so language-blind `api`
+  recommendations for Python and JS projects are unchanged. `pest` is not a
+  classifier hint, because the English word would steal prompts.
+- **`canary php floor`, a gate.** It fails a PHP runtime below its branch's
+  PHP2Shell patched floor (CVE-2026-109618, CVE-2026-109619: 8.2.35, 8.3.36,
+  8.4.27, 8.5.12). 7.4 through 8.1 have no upstream fix, so an upstream build
+  there fails. A distro build below the floor (`8.3.6-1ubuntu…`) and a
+  pre-release of the floor version itself (`8.3.36RC1`) are skipped, not judged,
+  because the number cannot prove either way; a distro build at or above the
+  floor passes. A run where nothing could be judged exits 3, and `--strict`
+  exits 3 on any skip. It takes `--php-version` for hosts it cannot reach, and
+  reports the `session.upload_progress.enabled` stopgap when it probes a binary.
+- **`canary php audit`, a gate.** It runs `composer audit --locked` and fails on
+  advisories or abandoned packages. Its denominator is the `composer.lock`
+  package count, so a missing, empty, unreadable or unparseable lockfile, or a
+  composer that cannot run, exits 3 instead of reading as clean. So does a
+  composer exit code that claims findings the parser did not find.
+
 ### Changed
 
-- **CI tracks harness 13 (`@harness-engineering/cli@13`).** All six workflow
-  pins move from `@12`. harness 13 makes the arch ratchet measure
+- **CI tracks harness 13 (`@harness-engineering/cli@13`) (#1420).** All six
+  workflow pins move from `@12`. harness 13 makes the arch ratchet measure
   `circular-deps`, `layer-violations` and `forbidden-imports` for the first time
   (Intense-Visions/harness-engineering#2235), and it found two `import type`
   cycles in `npm/src` that no gate had reported. Both are broken by moving the
@@ -60,7 +87,7 @@ under the project's former name) are documented in the
   and redacts exactly what the old regex did, pinned by a differential test
   against it.
 
-- **The engine's lockfile moves hono to 4.13.13**
+- **The engine's lockfile moves hono to 4.13.13 (#1431)**
   ([GHSA-5r4p-p66f-jhc7](https://github.com/advisories/GHSA-5r4p-p66f-jhc7)).
   `ts/package-lock.json` resolved hono 4.13.7, pulled in by
   `@modelcontextprotocol/sdk`, and hono 4.12.4 to 4.13.10 has a `serveStatic`
@@ -4971,7 +4998,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.4.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.5.0...HEAD
+[9.5.0]: https://github.com/bop-clocktower/canary/compare/v9.4.0...v9.5.0
 [9.4.0]: https://github.com/bop-clocktower/canary/compare/v9.3.0...v9.4.0
 [9.3.0]: https://github.com/bop-clocktower/canary/compare/v9.2.0...v9.3.0
 [9.2.0]: https://github.com/bop-clocktower/canary/compare/v9.1.0...v9.2.0
