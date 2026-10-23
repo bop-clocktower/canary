@@ -94,7 +94,12 @@ Also changed:
 ## Assumptions / remediation actions
 
 - **F1 (DECIDED, human):** the retry lives in `RestGitHubClient`'s request path
-  and covers reads and writes.
+  and covers reads and writes. **Amended after review (human, option a):** the
+  non-idempotent comment-create POST retries only on a 429 or a rate-limited
+  403, which GitHub rejects before processing. A POST 5xx is not retried: it can
+  arrive after the comment was created, and a re-POST would stack a second
+  sticky (SC-9). It falls through to the F2 degrade. GET and PATCH keep the 5xx
+  retry.
 - **F2 (DECIDED, human):** a post that still fails exits with the computed
   verdict's code. The verdict goes to the job log and step summary, and the
   failure surfaces as a `::warning::` (same degrade shape as the 403 path).

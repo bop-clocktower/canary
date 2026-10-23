@@ -415,14 +415,17 @@ comment and the Actions step summary. Never a silent under-delivery.
 
 **A failed comment post is not a failed check.** The comment client retries a
 GitHub 5xx, a 429, or a rate-limited 403 up to 3 attempts in total, waiting 1s
-then 2s, or the `retry-after` the response names (capped at 60s). Both the
-comment lookup and the write retry. If the post still fails, or the token cannot
-write at all (a plain 403, as on a fork), `pr-check` prints a `::warning::`
-naming the HTTP status. It then writes the rendered verdict to the job log and
-the step summary and exits with the **computed verdict's** code, so a GitHub
-outage cannot turn a passing gate red. Any other 4xx, such as a 404 or a 422, is
-not retried and fails the run loudly, because it says the request itself is
-wrong ([#1467]).
+then 2s, or the `retry-after` the response names (capped at 60s). The comment
+lookup and the comment update retry all three. Creating the comment is a POST,
+which is not idempotent: a 5xx can arrive after GitHub has already created it,
+so the POST is retried only on a 429 or a rate-limited 403 (rejected before
+processing) and a 5xx goes straight to the degrade path rather than risk a
+second sticky. If the post still fails, or the token cannot write at all (a
+plain 403, as on a fork), `pr-check` prints a `::warning::` naming the HTTP
+status. It then writes the rendered verdict to the job log and the step summary
+and exits with the **computed verdict's** code, so a GitHub outage cannot turn a
+passing gate red. Any other 4xx, such as a 404 or a 422, is not retried and
+fails the run loudly, because it says the request itself is wrong ([#1467]).
 
 ## Suppression
 

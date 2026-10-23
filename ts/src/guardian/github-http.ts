@@ -3,8 +3,9 @@
  *
  * A transient GitHub failure (a 5xx, a 429, or a rate-limited 403) says nothing
  * about the diff, yet a single one used to fail the required `guardian` check.
- * {@link fetchWithRetry} gives each request {@link MAX_ATTEMPTS} tries; every
- * other status is a real answer and returns on the first try.
+ * {@link fetchWithRetry} gives each request {@link MAX_ATTEMPTS} tries (a POST
+ * only on a rate limit, never a 5xx); every other status is a real answer and
+ * returns on the first try.
  * {@link toGitHubError} then types a final failure so the sticky-comment upsert
  * can tell a token problem, a rate limit, and a GitHub outage apart. Split out
  * of `pr-comment.ts`, which owns the comment client and the degrade decision.
@@ -37,13 +38,19 @@ function isRateLimited(headers: Headers | undefined): boolean {
 /**
  * Worth another attempt (#1467 F3): a 5xx, a 429, or a RATE-LIMITED 403. Every
  * other 4xx is a real answer about the request and stays loud on the first try.
+ *
+ * A POST is not idempotent: a 5xx can arrive after GitHub already created the
+ * comment, and re-POSTing would stack a second guardian sticky (SC-9). So a
+ * POST retries only on a 429 or rate-limited 403, which GitHub rejects before
+ * processing; a POST 5xx falls straight through to the caller's degrade path.
  */
-function isRetryable(status: number, headers: Headers): boolean {
-  return (
-    status >= 500 ||
-    status === 429 ||
-    (status === 403 && isRateLimited(headers))
-  );
+function isRetryable(
+  method: string,
+  status: number,
+  headers: Headers,
+): boolean {
+  if (status === 429 || (status === 403 && isRateLimited(headers))) return true;
+  return status >= 500 && method !== 'POST';
 }
 
 /** `retry-after` (seconds) when GitHub sent one, else exponential backoff. */
@@ -58,7 +65,7 @@ function retryDelayMs(attempt: number, headers: Headers): number {
 
 /**
  * `fetch` with the bounded retry (#1467): up to {@link MAX_ATTEMPTS} tries on a
- * retryable status. Returns the last response either way, so the caller's
+ * retryable status (method-aware: see {@link isRetryable}). Returns the last response either way, so the caller's
  * status mapping still decides what a final failure means.
  */
 export async function fetchWithRetry(
@@ -71,7 +78,7 @@ export async function fetchWithRetry(
     if (
       resp.ok ||
       attempt >= MAX_ATTEMPTS ||
-      !isRetryable(resp.status, resp.headers)
+      !isRetryable(init.method ?? 'GET', resp.status, resp.headers)
     ) {
       return resp;
     }

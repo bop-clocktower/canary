@@ -6,6 +6,9 @@
  *
  * Contract (human-decided F1-F3):
  * - F1: the retry lives in RestGitHubClient's request path, reads and writes.
+ *   A non-idempotent POST is retried ONLY on a 429 or a rate-limited 403 (the
+ *   request was rejected before processing); a 5xx may arrive after GitHub
+ *   already created the comment, so re-POSTing would stack a second sticky.
  * - F3: 3 attempts, backoff 1s then 2s, `retry-after` honoured; 5xx, 429 and a
  *   rate-limited 403 retry; any other 4xx is loud and is NOT retried.
  * - F2: a post that still fails degrades to a `::warning::` and `pr-check`
@@ -39,9 +42,14 @@ interface FetchLog {
 function stubFetch(
   posts: Reply[],
   gets: Reply[] = [{ status: 200 }],
+  patches: Reply[] = [{ status: 200 }],
 ): FetchLog {
   const log: FetchLog = { calls: [] };
-  const queues: Record<string, Reply[]> = { GET: [...gets], POST: [...posts] };
+  const queues: Record<string, Reply[]> = {
+    GET: [...gets],
+    POST: [...posts],
+    PATCH: [...patches],
+  };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -77,31 +85,44 @@ function client(sleep: (ms: number) => Promise<void>): RestGitHubClient {
 }
 
 const posts = (log: FetchLog) => log.calls.filter((c) => c.method === 'POST');
+const patches = (log: FetchLog) =>
+  log.calls.filter((c) => c.method === 'PATCH');
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('RestGitHubClient retries transient failures (F1, F3)', () => {
-  it('a 500 then a 200 on the comment POST succeeds after one 1s backoff', async () => {
+  it('a 500 on the comment POST is NOT retried (it may already have posted)', async () => {
     const log = stubFetch([{ status: 500 }, { status: 201 }]);
-    const { sleeps, sleep } = recordingSleep();
-    const row = await client(sleep).createComment('body');
-    expect({ id: row.id, posts: posts(log).length, sleeps }).toEqual({
-      id: 77,
-      posts: 2,
-      sleeps: [1000],
-    });
-  });
-
-  it('three 500s stop at 3 attempts with 1s then 2s backoff', async () => {
-    const log = stubFetch([{ status: 500 }]);
     const { sleeps, sleep } = recordingSleep();
     await expect(client(sleep).createComment('body')).rejects.toThrow(
       /GitHub API 500/,
     );
     expect({ posts: posts(log).length, sleeps }).toEqual({
-      posts: 3,
+      posts: 1,
+      sleeps: [],
+    });
+  });
+
+  it('a 500 then a 200 on the comment PATCH succeeds after one 1s backoff', async () => {
+    const log = stubFetch([], undefined, [{ status: 500 }, { status: 200 }]);
+    const { sleeps, sleep } = recordingSleep();
+    await client(sleep).updateComment(77, 'body');
+    expect({ patches: patches(log).length, sleeps }).toEqual({
+      patches: 2,
+      sleeps: [1000],
+    });
+  });
+
+  it('three 500s on the PATCH stop at 3 attempts with 1s then 2s backoff', async () => {
+    const log = stubFetch([], undefined, [{ status: 500 }]);
+    const { sleeps, sleep } = recordingSleep();
+    await expect(client(sleep).updateComment(77, 'body')).rejects.toThrow(
+      /GitHub API 500/,
+    );
+    expect({ patches: patches(log).length, sleeps }).toEqual({
+      patches: 3,
       sleeps: [1000, 2000],
     });
   });
@@ -232,6 +253,28 @@ index 1111111..2222222 100644
     );
     expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toMatch(/::warning::guardian: .*HTTP 500/);
+  });
+
+  it('a POST 500 then 201 makes exactly ONE POST and degrades to the verdict code', async () => {
+    const log = stubFetch([{ status: 500 }, { status: 201 }]);
+    const { sleep } = recordingSleep();
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--post-comment'],
+      {
+        input: DIFF_NEW_UNIT,
+        env: { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/7/merge' },
+        cwd: tmp,
+        deps: {
+          buildCommentClient: (repo, pr) =>
+            new RestGitHubClient(repo, pr, 'tok', undefined, sleep),
+        },
+      },
+    );
+    expect({
+      posts: posts(log).length,
+      code: res.code,
+      warned: /::warning::guardian: .*HTTP 500/.test(res.stdout),
+    }).toEqual({ posts: 1, code: ABSTAINED, warned: true });
   });
 
   it('prints the verdict to the job log and step summary when the post degrades', async () => {

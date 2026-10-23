@@ -202,7 +202,8 @@ export function degradationAnnotation(notice: string): string {
  * Exported (public, like {@link RestBranchProtectionClient}). Network lives
  * ONLY in `request` and in
  * the default {@link restPageReader}. Both go through {@link fetchWithRetry}
- * (#1467), so a 5xx/429/rate-limited 403 is retried on reads and writes alike;
+ * (#1467), so a 5xx/429/rate-limited 403 is retried on reads and the PATCH,
+ * while the comment POST retries only a rate limit (a 5xx may have posted);
  * `sleep` is the seam that keeps those retries out of real time in tests, and
  * the paged read path is also covered through the injected `read` seam (#528).
  * A 403 (fork read-only token) surfaces as {@link GitHubPermissionError} so the
