@@ -48,6 +48,23 @@ test("a payload over budget drops the catalog first and says so", () => {
   assert.match(warnings.join("\n"), /collected/);
 });
 
+test("fitPayload names its lossy outcomes so a caller can refuse them (#1355)", () => {
+  const cfg = resolveConfig({ suite: "s" }, {});
+  const withCatalog = buildPayload([], cfg, T, {}, "passed", { collected: [{ full_title: "t", test_file: "x.spec.ts", tags: ["z".repeat(300)] }] });
+  const dropped = fitPayload(withCatalog, 400);
+  assert.equal(dropped.catalogDropped, true);
+  assert.equal(dropped.overBudget, false);
+  assert.equal(dropped.maxBytes, 400);
+  assert.equal(dropped.bytes, Buffer.byteLength(JSON.stringify(withCatalog)));
+  const still = fitPayload(withCatalog, 50);
+  assert.equal(still.catalogDropped, true);
+  assert.equal(still.overBudget, true);
+  const fits = fitPayload(withCatalog);
+  assert.equal(fits.catalogDropped, false);
+  assert.equal(fits.overBudget, false);
+  assert.deepEqual(fits.warnings, []);
+});
+
 test("--list mode (nothing ran, tests collected) pushes nothing", async () => {
   const t = fakeTest({ title: "a" });
   const { pushes, logs } = await runReporter({ collected: [t], tests: [] });

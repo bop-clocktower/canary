@@ -75,6 +75,7 @@ describe('findNestedConfigs', () => {
         'node_modules',
         'out',
         'target',
+        'vendor',
         'venv',
       ].sort(),
     );

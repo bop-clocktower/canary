@@ -6,6 +6,20 @@
  */
 
 import { PageReader, readAllPages, restPageReader } from './github-paging.js';
+import {
+  GitHubPermissionError,
+  GitHubRateLimitError,
+  GitHubServerError,
+  MAX_ATTEMPTS,
+  type Sleep,
+  fetchWithRetry,
+  realSleep,
+  toGitHubError,
+} from './github-http.js';
+
+// Re-exported: hard-gate, briefing, and the tests catch it from here (#1467
+// moved the HTTP error mapping next to the retry it classifies).
+export { GitHubPermissionError };
 
 // `renderFindings` writes this literal on a comment body's first line.
 export const STICKY_MARKER = '<!-- canary-pr-guardian -->';
@@ -39,49 +53,6 @@ export interface GitHubClient {
   createComment(body: string): Promise<Comment>;
   /** Update an existing comment in place; return the updated row. */
   updateComment(commentId: number, body: string): Promise<Comment>;
-}
-
-/**
- * A client cannot write (fork read-only token → HTTP 403).
- *
- * Thrown by write methods so {@link upsertStickyComment} can degrade loudly to
- * a `::warning::` annotation instead of crashing the job (OT-4).
- */
-export class GitHubPermissionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'GitHubPermissionError';
-  }
-}
-
-/**
- * GitHub also answers 403 to a RATE-LIMITED token (primary limit:
- * `x-ratelimit-remaining: 0`; secondary limit: `retry-after`). That is not a
- * permission failure, and reporting it as one sends the reader off to fix a
- * token that is fine (#931: the notice must say what failed).
- */
-class GitHubRateLimitError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'GitHubRateLimitError';
-  }
-}
-
-function isRateLimited(headers: Headers | undefined): boolean {
-  return (
-    headers?.get('x-ratelimit-remaining') === '0' ||
-    (headers?.get('retry-after') ?? null) !== null
-  );
-}
-
-/** Map a non-2xx status to an error; a non-rate-limit 403 is a permission error. */
-function toGitHubError(status: number, url: string, headers?: Headers): Error {
-  if (status !== 403) return new Error(`GitHub API ${status}: ${url}`);
-  return isRateLimited(headers)
-    ? new GitHubRateLimitError(`GitHub API 403 (rate limited): ${url}`)
-    : new GitHubPermissionError(
-        `GitHub API 403 (read-only token / fork PR?): ${url}`,
-      );
 }
 
 /**
@@ -178,7 +149,8 @@ function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {
  * Update guardian's own sticky in place, else create one (SC-9: never stacks).
  * A 403 degrades to a `degraded` result instead of crashing the job (OT-4) --
  * on the lookup as well as the write, since the paged read maps 403 the same
- * way (#528).
+ * way (#528). So does a 429 or 5xx that outlived the client's retries (#1467):
+ * none of them says anything about the diff. Any other 4xx still throws.
  */
 export async function upsertStickyComment(
   client: GitHubClient,
@@ -205,7 +177,14 @@ export async function upsertStickyComment(
       return {
         action: 'degraded',
         comment_id: null,
-        notice: `guardian: GitHub API rate limit hit (HTTP 403) — findings not posted as a comment; re-run the job once the limit resets`,
+        notice: `guardian: GitHub API rate limit hit (HTTP ${err.status}) — findings not posted as a comment; re-run the job once the limit resets`,
+      };
+    }
+    if (err instanceof GitHubServerError) {
+      return {
+        action: 'degraded',
+        comment_id: null,
+        notice: `guardian: GitHub API server error (HTTP ${err.status}) after ${MAX_ATTEMPTS} attempts — findings not posted as a comment; the check's result is the computed verdict`,
       };
     }
     throw err;
@@ -222,11 +201,13 @@ export function degradationAnnotation(notice: string): string {
  *
  * Exported (public, like {@link RestBranchProtectionClient}). Network lives
  * ONLY in `request` and in
- * the default {@link restPageReader}; the write paths have no unit test by
- * design, while the paged read path is covered through the injected `read`
- * seam (#528). A 403 (fork read-only token) surfaces as
- * {@link GitHubPermissionError} so the caller degrades loudly rather than
- * crashing.
+ * the default {@link restPageReader}. Both go through {@link fetchWithRetry}
+ * (#1467), so a 5xx/429/rate-limited 403 is retried on reads and the PATCH,
+ * while the comment POST retries only a rate limit (a 5xx may have posted);
+ * `sleep` is the seam that keeps those retries out of real time in tests, and
+ * the paged read path is also covered through the injected `read` seam (#528).
+ * A 403 (fork read-only token) surfaces as {@link GitHubPermissionError} so the
+ * caller degrades loudly rather than crashing.
  *
  * Comments live on the *issues* endpoint (a PR is an issue):
  * `https://api.github.com/repos/{repo}/issues/{pr}/comments`.
@@ -241,12 +222,17 @@ export class RestGitHubClient implements GitHubClient {
     private readonly prNumber: number,
     private readonly token: string,
     read?: PageReader,
+    private readonly sleep: Sleep = realSleep,
   ) {
     // The `read` seam exists so #528's paging is testable without a socket;
     // production callers pass three arguments and get the real reader. It
-    // shares `request`'s 403 mapping so a fork PR degrades identically on a
-    // paged read and an unpaged write.
-    this.read = read ?? restPageReader(this.headers(), toGitHubError);
+    // shares `request`'s 403 mapping AND its retry so a fork PR or a GitHub
+    // 5xx behaves identically on a paged read and an unpaged write.
+    this.read =
+      read ??
+      restPageReader(this.headers(), toGitHubError, (url, init) =>
+        fetchWithRetry(url, init, this.sleep),
+      );
   }
 
   private headers(): Record<string, string> {
@@ -268,7 +254,7 @@ export class RestGitHubClient implements GitHubClient {
     if (payload !== undefined) {
       init.body = JSON.stringify(payload);
     }
-    const resp = await fetch(url, init);
+    const resp = await fetchWithRetry(url, init, this.sleep);
     if (!resp.ok) throw toGitHubError(resp.status, url, resp.headers);
     return resp.json();
   }

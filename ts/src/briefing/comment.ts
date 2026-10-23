@@ -53,7 +53,7 @@ export async function postCharter(
       BRIEFING_MARKER,
     );
     if (r.action === 'degraded')
-      return { kind: 'degraded', notice: FORBIDDEN_NOTICE };
+      return { kind: 'degraded', notice: degraded(r.notice) };
     return { kind: 'posted', action: r.action, commentId: r.comment_id };
   } catch (e) {
     // Non-403 failures (missing token, network) degrade the same way: the
@@ -61,7 +61,23 @@ export async function postCharter(
     const notice =
       e instanceof GitHubPermissionError
         ? FORBIDDEN_NOTICE
-        : `canary briefing: could not post the charter comment (${(e as Error).message}) \u{2014} charter printed to stdout instead`;
+        : couldNotPost((e as Error).message);
     return { kind: 'degraded', notice };
   }
+}
+
+function couldNotPost(why: string): string {
+  return `canary briefing: could not post the charter comment (${why}) \u{2014} charter printed to stdout instead`;
+}
+
+/**
+ * The upsert degrades on a permission 403, a rate limit, AND a GitHub 5xx that
+ * outlived its retries (#1467). Only the first is the token's fault, so only
+ * it gets {@link FORBIDDEN_NOTICE}; the others keep the upsert's own reason.
+ */
+function degraded(notice: string | null): string {
+  if (notice === null || notice.includes('lacks write permission')) {
+    return FORBIDDEN_NOTICE;
+  }
+  return couldNotPost(notice.replace(/^guardian: /, ''));
 }

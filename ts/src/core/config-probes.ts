@@ -48,6 +48,9 @@ export const CONFIG_PROBES: Array<[string, string, TestShape, string]> = [
   ['wdio.conf.ts', 'wdio', 'mobile', 'config'],
   ['wdio.conf.js', 'wdio', 'mobile', 'config'],
   ['wdio.conf.mjs', 'wdio', 'mobile', 'config'],
+  // Pest runs off phpunit.xml too; classifyConfig refines it (#1465).
+  ['phpunit.xml.dist', 'phpunit', 'api', 'config'],
+  ['phpunit.xml', 'phpunit', 'api', 'config'],
 ];
 
 // Detects playwright UI fixture params. MULTILINE is a no-op (no `^`/`$`).
@@ -98,7 +101,21 @@ function classifyConfig(
     const inferred = inferPlaywrightTestType(dir);
     if (inferred !== shape) return [framework, inferred, 'content'];
   }
+  const pest = pestRefinement(dir, framework);
+  if (pest !== framework) return [pest, shape, 'content'];
   return [framework, shape, confidence];
+}
+
+/**
+ * `pest` when a phpunit config sits beside `tests/Pest.php`, else *framework*.
+ * Probe table entries are bare filenames (the nested walk matches on
+ * basename), so Pest is a refinement of phpunit rather than its own row.
+ * Shared with workspace detection so the two tiers cannot disagree.
+ */
+export function pestRefinement(dir: string, framework: string): string {
+  return framework === 'phpunit' && existsSync(join(dir, 'tests', 'Pest.php'))
+    ? 'pest'
+    : framework;
 }
 
 /** Tier 1 -- a dedicated config file at the root (highest confidence). */
@@ -122,6 +139,8 @@ export const NESTED_CONFIG_MAX_DEPTH = 3;
  */
 export const NESTED_CONFIG_SKIP_DIRS: ReadonlySet<string> = new Set([
   ...WORKSPACE_SKIP_DIRS,
+  // Composer (and Go) installs: a vendored package's own suite (#1465).
+  'vendor',
   'out',
   '.nuxt',
   '.cache',

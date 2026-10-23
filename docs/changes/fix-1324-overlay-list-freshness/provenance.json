@@ -1,0 +1,22 @@
+{
+  "fleet": "roadmap-fleet",
+  "runId": "fc1023",
+  "issues": [1324],
+  "route": "bug",
+  "routeSignal": "label",
+  "stages": ["debugging"],
+  "reproducingTest": "npm/scripts/__tests__/overlay-list.test.js",
+  "closingKeyword": "Refs",
+  "closingKeywordReason": "Slice: fixes the overlay list freshness wording only; the issue's 'canary doctor flags an overlay not fetched in N days' half was deferred by the human (F1) and stays open on the issue.",
+  "assumptions": [
+    "Last fetch time = mtime of <clone>/.git/FETCH_HEAD (rewritten by every git fetch, even a no-op); when absent, the timestamp of the 'clone: from' entry in <clone>/.git/logs/HEAD (a fresh clone counts as a fetch); otherwise 'unknown (never fetched)'. Read from disk, no extra git call and no network.",
+    "Time rendered as ISO-8601 UTC to the second (e.g. 2026-09-21T12:00:00Z), no locale or relative formatting.",
+    "Only the zero-behind branch changes; 'N commits behind', 'pinned @ <ref>', 'unknown (no upstream tracking ref)' and 'missing' are unchanged.",
+    "canary doctor shares freshness(), so its overlay:<name>:fresh label carries the new wording; its pass/fail status is unchanged (the N-day staleness flag is the deferred follow-up).",
+    "Overlay clones are plain git clones with a .git directory (as created by canary overlay add); a .git file (worktree/gitdir link) yields 'unknown (never fetched)'."
+  ],
+  "answeredForks": {
+    "F1": "a: no network; 'up to date as of <last fetch time>' / 'unknown (never fetched)'; doctor staleness flag deferred to follow-up"
+  },
+  "baseSha": "7f1c23644e7f1b0c71dae0e5f53c170118bf35fc"
+}
