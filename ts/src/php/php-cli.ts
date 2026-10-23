@@ -21,6 +21,7 @@ import {
 } from '../core/composer-audit.js';
 import {
   errnoCode,
+  EXIT_ABSTAINED,
   gateOutcome,
   type GateResult,
 } from '../core/gate-result.js';
@@ -40,7 +41,10 @@ const PROBE_SCRIPT =
 /** Run *php* once, or explain in a skip why its version is unknown. */
 function probeRuntime(php: string, deps: MainDeps): RuntimeReport | string {
   const run = deps.runSubprocess(php, ['-r', PROBE_SCRIPT]);
-  if (run.status === null) return `'${php}' is not runnable`;
+  // spawnSync reports both a missing binary and a signal death as null.
+  if (run.status === null) {
+    return `'${php}' did not run to completion (missing, or killed by a signal)`;
+  }
   try {
     const [version, ini] = JSON.parse(run.stdout) as unknown[];
     if (typeof version === 'string') {
@@ -59,6 +63,8 @@ function report<F>(
   result: GateResult<F>,
   opts: {
     json?: boolean | undefined;
+    /** Any skipped item escalates a clean exit 0 to exit 3. */
+    strict?: boolean | undefined;
     noun: string;
     extra?: Record<string, unknown>;
   },
@@ -67,6 +73,7 @@ function report<F>(
   deps: MainDeps,
 ): void {
   const outcome = gateOutcome(result, 'gate', { noun: opts.noun });
+  const skippedCount = result.skipped?.length ?? 0;
   if (opts.json) {
     const { abstained } = outcome;
     deps.out(jsonIndent2({ ...opts.extra, ...result, abstained }));
@@ -74,15 +81,22 @@ function report<F>(
     for (const f of result.findings)
       deps.out(`  ${pc.red(CROSS)} ${render(f)}`);
     deps.out(outcome.summaryLine);
-    if (outcome.abstained) deps.out(pc.yellow(`${WARN} ${remedy}`));
+    // A partial run passes on what it judged; the skipped ones still need
+    // the fix step, or they read as handled.
+    if (skippedCount > 0) deps.out(pc.yellow(`${WARN} ${remedy}`));
   }
-  if (outcome.exitCode !== 0) throw new CliExitError(outcome.exitCode);
+  // --strict only escalates a clean exit; findings and abstention keep the
+  // code gateOutcome decided.
+  const escalate = opts.strict && skippedCount > 0 && outcome.exitCode === 0;
+  const code = escalate ? EXIT_ABSTAINED : outcome.exitCode;
+  if (code !== 0) throw new CliExitError(code);
 }
 
 interface FloorOpts {
   phpVersion?: string[];
   php: string;
   json?: boolean;
+  strict?: boolean;
 }
 
 function floorAction(opts: FloorOpts, deps: MainDeps): void {
@@ -104,6 +118,7 @@ function floorAction(opts: FloorOpts, deps: MainDeps): void {
     result,
     {
       json: opts.json,
+      strict: opts.strict,
       noun: 'runtime check(s)',
       extra: { advisory: id, cves },
     },
@@ -164,10 +179,12 @@ export function buildPhpCommand(deps: MainDeps): Command {
     .command('floor')
     .description(
       `Fail when a PHP runtime is below the ${PHP2SHELL.id} patched floor ` +
-        `(${PHP2SHELL.cves.join(', ')}). Unjudgeable versions exit 3.`,
+        `(${PHP2SHELL.cves.join(', ')}). Unjudgeable versions are skipped; ` +
+        'exit 3 when none could be judged, or any with --strict.',
     )
     .option('--php-version <versions...>', 'versions to judge; skips probing')
     .option('--php <binary>', 'PHP binary to probe', 'php')
+    .option('--strict', 'exit 3 when any runtime was skipped')
     .option('--json', 'Print the gate result as JSON.')
     .action((opts: FloorOpts) => floorAction(opts, deps));
   php

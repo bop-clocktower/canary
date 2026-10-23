@@ -26,6 +26,7 @@ import { probeFramework } from '../src/core/framework-probes.js';
 import { FrameworkRegistry } from '../src/core/framework-registry.js';
 import { FrameworkRecommender } from '../src/core/recommender.js';
 import { Scaffolder } from '../src/core/scaffolder.js';
+import { detectWorkspace } from '../src/core/workspace-detect.js';
 
 const ALL = ['config', 'content', 'scripts', 'dependency', 'language'] as const;
 const PKG = ['config', 'content', 'scripts', 'dependency'] as const;
@@ -157,6 +158,38 @@ describe('detection probes', () => {
       'language',
     ]);
     expect(probeFramework(root, { language: 'php' }, [...PKG])[0]).toBeNull();
+  });
+});
+
+describe('detection: review findings (#1465)', () => {
+  it('the nested walk never reads a dependency suite under vendor/', () => {
+    // A composer install vendors packages that ship their own phpunit.xml.
+    const lib = join(root, 'vendor', 'acme', 'lib');
+    mkdirSync(lib, { recursive: true });
+    writeFileSync(join(lib, 'phpunit.xml.dist'), '<phpunit/>', 'utf-8');
+    expect(probeFramework(root, {}, ['nested-config'])[0]).toBeNull();
+  });
+
+  it('workspace detection applies the same Pest refinement', () => {
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ workspaces: ['apps/*'] }),
+      'utf-8',
+    );
+    const pkg = join(root, 'apps', 'api');
+    mkdirSync(join(pkg, 'tests'), { recursive: true });
+    writeFileSync(join(pkg, 'package.json'), '{}', 'utf-8');
+    writeFileSync(join(pkg, 'phpunit.xml'), '<phpunit/>', 'utf-8');
+    writeFileSync(join(pkg, 'tests', 'Pest.php'), '<?php\n', 'utf-8');
+    expect(detectWorkspace(root, {})?.findings).toEqual([
+      {
+        dir: 'apps/api',
+        framework: 'pest',
+        shape: 'api',
+        source: 'phpunit.xml',
+        confidence: 'content',
+      },
+    ]);
   });
 });
 

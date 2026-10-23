@@ -202,8 +202,34 @@ describe('canary php audit abstains instead of passing', () => {
     lockfile(['acme/a', 'acme/b']);
     const r = await audit(() => ({ status: null, stdout: '', stderr: '' }));
     expect(r.code).toBe(EXIT_ABSTAINED);
-    expect(r.stdout).toContain('composer is not runnable');
+    expect(r.stdout).toContain('composer did not run to completion');
     expect(r.stdout).not.toContain('passed');
+  });
+
+  it('a JSON object with no advisories key is not a report: exit 3', async () => {
+    lockfile(['acme/a']);
+    const r = await audit(fakeComposer({ foo: 1 }, 1).runSubprocess);
+    expect(r.code).toBe(EXIT_ABSTAINED);
+    expect(r.stdout).toContain('no advisories key');
+  });
+
+  it('exit bit 1 with no parsed advisory abstains instead of passing', async () => {
+    // Composer says "vulnerable"; a parser that found nothing has drifted.
+    lockfile(['acme/a']);
+    const r = await audit(
+      fakeComposer({ advisories: { 'acme/a': 'unexpected' } }, 1).runSubprocess,
+    );
+    expect(r.code).toBe(EXIT_ABSTAINED);
+    expect(r.stdout).toContain('composer reported advisories');
+  });
+
+  it('exit bit 2 with no parsed abandoned package abstains', async () => {
+    lockfile(['acme/a']);
+    const r = await audit(
+      fakeComposer({ advisories: [], abandoned: 'x' }, 2).runSubprocess,
+    );
+    expect(r.code).toBe(EXIT_ABSTAINED);
+    expect(r.stdout).toContain('composer reported abandoned');
   });
 
   it('composer output that is not an audit report: exit 3', async () => {

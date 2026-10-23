@@ -38,6 +38,32 @@ describe('evaluateRuntimes', () => {
     expect(r.findings[0]!.detail).toContain('CVE-2026-109619');
   });
 
+  it.each(['8.3.36RC1', '8.3.36-dev', '8.5.12beta1'])(
+    'pre-release %s of the patched version is skipped: it may predate the fix',
+    (v) => {
+      const r = evaluateRuntimes([{ version: v }]);
+      expect(r.checked).toBe(0);
+      expect(r.skipped?.[0]?.reason).toMatch(/pre-release of the patched/);
+    },
+  );
+
+  it('a pre-release above the floor passes: its branch already has the fix', () => {
+    expect(evaluateRuntimes([{ version: '8.3.37-dev' }])).toMatchObject({
+      checked: 1,
+      findings: [],
+    });
+  });
+
+  it.each(['8.3.40-1+ubuntu24.04.1+deb.sury.org+1', '8.4.27-1~deb12u1'])(
+    'vendor build %s at or above the floor passes on its upstream number',
+    (v) => {
+      expect(evaluateRuntimes([{ version: v }])).toMatchObject({
+        checked: 1,
+        findings: [],
+      });
+    },
+  );
+
   it('an upstream pre-release compares on its number', () => {
     expect(evaluateRuntimes([{ version: '8.5.0RC1' }]).findings).toHaveLength(
       1,
@@ -148,12 +174,49 @@ describe('canary php floor', () => {
     expect(r.stdout).toContain('session.upload_progress.enabled=1');
   });
 
+  it('a mixed run passes what it judged but still names the remedy', async () => {
+    const r = await invokeCanary([
+      'php',
+      'floor',
+      '--php-version',
+      '8.3.36',
+      '8.3.6-1ubuntu2.14',
+    ]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('1 skipped');
+    expect(r.stdout).toContain("check a vendor build against its vendor's");
+  });
+
+  it('--strict exits 3 when any runtime was skipped', async () => {
+    const r = await invokeCanary([
+      'php',
+      'floor',
+      '--strict',
+      '--php-version',
+      '8.3.36',
+      '8.3.6-1ubuntu2.14',
+    ]);
+    expect(r.code).toBe(EXIT_ABSTAINED);
+  });
+
+  it('--strict leaves a fully judged clean run at exit 0', async () => {
+    const r = await invokeCanary([
+      'php',
+      'floor',
+      '--strict',
+      '--php-version',
+      '8.4.27',
+    ]);
+    expect(r.code).toBe(0);
+  });
+
   it('a binary that cannot run abstains (exit 3) and names the fix', async () => {
     const r = await invokeCanary(['php', 'floor'], {
       deps: { runSubprocess: () => ({ status: null, stdout: '', stderr: '' }) },
     });
     expect(r.code).toBe(EXIT_ABSTAINED);
     expect(r.stdout).toContain('Abstained');
+    expect(r.stdout).toContain('did not run to completion');
     expect(r.stdout).toContain('--php-version');
     expect(r.stdout).not.toContain('passed');
   });

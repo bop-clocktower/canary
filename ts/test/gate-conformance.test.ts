@@ -483,6 +483,31 @@ const ROWS: GateRow[] = [
     forbid: ['passed'],
     run: (base) => invokeCanary(['php', 'audit', '--dir', base]),
   },
+  {
+    // #1465 review: composer's exit says "vulnerable" but the parser found
+    // nothing -- a drifted output shape must not read as a clean audit.
+    command: 'php audit (exit bit 1, zero advisories parsed)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['passed'],
+    run: (base) => {
+      writeFileSync(
+        join(base, 'composer.lock'),
+        JSON.stringify({ packages: [{ name: 'acme/a' }] }),
+        'utf-8',
+      );
+      return invokeCanary(['php', 'audit', '--dir', base], {
+        deps: {
+          runSubprocess: () => ({
+            status: 1,
+            stdout: JSON.stringify({ advisories: { 'acme/a': {} } }),
+            stderr: '',
+          }),
+        },
+      });
+    },
+  },
 ];
 
 describe('gate conformance registry (#508)', () => {

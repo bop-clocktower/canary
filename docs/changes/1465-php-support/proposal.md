@@ -57,20 +57,31 @@ booking page with playwright" would hint `pest`. A test pins this.
 
 The verdict for each runtime:
 
-| Runtime                                                         | Verdict  |
-| --------------------------------------------------------------- | -------- |
-| Upstream build at or above its branch floor                     | pass     |
-| Upstream build below its branch floor                           | finding  |
-| Upstream build on 7.4/8.0/8.1 (no upstream release)             | finding  |
-| Anything below 7.4, vendor builds included (no fix from anyone) | finding  |
-| Vendor build (`8.3.6-1ubuntu…`) on a covered branch             | **skip** |
-| Unknown branch, or not a version string                         | **skip** |
+| Runtime                                                                 | Verdict                                  |
+| ----------------------------------------------------------------------- | ---------------------------------------- |
+| At or above its branch floor, upstream or vendor build                  | pass                                     |
+| Upstream pre-release above the floor (`8.3.37-dev`)                     | pass                                     |
+| Upstream pre-release _of_ the floor version (`8.3.36RC1`, `8.3.36-dev`) | **skip**: may predate the security merge |
+| Upstream build below its branch floor                                   | finding                                  |
+| Vendor build below its branch floor (`8.3.6-1ubuntu…`)                  | **skip**                                 |
+| Upstream build on 7.4/8.0/8.1 (no upstream release)                     | finding                                  |
+| Vendor build on 7.4/8.0/8.1                                             | **skip**                                 |
+| Anything below 7.4, vendor builds included (no fix from anyone)         | finding                                  |
+| Unknown branch, or not a version string                                 | **skip**                                 |
 
 Debian and Ubuntu keep the upstream number in `PHP_VERSION` and backport fixes
-under their own suffix. Failing a vendor build is a false alarm, and passing it
-is a false green. Only the vendor's advisory can answer, so the gate abstains
-(#508: unknown is not zero). When it probes a binary, it also reports the
-`session.upload_progress.enabled` stopgap state for CVE-2026-109619.
+under their own suffix. A vendor number _below_ the floor may be patched, so
+failing it is a false alarm, and passing it is a false green. Only the vendor's
+advisory can answer, so the gate skips it (#508: unknown is not zero). A vendor
+number at or above the floor is built on a patched release, so it passes.
+Otherwise every host on a distro PPA would sit at exit 3 forever, and teams
+would learn to ignore exit 3.
+
+A run with some judged and some skipped runtimes follows the shared contract: it
+passes on what it judged, names each skip and its remedy, and exits 0.
+`--strict` turns any skip into exit 3, for a fleet verdict where an unjudged
+production host must not pass. When it probes a binary, the gate also reports
+the `session.upload_progress.enabled` stopgap state for CVE-2026-109619.
 
 ### D6: the audit's denominator is canary's own lockfile count
 
@@ -79,8 +90,10 @@ is a false green. Only the vendor's advisory can answer, so the gate abstains
 (exit 3) with the reason and the first fix step:
 
 - the lockfile is missing, empty, unparseable, or unreadable (errno)
-- composer cannot run
-- composer's output is not an audit report
+- composer does not run to completion
+- composer's output is not an audit report, or has no `advisories` key
+- composer's exit bitmask (1 vulnerable, 2 abandoned) claims findings the parser
+  did not find, which means the output shape drifted
 
 Abandoned packages are findings. An abandoned framework gets no security
 releases, and that is the risk this gate exists to surface.

@@ -283,10 +283,10 @@ Use, process, escalation) lives in
 
 ### I want to gate a PHP app's security posture
 
-| Tool                                  | What it does                                                                                                           |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `canary php floor [--php-version v…]` | CLI gate — fails a runtime below its branch's patched floor (PHP2Shell, CVE-2026-109618/109619); vendor builds exit 3. |
-| `canary php audit [--dir <path>]`     | CLI gate — `composer audit` over `composer.lock`; advisories and abandoned packages fail, no lockfile exits 3.         |
+| Tool                                  | What it does                                                                                                               |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `canary php floor [--php-version v…]` | CLI gate — fails a runtime below its branch's patched floor (PHP2Shell, CVE-2026-109618/109619); unprovable versions skip. |
+| `canary php audit [--dir <path>]`     | CLI gate — `composer audit` over `composer.lock`; advisories and abandoned packages fail, no lockfile exits 3.             |
 
 PHPUnit and Pest are detected from `phpunit.xml(.dist)`, `tests/Pest.php` and
 `composer.json`, and run through the project's own `vendor/bin`.

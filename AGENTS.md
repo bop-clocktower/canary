@@ -177,10 +177,10 @@ remote deletion is a human act. Worktree pruning waits for #889.
   [ts/src/core/composer-audit.ts](ts/src/core/composer-audit.ts) turns
   `composer audit` into a gate whose denominator is the `composer.lock` package
   count. [ts/src/php/php-cli.ts](ts/src/php/php-cli.ts) wires both as
-  `canary php floor|audit`. A distro build (`8.3.6-1ubuntu…`) is skipped, not
-  judged: distros backport the fix under their own suffix, so the upstream
-  number proves nothing. To add an advisory, add a `PhpAdvisory` and a test per
-  branch boundary.
+  `canary php floor|audit`. A distro build below the floor (`8.3.6-1ubuntu…`) is
+  skipped, not judged: distros backport the fix under their own suffix, so the
+  upstream number proves nothing. To add an advisory, add a `PhpAdvisory` and a
+  test per branch boundary.
 - **Metadata Scanner:**
   [ts/src/core/metadata-scanner.ts](ts/src/core/metadata-scanner.ts) — Reads
   `package.json`, `tsconfig.json`, `requirements.txt`, and `pyproject.toml` to

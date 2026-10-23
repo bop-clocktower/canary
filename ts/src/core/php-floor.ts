@@ -7,10 +7,12 @@
  * actually reports against the patched floor of its branch.
  *
  * Doctrine (#508): a version the table cannot judge is SKIPPED, never passed.
- * The sharpest case is a distro build: Debian/Ubuntu keep the upstream number
- * in `PHP_VERSION` and backport the fix under their own suffix, so
- * `8.3.6-1ubuntu...` can be fully patched. Failing it would be a false alarm,
- * passing it a false green; only the vendor's advisory can answer.
+ * The sharpest case is a distro build below the floor: Debian/Ubuntu keep the
+ * upstream number in `PHP_VERSION` and backport the fix under their own
+ * suffix, so `8.3.6-1ubuntu...` can be fully patched. Failing it would be a
+ * false alarm, passing it a false green; only the vendor's advisory can
+ * answer. The other unprovable case is an upstream pre-release of the floor
+ * version itself.
  */
 
 import type { GateResult, SkipEntry } from './gate-result.js';
@@ -84,32 +86,69 @@ function stopgapNote(r: RuntimeReport): string {
 
 type Verdict = { finding: FloorFinding } | { skip: string } | { ok: true };
 
-function judge(r: RuntimeReport, a: PhpAdvisory): Verdict {
-  const m = VERSION_RE.exec(r.version.trim());
-  if (!m) return { skip: 'not a PHP version string' };
+const VENDOR_SKIP = 'vendor build: check the vendor advisory for a backport';
+
+interface Parsed {
+  ver: Triple;
+  branch: string;
+  /** Distro/vendor suffix (`-1ubuntu2.14`), as opposed to an upstream one. */
+  vendor: boolean;
+  /** Upstream RC/beta/alpha/-dev: a build from BEFORE that release. */
+  prerelease: boolean;
+}
+
+function parse(version: string): Parsed | null {
+  const m = VERSION_RE.exec(version.trim());
+  if (!m) return null;
   const ver: Triple = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const branch = `${ver[0]}.${ver[1]}`;
   const vendor = !UPSTREAM_SUFFIX_RE.test(m[4]!);
+  return {
+    ver,
+    branch: `${ver[0]}.${ver[1]}`,
+    vendor,
+    prerelease: !vendor && m[4] !== '',
+  };
+}
+
+/**
+ * A branch with an upstream fix. A vendor number at or above the floor is
+ * built on a patched release, so it passes; only a vendor number BELOW the
+ * floor is unprovable either way. A pre-release of the floor version itself
+ * (8.3.36RC1, 8.3.36-dev) may predate the security merge, so it is skipped.
+ */
+function judgeFixed(p: Parsed, floor: string): 'ok' | 'below' | string {
+  const cmp = compare(p.ver, triple(floor));
+  if (cmp > 0 || (cmp === 0 && !p.prerelease)) return 'ok';
+  if (cmp === 0)
+    return 'pre-release of the patched version: may predate the fix';
+  return p.vendor ? VENDOR_SKIP : 'below';
+}
+
+function judge(r: RuntimeReport, a: PhpAdvisory): Verdict {
+  const p = parse(r.version);
+  if (p === null) return { skip: 'not a PHP version string' };
   const finding = (floor: string | null, detail: string): Verdict => ({
     finding: { version: r.version, floor, detail: detail + stopgapNote(r) },
   });
-  if (compare(ver, triple(`${a.noFixBelow}.0`)) < 0) {
-    return finding(null, `branch ${branch} has no fix for ${cveList(a)}`);
+  if (compare(p.ver, triple(`${a.noFixBelow}.0`)) < 0) {
+    return finding(null, `branch ${p.branch} has no fix for ${cveList(a)}`);
   }
-  if (vendor) {
-    return { skip: 'vendor build: check the vendor advisory for a backport' };
+  const floor = a.fixed[p.branch];
+  if (floor !== undefined) {
+    const v = judgeFixed(p, floor);
+    if (v === 'ok') return { ok: true };
+    if (v !== 'below') return { skip: v };
+    return finding(floor, `below ${floor}, vulnerable to ${cveList(a)}`);
   }
-  if (a.upstreamUnfixed.includes(branch)) {
+  if (p.vendor) return { skip: VENDOR_SKIP };
+  if (a.upstreamUnfixed.includes(p.branch)) {
     return finding(
       null,
-      `branch ${branch} has no upstream fix for ${cveList(a)}; upgrade, ` +
+      `branch ${p.branch} has no upstream fix for ${cveList(a)}; upgrade, ` +
         'or run a vendor/LTS build that carries the backport',
     );
   }
-  const floor = a.fixed[branch];
-  if (floor === undefined) return { skip: `branch ${branch} not covered` };
-  if (compare(ver, triple(floor)) >= 0) return { ok: true };
-  return finding(floor, `below ${floor}, vulnerable to ${cveList(a)}`);
+  return { skip: `branch ${p.branch} not covered` };
 }
 
 /** Judge each runtime against *advisory*; unjudgeable ones are skipped. */

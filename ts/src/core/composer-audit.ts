@@ -117,8 +117,12 @@ export function auditResult(
     findings: [],
     skipped: [{ name: 'composer audit', reason } satisfies SkipEntry],
   });
+  // spawnSync reports both a missing binary and a signal death as null.
   if (run.status === null) {
-    return abstain('composer is not runnable: install it or pass --composer');
+    return abstain(
+      'composer did not run to completion (missing, or killed by a signal): ' +
+        'install it or pass --composer',
+    );
   }
   let report: unknown;
   try {
@@ -130,8 +134,21 @@ export function auditResult(
     const why = firstLine(run.stderr) || `exit ${run.status}, no JSON report`;
     return abstain(`composer audit failed: ${why}`);
   }
-  return {
-    checked: count,
-    findings: [...advisoryFindings(report), ...abandonedFindings(report)],
-  };
+  if (!('advisories' in report)) {
+    return abstain('composer audit output has no advisories key');
+  }
+  const advisories = advisoryFindings(report);
+  const abandoned = abandonedFindings(report);
+  // Composer's exit bitmask (1 vulnerable, 2 abandoned) is the cross-check on
+  // this parser: a bit set with nothing parsed means the shape drifted, and
+  // reading it as clean would be the false green this gate exists to refuse.
+  if (run.status & 1 && advisories.length === 0) {
+    return abstain('composer reported advisories (exit bit 1) but none parsed');
+  }
+  if (run.status & 2 && abandoned.length === 0) {
+    return abstain(
+      'composer reported abandoned packages (exit bit 2) but none parsed',
+    );
+  }
+  return { checked: count, findings: [...advisories, ...abandoned] };
 }
