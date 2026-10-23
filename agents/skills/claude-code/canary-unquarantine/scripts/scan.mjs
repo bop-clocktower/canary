@@ -67,7 +67,7 @@ function testFiles(repo) {
 function markerName(lang, decl, tags) {
   if (lang === 'py') return decl.decorators[0];
   if (STATIC_SKIP.test(decl.callee)) return decl.callee;
-  return tags.find((t) => decl.title.includes(t));
+  return tags.find((t) => decl.title.includes(t) || decl.tags?.includes(t));
 }
 
 /** The markers in one file. Template literals are blanked: fixture source is not a marker. */
@@ -106,7 +106,14 @@ function fileMarkers(repo, file, tags) {
  * not listed -- they carry no title of their own and are usually conditions on
  * the environment, not quarantines; one that IS a quarantine has a ledger row
  * naming it, and `locate` finds it from there.
+ *
+ * `files` is the denominator: how many test files were read. Zero markers in
+ * zero files is not a clean suite.
  */
-export function scanMarkers(repo, tags = DEFAULT_TAGS) {
-  return testFiles(repo).flatMap((file) => fileMarkers(repo, file, tags));
+export function scanSuite(repo, tags = DEFAULT_TAGS) {
+  const files = testFiles(repo);
+  return {
+    files: files.length,
+    markers: files.flatMap((file) => fileMarkers(repo, file, tags)),
+  };
 }

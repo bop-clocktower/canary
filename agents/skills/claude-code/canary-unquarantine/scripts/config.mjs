@@ -1,6 +1,7 @@
 // config -- the company.json keys this skill reads: `jira_projects` (which
-// Jira projects may be read and commented on) and `quarantine_tags`, and how
-// --tags overrides them.
+// Jira projects may be read and commented on), `jira_fixed_resolutions` (the
+// Jira resolutions that mean fixed) and `quarantine_tags`, and how --tags
+// overrides them.
 
 import fs from 'node:fs';
 
@@ -21,9 +22,11 @@ export function loadCompany(file) {
   if (!fs.existsSync(file)) return { jiraProjects: [], tags: null };
   const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
   const tags = list(doc.quarantine_tags);
+  const fixed = list(doc.jira_fixed_resolutions);
   return {
     jiraProjects: list(doc.jira_projects),
     tags: tags.length ? tags : null,
+    fixedResolutions: fixed.length ? fixed : undefined,
   };
 }
 

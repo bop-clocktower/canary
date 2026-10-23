@@ -12,6 +12,12 @@
  * - #1238: shellcheck findings piled up in `run:` scripts, because nothing ran
  *   actionlint. The `$*_BASE_FLAG` expansions are deliberately unquoted, so
  *   this file also guards them against a well-meant "fix" that quotes them.
+ * - #1427: `harness-security.yml` force-pushed its ledger branch with no
+ *   `concurrency:` group, so overlapping runs silently lost a write.
+ *   `release-advance-latest.test.ts` covers the `latest` tag's ordering.
+ * - #1428: five workflows hard-coded `node-version: '20'` while `.nvmrc`
+ *   moved on, so the harness CLI ran under an engine it rejects (EBADENGINE,
+ *   the #1401 required-check flake).
  *
  * Offline: every assertion reads the YAML or JSON as data.
  */
@@ -25,15 +31,27 @@ import { advisoryEntries, REPO_ROOT } from './required-checks-testkit.js';
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 
 interface Step {
+  uses?: string;
   run?: string;
   env?: Record<string, string>;
+  with?: Record<string, unknown>;
+}
+interface Concurrency {
+  group?: string;
+  'cancel-in-progress'?: unknown;
+}
+interface Concurrency {
+  group?: string;
+  'cancel-in-progress'?: unknown;
 }
 interface Job {
   permissions?: unknown;
+  concurrency?: string | Concurrency;
   steps?: Step[];
 }
 interface Workflow {
   permissions?: unknown;
+  concurrency?: string | Concurrency;
   jobs?: Record<string, Job>;
 }
 
@@ -273,4 +291,120 @@ describe('#1238 the *_BASE_FLAG expansions stay unquoted', () => {
       expect(step!.run).toMatch(/# shellcheck disable=SC2086/);
     },
   );
+});
+
+describe('#1427 a workflow that force-pushes declares a concurrency group', () => {
+  // A force push is last-writer-wins. Two overlapping runs that force-update
+  // the same ref lose one run's write, and nothing goes red. A `concurrency:`
+  // group (workflow-level, or on the pushing job) makes them queue instead.
+  // `cancel-in-progress: true` would not help: it kills the earlier run,
+  // which drops the same write by a different route.
+  const FORCE_PUSH =
+    /\bgit\s+push\b[^\n]*?(?:\s--force(?:-with-lease)?\b|\s-f\b|\s\+[^\s]+)/;
+
+  it.each([
+    ['git push --force origin "HEAD:$BRANCH"', true],
+    ['git push origin latest --force', true],
+    ['git push --force-with-lease origin HEAD:x', true],
+    ['git push -f origin HEAD:x', true],
+    ['git push origin +HEAD:x', true],
+    ['git push origin "HEAD:$BRANCH"', false],
+    ['git push origin HEAD:master', false],
+    ['git push --follow-tags origin main', false],
+  ])('the detector classifies %s as force=%s', (line, force) => {
+    expect(FORCE_PUSH.test(line)).toBe(force);
+  });
+
+  const forcePushers = readdirSync(WORKFLOW_DIR)
+    .filter((f) => f.endsWith('.yml'))
+    .flatMap((file) => {
+      const wf = workflow(file);
+      return Object.entries(wf.jobs ?? {})
+        .filter(([, job]) =>
+          (job.steps ?? []).some((s) => s.run && FORCE_PUSH.test(s.run)),
+        )
+        .map(([id, job]) => ({
+          where: `${file} job ${id}`,
+          concurrency: job.concurrency ?? wf.concurrency,
+        }));
+    });
+
+  // A zero denominator would make the next test pass vacuously, e.g. after a
+  // detector regression. These three are known force-pushers. Since #1426 the
+  // push lives in a write job apart from the scan.
+  it('finds the known force-pushing workflows', () => {
+    const wheres = forcePushers.map((p) => p.where);
+    expect(wheres).toContain('arch-snapshot.yml job push');
+    expect(wheres).toContain('harness-security.yml job ledger');
+    expect(wheres).toContain('release.yml job advance-latest');
+  });
+
+  // `security` is a required check. It no longer pushes (#1426 moved that to
+  // `ledger`, which holds the ledger group), so a group on it only queues or
+  // supersedes required-check runs. A static group there would make PR runs
+  // wait behind `main` or be cancelled as superseded pending runs.
+  it('the required security job carries no concurrency group', () => {
+    const wf = workflow('harness-security.yml');
+    expect(wf.concurrency).toBeUndefined();
+    expect(wf.jobs?.security?.concurrency).toBeUndefined();
+  });
+
+  it('every force-pushing job is under a non-cancelling concurrency group', () => {
+    const bad = forcePushers
+      .filter(({ concurrency }) => {
+        if (concurrency === undefined) return true;
+        if (typeof concurrency === 'string') return concurrency.length === 0;
+        return !concurrency.group || concurrency['cancel-in-progress'] === true;
+      })
+      .map((p) => p.where);
+    expect(bad).toEqual([]);
+  });
+});
+
+describe('#1428 setup-node takes its version from .nvmrc', () => {
+  // A literal `node-version:` drifts the moment `.nvmrc` moves, and nothing
+  // goes red until a tool's engine check bites. An expression is allowed only
+  // where a job deliberately runs a different runtime: a `matrix.*` axis, or
+  // a version computed by an earlier step (dogfood.yml derives the
+  // unsupported runtime from the npm package's declared engine floor).
+  const ALLOWED_EXPRESSION =
+    /^\$\{\{\s*(?:matrix\.[\w.-]+|steps\.[\w-]+\.outputs\.[\w-]+)\s*\}\}$/;
+
+  const setupNodeSteps = readdirSync(WORKFLOW_DIR)
+    .filter((f) => f.endsWith('.yml'))
+    .flatMap((file) =>
+      Object.entries(workflow(file).jobs ?? {}).flatMap(([id, job]) =>
+        (job.steps ?? [])
+          .filter((s) => s.uses?.startsWith('actions/setup-node@'))
+          .map((s) => ({ where: `${file} job ${id}`, with: s.with ?? {} })),
+      ),
+    );
+
+  it.each([
+    ['${{ matrix.node }}', true],
+    ['${{ matrix.node-version }}', true],
+    ['${{ steps.floor.outputs.unsupported }}', true],
+    ['20', false],
+    ['22.x', false],
+    ["${{ '20' }}", false],
+    ['${{ env.NODE }}', false],
+  ])('the allow-list classifies %s as allowed=%s', (value, allowed) => {
+    expect(ALLOWED_EXPRESSION.test(value)).toBe(allowed);
+  });
+
+  // Zero setup-node steps would make the next test pass vacuously.
+  it('finds the setup-node steps', () => {
+    expect(setupNodeSteps.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it('no setup-node step hard-codes a literal node-version', () => {
+    const bad = setupNodeSteps
+      .filter((s) => {
+        const v = s.with['node-version'];
+        if (v === undefined) return s.with['node-version-file'] !== '.nvmrc';
+        return !ALLOWED_EXPRESSION.test(String(v));
+      })
+      .map((s) => `${s.where}: ${JSON.stringify(s.with)}`);
+    expect(bad).toEqual([]);
+  });
 });

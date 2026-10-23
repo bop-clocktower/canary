@@ -4,7 +4,7 @@
 // pull URL) or a Jira ticket (`ABC-123`, or a `/browse/ABC-123` URL).
 //
 // Bare Jira-shaped keys are the hard case. Test ids look exactly like them --
-// `TC-065` is a case id in a title, not a ticket -- so a bare key is only
+// `CASE-065` is a case id in a title, not a ticket -- so a bare key is only
 // believed when the context says it is a ticket:
 //
 //   - it follows a blocker phrase ("quarantined against UP-1", "filed as
@@ -147,66 +147,108 @@ function dedupe(refs) {
   return [...byId.values()];
 }
 
+/** Which sentence of `text` offset `index` falls in (breaks: `. ` / `! ` / `? ` / newline). */
+const sentenceOf = (text, index) =>
+  (
+    String(text)
+      .slice(0, index)
+      .match(/[.!?](?=\s)|\n/g) ?? []
+  ).length;
+
 /**
- * The blocker named by one source of text: the FIRST anchored reference when
- * there is one ("quarantined against #12" names exactly one thing), otherwise
- * every reference the text carries.
+ * The blocker named by one source of text: every anchored reference in the
+ * first sentence that carries one ("quarantined against #12; also blocked by
+ * UP-7" waits on both), otherwise every reference the text carries.
  *
  * @returns {{refs: Ref[], anchored: boolean}}
  */
 export function pickBlocker(text, opts = {}) {
   const refs = extractRefs(text, opts);
   const first = refs.find((r) => r.anchored);
-  if (first) return { refs: [first], anchored: true };
-  return { refs, anchored: false };
+  if (!first) return { refs, anchored: false };
+  const s = sentenceOf(text, first.index);
+  return {
+    refs: refs.filter((r) => r.anchored && sentenceOf(text, r.index) === s),
+    anchored: true,
+  };
 }
 
 /**
  * Words on a line of a CLOSED issue that say the work moved somewhere else
- * rather than being fixed: "Filed as UP-1", "TC-065 is parked there",
+ * rather than being fixed: "Filed as UP-1", "CASE-065 is parked there",
  * "superseded by #9", "moves the rows to #12".
  */
 const HANDOFF_LINE =
   /\b(?:(?:re-?)?filed|raised|tracked|mov(?:e|ed|es|ing)|superseded|duplicate|parked|continu(?:e|es|ed)|follow[- ]?up|carried|split\s+into|replaced\s+by)\b/i;
 
 /**
- * Hand-off targets in a closed issue's comments (newest first) and body.
- * Only the newest comment that carries any hand-off line is used: a later
- * comment re-routes an earlier one, so reading them all would resurrect a
- * filing the thread itself retired.
+ * Comment authors whose hand-off lines are not believed: anyone can comment on
+ * a public issue, and a stranger's "Moved to #9" must not re-route a blocker.
+ * A comment with no association recorded is read as trusted.
+ */
+const UNTRUSTED = new Set([
+  'NONE',
+  'FIRST_TIMER',
+  'FIRST_TIME_CONTRIBUTOR',
+  'CONTRIBUTOR',
+]);
+
+/** A hand-off whose target this audit has no way to read: it abstains. */
+const unreadable = (line) => ({
+  tracker: 'unreadable',
+  id: `hand-off "${line.trim().slice(0, 60)}"`,
+  why: `hand-off line names a target this audit cannot read: "${line.trim()}"`,
+  index: 0,
+  text: line,
+});
+
+/**
+ * The hand-off lines in one text, each with the refs it names. Every key on a
+ * hand-off line is believed (`anyBareJira`): the line's whole subject is a
+ * filing. A line ending in `:` takes its target from the next line ("Filed
+ * upstream:\nUP-1"); a hand-off line that names nothing readable (a foreign
+ * tracker URL, a key with no project) is kept as an unreadable ref.
+ */
+function handoffLines(text, ids, ctx) {
+  const lines = String(text).split('\n');
+  const read = (s) =>
+    extractRefs(s, {
+      jiraProjects: ctx.jiraProjects,
+      exclude: ids,
+      anyBareJira: true,
+    }).filter((r) => r.id !== ctx.self);
+  return lines.flatMap((line, i) => {
+    if (!HANDOFF_LINE.test(line)) return [];
+    let refs = read(line);
+    if (!refs.length && /:\s*$/.test(line))
+      refs = read(lines.slice(i + 1).find((l) => l.trim()) ?? '');
+    return [{ line, refs: refs.length ? refs : [unreadable(line)] }];
+  });
+}
+
+/**
+ * Hand-off targets in a closed issue's body and every trusted comment. Every
+ * hand-off line counts, not only the newest comment's: merging leans toward
+ * blocked, where newest-wins let any later hand-off-shaped comment erase a
+ * real filing.
  *
- * When some of that comment's hand-off lines name one of the row's own test
- * ids (`TC-065`), only those lines count -- a closing comment that routes five
- * cases to five issues must not make every row wait on all five.
+ * When some hand-off lines name one of the row's own test ids (`CASE-065`),
+ * only those lines count -- a closing comment that routes five cases to five
+ * issues must not make every row wait on all five.
  *
- * @param {{body?: string, comments?: {body: string}[]}} issue
+ * @param {{body?: string, comments?: {body: string, author_association?: string}[]}} issue
  * @param {{title?: string, self?: string, jiraProjects?: string[]}} ctx
  * @returns {Ref[]} refs (empty: no hand-off, the issue was simply closed)
  */
 export function handoffRefs(issue, ctx = {}) {
   const ids = idTokens(ctx.title);
-  const texts = [...(issue.comments ?? [])]
-    .map((c) => c.body ?? '')
-    .reverse()
-    .concat([issue.body ?? '']);
-  for (const text of texts) {
-    const lines = text
-      .split('\n')
-      .filter((line) => HANDOFF_LINE.test(line))
-      .map((line) => ({
-        line,
-        refs: extractRefs(line, {
-          jiraProjects: ctx.jiraProjects,
-          exclude: ids,
-        }).filter((r) => r.id !== ctx.self),
-      }))
-      .filter((l) => l.refs.length);
-    if (!lines.length) continue;
-    const named = lines.filter((l) =>
-      [...ids].some((id) => l.line.includes(id)),
-    );
-    const chosen = named.length ? named : lines;
-    return dedupe(chosen.flatMap((l) => l.refs));
-  }
-  return [];
+  const texts = [
+    issue.body ?? '',
+    ...(issue.comments ?? [])
+      .filter((c) => !UNTRUSTED.has(c.author_association))
+      .map((c) => c.body ?? ''),
+  ];
+  const lines = texts.flatMap((t) => handoffLines(t, ids, ctx));
+  const named = lines.filter((l) => [...ids].some((id) => l.line.includes(id)));
+  return dedupe((named.length ? named : lines).flatMap((l) => l.refs));
 }

@@ -128,6 +128,25 @@ written to the fixture as literals.
   import-surface test, for the two gen-data trees. This is a follow-up and
   outside this ADR's scope.
 
+  > **Amended 2026-10-23 by
+  > [#1377](https://github.com/bop-clocktower/canary/issues/1377) (PR
+  > [#1462](https://github.com/bop-clocktower/canary/pull/1462)): the guard now
+  > exists.** The decision is unchanged and the status stays accepted; only the
+  > finding above is out of date. `ts/test/gen-data-model-free.test.ts` is the
+  > import-surface test it called for. It walks every source file under
+  > `ts/src/gen-data/` and `ts/src/core/gen-data/`, plus every module they reach
+  > through relative imports, transitively. In that closure it fails on a model
+  > SDK import, on a process-spawning module (`node:child_process`, `execa` and
+  > similar), and on a `spawnSync` / `spawn` / `execSync` / `execFile` / `fork`
+  > call or property reference — the last catches the injected `MainDeps` runner
+  > without any new import. It also pins the exact set of non-literal dynamic
+  > imports, so a new one fails instead of passing unread. Type-only imports are
+  > not followed, since they cannot put code in the value path. To keep the
+  > closure clean, `CliExitError` moved to `ts/src/util/exit-error.ts`, so
+  > `cli-common.ts` no longer reaches `guardian/cli.ts` and its `child_process`
+  > import. Known gaps: bare `exec(` is not matched (it would flag every
+  > `RegExp#exec`), and the comment stripper does not model regex literals.
+
 ### Assumptions made
 
 - The decision is recorded exactly as signed off on 2026-09-15. The architecture

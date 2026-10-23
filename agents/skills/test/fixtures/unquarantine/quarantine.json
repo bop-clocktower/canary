@@ -8,7 +8,7 @@
       "marker": "describe.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
+      "date": "2000-01-01T00:00:00Z",
       "reason": "test: quarantine the create cases -- the platform is wrong, not the tests"
     },
     {
@@ -18,7 +18,7 @@
       "marker": "describe.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
+      "date": "2000-01-01T00:00:00Z",
       "reason": "test: re-apply the create quarantine, with its ticket"
     },
     {
@@ -28,7 +28,7 @@
       "marker": "test.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
+      "date": "2000-01-01T00:00:00Z",
       "reason": "test: skip the empty-body case against its own ticket"
     },
     {
@@ -38,38 +38,38 @@
       "marker": "",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
+      "date": "2000-01-01T00:00:00Z",
       "reason": "test: skip the empty-body case against its own ticket"
     },
     {
-      "test": "FINDING: a full return does not reverse the points its sale earned (filed 2026-09-08, #501)",
+      "test": "FINDING: cancelling an order does not restock its items (#501)",
       "file": "tests/api/returns.spec.js",
       "kind": "skipped",
       "marker": "test.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
-      "reason": "test: quarantine the points-reversal finding; supersedes #510"
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: quarantine the restock finding; supersedes #510"
     },
     {
-      "test": "FINDING: card series is unreachable, gateway-blocked by an access group (filed 2026-09-22)",
+      "test": "FINDING: the warehouse list is unreachable, blocked by a missing permission",
       "file": "tests/api/reference.spec.js",
       "kind": "skipped",
       "marker": "test.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
-      "reason": "test: quarantine the card-series finding against its issue"
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: quarantine the warehouse-list finding against its issue"
     },
     {
-      "test": "FINDING: event_data answers an edge/origin 520, not application data (filed 2026-09-22)",
+      "test": "FINDING: stock levels answer a proxy 502, not application data",
       "file": "tests/api/reference.spec.js",
       "kind": "skipped",
       "marker": "test.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
-      "reason": "test: quarantine the event_data finding against its issue"
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: quarantine the stock-levels finding against its issue"
     },
     {
       "test": "a row whose ticket cannot be read",
@@ -78,67 +78,67 @@
       "marker": "test.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
+      "date": "2000-01-01T00:00:00Z",
       "reason": "test: park it"
     },
     {
-      "test": "TC-030 an earned-reward message is sent when the bonus reward is allocated",
-      "file": "tests/promo/tiered.spec.js",
+      "test": "CASE-030 a confirmation notice is sent when a bulk order is accepted",
+      "file": "tests/orders/bulk.spec.js",
       "kind": "skipped",
       "marker": "test.skip(condition)",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
-      "reason": "fix: TC-030 abstains at run time against #503"
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "fix: CASE-030 abstains at run time against #503"
     },
     {
-      "test": "TIERED tiered bonus -- coupon-gated @regression",
-      "file": "tests/promo/tiered.spec.js",
+      "test": "BULK bulk orders -- approval-gated @regression",
+      "file": "tests/orders/bulk.spec.js",
       "kind": "skipped",
       "marker": "describe.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
-      "reason": "test: re-quarantine the cases after their first live run (1000001)"
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: re-quarantine the cases after their first run (1000001)"
     },
     {
-      "test": "a $100 sale issues the $10 coupon and only that",
-      "file": "tests/promo/milestone.spec.js",
+      "test": "a 100-unit order reserves stock and only that",
+      "file": "tests/orders/thresholds.spec.js",
       "kind": "skipped",
-      "marker": "requireLiveWindow(condition)",
+      "marker": "requireOpenWarehouse(condition)",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
-      "reason": "test: park the milestone claims behind the promotion-window guard - the standing fix is #504"
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park the threshold claims behind the warehouse-hours guard - the standing fix is #504"
     },
     {
-      "test": "TC-065 percent-back bonus points carry the configured expiry",
-      "file": "tests/promo/percent.spec.js",
-      "kind": "skipped",
-      "marker": "test.skip",
-      "commit": "0000000000000000000000000000000000000000",
-      "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
-      "reason": "test: park after the live run (#511) failed it"
-    },
-    {
-      "test": "the reward expires 60 days after the sale",
-      "file": "tests/promo/percent.spec.js",
+      "test": "CASE-065 a reservation carries the configured expiry",
+      "file": "tests/orders/reservations.spec.js",
       "kind": "skipped",
       "marker": "test.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
-      "reason": "test: park the 60-day expiry case"
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park after the run (#511) failed it"
+    },
+    {
+      "test": "a reservation lapses 60 days after the order",
+      "file": "tests/orders/reservations.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park the 60-day lapse case"
     },
     {
       "test": "an unlinked parked case",
-      "file": "tests/promo/percent.spec.js",
+      "file": "tests/orders/reservations.spec.js",
       "kind": "skipped",
       "marker": "test.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
+      "date": "2000-01-01T00:00:00Z",
       "reason": "test: park it"
     },
     {
@@ -148,7 +148,7 @@
       "marker": "",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
+      "date": "2000-01-01T00:00:00Z",
       "reason": "chore: drop the old case"
     },
     {
@@ -158,7 +158,7 @@
       "marker": "test.skip",
       "commit": "0000000000000000000000000000000000000000",
       "author": "Ada Lovelace",
-      "date": "2026-09-02T13:16:21-05:00",
+      "date": "2000-01-01T00:00:00Z",
       "reason": "test: park it",
       "cause": "product-defect",
       "issue": "#505",

@@ -1,15 +1,15 @@
 // Fixture for canary-unquarantine. Never executed; read as text only.
 import { test, expect } from '@playwright/test';
 
-test.describe('percent-back bonus', () => {
-  // PARKED against #507: the sale's points side effect carries no expiry
+test.describe('stock reservations', () => {
+  // PARKED against #507: the order's hold side effect carries no expiry
   // date. RELEASE when #507 closes.
   // eslint-disable-next-line no-skipped-tests
-  test.skip('TC-065 percent-back bonus points carry the configured expiry', async () => {});
+  test.skip('CASE-065 a reservation carries the configured expiry', async () => {});
 
-  // PARKED against #507: the coupon side effect carries no expiryDate.
+  // PARKED against #507: the hold side effect carries no heldUntil.
   // eslint-disable-next-line no-skipped-tests
-  test.skip('the reward expires 60 days after the sale', async () => {});
+  test.skip('a reservation lapses 60 days after the order', async () => {});
 
   // eslint-disable-next-line no-skipped-tests
   test.skip('an unlinked parked case', async () => {

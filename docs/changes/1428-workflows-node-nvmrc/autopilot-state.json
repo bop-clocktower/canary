@@ -1,0 +1,12 @@
+{
+  "item": "#1428",
+  "phase": "done",
+  "steps": [
+    "workflow-audit: inventory 28 actions/setup-node steps across .github/workflows",
+    "workflow-audit: 7 literal node-version '20' steps in batwoman, docs-lint (x3), harness-architecture, harness-quality, leak-gate; dogfood.yml:236 step-output expression judged justified",
+    "tdd: add #1428 describe block to ts/test/workflow-hygiene.test.ts; red on exactly the 7 steps",
+    "fix: node-version-file: .nvmrc on all 7 steps",
+    "verify: test green; build/typecheck/format:check/test green (6453 passed, 2 skipped)"
+  ],
+  "commits": ["18c87a87516bddf23e7169da0ac23610946fc753"]
+}

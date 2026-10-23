@@ -83,23 +83,27 @@ export function githubTracker({ run, gh = 'gh', defaultRepo }) {
   return lookup;
 }
 
-/** A closed issue's comments (NDJSON from `--jq '.[] | {body}'`), or why not. */
+/**
+ * A closed issue's comments (NDJSON: body and author association, so a
+ * stranger's hand-off can be discounted), or why not. One unreadable line is
+ * a comment that might have been a hand-off, so the whole read fails.
+ */
 function readComments(run, gh, repo, number) {
   const c = run(gh, [
     'api',
     '--paginate',
     `repos/${repo}/issues/${number}/comments`,
     '--jq',
-    '.[] | {body}',
+    '.[] | {body, author_association}',
   ]);
   if (c.status !== 0) return { why: failure(c, 'gh api') };
-  const lines = c.stdout.split('\n').filter((l) => l.trim());
-  return {
-    comments: lines.map(
-      (l) =>
-        parseJson({ status: 0, stdout: l }, 'comment').value ?? { body: '' },
-    ),
-  };
+  const comments = [];
+  for (const l of c.stdout.split('\n').filter((x) => x.trim())) {
+    const parsed = parseJson({ status: 0, stdout: l }, 'a comment');
+    if (parsed.why) return { why: parsed.why };
+    comments.push(parsed.value);
+  }
+  return { comments };
 }
 
 /** `@a, @b` for an issue's assignees, or `unassigned`. */
