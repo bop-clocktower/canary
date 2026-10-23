@@ -48,6 +48,9 @@ export const CONFIG_PROBES: Array<[string, string, TestShape, string]> = [
   ['wdio.conf.ts', 'wdio', 'mobile', 'config'],
   ['wdio.conf.js', 'wdio', 'mobile', 'config'],
   ['wdio.conf.mjs', 'wdio', 'mobile', 'config'],
+  // Pest runs off phpunit.xml too; classifyConfig refines it (#1465).
+  ['phpunit.xml.dist', 'phpunit', 'api', 'config'],
+  ['phpunit.xml', 'phpunit', 'api', 'config'],
 ];
 
 // Detects playwright UI fixture params. MULTILINE is a no-op (no `^`/`$`).
@@ -97,6 +100,11 @@ function classifyConfig(
   if (framework === 'playwright' && shape === 'e2e_ui') {
     const inferred = inferPlaywrightTestType(dir);
     if (inferred !== shape) return [framework, inferred, 'content'];
+  }
+  // Probe table entries are bare filenames (the nested walk matches on
+  // basename), so Pest's tests/Pest.php is read here, next to the config.
+  if (framework === 'phpunit' && existsSync(join(dir, 'tests', 'Pest.php'))) {
+    return ['pest', shape, 'content'];
   }
   return [framework, shape, confidence];
 }

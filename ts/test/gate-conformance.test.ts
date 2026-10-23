@@ -462,6 +462,27 @@ const ROWS: GateRow[] = [
       return { code, stdout: out.join('\n') };
     },
   },
+  {
+    // #1465: a vendor build's number cannot prove a backport either way, so
+    // the only runtime given is skipped and nothing was judged.
+    command: 'php floor (only runtime is a vendor build)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['passed'],
+    run: () =>
+      invokeCanary(['php', 'floor', '--php-version', '8.3.6-1ubuntu2.14']),
+  },
+  {
+    // #1465: composer audit is silent on a missing lockfile; canary refuses
+    // to read that silence as clean.
+    command: 'php audit (no composer.lock)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['passed'],
+    run: (base) => invokeCanary(['php', 'audit', '--dir', base]),
+  },
 ];
 
 describe('gate conformance registry (#508)', () => {

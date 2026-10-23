@@ -59,8 +59,18 @@ const _PYTHON_DEP_PATTERNS: Array<[RegExp, string, TestShape]> = [
   [/(?:^|(?<=\n))testcontainers\b/i, 'testcontainers', 'integration'],
 ];
 
+// composer.json package -> (framework, shape) (#1465). Pest first: it
+// depends on phpunit, so a repo requiring both runs Pest.
+const _COMPOSER_PACKAGES: Array<[string, string, TestShape]> = [
+  ['pestphp/pest', 'pest', 'api'],
+  ['phpunit/phpunit', 'phpunit', 'api'],
+];
+
+const _COMPOSER_FIELDS = ['require-dev', 'require'];
+
 // Language -> (framework, shape) fallbacks from harness.config.json
 const _LANGUAGE_FALLBACKS: Record<string, [string, TestShape]> = {
+  php: ['phpunit', 'api'],
   python: ['pytest', 'api'],
   typescript: ['playwright', 'e2e_ui'],
   javascript: ['playwright', 'e2e_ui'],
@@ -111,12 +121,35 @@ function probeRequirements(root: string): ProbeResult | null {
   return null;
 }
 
+/** Tier 2b, PHP -- composer.json require/require-dev scan (#1465). */
+function probeComposer(root: string): ProbeResult | null {
+  const manifest = readJsonObject(root, 'composer.json');
+  if (manifest === null) return null;
+  for (const [pkg, framework, shape] of _COMPOSER_PACKAGES) {
+    const field = _COMPOSER_FIELDS.find(
+      (f) => isRecord(manifest[f]) && Object.hasOwn(manifest[f] as object, pkg),
+    );
+    if (field !== undefined) {
+      return [framework, shape, `composer.json (${field}: ${pkg})`, 'content'];
+    }
+  }
+  return null;
+}
+
 /** package.json as an object, or null when absent, unreadable, or not JSON. */
 function readPackageJson(root: string): Record<string, unknown> | null {
-  const text = readTextOrNull(join(root, 'package.json'));
+  return readJsonObject(root, 'package.json');
+}
+
+/** *file* under *root* as a JSON object, or null when absent or not one. */
+function readJsonObject(
+  root: string,
+  file: string,
+): Record<string, unknown> | null {
+  const text = readTextOrNull(join(root, file));
   try {
-    const pkg: unknown = JSON.parse(text ?? ''); // missing file -> throws -> null
-    return isRecord(pkg) ? pkg : null;
+    const parsed: unknown = JSON.parse(text ?? ''); // missing -> throws -> null
+    return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -218,6 +251,7 @@ export function probeFramework(
       () =>
         probePyproject(dir) ??
         probeRequirements(dir) ??
+        probeComposer(dir) ??
         probeScripts(dir, (key) => key === 'test'),
     ],
     ['nested-config', () => probeNestedConfig(dir)],
