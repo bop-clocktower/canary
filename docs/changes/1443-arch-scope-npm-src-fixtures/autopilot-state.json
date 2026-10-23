@@ -1,0 +1,18 @@
+{
+  "item": "#1443",
+  "fleet": "cicd-fleet",
+  "run": "fc1022",
+  "skill": "harness:debugging",
+  "phase": "done",
+  "steps": [
+    "investigate: measured check-deps/check-arch/entropy/perf on origin/main 871649d5 in a fresh worktree",
+    "investigate: reproduced fixture leak with planted cycle + dead exports + oversize module (regular and dot-dir)",
+    "analyze: read harness 13.0.0 runCheckDeps discovery, arch isExcluded (dot:true) and entropy exclude (dot:false)",
+    "hypothesize: npm/src layers + fixture excludes in architecture and entropy",
+    "fix: failing tests first (denominator, live rehearsal, entrypoint exclusion), then harness.config.json",
+    "verify: revert check fails 9 tests; four gates green; after-measurements recorded",
+    "parked: entropy ratchet suggests lowering maxFindings 145 -> 124; baseline not edited per run rule"
+  ],
+  "commits": ["87059c5e"],
+  "parkedForks": ["entropy-baseline-lower-after-fixture-exclusion"]
+}
