@@ -406,3 +406,85 @@ describe('quarantine', () => {
     });
   });
 });
+
+// --- marker and row together, inside the repo only (#1459 review) -------------
+
+describe('quarantine writes both or neither, and only inside --repo', () => {
+  const quarantine = (repo: string, file: string) =>
+    callMain([
+      'quarantine',
+      '--repo',
+      repo,
+      '--file',
+      file,
+      '--test',
+      'a sale earns points',
+      '--cause',
+      'flaky',
+    ]);
+  // Root ignores file modes, so the forced write failure cannot be staged.
+  const asRoot = process.getuid?.() === 0;
+
+  it.skipIf(asRoot)(
+    'a ledger write that fails leaves the test file byte for byte as it was',
+    () => {
+      const repo = plainSuite();
+      const ledger = path.join(repo, '.canary', 'quarantine.json');
+      fs.mkdirSync(path.dirname(ledger));
+      fs.writeFileSync(ledger, '{"schema_version": 1, "entries": []}\n');
+      fs.chmodSync(ledger, 0o444);
+      try {
+        const r = quarantine(repo, 'tests/points.spec.ts');
+        expect(r.code).not.toBe(0);
+        expect(source(repo)).toBe(PLAIN);
+      } finally {
+        fs.chmodSync(ledger, 0o644);
+      }
+      expect(ledgerOf(repo).entries).toEqual([]);
+    },
+  );
+
+  it('--file ../ outside --repo is refused and nothing outside is touched', () => {
+    const root = mkTmp();
+    const repo = path.join(root, 'repo');
+    fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'outside'));
+    const victim = path.join(root, 'outside', 'x.spec.ts');
+    fs.writeFileSync(victim, PLAIN);
+    const r = quarantine(repo, '../outside/x.spec.ts');
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/outside --repo/);
+    expect(fs.readFileSync(victim, 'utf8')).toBe(PLAIN);
+    expect(fs.existsSync(path.join(repo, '.canary', 'quarantine.json'))).toBe(
+      false,
+    );
+  });
+
+  it('an absolute --file outside --repo is refused', () => {
+    const outside = plainSuite();
+    const repo = plainSuite();
+    const r = quarantine(repo, path.join(outside, 'tests', 'points.spec.ts'));
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/outside --repo/);
+    expect(source(outside)).toBe(PLAIN);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'a symlink inside --repo that points outside it is refused',
+    () => {
+      const outside = plainSuite();
+      const repo = mkTmp();
+      fs.symlinkSync(path.join(outside, 'tests'), path.join(repo, 'tests'));
+      const r = quarantine(repo, 'tests/points.spec.ts');
+      expect(r.code).not.toBe(0);
+      expect(r.stderr).toMatch(/outside --repo/);
+      expect(source(outside)).toBe(PLAIN);
+    },
+  );
+
+  it('a path that stays inside --repo is recorded repo-relative', () => {
+    const repo = plainSuite();
+    expect(quarantine(repo, './tests/../tests/points.spec.ts').code).toBe(0);
+    expect(ledgerOf(repo).entries[0].file).toBe('tests/points.spec.ts');
+  });
+});

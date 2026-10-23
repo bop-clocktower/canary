@@ -263,7 +263,11 @@ canary skills run canary-unquarantine -- quarantine \
   --cause product-defect --issue https://github.com/acme/suite/issues/7
 ```
 
-This writes the marker and a caused ledger row together, or writes neither.
+This writes the marker and a caused ledger row together, or writes neither: the
+marker goes in first, and if the ledger cannot be written the test file is
+restored byte for byte. `--file` must resolve (symlinks included) to a file
+inside `--repo`; a `../` path, an absolute path elsewhere or a symlink out of
+the repo is refused, and the row records the repo-relative path.
 
 The marker is `.skip` on the declaration: `test`, `it`, `describe` and
 `test.describe` are handled. A pytest test gets a `@pytest.mark.skip(reason=…)`

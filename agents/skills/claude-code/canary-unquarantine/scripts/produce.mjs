@@ -12,6 +12,7 @@
 // reference it carried exactly as written, so the audit can then chase it.
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 import * as ledgerIo from '../../canary-katana/scripts/ledger.mjs';
 import { applyEdits, planQuarantine } from './lift.mjs';
@@ -94,6 +95,32 @@ function refusal({ file, test, cause, issue }) {
 }
 
 /**
+ * `file` as a repo-relative POSIX path, or why it is refused. The path is
+ * resolved, symlinks included, and must land strictly inside `repo`: a
+ * `--file ../x` or an absolute path elsewhere would otherwise be edited.
+ *
+ * @returns {{rel: string, abs: string} | {why: string}}
+ */
+function insideRepo(repo, file) {
+  const outside = { why: `--file ${file} is outside --repo ${repo}` };
+  const root = path.resolve(repo);
+  const abs = path.resolve(root, file);
+  const within = (base, p) => {
+    const rel = path.relative(base, p);
+    const up = rel === '..' || rel.startsWith(`..${path.sep}`);
+    return rel && !up && !path.isAbsolute(rel) ? rel : null;
+  };
+  const rel = within(root, abs);
+  if (!rel) return outside;
+  try {
+    if (!within(fs.realpathSync(root), fs.realpathSync(abs))) return outside;
+  } catch {
+    // A file that does not exist is reported by locate, with its own reason.
+  }
+  return { rel: rel.split(path.sep).join('/'), abs };
+}
+
+/**
  * Switch one test off and record it: the marker (with a comment naming the
  * ticket) and the ledger row are written together, or neither is.
  *
@@ -102,7 +129,7 @@ function refusal({ file, test, cause, issue }) {
 function quarantineTest({
   repo,
   ledgerPath,
-  file,
+  file: given,
   test,
   cause,
   issue = '',
@@ -111,8 +138,11 @@ function quarantineTest({
   asTag = false,
   now = new Date(),
 }) {
-  const refused = refusal({ file, test, cause, issue });
+  const refused = refusal({ file: given, test, cause, issue });
   if (refused) return { why: refused };
+  const where = insideRepo(repo, given);
+  if ('why' in where) return where;
+  const file = where.rel;
   ledgerIo.load(ledgerPath); // a corrupt ledger throws here, before any file is touched
   const src = readSource(repo, file);
   const loc = locate(src, { test, file, marker: '' }, tags);
@@ -140,12 +170,19 @@ function quarantineTest({
     issue,
     expiry,
   });
+  // Marker first, then the row; if the row cannot be written, the marker is
+  // taken back out, so a failure never leaves a skip the ledger cannot see.
   fs.writeFileSync(
-    `${repo}/${file}`,
+    where.abs,
     applyEdits(src.lines, plan.edits).join('\n'),
     'utf8',
   );
-  ledgerIo.appendEntries(ledgerPath, [row]);
+  try {
+    ledgerIo.appendEntries(ledgerPath, [row]);
+  } catch (err) {
+    fs.writeFileSync(where.abs, src.lines.join('\n'), 'utf8');
+    throw err;
+  }
   return { row, markerLine: loc.line + 1 };
 }
 
