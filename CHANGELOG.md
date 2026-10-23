@@ -24,6 +24,21 @@ under the project's former name) are documented in the
   budget, naming the measured size and the budget. `--no-strict-budget` restores
   the warn-and-push behaviour under CI; outside CI it remains the default.
 
+### Fixed
+
+- **`overlay list` no longer reports a bare `up to date` from a stale cache
+  (#1324).** The freshness check never asks the remote, so a zero "behind" count
+  only means the clone matched its remote at the last fetch. The status now says
+  `up to date as of <last fetch time>` (from `.git/FETCH_HEAD`, or the clone's
+  own reflog entry when it was never re-fetched) and `unknown (never fetched)`
+  when nothing records a fetch. `canary doctor`'s overlay freshness label
+  carries the same wording.
+
+- **`analyze_file` existing-test paths (#1371).** A root-level test file whose
+  name starts with `..` (for example `..foo.test.ts`) is now listed in
+  `existing_tests` as a project-relative path instead of an absolute one. Only a
+  leading `..` path segment counts as leaving the project root now.
+
 ## [9.5.0] - 2026-10-23
 
 ### Added
@@ -67,6 +82,18 @@ under the project's former name) are documented in the
   13.0.0.
 
 ### Fixed
+
+- **`harness check-deps` reads `npm/src`, and test fixtures no longer move the
+  arch and entropy ratchets (#1443).** No layer pattern matched `npm/src`, so
+  `check-deps` analysed 468 modules and passed with a cycle planted there. Two
+  layers now cover it, `npm-cli` over the published `npm-reporter` leaf, and the
+  count is 501. Separately, `**/test/fixtures/**` (dot-directories included) is
+  excluded from both analyzers, so a deliberately broken fixture no longer
+  counts against the ratchets; the entropy count falls 140 to 114, all 26 of
+  them fixture files. The two fixture entry points that only existed to keep
+  fixtures from reading as dead are removed from both `entryPoints` lists.
+  `ts/test/analysis-scope-rehearsal.test.ts` plants both cases against the real
+  CLI on a throwaway project.
 
 - **The required `security` check runs on the pinned Node and one resolved CLI,
   and a red `harness validate` explains itself (#1401).** `harness-security.yml`
