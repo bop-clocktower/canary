@@ -1,0 +1,14 @@
+{
+  "issues": [1465],
+  "route": "feature",
+  "stages": ["brainstorming", "tdd"],
+  "spec": "docs/changes/1465-php-support/proposal.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Scope fork answered by the human: full PHP support in one PR (registry, detection, scaffold, run, and both gates), not gates-first.",
+    "The floor table is a TS constant, not a data file: a new advisory needs a reviewed code change and a test per branch boundary either way, and a constant has no dist/bundle path to get wrong.",
+    "Fixed versions and unfixed branches come from the 2026-10-21 PHP security release as reported by CISA and the PHP2Shell advisories: 8.2.35, 8.3.36, 8.4.27, 8.5.12; 7.4/8.0/8.1 no upstream release; 7.3 and older no fix.",
+    "MetadataScanner is unchanged: `canary recommend` passes null metadata, so composer package scanning there would have no caller.",
+    "Every fixture is synthetic (acme/* packages, placeholder advisory ids); no consumer code, name or repository is referenced."
+  ]
+}

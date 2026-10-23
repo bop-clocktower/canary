@@ -707,8 +707,10 @@ function shapeForFrameworkOverride(
   framework: string,
   root: string,
 ): string | null {
+  // Pest has no probe row of its own: it is a refinement of phpunit's.
+  const probed = framework === 'pest' ? 'phpunit' : framework;
   for (const [, candidateFramework, shape] of CONFIG_PROBES) {
-    if (candidateFramework !== framework) continue;
+    if (candidateFramework !== probed) continue;
     if (candidateFramework === 'playwright' && shape === 'e2e_ui') {
       return inferPlaywrightTestType(root);
     }

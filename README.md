@@ -223,7 +223,7 @@ Use, process, escalation) lives in
 | `/canary-write-test <requirement>` | Claude Code — `canary-test-author` agent generates the test in your session (no API key).      |
 | `canary-generate-test` skill       | Classify → recommend → generate pipeline; writes to `tests/generated/` and optionally runs it. |
 | `canary recommend "<requirement>"` | CLI, deterministic — framework + reasoning, no key.                                            |
-| `canary init <framework>`          | CLI — scaffold a suite (`playwright`, `vitest`, `pytest`, `k6`).                               |
+| `canary init <framework>`          | CLI — scaffold a suite (`playwright`, `vitest`, `pytest`, `phpunit`, `k6`).                    |
 | `canary run <file> <framework>`    | CLI — execute a generated or existing test file. Exits 1 if the test failed.                   |
 | `canary-promote-test` skill        | Once validated, move a test out of `tests/generated/` into the committed suite.                |
 
@@ -280,6 +280,16 @@ Use, process, escalation) lives in
 | Tool                                                       | What it does                                                                                                    |
 | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `/canary-test-pipeline [--continue] [--threshold <depth>]` | Claude Code — chains critical-areas → edge-cases → failure-impact → write-test → ci-ready, looping until green. |
+
+### I want to gate a PHP app's security posture
+
+| Tool                                  | What it does                                                                                                               |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `canary php floor [--php-version v…]` | CLI gate — fails a runtime below its branch's patched floor (PHP2Shell, CVE-2026-109618/109619); unprovable versions skip. |
+| `canary php audit [--dir <path>]`     | CLI gate — `composer audit` over `composer.lock`; advisories and abandoned packages fail, no lockfile exits 3.             |
+
+PHPUnit and Pest are detected from `phpunit.xml(.dist)`, `tests/Pest.php` and
+`composer.json`, and run through the project's own `vendor/bin`.
 
 ### I want a per-change PR gate
 

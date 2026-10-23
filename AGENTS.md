@@ -154,7 +154,7 @@ remote deletion is a human act. Worktree pruning waits for #889.
   `recommend`, `frameworks`, `feedback`, `run`, `init`, `migrate`, `setup`,
   `skills list`, `env-setup` (alias for `setup`), `version`, `review-test`,
   `flake-check`, `heal-test`, `vacuity-check`, `promote-check`, `ci-ready`,
-  `inventory`, `gen-data`.
+  `inventory`, `gen-data`, `php floor`, `php audit`.
 
 ### Core Services (`ts/src/core/`)
 
@@ -171,6 +171,16 @@ remote deletion is a human act. Worktree pruning waits for #889.
 - **Framework Registry:** [ts/src/core/framework-registry.ts][fw-registry] —
   Internal registry for managing supported testing frameworks and their
   capabilities.
+- **PHP security gates (#1465):**
+  [ts/src/core/php-floor.ts](ts/src/core/php-floor.ts) judges runtime versions
+  against the PHP2Shell patched floor per branch, and
+  [ts/src/core/composer-audit.ts](ts/src/core/composer-audit.ts) turns
+  `composer audit` into a gate whose denominator is the `composer.lock` package
+  count. [ts/src/php/php-cli.ts](ts/src/php/php-cli.ts) wires both as
+  `canary php floor|audit`. A distro build below the floor (`8.3.6-1ubuntu…`) is
+  skipped, not judged: distros backport the fix under their own suffix, so the
+  upstream number proves nothing. To add an advisory, add a `PhpAdvisory` and a
+  test per branch boundary.
 - **Metadata Scanner:**
   [ts/src/core/metadata-scanner.ts](ts/src/core/metadata-scanner.ts) — Reads
   `package.json`, `tsconfig.json`, `requirements.txt`, and `pyproject.toml` to
