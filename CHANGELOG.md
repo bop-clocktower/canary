@@ -80,6 +80,18 @@ under the project's former name) are documented in the
   than for all three metrics unconditionally. The entropy, perf and docs
   ratchets are re-stamped to 13.0.0; their counts were identical on 12.10.1 and
   13.0.0.
+- **Bin verification is its own release job and gates only the `latest` advance
+  (#1439, ADR 0042).** `release.yml` moves "Verify the published manifest ships
+  every bin" out of `publish` into a `verify-bins` job (`needs: publish`). The
+  GitHub Release now depends only on the npm publish it announces, so a slow
+  registry no longer strands a good release without one. `advance-latest` needs
+  `[publish, verify-bins]`, so the git `latest` tag still never moves over a
+  failed (exit 1) or abstained (exit 3) check. The verdict, including "NOT
+  verified" on an abstention, is written to the job's step summary, and
+  `verify-bins` checks the exact name@version `publish` reports as job outputs.
+  Permissions are now per job: the workflow default is `contents: read`, only
+  `publish` holds the OIDC token, and `verify-bins` is read-only. Recovery after
+  an abstention is a re-run of `verify-bins`, then `advance-latest`.
 
 ### Fixed
 
