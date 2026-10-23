@@ -34,6 +34,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Every workflow's Node comes from `.nvmrc` (#1428).** Seven `setup-node`
+  steps in `batwoman.yml`, `docs-lint.yml`, `harness-architecture.yml`,
+  `harness-quality.yml` and `leak-gate.yml` still hard-coded
+  `node-version: '20'`, below the harness CLI's engine floor (the `EBADENGINE`
+  mismatch behind the #1401 flake). They now read `node-version-file: .nvmrc`.
+  `ts/test/workflow-hygiene.test.ts` fails on any literal `node-version:`; only
+  a `matrix.*` or `steps.*.outputs.*` expression is allowed, for jobs that
+  deliberately run another runtime.
+
 - **Overlapping workflow runs no longer overwrite a force-pushed ref, and
   `latest` never moves backwards (#1427).** `release.yml`'s `advance-latest` job
   force-pushes the `latest` tag, and its runs queue in the order their publish

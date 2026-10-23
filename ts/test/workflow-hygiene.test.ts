@@ -15,6 +15,9 @@
  * - #1427: `harness-security.yml` force-pushed its ledger branch with no
  *   `concurrency:` group, so overlapping runs silently lost a write.
  *   `release-advance-latest.test.ts` covers the `latest` tag's ordering.
+ * - #1428: five workflows hard-coded `node-version: '20'` while `.nvmrc`
+ *   moved on, so the harness CLI ran under an engine it rejects (EBADENGINE,
+ *   the #1401 required-check flake).
  *
  * Offline: every assertion reads the YAML or JSON as data.
  */
@@ -28,8 +31,14 @@ import { advisoryEntries, REPO_ROOT } from './required-checks-testkit.js';
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 
 interface Step {
+  uses?: string;
   run?: string;
   env?: Record<string, string>;
+  with?: Record<string, unknown>;
+}
+interface Concurrency {
+  group?: string;
+  'cancel-in-progress'?: unknown;
 }
 interface Concurrency {
   group?: string;
@@ -348,6 +357,54 @@ describe('#1427 a workflow that force-pushes declares a concurrency group', () =
         return !concurrency.group || concurrency['cancel-in-progress'] === true;
       })
       .map((p) => p.where);
+    expect(bad).toEqual([]);
+  });
+});
+
+describe('#1428 setup-node takes its version from .nvmrc', () => {
+  // A literal `node-version:` drifts the moment `.nvmrc` moves, and nothing
+  // goes red until a tool's engine check bites. An expression is allowed only
+  // where a job deliberately runs a different runtime: a `matrix.*` axis, or
+  // a version computed by an earlier step (dogfood.yml derives the
+  // unsupported runtime from the npm package's declared engine floor).
+  const ALLOWED_EXPRESSION =
+    /^\$\{\{\s*(?:matrix\.[\w.-]+|steps\.[\w-]+\.outputs\.[\w-]+)\s*\}\}$/;
+
+  const setupNodeSteps = readdirSync(WORKFLOW_DIR)
+    .filter((f) => f.endsWith('.yml'))
+    .flatMap((file) =>
+      Object.entries(workflow(file).jobs ?? {}).flatMap(([id, job]) =>
+        (job.steps ?? [])
+          .filter((s) => s.uses?.startsWith('actions/setup-node@'))
+          .map((s) => ({ where: `${file} job ${id}`, with: s.with ?? {} })),
+      ),
+    );
+
+  it.each([
+    ['${{ matrix.node }}', true],
+    ['${{ matrix.node-version }}', true],
+    ['${{ steps.floor.outputs.unsupported }}', true],
+    ['20', false],
+    ['22.x', false],
+    ["${{ '20' }}", false],
+    ['${{ env.NODE }}', false],
+  ])('the allow-list classifies %s as allowed=%s', (value, allowed) => {
+    expect(ALLOWED_EXPRESSION.test(value)).toBe(allowed);
+  });
+
+  // Zero setup-node steps would make the next test pass vacuously.
+  it('finds the setup-node steps', () => {
+    expect(setupNodeSteps.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it('no setup-node step hard-codes a literal node-version', () => {
+    const bad = setupNodeSteps
+      .filter((s) => {
+        const v = s.with['node-version'];
+        if (v === undefined) return s.with['node-version-file'] !== '.nvmrc';
+        return !ALLOWED_EXPRESSION.test(String(v));
+      })
+      .map((s) => `${s.where}: ${JSON.stringify(s.with)}`);
     expect(bad).toEqual([]);
   });
 });
