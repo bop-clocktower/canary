@@ -209,41 +209,47 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
     return { work, origin, src };
   }
 
+  /** The runner env for one step, with `${{ runner.temp }}` substituted. */
+  function stepEnv(step: Step, summary: string): Record<string, string> {
+    const runnerTemp = join(dir!, 'runner-temp');
+    const env: Record<string, string> = {
+      PATH: process.env.PATH ?? '',
+      HOME: dir!,
+      GIT_CONFIG_NOSYSTEM: '1',
+      RUNNER_TEMP: runnerTemp,
+      GITHUB_STEP_SUMMARY: summary,
+      GITHUB_SERVER_URL: 'https://github.com',
+      GITHUB_REPOSITORY: 'o/r',
+    };
+    for (const [k, v] of Object.entries(step.env ?? {}))
+      env[k] = v.replace(/\$\{\{\s*runner\.temp\s*\}\}/, runnerTemp);
+    return env;
+  }
+
   /** Run every `run:` step of the write job in order, as Actions would. */
-  function runJob(work: string, src: string) {
+  function runJob(work: string) {
     const summary = join(dir!, 'summary.md');
+    const scripts = (job(c, c.writeJob).steps ?? []).filter(
+      (s) => s.run !== undefined,
+    );
     let last = { status: 0 as number | null, log: '' };
-    for (const step of job(c, c.writeJob).steps ?? []) {
-      if (step.run === undefined) continue;
-      const env: Record<string, string> = {
-        PATH: process.env.PATH ?? '',
-        HOME: dir!,
-        GIT_CONFIG_NOSYSTEM: '1',
-        RUNNER_TEMP: join(dir!, 'runner-temp'),
-        GITHUB_STEP_SUMMARY: summary,
-        GITHUB_SERVER_URL: 'https://github.com',
-        GITHUB_REPOSITORY: 'o/r',
-      };
-      for (const [k, v] of Object.entries(step.env ?? {}))
-        env[k] = v.replace(/\$\{\{\s*runner\.temp\s*\}\}/, env.RUNNER_TEMP!);
-      const r = spawnSync('bash', ['-e', '-c', step.run], {
+    for (const step of scripts) {
+      const r = spawnSync('bash', ['-e', '-c', step.run!], {
         cwd: work,
         encoding: 'utf8',
-        env,
+        env: stepEnv(step, summary),
       });
       last = { status: r.status, log: `${r.stdout}${r.stderr}` };
       if (r.status !== 0) break;
     }
-    const summaryText = existsSync(summary)
-      ? readFileSync(summary, 'utf8')
-      : '';
-    return { ...last, summary: summaryText, src };
+    const text = existsSync(summary) ? readFileSync(summary, 'utf8') : '';
+    return { ...last, summary: text };
   }
 
   it('pushes the downloaded output to the standing branch', () => {
     const { work, origin, src } = setup();
     for (const p of c.paths) writeFileSync(join(src, p), 'new\n');
-    const r = runJob(work, src);
+    const r = runJob(work);
     expect(r.status, r.log).toBe(0);
     for (const p of c.paths)
       expect(git(origin, 'show', `${c.branch}:${p}`)).toBe('new');
@@ -252,7 +258,7 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
 
   it('pushes nothing when the output is unchanged', () => {
     const { work, origin, src } = setup();
-    const r = runJob(work, src);
+    const r = runJob(work);
     expect(r.status, r.log).toBe(0);
     expect(git(origin, 'branch', '--list', c.branch)).toBe('');
   });
@@ -261,7 +267,7 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
     const { work, src } = setup();
     for (const p of c.paths) writeFileSync(join(src, p), 'new\n');
     git(work, 'remote', 'set-url', 'origin', join(dir!, 'missing.git'));
-    const r = runJob(work, src);
+    const r = runJob(work);
     expect(r.status).not.toBe(0);
   });
 
@@ -271,7 +277,7 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
     writeFileSync(secret, 'token\n');
     rmSync(join(src, c.paths[0]!));
     symlinkSync(secret, join(src, c.paths[0]!));
-    const r = runJob(work, src);
+    const r = runJob(work);
     expect(r.status).not.toBe(0);
     expect(r.log).toMatch(/not a regular file/);
     expect(git(origin, 'branch', '--list', c.branch)).toBe('');
@@ -280,7 +286,7 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
   it('fails when the artifact is missing a pushed path', () => {
     const { work, src } = setup();
     rmSync(join(src, c.paths[0]!));
-    const r = runJob(work, src);
+    const r = runJob(work);
     expect(r.status).not.toBe(0);
   });
 });
