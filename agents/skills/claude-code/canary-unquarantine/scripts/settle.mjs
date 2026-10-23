@@ -12,7 +12,14 @@
 // from a throwaway worktree; a person reviews and merges it.
 
 import * as ledgerIo from '../../canary-katana/scripts/ledger.mjs';
-import { at, must, withWorktree, writeAt, writeLifts } from './git.mjs';
+import {
+  at,
+  insideRepo,
+  must,
+  withWorktree,
+  writeAt,
+  writeLifts,
+} from './git.mjs';
 
 const sameRow = (a, b) =>
   a.test === b.test &&
@@ -58,6 +65,26 @@ function rebuildFiles(run, work, base, judged) {
 }
 
 /**
+ * Refuse a manifest that reaches outside `root`. The manifest lives in the PR
+ * body, which anyone who can edit the PR controls, so every path it names is
+ * resolved (symlinks included) and must stay strictly inside the tree, and
+ * `base` must be a commit id: it is handed to `git show` as an argument.
+ * Any escape refuses the whole settle, before anything is written.
+ */
+function checkManifest(root, manifest, judged) {
+  if (!/^[0-9a-f]{7,64}$/.test(String(manifest.base ?? '')))
+    throw new Error(
+      `trial manifest base "${manifest.base}" is not a commit id; refusing to settle`,
+    );
+  for (const p of [manifest.ledger, ...judged.map((j) => j.file)]) {
+    if ('why' in insideRepo(root, p))
+      throw new Error(
+        `trial manifest path "${p}" escapes the trial worktree; refusing to settle`,
+      );
+  }
+}
+
+/**
  * Apply the verdict to the trial branch and tell the failing tests' tickets.
  * Returns the comment notes.
  */
@@ -70,12 +97,14 @@ export function applyVerdict({
   now = new Date(),
 }) {
   const { manifest, headRefName, url } = trial;
+  checkManifest(repo, manifest, judged); // before any git call
   must(run('git', ['-C', repo, 'fetch', 'origin', headRefName]), 'git fetch');
   withWorktree(
     run,
     repo,
     { options: ['--detach'], commit: 'FETCH_HEAD' },
     (work) => {
+      checkManifest(work, manifest, judged); // again, against the checked-out tree's symlinks
       const files = rebuildFiles(run, work, manifest.base, judged);
       rewriteLedger(work, manifest.ledger, judged);
       const git = (...args) =>

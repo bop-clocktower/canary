@@ -21,6 +21,7 @@ import {
 } from '../claude-code/canary-unquarantine/scripts/lift.mjs';
 import { selectRows } from '../claude-code/canary-unquarantine/scripts/trial.mjs';
 import {
+  downloadResults,
   judge,
   junitCases,
   playwrightCases,
@@ -827,5 +828,161 @@ describe('results', () => {
     const { cases, read } = readCases(dir);
     expect(cases).toHaveLength(3);
     expect(read.map((f) => path.basename(f))).toEqual(['a.json']);
+  });
+
+  it('a run list that is not JSON abstains with the reason instead of throwing', () => {
+    const run = () => ({ status: 0, stdout: '<html>', stderr: '', error: '' });
+    const out = downloadResults(run, {
+      repo: '.',
+      headRefName: 'canary/trial',
+      headRefOid: 'a'.repeat(40),
+      artifact: 'playwright-json',
+    });
+    expect(out).toEqual({
+      why: expect.stringMatching(/gh run list returned unparseable JSON/),
+    });
+  });
+});
+
+// --- the PR body is untrusted: settle stays inside the trial worktree ---------
+
+describe('verdict --apply refuses a manifest that reaches outside the worktree', () => {
+  /** Open a trial, then rewrite its PR-body manifest the way an editor of the PR could. */
+  function tampered(change: (m: any) => void) {
+    const results = report({
+      card: 'expected',
+      event: 'expected',
+      v2: 'expected',
+    });
+    const suite = makeSuite();
+    const h = harness({ results });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    const manifest = readManifest(h.state.body!);
+    change(manifest);
+    h.state.body = `edited\n\n${embedManifest(manifest)}\n`;
+    const head = git(suite.origin, 'rev-parse', 'canary/trial');
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        suite.repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    return { ...suite, h, r, head };
+  }
+
+  /** Refused: non-zero, named, nothing pushed, no ticket told. */
+  function expectRefused(
+    t: ReturnType<typeof tampered>,
+    why = /escapes the trial worktree/,
+  ) {
+    expect(t.r.code).not.toBe(0);
+    expect(t.r.stderr).toMatch(why);
+    expect(git(t.origin, 'rev-parse', 'canary/trial')).toBe(t.head);
+    expect(t.h.calls.some((c) => c.args[0] === 'issue')).toBe(false);
+  }
+
+  /** A file outside every worktree, holding `text`. */
+  function victim(name: string, text: string) {
+    const dir = mkTmp();
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, text);
+    return { dir, file };
+  }
+
+  it('a lifted file with ../ is refused', () => {
+    expectRefused(
+      tampered((m) => {
+        m.lifts[0].file = `../../../${m.lifts[0].file}`;
+      }),
+    );
+  });
+
+  it('an absolute lifted file is refused, and the file there is untouched', () => {
+    const v = victim('x.spec.js', 'outside\n');
+    expectRefused(
+      tampered((m) => {
+        m.lifts[0].file = v.file;
+      }),
+    );
+    expect(fs.readFileSync(v.file, 'utf8')).toBe('outside\n');
+  });
+
+  it('a ledger path with ../ is refused', () => {
+    expectRefused(
+      tampered((m) => {
+        m.ledger = '../../outside/quarantine.json';
+      }),
+    );
+  });
+
+  it('an absolute ledger path is refused', () => {
+    const v = victim('quarantine.json', '{"schema_version":1,"entries":[]}\n');
+    expectRefused(
+      tampered((m) => {
+        m.ledger = v.file;
+      }),
+    );
+    expect(fs.readFileSync(v.file, 'utf8')).toBe(
+      '{"schema_version":1,"entries":[]}\n',
+    );
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'a ledger reached through a committed symlink out of the repo is refused, and not written',
+    () => {
+      const v = victim(
+        'quarantine.json',
+        '{"schema_version":1,"entries":[]}\n',
+      );
+      const t = tampered((m) => {
+        m.ledger = 'escape/quarantine.json';
+      });
+      // tampered() ran with the link absent; commit it and run again.
+      fs.symlinkSync(v.dir, path.join(t.repo, 'escape'));
+      git(t.repo, 'add', 'escape');
+      git(t.repo, 'commit', '-q', '-m', 'link');
+      git(t.repo, 'push', '-q', 'origin', 'HEAD:refs/heads/canary/trial', '-f');
+      const head = git(t.origin, 'rev-parse', 'canary/trial');
+      const r = callMain(
+        [
+          'verdict',
+          '--repo',
+          t.repo,
+          '--pr',
+          '77',
+          '--artifact',
+          'playwright-json',
+          '--apply',
+        ],
+        { run: t.h.run, env: JIRA_ENV },
+      );
+      expect(r.code).not.toBe(0);
+      expect(r.stderr).toMatch(/escapes the trial worktree/);
+      expect(git(t.origin, 'rev-parse', 'canary/trial')).toBe(head);
+      expect(fs.readFileSync(v.file, 'utf8')).toBe(
+        '{"schema_version":1,"entries":[]}\n',
+      );
+    },
+  );
+
+  it('a manifest base that is not a commit id is refused (it is passed to git show)', () => {
+    expectRefused(
+      tampered((m) => {
+        m.base = '--output=/tmp/x';
+      }),
+      /not a commit id/,
+    );
   });
 });

@@ -21,6 +21,25 @@ export function must(r, what) {
 }
 
 /**
+ * The real path of `p`, symlinks resolved. A path that does not exist yet is
+ * resolved through its nearest existing ancestor, so a write to
+ * `link/new.json` is judged by where `link` really points.
+ */
+function realish(p) {
+  let rest = '';
+  for (let cur = p; ;) {
+    try {
+      return path.join(fs.realpathSync(cur), rest);
+    } catch {
+      const up = path.dirname(cur);
+      if (up === cur) return p;
+      rest = path.join(path.basename(cur), rest);
+      cur = up;
+    }
+  }
+}
+
+/**
  * `file` as a repo-relative POSIX path, or why it is refused. The path is
  * resolved, symlinks included, and must land strictly inside `repo`: a
  * `--file ../x` or an absolute path elsewhere would otherwise be edited.
@@ -30,19 +49,14 @@ export function must(r, what) {
 export function insideRepo(repo, file) {
   const outside = { why: `--file ${file} is outside --repo ${repo}` };
   const root = path.resolve(repo);
-  const abs = path.resolve(root, file);
+  const abs = path.resolve(root, String(file ?? ''));
   const within = (base, p) => {
     const rel = path.relative(base, p);
     const up = rel === '..' || rel.startsWith(`..${path.sep}`);
     return rel && !up && !path.isAbsolute(rel) ? rel : null;
   };
   const rel = within(root, abs);
-  if (!rel) return outside;
-  try {
-    if (!within(fs.realpathSync(root), fs.realpathSync(abs))) return outside;
-  } catch {
-    // A file that does not exist is reported by locate, with its own reason.
-  }
+  if (!rel || !within(realish(root), realish(abs))) return outside;
   return { rel: rel.split(path.sep).join('/'), abs };
 }
 
