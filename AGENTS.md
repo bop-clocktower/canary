@@ -1399,6 +1399,20 @@ with `|| echo`, reporting success while delivering nothing.
 `ts/test/workflow-false-green.test.ts` fails the build if any of those patterns
 return, including a side-branch push that does not announce itself.
 
+**The push is a separate job, and only it can write (#1426).** Both workflows
+run a floating `@harness-engineering/cli` through `npx`, and `actions/checkout`
+leaves the job's token in `.git/config`. So each is split. The scan job
+(`security`, `snapshot`) runs at `contents: read` and uploads the files it
+refreshed as an artifact. The push job (`ledger`, `push`) holds
+`contents: write` and runs no registry code. It downloads the artifact under
+`runner.temp` and copies only the named files into the checkout, then does the
+standing-branch push above. `security` is still the required check. `ledger` is
+skipped on PRs, so `.github/required-checks.json` lists it as advisory.
+`ts/test/workflow-hygiene.test.ts` fails on a top-level `contents: write`
+outside its allowlist (`release.yml`, `wiki-sync.yml`), and on `npx` in a write
+job of either workflow. `ts/test/ledger-push-jobs.test.ts` runs the push jobs'
+own scripts against a local bare remote.
+
 ## Agent Behavior
 
 ### Branch Hygiene Before Code Changes
@@ -1678,8 +1692,10 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 
 - Runs `markdownlint` on staged `.md` files — catches MD040 and other violations
   before they reach CI.
-- Re-runs `python3 scripts/security_ledger.py` whenever non-ledger files are
-  staged — keeps the security ledger fresh without a manual step.
+- Re-runs `node scripts/security_ledger.mjs` and restages its outputs only
+  when the commit stages a ledger input (`.harness/security/timeline.json`,
+  `docs/SECURITY_LEDGER.md`, or the script itself). Unrelated commits leave the
+  ledger alone; CI (`harness-security.yml`) is its canonical writer (#1446).
 
 Then install the Python test dependency (pytest) into the `python3` on your
 `PATH` — the same interpreter the tests spawn:

@@ -96,7 +96,14 @@ parked, superseded or continued somewhere, and names where. Only the newest
 comment carrying a hand-off is used — a later comment re-routes an earlier one.
 When that comment routes several cases to several tickets, the lines naming the
 row's own case id are the ones that count; otherwise every target counts, which
-errs toward blocked. Chains are followed up to 4 hops, and a cycle abstains.
+errs toward blocked. Chains are followed up to 3 hops (A → B → C → D); a fourth
+hop abstains, and so does a cycle.
+
+A closed issue counts as resolved only when it was closed as **completed**, and
+a pull request only once **merged**. Closed as not planned, as a duplicate, for
+any reason the audit does not recognise, or a pull request closed unmerged, is
+not a fix: the hand-off it names is followed, and with no hand-off the row
+abstains.
 
 A closed issue whose comments cannot be read abstains: a hand-off cannot be
 ruled out, and ruling it out is the whole point.
@@ -113,11 +120,14 @@ makes it `abstain`. Only when every blocker is resolved is it a `candidate`.
 - **Jira** is enabled per project by `.canary/company.json` `jira_projects`
   (company-specific configuration, not a separate skill). Credentials come from
   the environment — `CANARY_JIRA_EMAIL` and `CANARY_JIRA_API_TOKEN` (or the
-  `JIRA_*` spellings) — and the site from the ticket's own URL or
-  `CANARY_JIRA_BASE_URL`. They are passed to `curl` on stdin, never in argv. A
-  Jira project not in `jira_projects`, or no credentials, abstains for that row.
-  A status in Jira's `done` category is resolved; `new` and `indeterminate` are
-  open.
+  `JIRA_*` spellings) — and the site from `CANARY_JIRA_BASE_URL` (one https URL,
+  or several separated by commas). Credentials go **only** to that configured
+  site: a ticket URL is used to identify the ticket, never as the host to send
+  to, and a `/browse/KEY-N` link on any other origin abstains. They are passed
+  to `curl` on stdin, never in argv, and curl is held to https. A Jira project
+  not in `jira_projects`, no configured site, or no credentials, abstains for
+  that row. A status in Jira's `done` category is resolved; `new` and
+  `indeterminate` are open.
 
 Tag-style quarantine reads its tags from `--tags`, else company.json
 `quarantine_tags`, else `@known-failure,@quarantine`.
@@ -215,7 +225,12 @@ canary skills run canary-unquarantine -- verdict --pr 77 --artifact playwright-r
 Results come from the newest **completed** CI run on the trial commit, through
 `--artifact` (downloaded with `gh run download`). `--results PATH` takes a local
 file or directory instead. Both read a Playwright JSON report or JUnit XML. A
-lifted describe is judged on every case under it.
+lifted describe is judged on every case under it. A JUnit case carrying a retry
+record (surefire `<flakyFailure>`/`<flakyError>`, pytest-rerunfailures
+`<rerun>`) is flaky, not a pass. A lifted test is matched in the run by its
+title as a whole segment; a case whose title only contains it can keep the row
+quarantined (fail, flaky, skipped) but never release it, so a passing look-alike
+such as `adds item twice` for `adds item` reads as missing.
 
 | Outcome in the run      | `--apply` does                                                                                                                                                                                                                           |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

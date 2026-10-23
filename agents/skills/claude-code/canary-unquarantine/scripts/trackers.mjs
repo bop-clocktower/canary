@@ -73,7 +73,11 @@ export function githubTracker({ run, gh = 'gh', defaultRepo }) {
           ? { ...r, repo, id: `${repo}#${r.number}` }
           : r,
       );
-    return { ...issue, id, raw: undefined, handoff };
+    // Closed without a fix and not handed anywhere: nothing says the defect
+    // is gone, so the row cannot be released on this issue's word.
+    if (issue.notFixed && !handoff.length)
+      return { state: 'unknown', why: issue.notFixed, url: issue.url, id };
+    return { ...issue, id, raw: undefined, notFixed: undefined, handoff };
   }
   lookup.repo = () => (fallback ? fallback.repo : null);
   return lookup;
@@ -129,6 +133,25 @@ function fetchIssue(run, gh, repo, number) {
     state: 'resolved',
     title,
     url,
+    notFixed: notFixedReason(issue, `${repo}#${number}`),
     raw: { body: String(issue.body ?? ''), comments: read.comments },
   };
+}
+
+/** Close reasons that mean the work was done. `null` is GitHub's legacy spelling of completed. */
+const FIXED_REASONS = new Set(['completed', null, undefined]);
+
+/**
+ * Why a closed issue or pull request is NOT evidence of a fix, or '' when it
+ * is. A pull request counts only once merged; an issue only when closed as
+ * completed. Not planned, duplicate, or any reason this audit does not know
+ * is closed-without-a-fix -- the defect may well still be there.
+ */
+function notFixedReason(issue, id) {
+  if (issue.pull_request)
+    return issue.pull_request.merged_at
+      ? ''
+      : `${id} is a pull request closed without merging, which fixes nothing`;
+  if (FIXED_REASONS.has(issue.state_reason)) return '';
+  return `${id} was closed as ${String(issue.state_reason).replace(/_/g, ' ')}, not as completed, and names no hand-off`;
 }

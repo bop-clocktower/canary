@@ -14,12 +14,54 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Security
+
+- **`ip-address` bumped to 10.7.4 (GHSA-rxp7-6hxx-x8q5).** The transitive
+  dependency (via `@modelcontextprotocol/sdk` → `express-rate-limit`) matched an
+  `Address6` zone identifier in quadratic time before its length limit, so a
+  single long string could stall the process. Both the `ts/` and `npm/`
+  lockfiles now resolve the patched version.
+
+### Changed
+
+- **`canary testtracker push` refuses a payload that would lose its catalog
+  under CI (#1355).** Fitting a run over the 4 MB ingest budget drops
+  `collected`, so the suite lands unmeasured; the push used to warn and exit 0.
+  With the new `--strict-budget` (on by default when `CI` is set) it exits 1
+  before sending anything when the fit would drop the catalog or stay over
+  budget, naming the measured size and the budget. `--no-strict-budget` restores
+  the warn-and-push behaviour under CI; outside CI it remains the default.
+
 ### Fixed
+
+- **`overlay list` no longer reports a bare `up to date` from a stale cache
+  (#1324).** The freshness check never asks the remote, so a zero "behind" count
+  only means the clone matched its remote at the last fetch. The status now says
+  `up to date as of <last fetch time>` (from `.git/FETCH_HEAD`, or the clone's
+  own reflog entry when it was never re-fetched) and `unknown (never fetched)`
+  when nothing records a fetch. `canary doctor`'s overlay freshness label
+  carries the same wording.
 
 - **`analyze_file` existing-test paths (#1371).** A root-level test file whose
   name starts with `..` (for example `..foo.test.ts`) is now listed in
   `existing_tests` as a project-relative path instead of an absolute one. Only a
   leading `..` path segment counts as leaving the project root now.
+
+- **guardian: a transient GitHub error no longer fails the check (#1467).** The
+  sticky-comment client now retries a 5xx, a 429, or a rate-limited 403 up to 3
+  attempts in total, waiting 1s then 2s or the `retry-after` the response names
+  (capped at 60s). This covers the comment lookup and the update. The
+  comment-create POST is retried only on a 429 or a rate-limited 403, which
+  GitHub rejects before processing; a 5xx there is not retried, because GitHub
+  may already have created the comment and a re-POST would stack a second
+  sticky. A post that still fails degrades to a `::warning::` naming the HTTP
+  status. The rendered verdict then goes to the job log and the step summary,
+  and `pr-check --post-comment` exits with the computed verdict's code. Before
+  this, a single `GitHub API 500` from the comment POST replaced that code with
+  exit 1 on the required `guardian` check. Any other 4xx (404, 422) is still not
+  retried and still fails loudly. A 403 or rate-limit degrade now also prints
+  the verdict to the log and summary. `canary briefing --comment` no longer
+  reports a GitHub 5xx as a missing write permission.
 
 ## [9.5.0] - 2026-10-23
 
@@ -62,8 +104,43 @@ under the project's former name) are documented in the
   than for all three metrics unconditionally. The entropy, perf and docs
   ratchets are re-stamped to 13.0.0; their counts were identical on 12.10.1 and
   13.0.0.
+- **Bin verification is its own release job and gates only the `latest` advance
+  (#1439, ADR 0042).** `release.yml` moves "Verify the published manifest ships
+  every bin" out of `publish` into a `verify-bins` job (`needs: publish`). The
+  GitHub Release now depends only on the npm publish it announces, so a slow
+  registry no longer strands a good release without one. `advance-latest` needs
+  `[publish, verify-bins]`, so the git `latest` tag still never moves over a
+  failed (exit 1) or abstained (exit 3) check. The verdict, including "NOT
+  verified" on an abstention, is written to the job's step summary, and
+  `verify-bins` checks the exact name@version `publish` reports as job outputs.
+  Permissions are now per job: the workflow default is `contents: read`, only
+  `publish` holds the OIDC token, and `verify-bins` is read-only. Recovery after
+  an abstention is a re-run of `verify-bins`, then `advance-latest`.
 
 ### Fixed
+
+- **Registry code no longer runs under a write token in `harness-security.yml`
+  or `arch-snapshot.yml` (#1426).** Both workflows granted `contents: write` to
+  every job. Their scans ran a floating `@harness-engineering/cli` through `npx`
+  while `actions/checkout` held that token in `.git/config` (CWE-250, CWE-272).
+  Only the final standing-branch push needs write. Each workflow is now
+  `contents: read` at the top. The scan job uploads what it refreshed, and a
+  separate push job (`ledger`, `push`) with `contents: write` and no `npx`
+  downloads it under `runner.temp`, copies only the named files and pushes. The
+  required `security` check keeps its name, and the new `ledger` job is listed
+  as advisory. `ts/test/workflow-hygiene.test.ts` now fails on a top-level
+  `contents: write` outside an allowlist with stated reasons, and on `npx` in a
+  write job of either workflow.
+
+- **The pre-commit hook no longer drags the security ledger into unrelated
+  commits (#1446).** It regenerated and staged `.harness/security/timeline.json`
+  and `docs/SECURITY_LEDGER.md` whenever any other file was staged, which also
+  swept in any snapshot a local `harness check-security` run had left in the
+  timeline. It also skipped the one case that needs a refresh, a commit staging
+  the timeline alone. The step now runs only when the timeline, the ledger, or
+  `scripts/security_ledger.mjs` is staged, and a failed refresh says so instead
+  of passing silently. CI stays the canonical writer. Guarded by
+  `ts/test/precommit-ledger-scope.test.ts`.
 
 - **`harness check-deps` reads `npm/src`, and test fixtures no longer move the
   arch and entropy ratchets (#1443).** No layer pattern matched `npm/src`, so

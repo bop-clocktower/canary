@@ -79,8 +79,15 @@ const decode = (s) =>
 const attr = (tag, name) =>
   decode(new RegExp(`\\b${name}="([^"]*)"`).exec(tag)?.[1] ?? '');
 
+/**
+ * A JUnit case's outcome. A case that failed and then passed on retry carries
+ * surefire's <flakyFailure>/<flakyError> or pytest-rerunfailures' <rerun>
+ * (also <rerunFailure>/<rerunError>) and no <failure>: that is a flake, and a
+ * retry pass is not a fix.
+ */
 function junitOutcome(body) {
   if (/<(?:failure|error)\b/.test(body)) return 'fail';
+  if (/<(?:flaky|rerun)(?:Failure|Error)?\b/.test(body)) return 'flaky';
   return /<skipped\b/.test(body) ? 'skipped' : 'pass';
 }
 
@@ -145,19 +152,24 @@ function worst(cases) {
 
 /**
  * The outcome for one lifted row: the cases in its file whose title path
- * contains its title (as a whole segment first, then by containment, the
- * ledger's own matching rule).
+ * holds its title as a whole segment. When none does, cases whose title merely
+ * CONTAINS it (the ledger's looser matching rule) may only demote: a failing,
+ * flaky or skipped look-alike keeps the row quarantined, but a passing one is
+ * a sibling (`adds item twice` for a lifted `adds item`), not proof the lifted
+ * test ran, so the row is `missing`.
  *
  * @returns {{outcome: string, cases: number}} pass, fail, flaky, skipped or missing
  */
 export function judge(row, cases) {
   const inFile = cases.filter((c) => sameFile(c.file, row.file));
   const exact = inFile.filter((c) => c.titlePath.includes(row.test));
-  const mine = exact.length
-    ? exact
-    : inFile.filter((c) => c.titlePath.some((t) => t.includes(row.test)));
-  if (!mine.length) return { outcome: 'missing', cases: 0 };
-  return { outcome: worst(mine), cases: mine.length };
+  if (exact.length) return { outcome: worst(exact), cases: exact.length };
+  const near = inFile.filter((c) =>
+    c.titlePath.some((t) => t.includes(row.test)),
+  );
+  const outcome = near.length ? worst(near) : 'pass';
+  if (outcome === 'pass') return { outcome: 'missing', cases: 0 };
+  return { outcome, cases: near.length };
 }
 
 /**

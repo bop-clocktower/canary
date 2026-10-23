@@ -1,0 +1,20 @@
+{
+  "issues": [1467],
+  "route": "cicd",
+  "stages": ["debugging", "tdd"],
+  "reproducingTest": "ts/test/guardian-transient-5xx.test.ts",
+  "baseSha": "7f1c2364",
+  "reproFailure": "pr-check --post-comment with every comment POST answering HTTP 500 threw `Error: GitHub API 500: https://api.github.com/repos/o/r/issues/7/comments` (from toGitHubError via RestGitHubClient.createComment) instead of exiting with the computed verdict (3); 8 of 11 new cases failed before the fix (no retry: 1 POST and no sleeps on 500x3; 429 and rate-limited 403 thrown on first try; paged read rejected on 502; upsert threw instead of degrading)",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "F1 DECIDED (human): the 5xx/429 retry lives in RestGitHubClient's request path, for reads and writes",
+    "F2 DECIDED (human): if the comment post still fails after retries, pr-check --post-comment exits with the computed verdict's exit code; the verdict goes to the job log + step summary and the failure surfaces as a ::warning:: (same shape as the 403 GitHubPermissionError path)",
+    "F3 DECIDED (human): 3 attempts total, backoff 1s then 2s, retry-after honoured; 429 and rate-limited 403 retried; other 4xx loud and not retried; sleep injectable",
+    "default: an honoured retry-after is capped at 60s",
+    "default: a non-numeric retry-after falls back to the exponential backoff",
+    "default: the verdict body is printed to the job log and step summary on EVERY degraded post, including the pre-existing 403 and rate-limit paths",
+    "default: network-level fetch rejections (DNS/ECONNRESET) are out of scope; not retried, still loud",
+    "default: RestBranchProtectionClient and the adjudication reactions client are unchanged",
+    "default: canary briefing --comment keeps FORBIDDEN_NOTICE only for a permission 403; other degrades report their own reason (avoids a regression the new 5xx degrade would otherwise introduce)"
+  ]
+}

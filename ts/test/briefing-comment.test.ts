@@ -4,7 +4,7 @@
  * guardian's default identity — so if the two markers ever collided the
  * guardian comment WOULD be overwritten, which keeps "untouched" non-vacuous.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { commentClientFor, postCharter } from '../src/briefing/comment.js';
 import {
   FakeGitHubClient,
@@ -64,6 +64,32 @@ describe('postCharter (criteria 6, 10)', () => {
     expect(r.kind).toBe('degraded');
     if (r.kind === 'degraded')
       expect(r.notice).toMatch(/^canary briefing: .*HTTP 403/);
+  });
+
+  it('a GitHub 5xx degrades without blaming the token (#1467)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_u: string, init?: RequestInit) =>
+        init?.method === 'POST'
+          ? new Response('{}', { status: 503 })
+          : new Response('[]', { status: 200 }),
+      ),
+    );
+    try {
+      const client = new RestGitHubClient(
+        'o/r',
+        1,
+        't',
+        undefined,
+        async () => {},
+      );
+      const r = await postCharter(client, 'c');
+      expect(r.kind === 'degraded' ? r.notice : r.kind).toMatch(
+        /^canary briefing: .*HTTP 503/,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('degrades on any other client error rather than throwing', async () => {

@@ -37,6 +37,8 @@ const TRACKER = JSON.parse(
 const JIRA_ENV = {
   CANARY_JIRA_EMAIL: 'qa@example.com',
   CANARY_JIRA_API_TOKEN: 'not-a-real-token',
+  // The only site credentials are sent to (#1456); other hosts abstain.
+  CANARY_JIRA_BASE_URL: 'https://acme.atlassian.net',
 };
 
 const CARD =
