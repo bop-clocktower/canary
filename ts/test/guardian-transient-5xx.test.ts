@@ -236,21 +236,29 @@ index 1111111..2222222 100644
 +
 `;
 
+  /** `pr-check --post-comment` on DIFF_NEW_UNIT through a stubbed client. */
+  const prCheck = (
+    sleep: (ms: number) => Promise<void>,
+    env: Record<string, string> = {},
+  ) =>
+    invokeGuardian(['pr-check', '--diff', '-', '--post-comment'], {
+      input: DIFF_NEW_UNIT,
+      env: {
+        GITHUB_REPOSITORY: 'o/r',
+        GITHUB_REF: 'refs/pull/7/merge',
+        ...env,
+      },
+      cwd: tmp,
+      deps: {
+        buildCommentClient: (repo, pr) =>
+          new RestGitHubClient(repo, pr, 'tok', undefined, sleep),
+      },
+    });
+
   it('exits with the verdict code and warns when every POST is a 500', async () => {
     stubFetch([{ status: 500 }]);
     const { sleep } = recordingSleep();
-    const res = await invokeGuardian(
-      ['pr-check', '--diff', '-', '--post-comment'],
-      {
-        input: DIFF_NEW_UNIT,
-        env: { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/7/merge' },
-        cwd: tmp,
-        deps: {
-          buildCommentClient: (repo, pr) =>
-            new RestGitHubClient(repo, pr, 'tok', undefined, sleep),
-        },
-      },
-    );
+    const res = await prCheck(sleep);
     expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toMatch(/::warning::guardian: .*HTTP 500/);
   });
@@ -258,18 +266,7 @@ index 1111111..2222222 100644
   it('a POST 500 then 201 makes exactly ONE POST and degrades to the verdict code', async () => {
     const log = stubFetch([{ status: 500 }, { status: 201 }]);
     const { sleep } = recordingSleep();
-    const res = await invokeGuardian(
-      ['pr-check', '--diff', '-', '--post-comment'],
-      {
-        input: DIFF_NEW_UNIT,
-        env: { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/7/merge' },
-        cwd: tmp,
-        deps: {
-          buildCommentClient: (repo, pr) =>
-            new RestGitHubClient(repo, pr, 'tok', undefined, sleep),
-        },
-      },
-    );
+    const res = await prCheck(sleep);
     expect({
       posts: posts(log).length,
       code: res.code,
@@ -282,22 +279,7 @@ index 1111111..2222222 100644
     const { sleep } = recordingSleep();
     const summary = join(tmp, 'step-summary.md');
     writeFileSync(summary, '');
-    const res = await invokeGuardian(
-      ['pr-check', '--diff', '-', '--post-comment'],
-      {
-        input: DIFF_NEW_UNIT,
-        env: {
-          GITHUB_REPOSITORY: 'o/r',
-          GITHUB_REF: 'refs/pull/7/merge',
-          GITHUB_STEP_SUMMARY: summary,
-        },
-        cwd: tmp,
-        deps: {
-          buildCommentClient: (repo, pr) =>
-            new RestGitHubClient(repo, pr, 'tok', undefined, sleep),
-        },
-      },
-    );
+    const res = await prCheck(sleep, { GITHUB_STEP_SUMMARY: summary });
     expect({
       log: res.stdout.includes('pkg/widget.py'),
       summary: readFileSync(summary, 'utf-8').includes('pkg/widget.py'),
