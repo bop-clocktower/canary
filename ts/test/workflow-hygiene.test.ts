@@ -126,12 +126,12 @@ describe('#1426 the registry-code detector', () => {
  * A top-level `contents: write` hands that scope to every job, including ones
  * added later. It is allowed only where the workflow's whole purpose is a
  * write, and each such exception carries its reason here.
+ *
+ * `release.yml` was on this list until #1439 split bin verification into its
+ * own job and moved `contents: write` down to the jobs that publish. Keeping
+ * it off the list is what proves the narrowing holds.
  */
 const TOP_LEVEL_WRITE_ALLOWLIST: Record<string, string> = {
-  'release.yml':
-    'Tag-triggered publish: creates the GitHub Release and uploads its assets. ' +
-    'Runs only on a v* tag a maintainer pushes, never on a PR. Narrowing it ' +
-    'to job level is worth doing but is not part of #1426.',
   'wiki-sync.yml':
     'Its one job exists to push docs/wiki to the GitHub Wiki on push to main, ' +
     'and it runs no registry code (no npx / npm exec).',

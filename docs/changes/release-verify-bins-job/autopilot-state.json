@@ -1,0 +1,15 @@
+{
+  "item": "#1439",
+  "phase": "done",
+  "pipeline": "harness:workflow-audit",
+  "steps": [
+    "inventory: release.yml triggers, jobs, permissions, actions (0 paths: globs)",
+    "mechanical: permissions-broad warning; pinning info (matches repo convention)",
+    "judgment: gate-coupling error (ADR 0042 unimplemented); concurrency info; injection clean",
+    "tdd red: ts/test/release-workflow.test.ts, 15 of 23 failing against the old workflow",
+    "fix: verify-bins job, job outputs, step summary, per-job permissions",
+    "tdd green: 23/23; actionlint 1.7.12 + shellcheck clean on release.yml",
+    "gates: build, typecheck, format:check, test (338 files, 6445 passed, 2 skipped)"
+  ],
+  "commits": ["3be12ea1"]
+}
