@@ -14,7 +14,30 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **`canary testtracker push` refuses a payload that would lose its catalog
+  under CI (#1355).** Fitting a run over the 4 MB ingest budget drops
+  `collected`, so the suite lands unmeasured; the push used to warn and exit 0.
+  With the new `--strict-budget` (on by default when `CI` is set) it exits 1
+  before sending anything when the fit would drop the catalog or stay over
+  budget, naming the measured size and the budget. `--no-strict-budget` restores
+  the warn-and-push behaviour under CI; outside CI it remains the default.
+
 ### Fixed
+
+- **`overlay list` no longer reports a bare `up to date` from a stale cache
+  (#1324).** The freshness check never asks the remote, so a zero "behind" count
+  only means the clone matched its remote at the last fetch. The status now says
+  `up to date as of <last fetch time>` (from `.git/FETCH_HEAD`, or the clone's
+  own reflog entry when it was never re-fetched) and `unknown (never fetched)`
+  when nothing records a fetch. `canary doctor`'s overlay freshness label
+  carries the same wording.
+
+- **`analyze_file` existing-test paths (#1371).** A root-level test file whose
+  name starts with `..` (for example `..foo.test.ts`) is now listed in
+  `existing_tests` as a project-relative path instead of an absolute one. Only a
+  leading `..` path segment counts as leaving the project root now.
 
 - **guardian: a transient GitHub error no longer fails the check (#1467).** The
   sticky-comment client now retries a 5xx, a 429, or a rate-limited 403 up to 3
@@ -75,6 +98,41 @@ under the project's former name) are documented in the
   13.0.0.
 
 ### Fixed
+
+- **Registry code no longer runs under a write token in `harness-security.yml`
+  or `arch-snapshot.yml` (#1426).** Both workflows granted `contents: write` to
+  every job. Their scans ran a floating `@harness-engineering/cli` through `npx`
+  while `actions/checkout` held that token in `.git/config` (CWE-250, CWE-272).
+  Only the final standing-branch push needs write. Each workflow is now
+  `contents: read` at the top. The scan job uploads what it refreshed, and a
+  separate push job (`ledger`, `push`) with `contents: write` and no `npx`
+  downloads it under `runner.temp`, copies only the named files and pushes. The
+  required `security` check keeps its name, and the new `ledger` job is listed
+  as advisory. `ts/test/workflow-hygiene.test.ts` now fails on a top-level
+  `contents: write` outside an allowlist with stated reasons, and on `npx` in a
+  write job of either workflow.
+
+- **The pre-commit hook no longer drags the security ledger into unrelated
+  commits (#1446).** It regenerated and staged `.harness/security/timeline.json`
+  and `docs/SECURITY_LEDGER.md` whenever any other file was staged, which also
+  swept in any snapshot a local `harness check-security` run had left in the
+  timeline. It also skipped the one case that needs a refresh, a commit staging
+  the timeline alone. The step now runs only when the timeline, the ledger, or
+  `scripts/security_ledger.mjs` is staged, and a failed refresh says so instead
+  of passing silently. CI stays the canonical writer. Guarded by
+  `ts/test/precommit-ledger-scope.test.ts`.
+
+- **`harness check-deps` reads `npm/src`, and test fixtures no longer move the
+  arch and entropy ratchets (#1443).** No layer pattern matched `npm/src`, so
+  `check-deps` analysed 468 modules and passed with a cycle planted there. Two
+  layers now cover it, `npm-cli` over the published `npm-reporter` leaf, and the
+  count is 501. Separately, `**/test/fixtures/**` (dot-directories included) is
+  excluded from both analyzers, so a deliberately broken fixture no longer
+  counts against the ratchets; the entropy count falls 140 to 114, all 26 of
+  them fixture files. The two fixture entry points that only existed to keep
+  fixtures from reading as dead are removed from both `entryPoints` lists.
+  `ts/test/analysis-scope-rehearsal.test.ts` plants both cases against the real
+  CLI on a throwaway project.
 
 - **The required `security` check runs on the pinned Node and one resolved CLI,
   and a red `harness validate` explains itself (#1401).** `harness-security.yml`
