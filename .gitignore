@@ -39,6 +39,8 @@ dist/
 /npm/agent/
 # Bundled skill tree staged by npm/scripts/build-engine.mjs (#757)
 /npm/agents/
+# lcov written by npm/'s coverage run (`npm test`, #1444)
+/npm/coverage/
 
 # Virtual environments
 .venv/

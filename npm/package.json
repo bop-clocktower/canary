@@ -39,7 +39,7 @@
     "build": "tsc && node scripts/stage-voice.mjs && node scripts/build-engine.mjs",
     "prepare": "npm run build",
     "pretest": "node scripts/sync-gate-result.mjs --check",
-    "test": "tsc && node scripts/stage-voice.mjs && node --test \"scripts/__tests__/*.test.js\""
+    "test": "tsc && node scripts/stage-voice.mjs && node scripts/coverage-guard.mjs --reset && node --test --experimental-test-coverage --test-coverage-include=\"bin/**\" --test-coverage-include=\"dist/**\" --test-coverage-include=\"scripts/*.mjs\" --test-coverage-exclude=\"scripts/__tests__/**\" --test-coverage-exclude=\"dist/engine/**\" --test-coverage-lines=92 --test-coverage-branches=85 --test-coverage-functions=85 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"scripts/__tests__/*.test.js\" && node scripts/coverage-guard.mjs"
   },
   "engines": {
     "node": ">=22"

@@ -153,6 +153,13 @@ const CASES: Record<string, Case> = {
     output: /has drifted/,
     target: driftedSyncTree,
   },
+  // The symlink's dir has no coverage/lcov.info, so the guard must run and
+  // abstain; a silent exit 0 means the entry guard skipped main().
+  'npm/scripts/coverage-guard.mjs': {
+    args: [],
+    status: 3,
+    output: /abstained/,
+  },
 };
 
 function walk(dir: string): string[] {

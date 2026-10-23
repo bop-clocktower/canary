@@ -17,6 +17,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const { runDoctor } = require('../../dist/doctor.js');
 const overlay = require('../../dist/overlay-commands.js');
@@ -90,6 +91,27 @@ const ROWS = [
         out: cap.out,
         err: cap.err,
       });
+      return { code, stdout: cap.text() };
+    },
+  },
+  {
+    command: 'coverage-guard (lcov covers 0 npm/ files)',
+    layer: 'npm',
+    kind: 'gate',
+    expect: 'exit3',
+    // #1444: a coverage floor over an empty report passes vacuously.
+    forbid: ['covers'],
+    run: async (base) => {
+      const { main } = await import(
+        pathToFileURL(path.resolve(__dirname, '..', 'coverage-guard.mjs')).href
+      );
+      fs.mkdirSync(path.join(base, 'coverage'));
+      fs.writeFileSync(
+        path.join(base, 'coverage', 'lcov.info'),
+        'SF:../elsewhere.js\nend_of_record\n',
+      );
+      const cap = capture();
+      const code = main([], { cwd: base, out: cap.out });
       return { code, stdout: cap.text() };
     },
   },
