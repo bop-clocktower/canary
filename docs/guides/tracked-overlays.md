@@ -35,13 +35,13 @@ No API key is needed — all LLM work runs through your agent session.
 
 ## Commands
 
-| Command                                     | What it does                                                                                                                                                          |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canary overlay add <source> [--ref <tag>]` | Clone `<source>` into `~/.canary/overlays/<owner>-<repo>/` and register it. `--ref` pins a tag or branch. Idempotent — re-adding is a no-op with a hint to `update`.  |
-| `canary overlay list`                       | Name, source, ref, freshness (`up to date` / `N commits behind`), and skill count for each overlay. Does **not** hit the network — freshness reflects the last fetch. |
-| `canary overlay lint <name\|path> [--json]` | Validate an overlay against the authoring contract (frontmatter floor, `deploy_to` targets, `cli:` paths, `doctor.json`). Exits non-zero on any error. See below.     |
-| `canary overlay update [name]`              | Fast-forward the clone (`git pull --ff-only`, or fetch + checkout when pinned). No name updates all. Refuses on local modifications or a non-fast-forward.            |
-| `canary overlay remove <name> [--force]`    | Deregister the overlay and delete its clone. Refuses when the clone has local modifications, or when its git status cannot be read; `--force` deletes it anyway.      |
+| Command                                     | What it does                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canary overlay add <source> [--ref <tag>]` | Clone `<source>` into `~/.canary/overlays/<owner>-<repo>/` and register it. `--ref` pins a tag or branch. Idempotent — re-adding is a no-op with a hint to `update`.                                                                                                                               |
+| `canary overlay list`                       | Name, source, ref, freshness, and skill count for each overlay. Does **not** hit the network, so freshness is only as current as the last fetch and says so: `up to date as of <last fetch time>` (UTC), `N commits behind`, or `unknown (never fetched)`. Run `canary overlay update` to refresh. |
+| `canary overlay lint <name\|path> [--json]` | Validate an overlay against the authoring contract (frontmatter floor, `deploy_to` targets, `cli:` paths, `doctor.json`). Exits non-zero on any error. See below.                                                                                                                                  |
+| `canary overlay update [name]`              | Fast-forward the clone (`git pull --ff-only`, or fetch + checkout when pinned). No name updates all. Refuses on local modifications or a non-fast-forward.                                                                                                                                         |
+| `canary overlay remove <name> [--force]`    | Deregister the overlay and delete its clone. Refuses when the clone has local modifications, or when its git status cannot be read; `--force` deletes it anyway.                                                                                                                                   |
 
 ### Source grammar
 

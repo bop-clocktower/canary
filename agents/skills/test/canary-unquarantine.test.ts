@@ -87,6 +87,8 @@ const TRACKER = JSON.parse(
 const JIRA_ENV = {
   CANARY_JIRA_EMAIL: 'qa@example.com',
   CANARY_JIRA_API_TOKEN: 'not-a-real-token',
+  // The only site credentials are sent to; ticket URLs elsewhere abstain.
+  CANARY_JIRA_BASE_URL: 'https://acme.atlassian.net',
 };
 
 type Result = { status: number; stdout: string; stderr: string; error: string };
@@ -296,7 +298,7 @@ describe('audit of the fixture suite', () => {
 
   it('the same hand-off abstains when Jira has no credentials', () => {
     const [row] = byTest(
-      auditJson({}),
+      auditJson({ CANARY_JIRA_BASE_URL: JIRA_ENV.CANARY_JIRA_BASE_URL }),
       'FINDING: event_data answers an edge/origin 520, not application data (filed 2026-09-22)',
     );
     expect(row.class).toBe('abstain');
@@ -828,10 +830,11 @@ describe('Jira adapter', () => {
   });
 
   it('abstains with no site URL', () => {
+    const { CANARY_JIRA_BASE_URL: _site, ...noSite } = JIRA_ENV;
     const lookup = jiraTracker({
       run: answer('done'),
       projects: ['CORE'],
-      env: JIRA_ENV,
+      env: noSite,
     });
     expect(lookup({ ...ref, base: null }).why).toMatch(/CANARY_JIRA_BASE_URL/);
   });
@@ -908,7 +911,7 @@ describe('resolveRef', () => {
     };
     const [leaf] = resolveRef(gh(1), lookup, {});
     expect(leaf.state).toBe('unknown');
-    expect(leaf.why).toMatch(/hand-off chain longer than/);
+    expect(leaf.why).toMatch(/hand-off chain of more than/);
   });
 
   it('a tracker with no adapter abstains', () => {

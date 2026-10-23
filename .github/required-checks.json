@@ -213,6 +213,11 @@
       "check": "actionlint",
       "workflow": "workflow-lint.yml",
       "reason": "Precision not yet known (ADR 0010). #1238 added this check after clearing the last 6 findings, so it has one clean run of history. It runs on every PR with no path filter, so it can be promoted with a ruleset edit (ADR 0011) once it has a record. It is pinned to actionlint 1.7.12, so a new upstream release cannot turn it red."
+    },
+    {
+      "check": "ledger",
+      "workflow": "harness-security.yml",
+      "reason": "Not a gate. #1426 split the security-ledger push out of the required `security` job so the push could hold `contents: write` without the scans. It runs only on push to main and is skipped on every PR, so it has no verdict about a PR to give, and requiring it would leave every PR waiting on a skipped job."
     }
   ],
 

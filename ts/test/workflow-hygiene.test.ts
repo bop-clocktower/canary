@@ -56,6 +56,153 @@ describe('#1236 harness-architecture.yml is least-privilege', () => {
   });
 });
 
+/**
+ * The `contents` scope a permissions block grants, or undefined when the block
+ * is absent. An object form grants `none` for every scope it does not name.
+ */
+function contentsScope(perms: unknown): string | undefined {
+  if (perms === undefined) return undefined;
+  if (perms === 'write-all') return 'write';
+  if (perms === 'read-all') return 'read';
+  if (perms && typeof perms === 'object')
+    return (perms as Record<string, string>).contents ?? 'none';
+  return 'none';
+}
+
+/**
+ * The `contents` scope a job actually runs with. A job with no block inherits
+ * the workflow's; a workflow with none gets the repository default, which may
+ * be write, so an undeclared scope counts as write.
+ */
+function effectiveContents(wf: Workflow, job: Job): string {
+  return (
+    contentsScope(job.permissions) ?? contentsScope(wf.permissions) ?? 'write'
+  );
+}
+
+/**
+ * Launchers that resolve and run package code, or run repo scripts that may
+ * import it: `npx`, `npm exec|ci|i|install|run`, `pnpm|yarn dlx`, `bunx`,
+ * and `node <script>`. A blocklist, so it is paired with the action allowlist
+ * in `ledger-push-jobs.test.ts`.
+ */
+const REGISTRY_CODE =
+  /(?:^|[\s;&|(])(?:(?:npx|bunx|npm\s+(?:exec|ci|i|install|run)|(?:pnpm|yarn)\s+dlx)\b|node\s+\S)/m;
+
+/** Whether a job runs registry code. */
+function runsRegistryCode(job: Job): boolean {
+  return (job.steps ?? []).some((s) => REGISTRY_CODE.test(s.run ?? ''));
+}
+
+describe('#1426 the registry-code detector', () => {
+  it.each([
+    'npx --yes -p x harness validate',
+    'npm exec x',
+    'npm ci',
+    'npm run build',
+    'pnpm dlx x',
+    'yarn dlx x',
+    'bunx x',
+    'node scripts/security_ledger.mjs',
+    'set -e; npx x',
+  ])('flags %s', (run) => {
+    expect(runsRegistryCode({ steps: [{ run }] })).toBe(true);
+  });
+
+  it.each(['git push --force origin "HEAD:$BRANCH"', 'cp -- "$SRC/$f" "$f"'])(
+    'does not flag %s',
+    (run) => {
+      expect(runsRegistryCode({ steps: [{ run }] })).toBe(false);
+    },
+  );
+});
+
+/**
+ * #1426 (CWE-250 / CWE-272). `harness-security.yml` and `arch-snapshot.yml`
+ * granted `contents: write` to the whole workflow, so `npx` resolved a
+ * floating `@harness-engineering/cli@13` and ran it while `actions/checkout`
+ * held a write token in `.git/config`. Only the final push needed write.
+ *
+ * A top-level `contents: write` hands that scope to every job, including ones
+ * added later. It is allowed only where the workflow's whole purpose is a
+ * write, and each such exception carries its reason here.
+ *
+ * `release.yml` was on this list until #1439 split bin verification into its
+ * own job and moved `contents: write` down to the jobs that publish. Keeping
+ * it off the list is what proves the narrowing holds.
+ */
+const TOP_LEVEL_WRITE_ALLOWLIST: Record<string, string> = {
+  'wiki-sync.yml':
+    'Its one job exists to push docs/wiki to the GitHub Wiki on push to main, ' +
+    'and it runs no registry code (no npx / npm exec).',
+};
+
+describe('#1426 a top-level contents: write is an explicit exception', () => {
+  const all = readdirSync(WORKFLOW_DIR)
+    .filter((f) => f.endsWith('.yml'))
+    .sort()
+    .map((f): [string, Workflow] => [f, workflow(f)]);
+  const topLevelWriters = all
+    .filter(([, wf]) => contentsScope(wf.permissions) === 'write')
+    .map(([f]) => f);
+
+  it('finds workflows to check (zero denominator is an abstention)', () => {
+    expect(all.length).toBeGreaterThan(0);
+  });
+
+  it('grants top-level contents: write only to allowlisted workflows', () => {
+    expect(
+      topLevelWriters.filter((f) => !(f in TOP_LEVEL_WRITE_ALLOWLIST)),
+      'move contents: write onto the one job that pushes, or allowlist it with a reason',
+    ).toEqual([]);
+  });
+
+  it.each(Object.keys(TOP_LEVEL_WRITE_ALLOWLIST))(
+    'allowlist entry %s still needs it and states why',
+    (file) => {
+      expect(topLevelWriters).toContain(file);
+      expect(TOP_LEVEL_WRITE_ALLOWLIST[file]!.length).toBeGreaterThan(40);
+    },
+  );
+});
+
+describe.each(['harness-security.yml', 'arch-snapshot.yml'])(
+  '#1426 %s runs no registry code under a write token',
+  (file) => {
+    const wf = workflow(file);
+    const jobs = Object.entries(wf.jobs ?? {});
+    const writers = jobs.filter(
+      ([, job]) => effectiveContents(wf, job) === 'write',
+    );
+
+    it('declares top-level permissions of exactly contents: read', () => {
+      expect(wf.permissions).toEqual({ contents: 'read' });
+    });
+
+    // Denominators for the assertion below: the npx still runs somewhere,
+    // and the push still happens somewhere.
+    it('still runs npx in some job, and still pushes from some job', () => {
+      expect(jobs.some(([, job]) => runsRegistryCode(job))).toBe(true);
+      expect(
+        writers.some(([, job]) =>
+          (job.steps ?? []).some((s) => /\bgit push\b/.test(s.run ?? '')),
+        ),
+      ).toBe(true);
+    });
+
+    it('runs npx in no job that holds contents: write', () => {
+      expect(
+        writers.filter(([, job]) => runsRegistryCode(job)).map(([id]) => id),
+      ).toEqual([]);
+    });
+
+    it('limits each write job to contents: write and nothing else', () => {
+      for (const [, job] of writers)
+        expect(job.permissions).toEqual({ contents: 'write' });
+    });
+  },
+);
+
 describe('#1237 workflow YAML is under the prettier gate', () => {
   const pkg = JSON.parse(
     readFileSync(join(REPO_ROOT, 'ts', 'package.json'), 'utf-8'),

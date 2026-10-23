@@ -443,6 +443,17 @@ function appendStepSummary(env: NodeJS.ProcessEnv, notice: string): void {
   }
 }
 
+/** Append a markdown block verbatim to `$GITHUB_STEP_SUMMARY` (no-op unset). */
+function appendStepSummaryBlock(env: NodeJS.ProcessEnv, block: string): void {
+  const summaryPath = env['GITHUB_STEP_SUMMARY'];
+  if (!summaryPath) return;
+  try {
+    appendFileSync(summaryPath, `\n${block}\n`, 'utf-8');
+  } catch {
+    // best-effort, like appendStepSummary
+  }
+}
+
 /**
  * Resolve the analyses record `<ref>`: PR number (`pr-<n>`) from CI env, else the
  * short HEAD sha, else `"local"`. Fails safe to `"local"` when `git` is absent.
@@ -1231,6 +1242,10 @@ async function postStickyComment(
   if (res.action === 'degraded' && res.notice) {
     deps.out(degradationAnnotation(res.notice));
     appendStepSummary(deps.env, res.notice);
+    // #1467: the comment was the verdict's only reader-facing surface, so a
+    // failed post must not lose it -- print it to the job log and the summary.
+    deps.out(body);
+    appendStepSummaryBlock(deps.env, body);
   }
 }
 

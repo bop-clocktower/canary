@@ -61,7 +61,7 @@ Engine
   ✓ CLI 5.9.0 (latest)
   ✓ Claude Code plugin 5.9.0 (marketplace 5.9.0)
   ✓ git present (git version 2.44.0)
-  ✓ overlay "example-org-example-overlay": up to date
+  ✓ overlay "example-org-example-overlay": up to date as of 2026-10-20T14:02:11Z
   ✓ overlay "example-org-example-overlay": no local changes
   ✓ project .canary/ config parses (1 file(s))
   ✓ MCP config resolves
@@ -90,18 +90,18 @@ Overlay: example-org-example-overlay
 
 These run with no overlay present and need no configuration:
 
-| Check                       | Passes when                                                                             | On failure                                                                                          |
-| --------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `engine:version`            | Installed CLI matches the latest published version                                      | Points at `npm install -g …@latest`. Offline → an `ℹ` line, never a failure.                        |
-| `engine:plugin-version`     | Installed Claude Code plugin matches the `bop-clocktower` marketplace clone             | Prints **both** update commands (see below). Skipped with no plugin install.                        |
-| `engine:git`                | `git` is on `PATH`                                                                      | Install git — `overlay add`/`update` need it.                                                       |
-| `overlay:<name>:present`    | The registered clone still exists on disk                                               | Re-add the overlay.                                                                                 |
-| `overlay:<name>:fresh`      | The clone is up to date with its last-known remote state                                | Run `canary overlay update <name>`. Does **not** hit the network.                                   |
-| `overlay:<name>:clean`      | The clone has no local modifications                                                    | Commit/stash, or remove and re-add.                                                                 |
-| `engine:overlay-conflicts`  | No two overlays ship the same skill name with equal precedence                          | Set a higher `precedence` on the overlay that should win, or run `canary overlay list --conflicts`. |
-| `engine:skill-requirements` | Every installed skill's declared `requires:` runtime tools are present (and new enough) | Install/upgrade the named tool. Info line when no installed skill declares requirements.            |
-| `engine:project-config`     | `.canary/company.json` (and any `company.<env>.json`) parse as JSON                     | Skipped when there is no project `.canary/`.                                                        |
-| `engine:mcp`                | Project and home `.mcp.json` parse and their `mcpServers` entries resolve               | Skipped when no `.mcp.json` exists.                                                                 |
+| Check                       | Passes when                                                                                                                                | On failure                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `engine:version`            | Installed CLI matches the latest published version                                                                                         | Points at `npm install -g …@latest`. Offline → an `ℹ` line, never a failure.                        |
+| `engine:plugin-version`     | Installed Claude Code plugin matches the `bop-clocktower` marketplace clone                                                                | Prints **both** update commands (see below). Skipped with no plugin install.                        |
+| `engine:git`                | `git` is on `PATH`                                                                                                                         | Install git — `overlay add`/`update` need it.                                                       |
+| `overlay:<name>:present`    | The registered clone still exists on disk                                                                                                  | Re-add the overlay.                                                                                 |
+| `overlay:<name>:fresh`      | The clone is up to date with its last-known remote state, named with the last fetch time (`unknown (never fetched)` when none is recorded) | Run `canary overlay update <name>`. Does **not** hit the network.                                   |
+| `overlay:<name>:clean`      | The clone has no local modifications                                                                                                       | Commit/stash, or remove and re-add.                                                                 |
+| `engine:overlay-conflicts`  | No two overlays ship the same skill name with equal precedence                                                                             | Set a higher `precedence` on the overlay that should win, or run `canary overlay list --conflicts`. |
+| `engine:skill-requirements` | Every installed skill's declared `requires:` runtime tools are present (and new enough)                                                    | Install/upgrade the named tool. Info line when no installed skill declares requirements.            |
+| `engine:project-config`     | `.canary/company.json` (and any `company.<env>.json`) parse as JSON                                                                        | Skipped when there is no project `.canary/`.                                                        |
+| `engine:mcp`                | Project and home `.mcp.json` parse and their `mcpServers` entries resolve                                                                  | Skipped when no `.mcp.json` exists.                                                                 |
 
 #### Updating the Claude Code plugin
 
