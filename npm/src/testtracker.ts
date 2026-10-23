@@ -14,6 +14,7 @@
  * pushed (#508 D4).
  */
 import { EXIT_ABSTAINED } from './gate-result.js';
+import { budgetRefusal, isCi } from './reporters/ingest/budget.js';
 import {
   envVar,
   resolveArea,
@@ -33,7 +34,6 @@ import {
   dedupeByFullTitle,
   fitPayload,
 } from './reporters/ingest/payload.js';
-import type { FitResult } from './reporters/ingest/payload.js';
 import { errText, push, warn } from './reporters/ingest/transport.js';
 
 interface Writer {
@@ -103,34 +103,6 @@ const FLAGS: Record<
   '--strict-budget': { takes: false, set: (p) => (p.strictBudget = true) },
   '--no-strict-budget': { takes: false, set: (p) => (p.strictBudget = false) },
 };
-
-/** `CI` set to anything but empty, `false` or `0` — the convention CI hosts share. */
-function isCi(env: NodeJS.ProcessEnv): boolean {
-  const ci = env.CI?.trim().toLowerCase();
-  return !!ci && ci !== 'false' && ci !== '0';
-}
-
-/**
- * Under a strict budget a lossy fit is a refusal, not a warning (#1355): on an
- * unattended nightly a catalog-less run lands looking normal, and the suite can
- * no longer tell "did not run" from "does not exist". Null = push it.
- */
-function budgetRefusal(fit: FitResult, why: string): string | null {
-  const losses = [
-    fit.catalogDropped &&
-      'drop its catalog (collected), so the suite would land unmeasured',
-    fit.overBudget &&
-      'still leave it over budget, so the dashboard may reject it',
-  ].filter(Boolean);
-  if (!losses.length) return null;
-  return (
-    `canary testtracker: refused — the payload is ${fit.bytes} bytes, over the ` +
-    `${fit.maxBytes}-byte budget, and fitting it would ${losses.join(' and ')}. ` +
-    `The strict budget is on (${why}). Split the run into smaller suites, ` +
-    `pass --no-collected if the reports are a subset, or pass ` +
-    `--no-strict-budget to push the degraded payload anyway. Nothing was pushed.\n`
-  );
-}
 
 /**
  * `--junit=a.xml` is one file; `--junit a.xml b.xml` takes every following
