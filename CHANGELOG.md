@@ -16,6 +16,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`overlay list` no longer reports a bare `up to date` from a stale cache
+  (#1324).** The freshness check never asks the remote, so a zero "behind" count
+  only means the clone matched its remote at the last fetch. The status now says
+  `up to date as of <last fetch time>` (from `.git/FETCH_HEAD`, or the clone's
+  own reflog entry when it was never re-fetched) and `unknown (never fetched)`
+  when nothing records a fetch. `canary doctor`'s overlay freshness label
+  carries the same wording.
+
 - **`analyze_file` existing-test paths (#1371).** A root-level test file whose
   name starts with `..` (for example `..foo.test.ts`) is now listed in
   `existing_tests` as a project-relative path instead of an absolute one. Only a
