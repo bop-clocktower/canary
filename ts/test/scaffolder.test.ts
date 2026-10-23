@@ -112,7 +112,7 @@ describe('Scaffolder.scaffold', () => {
 describe('scaffoldableFrameworks', () => {
   it('is the set of template names', () => {
     expect(scaffoldableFrameworks()).toEqual(
-      new Set(['playwright', 'vitest', 'pytest', 'k6', 'wdio']),
+      new Set(['playwright', 'vitest', 'pytest', 'phpunit', 'k6', 'wdio']),
     );
   });
 });

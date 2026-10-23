@@ -5,12 +5,12 @@
   "$headroom": "minCoveragePercent sits maxHeadroom (1) point below the measurement, the same deliberate slack the entropy and perf ceilings carry. At 70 documented of 392 scanned that is 23 new undocumented files with no doc added in between: 70/415 = 16.87% passes, 70/416 = 16.83% fails. The headroom is a SHARED, ABSOLUTE budget that no branch can see the others spending: once it is spent, the next PR that adds an undocumented file fails, whoever wrote it. That PR links a file from docs/ (or links the new file); nobody lowers the floor. A floor pinned exactly to the measurement would spend the budget on day one and replay #864.",
   "$restamp": "The floor never moves on its own. When coverage rises more than maxHeadroom above the floor, the ratchet prints the values to write; commit them in a PR (chore(ratchet): restamp ...), measured in a clean worktree with the CLI the workflow resolves. A LOWERED floor is refused at runtime: on a pull request CI passes the merge base's copy of this file as --base-baseline, and the ratchet exits 1 when minCoveragePercent is below it, or 3 when the base copy cannot be read. Offline tests only check this file's self-consistency; a lowering with the headroom widened to match would pass them, which is why the rule lives in the ratchet.",
   "$instrument": "harnessCli is the EXACT version that measured this file. The workflow pins a floating @12, so the ratchet abstains (exit 3) when CI resolves a different version. Re-measure and update harnessCli in the same PR; do not delete it to silence the abstention.",
-  "minCoveragePercent": 17.27,
+  "minCoveragePercent": 17.86,
   "maxHeadroom": 1,
-  "measuredAt": "2026-10-21",
-  "measuredDocumented": 76,
-  "measuredScanned": 416,
-  "measuredPercent": 18.27,
+  "measuredAt": "2026-10-23",
+  "measuredDocumented": 79,
+  "measuredScanned": 419,
+  "measuredPercent": 18.85,
   "harnessCli": "13.0.0",
   "$restamp2": "2026-10-21, the @12 -> @13 pin bump (12.10.1 -> 13.0.0): CLI-INDEPENDENT. Measured in a fresh worktree of origin/main 5d74d92c under both 12.10.1 and 13.0.0 with every consumed subcommand captured to a file: `harness check-docs --json` reads 75/414 on main under both CLIs; the bump branch reads 76/416. The floor moves up to the value docs-ratchet.mjs itself recommended (coverage sat 1.41 points above it, past maxHeadroom)."
 }

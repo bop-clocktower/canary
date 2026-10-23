@@ -13,6 +13,7 @@ import { join, relative, sep } from 'node:path';
 import {
   CONFIG_PROBES,
   inferPlaywrightTestType,
+  pestRefinement,
   ProbeResult,
 } from './config-probes.js';
 import { probeFramework } from './framework-probes.js';
@@ -206,20 +207,22 @@ function configFindings(dir: string, rel: string): WorkspaceFinding[] {
       framework === 'playwright' && shape === 'e2e_ui'
         ? inferPlaywrightTestType(dir)
         : shape;
+    const fw = pestRefinement(dir, framework);
     // NUL separates the parts because it cannot occur in a path, a framework
     // name, or a shape -- so `a\0b` can never collide with `a` + `\0b`. Written
     // as an escape, never as a literal byte: a raw NUL inside a file's first
     // 8 KB makes git classify it as binary, which is how this module first
     // landed with no reviewable diff at all.
-    const key = `${rel}\0${framework}\0${refined}`;
+    const key = `${rel}\0${fw}\0${refined}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({
       dir: rel,
-      framework,
+      framework: fw,
       shape: refined,
       source: filename,
-      confidence: refined === shape ? confidence : 'content',
+      confidence:
+        refined === shape && fw === framework ? confidence : 'content',
     });
   }
   return out;

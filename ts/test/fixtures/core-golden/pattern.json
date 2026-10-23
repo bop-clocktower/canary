@@ -11,8 +11,8 @@
       "uses_fixtures": true,
       "uses_describe": false,
       "common_imports": [
-        "pytest",
-        "myapp"
+        "myapp",
+        "pytest"
       ],
       "sample_names": [
         "test_should_login_with_valid_credentials",
@@ -80,8 +80,8 @@
       "uses_fixtures": true,
       "uses_describe": false,
       "common_imports": [
-        "pytest",
-        "myapp"
+        "myapp",
+        "pytest"
       ],
       "sample_names": [
         "test_should_login_with_valid_credentials",
