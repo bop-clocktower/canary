@@ -1,0 +1,15 @@
+{
+  "item": "#1446",
+  "phase": "done",
+  "skill": "harness-debugging",
+  "steps": [
+    "investigate: traced .githooks/pre-commit step 4 and scripts/security_ledger.mjs inputs (timeline only)",
+    "analyze: CI writers harness-security.yml (canonical) and harness-quality.yml freshness guard",
+    "hypothesize: trigger set is the complement of the generator's inputs; confirmed in temp repo",
+    "fix: regression test red (3/4), hook scoped to timeline/ledger/script, green (4/4), revert-and-fail verified",
+    "upstream: filed Intense-Visions/harness-engineering#2330 (check-security writes tracked timeline) and #2331 (check-perf walks gitignored paths)"
+  ],
+  "commits": [
+    "fix(hooks): refresh the security ledger only when its inputs are staged (#1446)"
+  ]
+}

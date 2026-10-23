@@ -83,6 +83,16 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The pre-commit hook no longer drags the security ledger into unrelated
+  commits (#1446).** It regenerated and staged
+  `.harness/security/timeline.json` and `docs/SECURITY_LEDGER.md` whenever any
+  other file was staged, which also swept in any snapshot a local
+  `harness check-security` run had left in the timeline. It also skipped the
+  one case that needs a refresh, a commit staging the timeline alone. The step
+  now runs only when the timeline, the ledger, or `scripts/security_ledger.mjs`
+  is staged, and a failed refresh says so instead of passing silently. CI stays
+  the canonical writer. Guarded by `ts/test/precommit-ledger-scope.test.ts`.
+
 - **`harness check-deps` reads `npm/src`, and test fixtures no longer move the
   arch and entropy ratchets (#1443).** No layer pattern matched `npm/src`, so
   `check-deps` analysed 468 modules and passed with a cycle planted there. Two

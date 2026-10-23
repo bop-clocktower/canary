@@ -1671,8 +1671,10 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 
 - Runs `markdownlint` on staged `.md` files — catches MD040 and other violations
   before they reach CI.
-- Re-runs `python3 scripts/security_ledger.py` whenever non-ledger files are
-  staged — keeps the security ledger fresh without a manual step.
+- Re-runs `node scripts/security_ledger.mjs` and restages its outputs only
+  when the commit stages a ledger input (`.harness/security/timeline.json`,
+  `docs/SECURITY_LEDGER.md`, or the script itself). Unrelated commits leave the
+  ledger alone; CI (`harness-security.yml`) is its canonical writer (#1446).
 
 Then install the Python test dependency (pytest) into the `python3` on your
 `PATH` — the same interpreter the tests spawn:
