@@ -14,6 +14,16 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **`canary testtracker push` refuses a payload that would lose its catalog
+  under CI (#1355).** Fitting a run over the 4 MB ingest budget drops
+  `collected`, so the suite lands unmeasured; the push used to warn and exit 0.
+  With the new `--strict-budget` (on by default when `CI` is set) it exits 1
+  before sending anything when the fit would drop the catalog or stay over
+  budget, naming the measured size and the budget. `--no-strict-budget` restores
+  the warn-and-push behaviour under CI; outside CI it remains the default.
+
 ## [9.5.0] - 2026-10-23
 
 ### Added

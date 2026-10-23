@@ -9,8 +9,9 @@
  * run where nothing ran, and the area handling from #1183.
  *
  * Exit codes: 0 pushed (or printed, `--dry-run`); 1 a report was unreadable or
- * not JUnit, or the push was not ingested; 2 usage; 3 abstained — a report
- * held zero testcases, so nothing was pushed (#508 D4).
+ * not JUnit, the push was not ingested, or a strict budget refused a lossy fit
+ * (#1355); 2 usage; 3 abstained — a report held zero testcases, so nothing was
+ * pushed (#508 D4).
  */
 import { EXIT_ABSTAINED } from './gate-result.js';
 import {
@@ -32,6 +33,7 @@ import {
   dedupeByFullTitle,
   fitPayload,
 } from './reporters/ingest/payload.js';
+import type { FitResult } from './reporters/ingest/payload.js';
 import { errText, push, warn } from './reporters/ingest/transport.js';
 
 interface Writer {
@@ -56,6 +58,10 @@ same payload, retry and size budget as the Playwright reporter.
   --workflow <label> workflow label (else CANARY_INGEST_WORKFLOW, default "junit")
   --no-collected     do not send the catalog; use when the reports are a
                      subset of the suite (a shard, a name filter)
+  --strict-budget    refuse to push (exit 1, nothing sent) when fitting the
+                     payload under the 4 MB budget would drop the catalog or
+                     still leave it over budget; on by default when CI is set
+  --no-strict-budget push a degraded payload anyway, even under CI
   --dry-run          print the payload instead of pushing
   -h, --help         show this help
 
@@ -68,8 +74,9 @@ Producing a report:
   newman     newman run collection.json -r junit --reporter-junit-export junit.xml
   maestro    maestro test flows/ --format junit --output junit.xml
 
-Exit: 0 pushed, 1 unreadable report or push not ingested, 2 usage,
-3 abstained (a report holds zero testcases; nothing pushed).
+Exit: 0 pushed, 1 unreadable report, push not ingested, or refused by the
+strict budget (nothing pushed), 2 usage, 3 abstained (a report holds zero
+testcases; nothing pushed).
 `;
 
 interface PushArgs {
@@ -78,6 +85,8 @@ interface PushArgs {
   workflow?: string;
   collected: boolean;
   dryRun: boolean;
+  /** Unset = the CI default (`isCi`); a flag always wins. */
+  strictBudget?: boolean;
 }
 
 class UsageError extends Error {}
@@ -91,7 +100,37 @@ const FLAGS: Record<
   '--workflow': { takes: true, set: (p, v) => (p.workflow = v) },
   '--no-collected': { takes: false, set: (p) => (p.collected = false) },
   '--dry-run': { takes: false, set: (p) => (p.dryRun = true) },
+  '--strict-budget': { takes: false, set: (p) => (p.strictBudget = true) },
+  '--no-strict-budget': { takes: false, set: (p) => (p.strictBudget = false) },
 };
+
+/** `CI` set to anything but empty, `false` or `0` — the convention CI hosts share. */
+function isCi(env: NodeJS.ProcessEnv): boolean {
+  const ci = env.CI?.trim().toLowerCase();
+  return !!ci && ci !== 'false' && ci !== '0';
+}
+
+/**
+ * Under a strict budget a lossy fit is a refusal, not a warning (#1355): on an
+ * unattended nightly a catalog-less run lands looking normal, and the suite can
+ * no longer tell "did not run" from "does not exist". Null = push it.
+ */
+function budgetRefusal(fit: FitResult, why: string): string | null {
+  const losses = [
+    fit.catalogDropped &&
+      'drop its catalog (collected), so the suite would land unmeasured',
+    fit.overBudget &&
+      'still leave it over budget, so the dashboard may reject it',
+  ].filter(Boolean);
+  if (!losses.length) return null;
+  return (
+    `canary testtracker: refused — the payload is ${fit.bytes} bytes, over the ` +
+    `${fit.maxBytes}-byte budget, and fitting it would ${losses.join(' and ')}. ` +
+    `The strict budget is on (${why}). Split the run into smaller suites, ` +
+    `pass --no-collected if the reports are a subset, or pass ` +
+    `--no-strict-budget to push the degraded payload anyway. Nothing was pushed.\n`
+  );
+}
 
 /**
  * `--junit=a.xml` is one file; `--junit a.xml b.xml` takes every following
@@ -224,6 +263,17 @@ async function runPush(
     return 0;
   }
   const fitted = fitPayload(payload);
+  const strict = opts.strictBudget ?? isCi(env);
+  const refusal = strict
+    ? budgetRefusal(
+        fitted,
+        opts.strictBudget ? '--strict-budget' : 'the default when CI is set',
+      )
+    : null;
+  if (refusal) {
+    err.write(refusal);
+    return 1;
+  }
   for (const w of fitted.warnings) warn(w, env);
   return (await push(cfg, fitted.payload)) ? 0 : 1;
 }

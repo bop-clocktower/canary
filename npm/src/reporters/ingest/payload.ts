@@ -237,22 +237,36 @@ export function buildPayload(
 /** The ingest body limit is 5 MB (and ~4.5 MB behind some proxies); stay under both. */
 const MAX_BODY_BYTES = 4_000_000;
 
+/** What fitting cost, so a caller can refuse a lossy fit instead of only logging it (#1355). */
+export interface FitResult {
+  payload: IngestPayload;
+  warnings: string[];
+  /** The payload's size before fitting, in bytes. */
+  bytes: number;
+  maxBytes: number;
+  /** The catalog was dropped: the run lands, but its suite is unmeasured. */
+  catalogDropped: boolean;
+  /** Still over `maxBytes` after every cut: the dashboard may reject it. */
+  overBudget: boolean;
+}
+
 /**
  * Keeps a payload under the body limit. A 413 is a 4xx, so it is not retried
  * and the whole run would be lost, typically on a night with many large
  * failures. The catalog goes first (the run still lands, unmeasured), then
- * stacks are cut to 1 KB.
+ * stacks are cut to 1 KB. `catalogDropped` and `overBudget` name the two lossy
+ * outcomes; `testtracker push --strict-budget` refuses either one.
  */
-export function fitPayload(
-  payload: IngestPayload,
-  maxBytes: number = MAX_BODY_BYTES,
-): { payload: IngestPayload; warnings: string[] } {
+export function fitPayload(payload: IngestPayload, maxBytes: number = MAX_BODY_BYTES): FitResult {
   const warnings: string[] = [];
   const size = (p: IngestPayload) => Buffer.byteLength(JSON.stringify(p));
+  const bytes = size(payload);
   let fitted = payload;
-  if (size(fitted) > maxBytes && fitted.collected) {
+  let catalogDropped = false;
+  if (bytes > maxBytes && fitted.collected) {
     const { collected: _dropped, ...rest } = fitted;
     fitted = rest;
+    catalogDropped = true;
     warnings.push(`payload over ${maxBytes} bytes: collected was dropped, so this run's suite is unmeasured.`);
   }
   if (size(fitted) > maxBytes) {
@@ -262,10 +276,11 @@ export function fitPayload(
     };
     warnings.push(`payload over ${maxBytes} bytes: error stacks were cut to 1 KB.`);
   }
-  if (size(fitted) > maxBytes) {
+  const overBudget = size(fitted) > maxBytes;
+  if (overBudget) {
     warnings.push(`payload is still over ${maxBytes} bytes; the dashboard may reject it.`);
   }
-  return { payload: fitted, warnings };
+  return { payload: fitted, warnings, bytes, maxBytes, catalogDropped, overBudget };
 }
 
 export const MAX_ERROR_MESSAGE = 4_000;
