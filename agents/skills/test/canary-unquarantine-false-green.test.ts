@@ -678,19 +678,23 @@ describe('Jira done is only resolved when the resolution is a fix', () => {
     CANARY_JIRA_API_TOKEN: 'not-a-real-token',
     CANARY_JIRA_BASE_URL: 'https://jira.example.com',
   };
+  /** A done ticket with `resolution`, as Jira answers it. */
+  const doneAs = (resolution: string | null) =>
+    ok({
+      fields: {
+        status: { statusCategory: { key: 'done' } },
+        resolution: resolution === null ? null : { name: resolution },
+        summary: 's',
+      },
+    });
   const ask = (resolution: string | null, fixedResolutions?: string[]) => {
     const calls: string[][] = [];
+    const run = (_c: string, args: string[]) => {
+      calls.push(args);
+      return doneAs(resolution);
+    };
     const lookup = jiraTracker({
-      run: (_c: string, args: string[]) => {
-        calls.push(args);
-        return ok({
-          fields: {
-            status: { statusCategory: { key: 'done' } },
-            resolution: resolution === null ? null : { name: resolution },
-            summary: 's',
-          },
-        });
-      },
+      run,
       projects: ['UP'],
       env: ENV,
       fixedResolutions,
