@@ -27,6 +27,28 @@ function write(name: string, content: string): void {
   writeFileSync(join(root, 'tests', name), content, 'utf-8');
 }
 
+// #1311: a bare `import` clause that crossed newlines swallowed every import
+// line after it, so only the first module of a block was ever counted.
+describe('python imports', () => {
+  it('counts every module on consecutive import lines', () => {
+    write(
+      'test_sample.py',
+      'import os\nimport sys\nimport json\n\ndef test_a():\n    assert os\n',
+    );
+    const profile = new PatternMatcher().scan(root, 'pytest');
+    expect(profile.common_imports).toEqual(['os', 'sys', 'json']);
+  });
+
+  it('counts a from-import that follows a bare import', () => {
+    write(
+      'test_sample.py',
+      'import pytest\nfrom myapp import auth\n\ndef test_a():\n    assert auth\n',
+    );
+    const profile = new PatternMatcher().scan(root, 'pytest');
+    expect(profile.common_imports).toEqual(['pytest', 'myapp']);
+  });
+});
+
 describe('js imports', () => {
   // A formatter wraps any long specifier list, so a multi-line import is the
   // common shape, not an edge case.
