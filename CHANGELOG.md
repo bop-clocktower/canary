@@ -47,6 +47,22 @@ under the project's former name) are documented in the
   `existing_tests` as a project-relative path instead of an absolute one. Only a
   leading `..` path segment counts as leaving the project root now.
 
+- **guardian: a transient GitHub error no longer fails the check (#1467).** The
+  sticky-comment client now retries a 5xx, a 429, or a rate-limited 403 up to 3
+  attempts in total, waiting 1s then 2s or the `retry-after` the response names
+  (capped at 60s). This covers the comment lookup and the update. The
+  comment-create POST is retried only on a 429 or a rate-limited 403, which
+  GitHub rejects before processing; a 5xx there is not retried, because GitHub
+  may already have created the comment and a re-POST would stack a second
+  sticky. A post that still fails degrades to a `::warning::` naming the HTTP
+  status. The rendered verdict then goes to the job log and the step summary,
+  and `pr-check --post-comment` exits with the computed verdict's code. Before
+  this, a single `GitHub API 500` from the comment POST replaced that code with
+  exit 1 on the required `guardian` check. Any other 4xx (404, 422) is still not
+  retried and still fails loudly. A 403 or rate-limit degrade now also prints
+  the verdict to the log and summary. `canary briefing --comment` no longer
+  reports a GitHub 5xx as a missing write permission.
+
 ## [9.5.0] - 2026-10-23
 
 ### Added
@@ -117,14 +133,14 @@ under the project's former name) are documented in the
   write job of either workflow.
 
 - **The pre-commit hook no longer drags the security ledger into unrelated
-  commits (#1446).** It regenerated and staged
-  `.harness/security/timeline.json` and `docs/SECURITY_LEDGER.md` whenever any
-  other file was staged, which also swept in any snapshot a local
-  `harness check-security` run had left in the timeline. It also skipped the
-  one case that needs a refresh, a commit staging the timeline alone. The step
-  now runs only when the timeline, the ledger, or `scripts/security_ledger.mjs`
-  is staged, and a failed refresh says so instead of passing silently. CI stays
-  the canonical writer. Guarded by `ts/test/precommit-ledger-scope.test.ts`.
+  commits (#1446).** It regenerated and staged `.harness/security/timeline.json`
+  and `docs/SECURITY_LEDGER.md` whenever any other file was staged, which also
+  swept in any snapshot a local `harness check-security` run had left in the
+  timeline. It also skipped the one case that needs a refresh, a commit staging
+  the timeline alone. The step now runs only when the timeline, the ledger, or
+  `scripts/security_ledger.mjs` is staged, and a failed refresh says so instead
+  of passing silently. CI stays the canonical writer. Guarded by
+  `ts/test/precommit-ledger-scope.test.ts`.
 
 - **`harness check-deps` reads `npm/src`, and test fixtures no longer move the
   arch and entropy ratchets (#1443).** No layer pattern matched `npm/src`, so
