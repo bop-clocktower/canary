@@ -154,7 +154,7 @@ remote deletion is a human act. Worktree pruning waits for #889.
   `recommend`, `frameworks`, `feedback`, `run`, `init`, `migrate`, `setup`,
   `skills list`, `env-setup` (alias for `setup`), `version`, `review-test`,
   `flake-check`, `heal-test`, `vacuity-check`, `promote-check`, `ci-ready`,
-  `inventory`, `gen-data`.
+  `inventory`, `gen-data`, `php floor`, `php audit`.
 
 ### Core Services (`ts/src/core/`)
 
@@ -171,6 +171,16 @@ remote deletion is a human act. Worktree pruning waits for #889.
 - **Framework Registry:** [ts/src/core/framework-registry.ts][fw-registry] —
   Internal registry for managing supported testing frameworks and their
   capabilities.
+- **PHP security gates (#1465):**
+  [ts/src/core/php-floor.ts](ts/src/core/php-floor.ts) judges runtime versions
+  against the PHP2Shell patched floor per branch, and
+  [ts/src/core/composer-audit.ts](ts/src/core/composer-audit.ts) turns
+  `composer audit` into a gate whose denominator is the `composer.lock` package
+  count. [ts/src/php/php-cli.ts](ts/src/php/php-cli.ts) wires both as
+  `canary php floor|audit`. A distro build below the floor (`8.3.6-1ubuntu…`) is
+  skipped, not judged: distros backport the fix under their own suffix, so the
+  upstream number proves nothing. To add an advisory, add a `PhpAdvisory` and a
+  test per branch boundary.
 - **Metadata Scanner:**
   [ts/src/core/metadata-scanner.ts](ts/src/core/metadata-scanner.ts) — Reads
   `package.json`, `tsconfig.json`, `requirements.txt`, and `pyproject.toml` to
@@ -386,9 +396,12 @@ host Claude Code session via `/canary-write-test` — no API key required.
   architectural layers, dependency constraints, and project metadata. The layers
   describe `ts/src` by role, plus two for the skills tree: `skills`
   (`agents/skills/claude-code/**`) may import `skills-lib`
-  (`agents/skills/lib/**`), never the reverse (#1155). Every pattern is required
-  to match at least one git-tracked file and every tracked source file under
-  each source root (`ts/src`, `agents/skills/lib`) to belong to a layer
+  (`agents/skills/lib/**`), never the reverse (#1155), and two for the runtime
+  CLI: `npm-cli` (`npm/src/**`) may import the published reporter `npm-reporter`
+  (`npm/src/reporters/**`, declared first because binding is first-match), never
+  the reverse (#1443). Every pattern is required to match at least one
+  git-tracked file and every tracked source file under each source root
+  (`ts/src`, `agents/skills/lib`, `npm/src`) to belong to a layer
   (`ts/test/harness-config-denominator.test.ts`, which prints the per-root
   module count), because a rule that matches nothing still reports as configured
   (#543), and a root no layer matches is never parsed by `harness check-deps` at
@@ -1038,12 +1051,20 @@ no file, and `layer-violations` and `forbidden-imports` ran with `layers: []`
 on the bump `circular-deps` found two real `import type` cycles in `npm/src`
 that `harness check-deps` (the `deps-and-validate` job and the `deps` step of
 `harness ci check`) had never reported. Layer direction and cycles are now gated
-by both, and the arch ratchet is the wider: `check-deps` reads only files its
-layer patterns match, so a value or `import type` cycle planted in `npm/src`
-passes it and fails only the ratchet (#1422). At desk speed,
-`ts/test/import-graph-acyclic.test.ts` checks both `ts/src` and `npm/src`.
-`scripts/arch-verdict.mjs` prints `NOT MEASURED` only for a dependency metric
-the report's `measurements` block cannot show ran. See
+by both. `check-deps` reads only files its layer patterns match, and until #1443
+no pattern matched `npm/src`, so a cycle planted there passed it and failed only
+the ratchet (#1422). `npm/src` now has two layers, `npm-cli` over the published
+`npm-reporter` leaf, and `ts/test/analysis-scope-rehearsal.test.ts` plants
+value, `import type` and layer-breach edges there against the real CLI (it
+abstains out loud where `harness` is not on PATH, which includes the
+`ts-validate` job). At desk speed, `ts/test/import-graph-acyclic.test.ts` checks
+both `ts/src` and `npm/src`. **Test fixtures are outside both analyzers**
+(#1443): `architecture.excludePatterns` and `entropy.excludePatterns` carry
+`**/test/fixtures/**` plus `**/test/fixtures/**/.*/**`, the second because the
+entropy analyzer matches without `dot: true` and would otherwise still count a
+fixture under a dot-directory. A deliberately broken fixture no longer needs
+declaring anywhere. `scripts/arch-verdict.mjs` prints `NOT MEASURED` only for a
+dependency metric the report's `measurements` block cannot show ran. See
 [arch-baseline-semantics](docs/knowledge/gates/arch-baseline-semantics.md).
 
 **A metric that silently improves is a finding (#688).** The arch analyzer skips

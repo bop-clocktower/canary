@@ -60,7 +60,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, matchesGlob } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -86,6 +86,7 @@ const SKIPPED_DIRS = [
 ];
 
 interface EntryPointSection {
+  excludePatterns?: string[];
   entryPoints?: string[];
 }
 
@@ -141,6 +142,19 @@ describe.each(ENTRY_POINT_KEYS)('%s', (_key, entryPoints) => {
       p.split('/').some((seg) => SKIPPED_DIRS.includes(seg)),
     );
     expect(skipped).toEqual([]);
+  });
+
+  // The config-level twin of the skip-dir rule above (#1443): a root inside
+  // `entropy.excludePatterns` is never scanned either, so it roots nothing.
+  // `path.matchesGlob` has minimatch's default (`dot: false`) semantics, the
+  // ones the entropy analyzer applies to these patterns.
+  it('keeps every entry out of entropy.excludePatterns', () => {
+    const excludes = CONFIG.entropy?.excludePatterns ?? [];
+    expect(excludes.length).toBeGreaterThan(0);
+    const excluded = entryPoints.filter((p) =>
+      excludes.some((g) => matchesGlob(p, g)),
+    );
+    expect(excluded).toEqual([]);
   });
 
   it('uses literal paths, never globs', () => {

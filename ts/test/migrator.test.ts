@@ -535,6 +535,17 @@ describe('TestFrameworkOverrideResolvesShape', () => {
       ).toBe('api');
     }));
 
+  // #1465 review: pest has no probe-table row of its own (it is a phpunit
+  // refinement), so without a mapping its override resolved no shape.
+  it.each(['phpunit', 'pest'])('%s override resolves the api shape', (fw) =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'p' });
+      expect(mig().migrate(root, { dryRun: true, framework: fw }).shape).toBe(
+        'api',
+      );
+    }),
+  );
+
   it('vitest override resolves the frontend_unit shape', () =>
     withTmp((root) => {
       harnessProject(root, { version: 1, name: 'p' });

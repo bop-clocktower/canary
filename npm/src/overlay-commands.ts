@@ -333,9 +333,47 @@ export function workingTreeStatus(dest: string, git: GitRunner): CleanStatus {
 }
 
 /**
+ * When the clone last learned anything from its remote, or `null` if nothing
+ * on disk says. Every `git fetch` (even a no-op) rewrites `.git/FETCH_HEAD`, so
+ * its mtime is the last fetch; a clone that was never fetched again has no
+ * FETCH_HEAD, but its `logs/HEAD` opens with a `clone: from` entry whose
+ * timestamp is when the tracking refs were populated. Read straight from disk
+ * so no extra git call (or network) is needed (#1324).
+ */
+function lastFetchTime(dest: string): Date | null {
+  const gitDir = path.join(dest, '.git');
+  try {
+    return fs.statSync(path.join(gitDir, 'FETCH_HEAD')).mtime;
+  } catch {
+    // Never fetched since the clone -- fall back to the clone's reflog entry.
+  }
+  let reflog: string;
+  try {
+    reflog = fs.readFileSync(path.join(gitDir, 'logs', 'HEAD'), 'utf8');
+  } catch {
+    return null;
+  }
+  for (const line of reflog.split('\n')) {
+    // `<old> <new> <name> <email> <epoch> <tz>\t<message>`
+    const m = /\s(\d+)\s[+-]\d{4}\tclone: /.exec(line);
+    if (m) {
+      return new Date(Number(m[1]) * 1000);
+    }
+  }
+  return null;
+}
+
+/** ISO-8601 to the second, UTC: `2026-09-21T12:00:00Z`. */
+function formatFetchTime(d: Date): string {
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
  * Freshness of a clone against its LOCAL knowledge of the upstream — no fetch
  * is performed (that is `overlay update`'s job). Returns a human-readable
- * status string.
+ * status string. A zero "behind" count only means the clone matched the
+ * remote as of the last fetch, so "up to date" always names that time, and a
+ * clone with no recorded fetch is `unknown` rather than a pass (#1324).
  */
 export function freshness(
   dest: string,
@@ -354,7 +392,10 @@ export function freshness(
   }
   const n = Number.parseInt(behind.stdout.trim(), 10);
   if (!Number.isFinite(n) || n === 0) {
-    return 'up to date';
+    const fetched = lastFetchTime(dest);
+    return fetched
+      ? `up to date as of ${formatFetchTime(fetched)}`
+      : 'unknown (never fetched)';
   }
   return `${n} commit${n === 1 ? '' : 's'} behind`;
 }
