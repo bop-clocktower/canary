@@ -14,6 +14,8 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [9.5.0] - 2026-10-23
+
 ### Added
 
 - **PHP support (#1465).** `phpunit` and `pest` join the framework registry and
@@ -41,8 +43,8 @@ under the project's former name) are documented in the
 
 ### Changed
 
-- **CI tracks harness 13 (`@harness-engineering/cli@13`).** All six workflow
-  pins move from `@12`. harness 13 makes the arch ratchet measure
+- **CI tracks harness 13 (`@harness-engineering/cli@13`) (#1420).** All six
+  workflow pins move from `@12`. harness 13 makes the arch ratchet measure
   `circular-deps`, `layer-violations` and `forbidden-imports` for the first time
   (Intense-Visions/harness-engineering#2235), and it found two `import type`
   cycles in `npm/src` that no gate had reported. Both are broken by moving the
@@ -73,7 +75,7 @@ under the project's former name) are documented in the
   and redacts exactly what the old regex did, pinned by a differential test
   against it.
 
-- **The engine's lockfile moves hono to 4.13.13**
+- **The engine's lockfile moves hono to 4.13.13 (#1431)**
   ([GHSA-5r4p-p66f-jhc7](https://github.com/advisories/GHSA-5r4p-p66f-jhc7)).
   `ts/package-lock.json` resolved hono 4.13.7, pulled in by
   `@modelcontextprotocol/sdk`, and hono 4.12.4 to 4.13.10 has a `serveStatic`
@@ -4984,7 +4986,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.4.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.5.0...HEAD
+[9.5.0]: https://github.com/bop-clocktower/canary/compare/v9.4.0...v9.5.0
 [9.4.0]: https://github.com/bop-clocktower/canary/compare/v9.3.0...v9.4.0
 [9.3.0]: https://github.com/bop-clocktower/canary/compare/v9.2.0...v9.3.0
 [9.2.0]: https://github.com/bop-clocktower/canary/compare/v9.1.0...v9.2.0
