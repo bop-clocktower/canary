@@ -106,6 +106,7 @@ import {
 } from './hard-gate.js';
 import { CoverageRow, mapImpact } from './impact-mapper.js';
 import { ensureAscii } from '../util/ensure-ascii.js';
+import { CliExitError } from '../util/exit-error.js';
 import {
   GuardianFinding,
   GateMeta,
@@ -161,16 +162,9 @@ const RIGHT_ARROW = '\u{2192}';
 const CHECK = '\u{2713}';
 const CROSS = '\u{2717}';
 
-/**
- * Business exit signal. Thrown from a handler to carry an exit code the way
- * Python's `typer.Exit(code)` did; the runner catches it to read the code.
- */
-export class CliExitError extends Error {
-  constructor(readonly code: number) {
-    super(`exit ${code}`);
-    this.name = 'CliExitError';
-  }
-}
+// Business exit signal; lives in a leaf module so lighter CLIs (gen-data) can
+// throw it without importing this file's subprocess closure (#1377).
+export { CliExitError } from '../util/exit-error.js';
 
 /**
  * Normalize commander's usage-error exit code to typer/click's `2`. Commander
