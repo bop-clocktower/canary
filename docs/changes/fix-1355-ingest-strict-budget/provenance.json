@@ -1,0 +1,24 @@
+{
+  "fleet": "roadmap-fleet",
+  "runId": "fc1023",
+  "issues": [1355],
+  "route": "bug",
+  "routeSignal": "label",
+  "stages": ["debugging"],
+  "reproducingTest": "npm/scripts/__tests__/testtracker-push-budget.test.js",
+  "closingKeyword": "Refs",
+  "closingKeywordReason": "Slice: this PR ships proposal 1 (--strict-budget, on by default under CI). Proposal 2 (chunked push) stays open on the issue for manual reconciliation.",
+  "assumptions": [
+    "Opt-out form is the paired boolean flag --no-strict-budget, matching the CLI's existing --no-collected; the last of --strict-budget / --no-strict-budget on the line wins.",
+    "'Under CI' means the CI env var is set to a non-empty value other than 'false' or '0' (case-insensitive).",
+    "A strict-budget refusal exits 1 (the command's existing 'nothing was ingested' code), not a new exit code.",
+    "Only the two lossy outcomes named in fork F3 are refused: a dropped catalog, or a body still over budget. Cutting error stacks to 1 KB alone is not refused.",
+    "--dry-run is unchanged: it prints the unfitted payload and is not budget-checked, since it sends nothing.",
+    "Scope is `canary testtracker push` only; the Playwright ingest reporter keeps its warn-and-push fit (fitPayload now reports catalogDropped/overBudget, so a follow-up could reuse it).",
+    "No env-var equivalent (e.g. CANARY_INGEST_STRICT_BUDGET) was added; the flag and the CI default cover the decided behaviour."
+  ],
+  "answeredForks": {
+    "F3": "a: --strict-budget, ON by default under CI; chunking stays open"
+  },
+  "baseSha": "7f1c23644e7f1b0c71dae0e5f53c170118bf35fc"
+}
