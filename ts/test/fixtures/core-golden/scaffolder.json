@@ -1,6 +1,7 @@
 {
   "frameworks": [
     "k6",
+    "phpunit",
     "playwright",
     "pytest",
     "vitest",
@@ -26,6 +27,14 @@
     "pytest": {
       "files": {
         "pytest.ini": "[pytest]\ntestpaths = tests\npython_files = test_*.py *_test.py\npython_classes = Test*\npython_functions = test_*\n"
+      },
+      "dirs": [
+        "tests"
+      ]
+    },
+    "phpunit": {
+      "files": {
+        "phpunit.xml.dist": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<phpunit xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n         xsi:noNamespaceSchemaLocation=\"vendor/phpunit/phpunit/phpunit.xsd\"\n         bootstrap=\"vendor/autoload.php\"\n         colors=\"true\"\n         failOnRisky=\"true\"\n         failOnWarning=\"true\">\n  <testsuites>\n    <testsuite name=\"default\">\n      <directory>tests</directory>\n    </testsuite>\n  </testsuites>\n</phpunit>\n"
       },
       "dirs": [
         "tests"

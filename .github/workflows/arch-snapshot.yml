@@ -5,7 +5,8 @@ name: Arch Timeline Snapshot
 # `.harness/security/timeline.json` ledger (#318 C). harness gives itself this
 # surface via `harness snapshot capture`; canary previously skipped it, so
 # `harness snapshot trends` had no history to draw on. Runs weekly and on manual
-# dispatch, and commits the appended timeline to main.
+# dispatch, and pushes the appended timeline to the `chore/arch-timeline`
+# branch (see the push step for why not to main).
 
 # Mondays 07:43 UTC, about an hour after the weekly `Dependency & project
 # validation` sweep (`harness-architecture.yml`, 06:37). An earlier comment said
@@ -28,8 +29,13 @@ concurrency:
 env:
   HARNESS_CLI: '@harness-engineering/cli@13'
 
+# #1426 (CWE-250 / CWE-272): read-only by default. `snapshot` runs a floating
+# `@harness-engineering/cli` through `npx`, and `actions/checkout` leaves the
+# job's token in `.git/config`, so a write scope here handed that token to
+# registry code. Only the `push` job writes, and it runs no registry code.
+# `ts/test/workflow-hygiene.test.ts` holds both halves.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   snapshot:
@@ -45,6 +51,51 @@ jobs:
 
       - name: Capture architecture snapshot
         run: npx --yes -p "$HARNESS_CLI" harness snapshot capture
+
+      # #1426: hand the timeline to the `push` job. `.harness/` is a dot-path,
+      # which upload-artifact skips unless told otherwise. The file is tracked,
+      # so it always exists; a missing one is an error, not "no change".
+      - name: Upload architecture timeline
+        uses: actions/upload-artifact@v7
+        with:
+          name: arch-timeline
+          path: |
+            .harness/arch/timeline.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # #1426: the only job that holds `contents: write`, and it runs no registry
+  # code: checkout, download, copy, git. The artifact was written by a job
+  # that ran `npx`, so it is extracted under runner.temp rather than over the
+  # checkout (where it could plant any file, `.git/config` included), and only
+  # the timeline is copied across. The workflow-level concurrency group above
+  # already serialises the force-push.
+  push:
+    needs: snapshot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: arch-timeline
+          path: ${{ runner.temp }}/arch-timeline
+
+      - name: Restore the captured timeline
+        env:
+          SRC: ${{ runner.temp }}/arch-timeline
+        # Regular files only: `cp` follows a symlink, and a link planted in the
+        # artifact could copy the persisted token into a file this job pushes.
+        run: |
+          f=.harness/arch/timeline.json
+          if [ ! -f "$SRC/$f" ] || [ -L "$SRC/$f" ]; then
+            echo "::error::artifact entry $f is missing or not a regular file" >&2
+            exit 1
+          fi
+          cp -- "$SRC/$f" "$f"
 
       # Two stacked false greens lived here (#548). First, the guard used
       # `git diff` against a path git had never tracked — git cannot report a

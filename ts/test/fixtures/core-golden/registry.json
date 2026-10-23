@@ -586,6 +586,58 @@
         "tier": "executable"
       },
       "tier": "executable"
+    },
+    {
+      "name": "phpunit",
+      "category": "api",
+      "categories": [
+        "api",
+        "integration"
+      ],
+      "languages": [
+        "php"
+      ],
+      "file_extensions": [
+        "php"
+      ],
+      "execution_command": "vendor/bin/phpunit {file}",
+      "ci_flags": [
+        "--colors=never",
+        "--do-not-cache-result"
+      ],
+      "status": "supported",
+      "capabilities": {
+        "scaffold": true,
+        "execute": true,
+        "tier": "full"
+      },
+      "tier": "full"
+    },
+    {
+      "name": "pest",
+      "category": "api",
+      "categories": [
+        "api",
+        "integration"
+      ],
+      "languages": [
+        "php"
+      ],
+      "file_extensions": [
+        "php"
+      ],
+      "execution_command": "vendor/bin/pest {file}",
+      "ci_flags": [
+        "--colors=never",
+        "--do-not-cache-result"
+      ],
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     }
   ],
   "byCategory": {
@@ -598,7 +650,9 @@
       "playwright",
       "pytest",
       "schemathesis",
-      "hurl"
+      "hurl",
+      "phpunit",
+      "pest"
     ],
     "observability": [
       "opentelemetry"
