@@ -1,5 +1,5 @@
-// Fixture for canary-unquarantine: a trimmed, anonymised copy of a real
-// consumer suite's quarantine shapes. Never executed; read as text only.
+// Fixture for canary-unquarantine: a synthetic suite carrying the quarantine
+// shapes the audit must read. Never executed; read as text only.
 import { test, expect } from '@playwright/test';
 
 /**

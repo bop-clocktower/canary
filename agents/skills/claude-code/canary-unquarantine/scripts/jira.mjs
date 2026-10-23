@@ -105,26 +105,34 @@ function jiraAccess({ projects = [], env = process.env }) {
   };
 }
 
+/** Resolutions that mean the defect was fixed; company.json `jira_fixed_resolutions` replaces them. */
+const FIXED_RESOLUTIONS = ['Done', 'Fixed'];
+
 /**
- * Jira adapter: reads a ticket's status category. Enabled per project by
- * company.json; anything `jiraAccess` refuses abstains with its reason.
+ * Jira adapter: reads a ticket's status category and resolution. Enabled per
+ * project by company.json; anything `jiraAccess` refuses abstains with its
+ * reason. A `done` ticket is resolved only when its resolution is one of
+ * `fixedResolutions` (case-insensitive): Won't Do, Duplicate, Cannot
+ * Reproduce and no resolution at all are done without being fixed.
  *
  * @param {{run: Function, projects?: string[], env?: Record<string, string|undefined>,
- *          curl?: string}} opts
+ *          curl?: string, fixedResolutions?: string[]}} opts
  */
 export function jiraTracker({
   run,
   projects = [],
   env = process.env,
   curl = 'curl',
+  fixedResolutions = FIXED_RESOLUTIONS,
 }) {
   const access = jiraAccess({ projects, env });
+  const fixed = new Set(fixedResolutions.map((r) => r.toLowerCase()));
   const cache = new Map();
   return function lookup(ref) {
     const ok = access(ref);
     if ('why' in ok) return { state: 'unknown', why: ok.why };
     if (!cache.has(ref.key))
-      cache.set(ref.key, fetchJira(run, curl, ok, ref.key));
+      cache.set(ref.key, fetchJira(run, curl, { ...ok, fixed }, ref.key));
     return cache.get(ref.key);
   };
 }
@@ -132,10 +140,28 @@ export function jiraTracker({
 /** Jira's status categories, as this audit reads them. */
 const JIRA_STATE = { done: 'resolved', new: 'open', indeterminate: 'open' };
 
-function jiraState(fields, url) {
+/** A `done` ticket: resolved only when its resolution is in `fixed`. */
+function doneState(fields, url, fixed) {
+  const resolution = fields.resolution?.name ?? '';
+  if (fixed.has(resolution.toLowerCase()))
+    return {
+      state: 'resolved',
+      title: String(fields.summary ?? ''),
+      url,
+      handoff: [],
+    };
+  const as = resolution ? `as "${resolution}"` : 'with no resolution';
+  return {
+    state: 'unknown',
+    why: `Jira ticket at ${url} is done ${as}, which is not a fix`,
+    url,
+  };
+}
+
+function jiraState(fields, url, fixed) {
   const state = JIRA_STATE[fields.status?.statusCategory?.key];
   const title = String(fields.summary ?? '');
-  if (state === 'resolved') return { state, title, url, handoff: [] };
+  if (state === 'resolved') return doneState(fields, url, fixed);
   if (state === 'open')
     return {
       state,
@@ -150,9 +176,10 @@ function jiraState(fields, url) {
   };
 }
 
-function fetchJira(run, curl, { base, auth }, key) {
+function fetchJira(run, curl, site, key) {
+  const { base, auth, fixed } = site;
   const url = `${base}/browse/${key}`;
-  const api = `${base}/rest/api/2/issue/${encodeURIComponent(key)}?fields=status,assignee,summary`;
+  const api = `${base}/rest/api/2/issue/${encodeURIComponent(key)}?fields=status,resolution,assignee,summary`;
   const parsed = parseJson(
     run(
       curl,
@@ -162,5 +189,5 @@ function fetchJira(run, curl, { base, auth }, key) {
     `Jira ${key}`,
   );
   if (parsed.why) return { state: 'unknown', why: parsed.why, url };
-  return jiraState(parsed.value.fields ?? {}, url);
+  return jiraState(parsed.value.fields ?? {}, url, fixed);
 }

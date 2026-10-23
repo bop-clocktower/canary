@@ -71,27 +71,37 @@ For each row, the first source that names a ticket wins:
 4. the test title.
 
 Within one source, a reference after a blocker phrase — "quarantined against",
-"parked against", "blocked by", "filed as", "tracked in" — is _the_ blocker, and
-it is the only one taken. A comment that says "quarantined against #225; the
-twin finding is quarantined against #200" waits on #225. With no such phrase,
+"parked against", "blocked by", "filed as", "tracked in" — is a blocker, and
+every such reference in the first sentence that carries one is taken.
+"Quarantined against #12; also blocked by UP-7" waits on both; "Quarantined
+against #12. Earlier it was blocked by #9." waits on #12. With no such phrase,
 every reference in the source counts.
 
 References: `#N` (in the suite's own repository), `owner/repo#N`, GitHub issue
 or pull URLs, Jira `/browse/KEY-N` URLs, and bare Jira keys. A bare key is
 believed only after a blocker phrase or when its project is in `jira_projects`,
-and a key that appears in the test's own title (`TC-065 …`) is a case id, never
-a ticket.
+and a key that appears in the test's own title (`CASE-065 …`) is a case id,
+never a ticket.
 
 ### Hand-offs
 
-When a blocker is a **closed** GitHub issue, its comments are read (newest
-first) for a hand-off: a line that says the work was filed, raised, moved,
-parked, superseded or continued somewhere, and names where. Only the newest
-comment carrying a hand-off is used — a later comment re-routes an earlier one.
-When that comment routes several cases to several tickets, the lines naming the
-row's own case id are the ones that count; otherwise every target counts, which
-errs toward blocked. Chains are followed up to 3 hops (A → B → C → D); a fourth
-hop abstains, and so does a cycle.
+When a blocker is a **closed** GitHub issue, its body and comments are read for
+a hand-off: a line that says the work was filed, raised, moved, parked,
+superseded or continued somewhere, and names where. Every bare key on such a
+line is believed, and a line ending in `:` takes its target from the next line
+("Filed upstream:\nUP-1"). A hand-off line that names nothing this audit can
+read — another tracker's URL, a key with no project — abstains rather than read
+as "no hand-off".
+
+Every hand-off comment counts, not only the newest: a later "follow-up in #30"
+must not erase an earlier "Filed as UP-1", so the targets are merged, which errs
+toward blocked. Comments from outside the project (GitHub `author_association`
+of `NONE`, `FIRST_TIMER`, `FIRST_TIME_CONTRIBUTOR` or `CONTRIBUTOR`) are not
+read for hand-offs: anyone can comment on a public issue. When the hand-off
+lines route several cases to several tickets, the lines naming the row's own
+case id are the ones that count; otherwise every target counts. Chains are
+followed up to 3 hops (A → B → C → D); a fourth hop abstains, and so does a
+cycle.
 
 A closed issue counts as resolved only when it was closed as **completed**, and
 a pull request only once **merged**. Closed as not planned, as a duplicate, for
@@ -120,11 +130,29 @@ makes it `abstain`. Only when every blocker is resolved is it a `candidate`.
   to, and a `/browse/KEY-N` link on any other origin abstains. They are passed
   to `curl` on stdin, never in argv, and curl is held to https. A Jira project
   not in `jira_projects`, no configured site, or no credentials, abstains for
-  that row. A status in Jira's `done` category is resolved; `new` and
+  that row. A status in Jira's `done` category is resolved only when its
+  resolution is a fix — `Done` or `Fixed` by default, or the list in
+  company.json `jira_fixed_resolutions`. Won't Do, Duplicate, Cannot Reproduce,
+  or no resolution at all, is done without being fixed and abstains. `new` and
   `indeterminate` are open.
 
 Tag-style quarantine reads its tags from `--tags`, else company.json
-`quarantine_tags`, else `@known-failure,@quarantine`.
+`quarantine_tags`, else `@known-failure,@quarantine`. A tag counts in the title
+or in Playwright's details object (`test('t', { tag: '@known-failure' }, …)`, or
+an array of tags). Vitest's `it.skipIf(cond)('t', …)` and
+`describe.runIf(cond)('t', …)` are read as skips.
+
+Pytest skips are read from the test's own decorators — `@pytest.mark.skip`,
+`skipif`, `xfail`, `@mark.skip` after `from pytest import mark`, and
+`@unittest.skip` and its variants — and from those of every class it is in. A
+comment or blank line between a decorator and its `def` does not detach it. A
+module-level `pytestmark` that skips makes that file's rows abstain: this reader
+cannot tell which tests it covers, so it never calls one released.
+
+An audit that read zero test files under `--repo` abstains, whatever the ledger
+says: a wrong `--repo` is not a clean suite. A ledger `file` that resolves
+outside `--repo` (`../`, an absolute path, a symlink out) is never read; its row
+is stale.
 
 ## Invocation
 

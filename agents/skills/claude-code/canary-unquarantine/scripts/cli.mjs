@@ -92,9 +92,11 @@ export function loadCompany(file) {
             .filter(Boolean)
         : [];
   const tags = list(doc.quarantine_tags);
+  const fixed = list(doc.jira_fixed_resolutions);
   return {
     jiraProjects: list(doc.jira_projects),
     tags: tags.length ? tags : null,
+    fixedResolutions: fixed.length ? fixed : undefined,
     found: true,
   };
 }
@@ -156,7 +158,12 @@ export function main(argv = [], deps = {}) {
   });
   const lookup = {
     github,
-    jira: jiraTracker({ run, projects: company.jiraProjects, env }),
+    jira: jiraTracker({
+      run,
+      projects: company.jiraProjects,
+      env,
+      fixedResolutions: company.fixedResolutions,
+    }),
   };
   const result = audit({
     repo,
