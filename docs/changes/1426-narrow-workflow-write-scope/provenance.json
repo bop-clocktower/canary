@@ -1,0 +1,40 @@
+{
+  "issue": [1426],
+  "route": "bug",
+  "fleet": "security-fleet",
+  "stages": ["debugging"],
+  "evidenceClass": "exploitable-path",
+  "cwe": ["CWE-250", "CWE-272"],
+  "baseSha": "871649d5",
+  "scope": [
+    "S1 .github/workflows/harness-security.yml (issue #1426)",
+    "S2 .github/workflows/arch-snapshot.yml (lane-found, same pattern; folded in with human approval)"
+  ],
+  "before": {
+    "harness-security.yml": "top-level contents: write; one job `security` runs npx harness validate/check-deps/check-security, then pushes chore/security-ledger",
+    "arch-snapshot.yml": "top-level contents: write; one job `snapshot` runs npx harness snapshot capture, then pushes chore/arch-timeline"
+  },
+  "after": {
+    "harness-security.yml": "top-level contents: read; `security` (required, read) uploads the ledger files on push to main; `ledger` (needs security, push-to-main only, contents: write, concurrency ledger-chore/security-ledger) downloads under runner.temp, copies the two files, pushes; no npx",
+    "arch-snapshot.yml": "top-level contents: read; `snapshot` (read) uploads the timeline; `push` (needs snapshot, contents: write) downloads under runner.temp, copies the timeline, pushes; no npx"
+  },
+  "reproducingTest": [
+    "ts/test/workflow-hygiene.test.ts",
+    "ts/test/ledger-push-jobs.test.ts"
+  ],
+  "failedBeforeFix": "workflow-hygiene: 'runs npx in no job that holds contents: write' received ['security'] / ['snapshot']; 'grants top-level contents: write only to allowlisted workflows' received ['arch-snapshot.yml','harness-security.yml']. 25 of 40 new tests red on 871649d5.",
+  "changed": [
+    ".github/workflows/harness-security.yml",
+    ".github/workflows/arch-snapshot.yml",
+    ".github/required-checks.json"
+  ],
+  "assumptions": [
+    "The `ledger` job is advisory, not required: it is skipped on every PR, so requiring it would block every PR on a skipped job.",
+    "upload-artifact@v7 stores the files relative to their common ancestor (the workspace root), so the download holds `.harness/...` and `docs/...` at those relative paths.",
+    "download-artifact@v8 is used because the repo uses no download-artifact yet and v8 is current; its digest-mismatch default is `error`.",
+    "Read-only scan jobs keep the default persist-credentials: a read token on a public repo grants nothing the public does not already have.",
+    "release.yml and wiki-sync.yml keep their top-level write and are allowlisted with reasons; narrowing them is out of scope.",
+    "refresh-arch-baseline.yml runs the harness CLI in a job with job-level contents: write + pull-requests: write. Same class, not named by #1426, reported rather than fixed."
+  ],
+  "closingKeyword": "Closes #1426"
+}

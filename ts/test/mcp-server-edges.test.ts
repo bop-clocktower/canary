@@ -27,6 +27,7 @@ import {
   analyzeFileImpl,
   detectFrameworkFromConfig,
   extractFileFunctions,
+  findExistingTests,
   projectRootFor,
   resolveServedRoot,
   runTestsImpl,
@@ -247,5 +248,21 @@ describe('runTestsImpl passed count without a runner summary', () => {
     ]);
     const root = tmp();
     expect(runTestsImpl(join(root, 'test_a.py'), root)['passed']).toBe(0);
+  });
+});
+
+describe('findExistingTests path form (#1371)', () => {
+  it('keeps a root file whose name starts with ".." project-relative', () => {
+    const root = tmp();
+    layout(root, {
+      '..foo.test.ts': 'it("a", () => {});',
+      'tests/bar.test.ts': 'it("b", () => {});',
+    });
+    // `..foo.test.ts` is a descendant of root, not a parent-directory escape,
+    // so it must come back relative like its nested sibling.
+    expect(findExistingTests(root, 'vitest')).toEqual([
+      '..foo.test.ts',
+      join('tests', 'bar.test.ts'),
+    ]);
   });
 });

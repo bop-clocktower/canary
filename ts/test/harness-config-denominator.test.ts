@@ -68,6 +68,9 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SOURCE_ROOTS: ReadonlyArray<{ root: string; exts: readonly string[] }> = [
   { root: 'ts/src', exts: ['.ts'] },
   { root: 'agents/skills/lib', exts: ['.mjs', '.js', '.cjs', '.ts'] },
+  // The runtime CLI shipped to users (#1443). Unlayered until then, so
+  // check-deps never read it and a cycle planted here passed the gate.
+  { root: 'npm/src', exts: ['.ts'] },
 ];
 
 /** The shared skill library and the skills that consume it (#1155). */
@@ -276,6 +279,59 @@ describe('harness.config.json architecture rules govern real files (#543)', () =
       expect(bindingLayer(skillFile!)?.allowedDependencies ?? []).toContain(
         'skills-lib',
       );
+    });
+  });
+
+  /**
+   * `npm/src` is the runtime CLI shipped to users (#1443). Its `reporters/`
+   * subtree is published on its own (`canary-test-cli/reporter`, loaded inside
+   * a user's Playwright run), so it is the leaf: the CLI may import it, never
+   * the reverse. Same two-sided shape as #1155 above, for the same reason —
+   * check-deps judges an edge only when both ends bind to a layer.
+   */
+  describe('the published reporter may not import the runtime CLI (#1443)', () => {
+    function bindingLayer(file: string): Layer | undefined {
+      return LAYERS.find((l) => globToRegExp(l.pattern).test(file));
+    }
+    const npmTs = TRACKED.filter(
+      (f) => f.startsWith('npm/src/') && f.endsWith('.ts'),
+    );
+    const reporterFiles = npmTs.filter((f) =>
+      f.startsWith('npm/src/reporters/'),
+    );
+    const cliFiles = npmTs.filter((f) => !f.startsWith('npm/src/reporters/'));
+
+    it('both sides of the boundary have tracked files', () => {
+      expect(reporterFiles.length).toBeGreaterThan(0);
+      expect(cliFiles.length).toBeGreaterThan(0);
+    });
+
+    it('every file binds to its side, so check-deps judges the edge', () => {
+      expect(
+        reporterFiles.filter((f) => bindingLayer(f)?.name !== 'npm-reporter'),
+      ).toEqual([]);
+      expect(
+        cliFiles.filter((f) => bindingLayer(f)?.name !== 'npm-cli'),
+      ).toEqual([]);
+    });
+
+    it('npm-reporter allows nothing; npm-cli allows npm-reporter', () => {
+      const reporter = LAYERS.find((l) => l.name === 'npm-reporter');
+      const cli = LAYERS.find((l) => l.name === 'npm-cli');
+      expect(reporter?.allowedDependencies ?? []).toEqual([]);
+      expect(cli?.allowedDependencies ?? []).toContain('npm-reporter');
+    });
+
+    it('a module added anywhere under npm/src would be analysed', () => {
+      // The denominator for a NEW file, not just today's tree: a planted
+      // cycle is only caught if its path binds to a layer at all.
+      for (const planted of [
+        'npm/src/planted-cycle-a.ts',
+        'npm/src/nested/planted-cycle-b.ts',
+        'npm/src/reporters/ingest/planted-cycle-c.ts',
+      ]) {
+        expect(bindingLayer(planted), planted).toBeDefined();
+      }
     });
   });
 });
