@@ -207,10 +207,16 @@ jobs:
     runs-on: ubuntu-latest
     # Only advance for stable vX.Y.Z tags, never pre-releases (e.g. v1.2.0-rc1).
     if: ${{ !contains(github.ref_name, '-') }}
-    # #1427: this job force-pushes the `latest` tag. Two releases close
-    # together would race, and the slower run could move `latest` backwards.
-    # One group keyed on the tag makes them queue; cancel-in-progress: false
-    # so a running tag move is never killed mid-push.
+    # #1427: this job force-pushes the `latest` tag. The group only
+    # serialises runs (cancel-in-progress: false, so a running tag move is
+    # never killed mid-push). It does NOT order them: runs queue in the order
+    # their publish and verify-bins finish, not tag order, and a force push
+    # is last-writer-wins. What stops `latest` moving backwards is the guard
+    # in the step below, which advances only for the highest stable tag.
+    # GitHub keeps one pending run per group, so with three releases close
+    # together a pending advance can be cancelled; that run shows as
+    # cancelled, and re-running it is safe (the guard makes it a no-op
+    # unless it is still the highest).
     concurrency:
       group: latest-tag
       cancel-in-progress: false
@@ -223,11 +229,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The tag ranking below runs under node; use the pinned one.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # #1427: advance only for the highest stable vX.Y.Z tag on origin. An
+      # older release whose run lands after a newer one's is a logged no-op,
+      # so `latest` never moves backwards. Tags are re-fetched because a newer
+      # release may have been tagged after this run started.
+      # `ts/test/release-advance-latest.test.ts` runs this script against a
+      # local bare remote.
       - name: Move latest tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
+          git fetch --force --tags --quiet origin
+          if ! HIGHEST="$(git tag --list 'v*' | node scripts/highest-stable-tag.mjs)"; then
+            echo "::error::could not rank the stable release tags; latest not moved"
+            exit 1
+          fi
+          if [ "$HIGHEST" != "$RELEASE_TAG" ]; then
+            echo "::notice::${RELEASE_TAG} is not the highest stable tag (${HIGHEST}); latest not moved"
+            echo "Left latest alone: ${RELEASE_TAG} is older than ${HIGHEST}." >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -fa latest "$RELEASE_SHA" -m "latest → ${RELEASE_TAG}"

@@ -28,22 +28,6 @@ env:
 jobs:
   security:
     runs-on: ubuntu-latest
-    # #1427: the ledger step below force-pushes `chore/security-ledger`, so two
-    # overlapping push-to-main runs used to race and the last writer silently
-    # overwrote the other's ledger. Push-to-main runs now share one group keyed
-    # on the ledger branch and queue (cancel-in-progress: false, so a running
-    # ledger write is never killed). Every other run gets a group of its own
-    # (run_id), so PR runs of the required `security` check never queue
-    # behind main or behind each other. GitHub keeps one pending run per
-    # group: a third overlapping main run supersedes the queued one, which is
-    # fine here because the newest run regenerates the ledger from newer main.
-    # `ts/test/workflow-hygiene.test.ts` fails on a force push with no group.
-    concurrency:
-      group: >-
-        ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-        'ledger-chore/security-ledger' || format('security-{0}', github.run_id)
-        }}
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
 

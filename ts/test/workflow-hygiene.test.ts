@@ -14,6 +14,7 @@
  *   this file also guards them against a well-meant "fix" that quotes them.
  * - #1427: `harness-security.yml` force-pushed its ledger branch with no
  *   `concurrency:` group, so overlapping runs silently lost a write.
+ *   `release-advance-latest.test.ts` covers the `latest` tag's ordering.
  *
  * Offline: every assertion reads the YAML or JSON as data.
  */
@@ -320,11 +321,23 @@ describe('#1427 a workflow that force-pushes declares a concurrency group', () =
     });
 
   // A zero denominator would make the next test pass vacuously, e.g. after a
-  // detector regression. These two are known force-pushers.
+  // detector regression. These three are known force-pushers. Since #1426 the
+  // push lives in a write job apart from the scan.
   it('finds the known force-pushing workflows', () => {
     const wheres = forcePushers.map((p) => p.where);
-    expect(wheres).toContain('arch-snapshot.yml job snapshot');
-    expect(wheres).toContain('harness-security.yml job security');
+    expect(wheres).toContain('arch-snapshot.yml job push');
+    expect(wheres).toContain('harness-security.yml job ledger');
+    expect(wheres).toContain('release.yml job advance-latest');
+  });
+
+  // `security` is a required check. It no longer pushes (#1426 moved that to
+  // `ledger`, which holds the ledger group), so a group on it only queues or
+  // supersedes required-check runs. A static group there would make PR runs
+  // wait behind `main` or be cancelled as superseded pending runs.
+  it('the required security job carries no concurrency group', () => {
+    const wf = workflow('harness-security.yml');
+    expect(wf.concurrency).toBeUndefined();
+    expect(wf.jobs?.security?.concurrency).toBeUndefined();
   });
 
   it('every force-pushing job is under a non-cancelling concurrency group', () => {

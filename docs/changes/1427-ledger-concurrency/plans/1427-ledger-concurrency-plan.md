@@ -20,6 +20,7 @@ check, M4.5), then TDD.
   Effect: two stable releases close together race; the slower run can move
   `latest` backwards.
   Patch: job-level group `latest-tag`, cancel-in-progress: false (applied).
+  Revised in review: the group alone does not stop this. See "Revision" below.
 ```
 
 The second finding was not in the issue. The new invariant found it on its first
@@ -82,3 +83,33 @@ after.
   the same file; this change is one self-contained `describe`. Lane #1426 edits
   harness-security.yml permissions; this change touches only the `security`
   job's `concurrency:` key and does not touch `permissions:`.
+
+## Revision after review (merge of main with #1426/#1439)
+
+Review found that the `latest-tag` group does not stop `latest` moving
+backwards. The group is on `advance-latest`, which needs `publish` and
+`verify-bins`, so runs queue in the order those finish, not in tag order, and
+serialised force pushes are still last-writer-wins. With three releases close
+together, GitHub's one-pending-run rule can also cancel the newest tag's pending
+advance.
+
+- `release.yml` `advance-latest`: the step re-fetches tags and moves `latest`
+  only when `RELEASE_TAG` is the highest stable `vX.Y.Z` tag, ranked by
+  `scripts/highest-stable-tag.mjs` (numeric compare; pre-releases, build
+  metadata and `latest` ignored; exit 3 abstains when nothing is stable). Any
+  other run logs a `::notice::` and leaves `latest` alone. `sort -V` was not
+  used: it ranks `v1.0.0-rc.1` above `v1.0.0`. The group stays, so two tag moves
+  never overlap; a cancelled pending advance is visible and safe to re-run,
+  because the guard makes it a no-op unless it is still the highest. The job now
+  runs `actions/setup-node` on `.nvmrc` for the script.
+- `harness-security.yml`: #1426 moved the force push into a separate `ledger`
+  job that already carries `ledger-chore/security-ledger`. The conditional group
+  on the `security` job is dropped, so the required check has no group.
+- Tests: `ts/test/release-advance-latest.test.ts` table-tests the script and
+  runs the step's own `run:` script against a local bare remote (highest
+  advances; an older release that lands later is a no-op; a newer tag pushed
+  after checkout is seen). `workflow-hygiene.test.ts` now names
+  `arch-snapshot.yml job push`, `harness-security.yml job ledger` and
+  `release.yml job advance-latest` as known force-pushers, and fails on a group
+  on the required `security` job. Red first: 12 of 14 in the new file and the
+  `security` no-group assertion.
