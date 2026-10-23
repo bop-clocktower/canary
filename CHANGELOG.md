@@ -14,6 +14,14 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Security
+
+- **`ip-address` bumped to 10.7.4 (GHSA-rxp7-6hxx-x8q5).** The transitive
+  dependency (via `@modelcontextprotocol/sdk` → `express-rate-limit`) matched an
+  `Address6` zone identifier in quadratic time before its length limit, so a
+  single long string could stall the process. Both the `ts/` and `npm/`
+  lockfiles now resolve the patched version.
+
 ### Changed
 
 - **`canary testtracker push` refuses a payload that would lose its catalog
