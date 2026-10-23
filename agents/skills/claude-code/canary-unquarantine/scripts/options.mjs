@@ -1,15 +1,23 @@
-// usage -- canary-unquarantine's flags and help text, kept out of cli.mjs so
-// the entry point stays a dispatcher.
+// options -- canary-unquarantine's flags, help text and company.json keys,
+// kept out of cli.mjs so the entry point stays a dispatcher.
+//
+// company.json keys read: `jira_projects` (which Jira projects may be read and
+// commented on) and `quarantine_tags` (overridden by --tags).
+
+import fs from 'node:fs';
 
 import { DEFAULT_TAGS } from './markers.mjs';
 
-export const USAGE = `usage: canary-unquarantine [-h] [{audit,trial,verdict}] [--repo PATH]
+export const USAGE = `usage: canary-unquarantine [-h] [{audit,trial,verdict,migrate,quarantine}]
+                           [--repo PATH]
                            [--ledger PATH] [--company PATH]
                            [--github-repo OWNER/NAME] [--tags LIST]
                            [--include-abstained] [--yes] [--branch NAME]
                            [--pr-base BRANCH] [--pr N] [--results PATH]
                            [--artifact NAME] [--apply] [--json] [--strict]
-                           [--no-scan]
+                           [--no-scan] [--file PATH] [--test TITLE]
+                           [--cause CAUSE] [--issue REF] [--expiry DATE]
+                           [--as-tag]
 
 Release quarantined tests through a trial run of their own CI, never on
 ticket state alone.
@@ -21,6 +29,10 @@ commands:
                          that lifts every candidate's marker
   verdict                read the trial PR's CI per test; with --apply,
                          release passes and re-quarantine the rest
+  migrate                show the ledger rows every unledgered marker (a
+                         tag, a bare skip) becomes; with --yes, append them
+  quarantine             switch one test off: write its marker and its
+                         ledger row together
 
 options:
   -h, --help             show this help message and exit
@@ -34,7 +46,8 @@ options:
                          company.json quarantine_tags, else ${DEFAULT_TAGS.join(',')})
   --include-abstained    trial: also lift rows whose tracker could not be
                          read (the trial run is the arbiter)
-  --yes                  trial: the confirm; without it nothing is written
+  --yes                  trial, migrate: the confirm; without it nothing is
+                         written
   --branch NAME          trial: branch name for the trial PR
   --pr-base BRANCH       trial: base branch of the trial PR (default: the
                          repository's default branch)
@@ -48,7 +61,16 @@ options:
   --json                 emit machine-readable output
   --strict               exit 1 when something needs action, 3 when the
                          command abstained
-  --no-scan              audit: do not scan for unledgered markers`;
+  --no-scan              audit: do not scan for unledgered markers
+  --file PATH            quarantine: the test file (repo-relative)
+  --test TITLE           quarantine: the test's title
+  --cause CAUSE          quarantine: flaky, product-defect, blocked-data,
+                         pending-feature or obsolete
+  --issue REF            quarantine: the ticket it waits on (required for
+                         product-defect, blocked-data, pending-feature)
+  --expiry DATE          quarantine: when the quarantine should be revisited
+  --as-tag               quarantine: add the first quarantine tag to the
+                         title instead of a .skip marker`;
 
 export const CLI_SPEC = {
   prog: 'canary-unquarantine',
@@ -59,6 +81,7 @@ export const CLI_SPEC = {
     '--include-abstained': 'includeAbstained',
     '--yes': 'yes',
     '--apply': 'apply',
+    '--as-tag': 'asTag',
   },
   values: {
     '--repo': { key: 'repo' },
@@ -71,7 +94,39 @@ export const CLI_SPEC = {
     '--pr': { key: 'pr', type: 'int' },
     '--results': { key: 'results' },
     '--artifact': { key: 'artifact' },
+    '--file': { key: 'file' },
+    '--test': { key: 'test' },
+    '--cause': { key: 'cause' },
+    '--issue': { key: 'issue' },
+    '--expiry': { key: 'expiry' },
   },
   defaults: { repo: '.' },
   positionals: { key: 'command', defaults: ['audit'] },
 };
+
+const list = (v) => {
+  if (Array.isArray(v)) return v.map(String);
+  return typeof v === 'string'
+    ? v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+};
+
+/** company.json, or an empty config. A malformed file is an error, not a default. */
+export function loadCompany(file) {
+  if (!fs.existsSync(file)) return { jiraProjects: [], tags: null };
+  const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const tags = list(doc.quarantine_tags);
+  return {
+    jiraProjects: list(doc.jira_projects),
+    tags: tags.length ? tags : null,
+  };
+}
+
+/** The quarantine tags: --tags, else company.json `quarantine_tags`, else the defaults. */
+export function tagsFor(flag, company) {
+  if (flag) return list(flag);
+  return company.tags ?? DEFAULT_TAGS;
+}

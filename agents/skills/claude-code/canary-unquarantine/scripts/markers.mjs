@@ -123,7 +123,8 @@ function commentBlock(lines, n) {
 /** Line `n`, plus its continuation when the call's arguments span lines. */
 function statementAt(lines, n) {
   const stmt = [(lines[n - 1] ?? '').trim()];
-  if (/\{\s*$/.test(stmt[0])) return stmt;
+  // Already complete: it opens a body, or it closes its own call.
+  if (/(?:\{|\)\s*;?)\s*$/.test(stmt[0])) return stmt;
   for (let i = n; i < Math.min(lines.length, n + 8); i += 1) {
     stmt.push(lines[i].trim());
     if (/\)\s*;?\s*$/.test(lines[i])) break;

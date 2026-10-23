@@ -11,16 +11,14 @@
 //   removed    a deletion record (katana `removed`): the test is gone, there
 //              is no marker to lift, so it is listed and not released
 //
-// "Resolved" is deliberately narrow. A closed GitHub issue whose thread says
-// the finding was filed somewhere else ("Filed as UP-123") is NOT resolved:
-// it resolves to that upstream ticket, and the row waits on that ticket's
-// state. Closing a tracking issue because the defect moved upstream is the
-// common case, and reading it as "fixed" would release a test the platform
-// still fails.
+// "Resolved" is deliberately narrow. A closed issue whose thread says the
+// finding was filed elsewhere ("Filed as UP-123") resolves to that upstream
+// ticket: closed-to-upstream is not fixed, and reading it as fixed would
+// release a test the platform still fails.
 
 import { extractRefs, idTokens, pickBlocker } from './refs.mjs';
 import { locate, readSource, runtimeCallee } from './markers.mjs';
-import { scanMarkers } from './scan.mjs';
+import { scanSuite } from './scan.mjs';
 
 const CLASSES = [
   'candidate',
@@ -229,9 +227,8 @@ export function audit({
     else seen.set(k, r.index);
   }
 
-  const unledgered = scan
-    ? findUnledgered(repo, rows, results, tags, jiraProjects)
-    : [];
+  const suite = scan ? scanSuite(repo, tags) : { files: null, markers: [] };
+  const unledgered = findUnledgered(suite.markers, rows, results, jiraProjects);
   const counts = Object.fromEntries(CLASSES.map((c) => [c, 0]));
   for (const r of results) counts[r.class] += 1;
   const denominator = {
@@ -243,6 +240,7 @@ export function audit({
   return {
     rows: results,
     unledgered,
+    scannedFiles: suite.files,
     counts,
     denominator,
     verdict: verdictOf(denominator, counts, unledgered),
@@ -250,12 +248,12 @@ export function audit({
 }
 
 /** Markers in code that no ledger row accounts for. */
-function findUnledgered(repo, rows, results, tags, jiraProjects) {
+function findUnledgered(markers, rows, results, jiraProjects) {
   const byLine = new Set(
     results.filter((r) => r.markerLine).map((r) => `${r.file}:${r.markerLine}`),
   );
   const titles = rows.map((r) => [r.file, r.test]);
-  return scanMarkers(repo, tags)
+  return markers
     .filter((m) => !byLine.has(`${m.file}:${m.markerLine}`))
     .filter(
       (m) =>
@@ -263,13 +261,21 @@ function findUnledgered(repo, rows, results, tags, jiraProjects) {
           ([f, t]) => f === m.file && (m.test === t || m.test.includes(t)),
         ),
     )
-    .map((m) => ({
-      ...m,
-      names: extractRefs(m.context, {
+    .map((m) => {
+      // A bare key in the comment right above a skip is believed; `links`
+      // keeps each reference verbatim so a migration loses none of them.
+      const opts = {
         jiraProjects,
         exclude: idTokens(m.test),
-      }).map((r) => r.id),
-    }));
+        anyBareJira: true,
+      };
+      const refs = extractRefs(m.context, opts);
+      return {
+        ...m,
+        names: refs.map((r) => r.id),
+        links: refs.map((r) => r.text),
+      };
+    });
 }
 
 /**

@@ -30,7 +30,6 @@ import {
 import { isMain } from '../../../lib/is-main.mjs';
 import * as ledger from '../../canary-katana/scripts/ledger.mjs';
 import { audit } from './audit.mjs';
-import { loadCompany, tagsFor } from './config.mjs';
 import {
   jsonPayload,
   renderText,
@@ -44,8 +43,9 @@ import { applyVerdict } from './settle.mjs';
 import { spawnRunner } from './exec.mjs';
 import { jiraCommenter, jiraTracker } from './jira.mjs';
 import { githubTracker, resolveGithubRepo } from './trackers.mjs';
+import { migrateCommand, quarantineCommand } from './produce.mjs';
 import { openTrial, planTrial, selectRows } from './trial.mjs';
-import { CLI_SPEC, USAGE } from './usage.mjs';
+import { CLI_SPEC, USAGE, loadCompany, tagsFor } from './options.mjs';
 import { loadTrial, planVerdict } from './verdict.mjs';
 
 export { CLI_SPEC };
@@ -58,7 +58,7 @@ const companyPath = (args) =>
   args.company ?? path.join(args.repo, '.canary', 'company.json');
 
 /** Load the ledger and config, run the audit. Throws on a corrupt input. */
-function runAudit(args, run, env) {
+function runAudit(args, run, env, { offline = false } = {}) {
   const ledgerPath =
     args.ledger ?? path.join(args.repo, '.canary', 'quarantine.json');
   const doc = ledger.load(ledgerPath);
@@ -69,10 +69,13 @@ function runAudit(args, run, env) {
     run,
     defaultRepo: () => resolveGithubRepo({ run, repo: args.repo, explicit }),
   });
-  const lookup = {
-    github,
-    jira: jiraTracker({ run, projects: company.jiraProjects, env }),
-  };
+  // Offline (migrate): the scan is all that is needed, and no tracker is asked.
+  const lookup = offline
+    ? {}
+    : {
+        github,
+        jira: jiraTracker({ run, projects: company.jiraProjects, env }),
+      };
   const scan = !args.noScan;
   const result = audit({
     repo: args.repo,
@@ -226,10 +229,21 @@ function verdictCommand(args, run, env) {
   return doc.abstained ? 3 : 0;
 }
 
+/** The producer commands get their I/O from here, so produce.mjs stays small. */
+const produceIo = (args, run, env) => ({
+  print: (doc, text) => print(args, doc, text),
+  runAudit: (a) => runAudit(a, run, env, { offline: true }),
+  ledgerPath: args.ledger ?? path.join(args.repo, '.canary', 'quarantine.json'),
+  tags: tagsFor(args.tags, loadCompany(companyPath(args))),
+});
+
 const COMMANDS = {
   audit: auditCommand,
   trial: trialCommand,
   verdict: verdictCommand,
+  migrate: (args, run, env) => migrateCommand(args, produceIo(args, run, env)),
+  quarantine: (args, run, env) =>
+    quarantineCommand(args, produceIo(args, run, env)),
 };
 
 /** A usage error for argv, or null. */

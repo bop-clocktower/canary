@@ -39,7 +39,7 @@ import {
   maskJs,
   readSource,
 } from '../claude-code/canary-unquarantine/scripts/markers.mjs';
-import { scanMarkers } from '../claude-code/canary-unquarantine/scripts/scan.mjs';
+import { scanSuite } from '../claude-code/canary-unquarantine/scripts/scan.mjs';
 import {
   githubTracker,
   resolveGithubRepo,
@@ -1119,7 +1119,9 @@ describe('markers', () => {
       path.join(dir, 'tests', 'b.spec.js'),
       "test.fixme('mine', () => {});\n",
     );
-    expect(scanMarkers(dir).map((m) => m.test)).toEqual(['mine']);
+    const scanned = scanSuite(dir);
+    expect(scanned.markers.map((m) => m.test)).toEqual(['mine']);
+    expect(scanned.files).toBe(1);
   });
 });
 

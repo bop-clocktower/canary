@@ -107,6 +107,70 @@ export function applyEdits(lines, edits) {
   return out;
 }
 
+// --- the reverse: switching a test off --------------------------------------
+
+/** Plain declarations a `.skip` can be added to; anything else is refused. */
+const SKIPPABLE = /\b((?:test|it|describe|context)(?:\.describe)?)\s*\(/;
+
+const indentOf = (line) => /^\s*/.exec(line)[0];
+
+/** The katana spelling of a JS skip marker: the last segment plus `.skip`. */
+const skipMarker = (callee) => `${callee.split('.').pop()}.skip`;
+
+/**
+ * Plan the edits that switch the test declared on `line` off, with a comment
+ * above naming why. Returns `{edits, marker}` (the marker as the ledger
+ * records it) or `{why}`.
+ *
+ * @param {string[]} lines
+ * @param {{line: number, title: string, lang: string}} decl
+ * @param {{note: string, tag?: string}} opts `tag` quarantines by title tag
+ */
+export function planQuarantine(lines, decl, { note, tag }) {
+  const at = lines[decl.line - 1];
+  const pad = indentOf(at);
+  if (decl.lang === 'py') {
+    const after = `${pad}# ${note}\n${pad}@pytest.mark.skip(reason=${JSON.stringify(note)})\n${at}`;
+    return {
+      marker: 'pytest.mark.skip',
+      edits: [{ line: decl.line, before: at, after }],
+    };
+  }
+  const comment = `${pad}// ${note}\n`;
+  if (tag) {
+    const title = new RegExp(`${escapeRe(decl.title)}(?=['"\`])`);
+    if (!title.test(at))
+      return {
+        why: 'the title is not on the declaration line, so a tag cannot be added to it',
+      };
+    return {
+      marker: tag,
+      edits: [
+        {
+          line: decl.line,
+          before: at,
+          after: comment + at.replace(title, `${decl.title} ${tag}`),
+        },
+      ],
+    };
+  }
+  const m = SKIPPABLE.exec(at);
+  if (!m)
+    return {
+      why: 'the declaration is not a plain test/it/describe call; quarantine it with a tag instead',
+    };
+  return {
+    marker: skipMarker(m[1]),
+    edits: [
+      {
+        line: decl.line,
+        before: at,
+        after: comment + at.replace(SKIPPABLE, `$1.skip(`),
+      },
+    ],
+  };
+}
+
 // --- the trial plan, carried in the trial PR's body --------------------------
 
 const MANIFEST_TAG = 'canary-unquarantine-trial';
