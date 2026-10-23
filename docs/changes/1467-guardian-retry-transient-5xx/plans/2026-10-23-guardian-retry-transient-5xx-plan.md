@@ -32,7 +32,10 @@ preserved. The 5xx/429 classes had none of this.
 
 ## Fix
 
-- `pr-comment.ts`
+- New module `github-http.ts`, split out of `pr-comment.ts` so that file stays
+  under the 300-line perf threshold. It holds the HTTP error classes,
+  `toGitHubError`, and the retry. `pr-comment.ts` re-exports
+  `GitHubPermissionError`, so existing importers are unchanged.
   - `fetchWithRetry(url, init, sleep)` makes up to 3 attempts on a retryable
     status: `>= 500`, `429`, or a rate-limited `403` (`isRateLimited`). Each
     retry waits `retry-after` seconds when present (capped at 60s), otherwise 1s
@@ -42,6 +45,7 @@ preserved. The 5xx/429 classes had none of this.
     becomes `GitHubRateLimitError(status 429)`. The rate-limit error now carries
     its status, so the notice no longer hard-codes 403. Other 4xx keep the plain
     `Error` and stay loud.
+- `pr-comment.ts`
   - `upsertStickyComment` degrades `GitHubServerError` to a notice that names
     the status and the attempt count.
   - `RestGitHubClient` takes an optional fifth constructor argument, `sleep`
