@@ -12,21 +12,25 @@ import { resolve } from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
 
-import { CliExitError, jsonIndent2 } from './cli-common.js';
+import { CliExitError, jsonIndent2 } from '../cli-common.js';
 import {
   auditResult,
   composerAuditArgs,
   lockedPackageCount,
   type AuditFinding,
-} from './core/composer-audit.js';
-import { errnoCode, gateOutcome, type GateResult } from './core/gate-result.js';
+} from '../core/composer-audit.js';
+import {
+  errnoCode,
+  gateOutcome,
+  type GateResult,
+} from '../core/gate-result.js';
 import {
   evaluateRuntimes,
   PHP2SHELL,
   type FloorFinding,
   type RuntimeReport,
-} from './core/php-floor.js';
-import { CROSS, WARN, type MainDeps } from './main-deps.js';
+} from '../core/php-floor.js';
+import { CROSS, WARN, type MainDeps } from '../main-deps.js';
 
 // One round trip reports the version and the CVE-2026-109619 stopgap's state.
 const PROBE_SCRIPT =
