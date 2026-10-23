@@ -206,8 +206,8 @@ describe('migrate', () => {
 
 const PLAIN = `import { test, expect } from '@playwright/test';
 
-test.describe('points', () => {
-  test('a sale earns points', async () => {
+test.describe('stock', () => {
+  test('an order reserves stock', async () => {
     expect(1).toBe(1);
   });
 });
@@ -216,10 +216,10 @@ test.describe('points', () => {
 function plainSuite() {
   const repo = mkTmp();
   fs.mkdirSync(path.join(repo, 'tests'));
-  fs.writeFileSync(path.join(repo, 'tests', 'points.spec.ts'), PLAIN);
+  fs.writeFileSync(path.join(repo, 'tests', 'stock.spec.ts'), PLAIN);
   return repo;
 }
-const source = (repo: string, f = 'tests/points.spec.ts') =>
+const source = (repo: string, f = 'tests/stock.spec.ts') =>
   fs.readFileSync(path.join(repo, f), 'utf8');
 
 describe('quarantine', () => {
@@ -228,9 +228,9 @@ describe('quarantine', () => {
     '--repo',
     repo,
     '--file',
-    'tests/points.spec.ts',
+    'tests/stock.spec.ts',
     '--test',
-    'a sale earns points',
+    'an order reserves stock',
     ...extra,
   ];
 
@@ -242,11 +242,11 @@ describe('quarantine', () => {
     expect(r.stderr).toBe('');
     expect(r.code).toBe(0);
     expect(source(repo)).toContain(
-      "  // Quarantined against #7 (product-defect) by canary-unquarantine\n  test.skip('a sale earns points', async () => {",
+      "  // Quarantined against #7 (product-defect) by canary-unquarantine\n  test.skip('an order reserves stock', async () => {",
     );
     const [row] = ledgerOf(repo).entries;
     expect(row).toMatchObject({
-      test: 'a sale earns points',
+      test: 'an order reserves stock',
       kind: 'skipped',
       marker: 'test.skip',
       cause: 'product-defect',
@@ -279,10 +279,10 @@ describe('quarantine', () => {
     const repo = plainSuite();
     callMain(args(repo, '--cause', 'flaky', '--as-tag'));
     expect(source(repo)).toContain(
-      "test('a sale earns points @known-failure', async () => {",
+      "test('an order reserves stock @known-failure', async () => {",
     );
     expect(ledgerOf(repo).entries[0]).toMatchObject({
-      test: 'a sale earns points',
+      test: 'an order reserves stock',
       marker: '@known-failure',
       cause: 'flaky',
     });
@@ -295,14 +295,14 @@ describe('quarantine', () => {
       '--repo',
       repo,
       '--file',
-      'tests/points.spec.ts',
+      'tests/stock.spec.ts',
       '--test',
-      'points',
+      'stock',
       '--cause',
       'obsolete',
     ]);
     expect(r.code).toBe(0);
-    expect(source(repo)).toContain("test.describe.skip('points', () => {");
+    expect(source(repo)).toContain("test.describe.skip('stock', () => {");
     expect(ledgerOf(repo).entries[0].marker).toBe('describe.skip');
   });
 
@@ -310,7 +310,7 @@ describe('quarantine', () => {
     const repo = mkTmp();
     fs.mkdirSync(path.join(repo, 'tests'));
     fs.writeFileSync(
-      path.join(repo, 'tests', 'test_points.py'),
+      path.join(repo, 'tests', 'test_stock.py'),
       'def test_earns():\n    assert True\n',
     );
     const r = callMain([
@@ -318,7 +318,7 @@ describe('quarantine', () => {
       '--repo',
       repo,
       '--file',
-      'tests/test_points.py',
+      'tests/test_stock.py',
       '--test',
       'test_earns',
       '--cause',
@@ -327,7 +327,7 @@ describe('quarantine', () => {
       'UP-3',
     ]);
     expect(r.code).toBe(0);
-    expect(source(repo, 'tests/test_points.py')).toBe(
+    expect(source(repo, 'tests/test_stock.py')).toBe(
       '# Quarantined against UP-3 (blocked-data) by canary-unquarantine\n' +
         '@pytest.mark.skip(reason="Quarantined against UP-3 (blocked-data) by canary-unquarantine")\n' +
         'def test_earns():\n    assert True\n',
@@ -360,7 +360,7 @@ describe('quarantine', () => {
         '--repo',
         repo,
         '--file',
-        'tests/points.spec.ts',
+        'tests/stock.spec.ts',
         '--test',
         'nope',
         '--cause',
@@ -418,7 +418,7 @@ describe('quarantine writes both or neither, and only inside --repo', () => {
       '--file',
       file,
       '--test',
-      'a sale earns points',
+      'an order reserves stock',
       '--cause',
       'flaky',
     ]);
@@ -434,7 +434,7 @@ describe('quarantine writes both or neither, and only inside --repo', () => {
       fs.writeFileSync(ledger, '{"schema_version": 1, "entries": []}\n');
       fs.chmodSync(ledger, 0o444);
       try {
-        const r = quarantine(repo, 'tests/points.spec.ts');
+        const r = quarantine(repo, 'tests/stock.spec.ts');
         expect(r.code).not.toBe(0);
         expect(source(repo)).toBe(PLAIN);
       } finally {
@@ -463,7 +463,7 @@ describe('quarantine writes both or neither, and only inside --repo', () => {
   it('an absolute --file outside --repo is refused', () => {
     const outside = plainSuite();
     const repo = plainSuite();
-    const r = quarantine(repo, path.join(outside, 'tests', 'points.spec.ts'));
+    const r = quarantine(repo, path.join(outside, 'tests', 'stock.spec.ts'));
     expect(r.code).not.toBe(0);
     expect(r.stderr).toMatch(/outside --repo/);
     expect(source(outside)).toBe(PLAIN);
@@ -475,7 +475,7 @@ describe('quarantine writes both or neither, and only inside --repo', () => {
       const outside = plainSuite();
       const repo = mkTmp();
       fs.symlinkSync(path.join(outside, 'tests'), path.join(repo, 'tests'));
-      const r = quarantine(repo, 'tests/points.spec.ts');
+      const r = quarantine(repo, 'tests/stock.spec.ts');
       expect(r.code).not.toBe(0);
       expect(r.stderr).toMatch(/outside --repo/);
       expect(source(outside)).toBe(PLAIN);
@@ -484,7 +484,7 @@ describe('quarantine writes both or neither, and only inside --repo', () => {
 
   it('a path that stays inside --repo is recorded repo-relative', () => {
     const repo = plainSuite();
-    expect(quarantine(repo, './tests/../tests/points.spec.ts').code).toBe(0);
-    expect(ledgerOf(repo).entries[0].file).toBe('tests/points.spec.ts');
+    expect(quarantine(repo, './tests/../tests/stock.spec.ts').code).toBe(0);
+    expect(ledgerOf(repo).entries[0].file).toBe('tests/stock.spec.ts');
   });
 });

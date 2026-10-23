@@ -1,9 +1,9 @@
 // canary-unquarantine: the release half of quarantine (#1455).
 //
-// The fixture under test/fixtures/unquarantine is a trimmed, anonymised copy of
-// one consumer suite's real quarantine shapes -- the ledger rows, the markers
-// and the comments above them -- with a fake tracker standing in for `gh` and
-// Jira so nothing here touches the network.
+// The fixture under test/fixtures/unquarantine is a synthetic orders/inventory
+// suite carrying every quarantine shape the audit must read -- the ledger
+// rows, the markers and the comments above them -- with a fake tracker
+// standing in for `gh` and Jira so nothing here touches the network.
 
 import {
   describe,
@@ -60,7 +60,7 @@ const PY_FIXTURE = [
   '',
   '',
   '@pytest.mark.skip(reason="blocked by #12")',
-  'def test_refund_reverses_points():',
+  'def test_refund_restocks_items():',
   '    assert False',
   '',
   '',
@@ -154,6 +154,7 @@ function fakeRunner(state = TRACKER, overrides: Record<string, Result> = {}) {
           fields: {
             summary: t.summary,
             status: { statusCategory: { key: t.statusCategory } },
+            resolution: t.resolution ? { name: t.resolution } : null,
             assignee: t.assignee ? { displayName: t.assignee } : null,
           },
         }),
@@ -236,23 +237,23 @@ describe('audit of the fixture suite', () => {
   it('a closed issue with no hand-off is a candidate', () => {
     const [row] = byTest(
       auditJson(),
-      'FINDING: card series is unreachable, gateway-blocked by an access group (filed 2026-09-22)',
+      'FINDING: the warehouse list is unreachable, blocked by a missing permission',
     );
     expect(row.class).toBe('candidate');
     expect(row.blockers.map((b: any) => b.id)).toEqual([
-      'acme/loyalty-suite#505',
+      'acme/orders-suite#505',
     ]);
   });
 
   it('closed-to-upstream is NOT fixed: a hand-off to an unreadable upstream ticket abstains', () => {
     const [row] = byTest(
       auditJson(),
-      'FINDING: a full return does not reverse the points its sale earned (filed 2026-09-08, #501)',
+      'FINDING: cancelling an order does not restock its items (#501)',
     );
     expect(row.class).toBe('abstain');
     expect(row.blockers).toHaveLength(1);
     expect(row.blockers[0].id).toBe('TRK-1001');
-    expect(row.blockers[0].via).toEqual(['acme/loyalty-suite#501', 'TRK-1001']);
+    expect(row.blockers[0].via).toEqual(['acme/orders-suite#501', 'TRK-1001']);
     expect(row.why).toMatch(
       /Jira project TRK is not in company\.json jira_projects/,
     );
@@ -279,27 +280,27 @@ describe('audit of the fixture suite', () => {
     );
     const [row] = byTest(
       JSON.parse(r.stdout),
-      'FINDING: a full return does not reverse the points its sale earned (filed 2026-09-08, #501)',
+      'FINDING: cancelling an order does not restock its items (#501)',
     );
     expect(row.class).toBe('blocked');
     expect(row.why).toContain(
-      'TRK-1001 is open, owner Platform Team (via acme/loyalty-suite#501)',
+      'TRK-1001 is open, owner Platform Team (via acme/orders-suite#501)',
     );
   });
 
   it('follows a hand-off to a configured Jira project that is done: candidate', () => {
     const [row] = byTest(
       auditJson(),
-      'FINDING: event_data answers an edge/origin 520, not application data (filed 2026-09-22)',
+      'FINDING: stock levels answer a proxy 502, not application data',
     );
     expect(row.class).toBe('candidate');
-    expect(row.blockers[0].via).toEqual(['acme/loyalty-suite#506', 'CORE-101']);
+    expect(row.blockers[0].via).toEqual(['acme/orders-suite#506', 'CORE-101']);
   });
 
   it('the same hand-off abstains when Jira has no credentials', () => {
     const [row] = byTest(
       auditJson({ CANARY_JIRA_BASE_URL: JIRA_ENV.CANARY_JIRA_BASE_URL }),
-      'FINDING: event_data answers an edge/origin 520, not application data (filed 2026-09-22)',
+      'FINDING: stock levels answer a proxy 502, not application data',
     );
     expect(row.class).toBe('abstain');
     expect(row.why).toMatch(
@@ -321,41 +322,44 @@ describe('audit of the fixture suite', () => {
   it('a hand-off list narrows to the line naming the row’s own case id', () => {
     const [row] = byTest(
       auditJson(),
-      'TC-065 percent-back bonus points carry the configured expiry',
+      'CASE-065 a reservation carries the configured expiry',
     );
     expect(row.class).toBe('blocked');
     expect(row.blockers.map((b: any) => b.id)).toEqual([
-      'acme/loyalty-suite#509',
+      'acme/orders-suite#509',
     ]);
-    expect(row.why).toContain('owner @grace (via acme/loyalty-suite#507)');
+    expect(row.why).toContain('owner @grace (via acme/orders-suite#507)');
   });
 
   it('without a case id, every hand-off target counts (conservatively)', () => {
     const [row] = byTest(
       auditJson(),
-      'the reward expires 60 days after the sale',
+      'a reservation lapses 60 days after the order',
     );
     expect(row.class).toBe('blocked');
+    // Every key on a hand-off line is believed, so another row's case id
+    // reads as a ticket here too: it cannot be read, which leans blocked.
     expect(row.blockers.map((b: any) => b.id).sort()).toEqual([
-      'acme/loyalty-suite#508',
-      'acme/loyalty-suite#509',
+      'CASE-065',
+      'acme/orders-suite#508',
+      'acme/orders-suite#509',
     ]);
   });
 
   it('blocked rows name the open blocker and its owner', () => {
     const doc = auditJson();
     expect(
-      byTest(doc, 'TIERED tiered bonus -- coupon-gated @regression')[0].why,
-    ).toBe('acme/loyalty-suite#502 is open, owner @grace');
+      byTest(doc, 'BULK bulk orders -- approval-gated @regression')[0].why,
+    ).toBe('acme/orders-suite#502 is open, owner @grace');
     expect(
-      byTest(doc, 'a $100 sale issues the $10 coupon and only that')[0].why,
-    ).toBe('acme/loyalty-suite#504 is open, owner unassigned');
+      byTest(doc, 'a 100-unit order reserves stock and only that')[0].why,
+    ).toBe('acme/orders-suite#504 is open, owner unassigned');
   });
 
   it('a runtime skip inside the body is found, with the comment above the call', () => {
     const [row] = byTest(
       auditJson(),
-      'TC-030 an earned-reward message is sent when the bonus reward is allocated',
+      'CASE-030 a confirmation notice is sent when a bulk order is accepted',
     );
     expect(row).toMatchObject({
       class: 'blocked',
@@ -368,7 +372,7 @@ describe('audit of the fixture suite', () => {
   it('a runtime guard named by a suite helper is found from the ledger marker', () => {
     const [row] = byTest(
       auditJson(),
-      'a $100 sale issues the $10 coupon and only that',
+      'a 100-unit order reserves stock and only that',
     );
     expect(row).toMatchObject({
       runtime: true,
@@ -441,7 +445,7 @@ describe('audit of the fixture suite', () => {
       ],
       [
         'tests/py/test_orders.py',
-        'test_refund_reverses_points',
+        'test_refund_restocks_items',
         'pytest.mark.skip(reason="blocked by #12")',
         ['#12'],
       ],
@@ -522,8 +526,8 @@ describe('exit codes', () => {
         schema_version: 2,
         entries: [
           {
-            test: 'TIERED tiered bonus -- coupon-gated @regression',
-            file: 'tests/promo/tiered.spec.js',
+            test: 'BULK bulk orders -- approval-gated @regression',
+            file: 'tests/orders/bulk.spec.js',
             kind: 'skipped',
             marker: 'describe.skip',
           },
@@ -667,7 +671,7 @@ describe('defaults', () => {
     expect(
       byTest(
         doc,
-        'FINDING: event_data answers an edge/origin 520, not application data (filed 2026-09-22)',
+        'FINDING: stock levels answer a proxy 502, not application data',
       )[0].class,
     ).toBe('candidate');
   });
@@ -675,13 +679,13 @@ describe('defaults', () => {
   it('a bare #N resolves against the repo gh reports when --github-repo is omitted', () => {
     const runner = fakeRunner();
     const doc = auditJson(JIRA_ENV, runner);
-    expect(doc.github_repo).toBe('acme/loyalty-suite');
+    expect(doc.github_repo).toBe('acme/orders-suite');
     expect(runner.calls.filter((c) => c.args[0] === 'repo')).toHaveLength(1);
   });
 
   it('--github-repo overrides the remote, and gh repo view is never asked', () => {
     const runner = fakeRunner();
-    callMain(fixtureArgs('--json', '--github-repo', 'acme/loyalty-suite'), {
+    callMain(fixtureArgs('--json', '--github-repo', 'acme/orders-suite'), {
       run: runner.run,
       env: JIRA_ENV,
     });
@@ -698,10 +702,7 @@ describe('defaults', () => {
       },
     });
     const doc = auditJson(JIRA_ENV, runner);
-    const [row] = byTest(
-      doc,
-      'TIERED tiered bonus -- coupon-gated @regression',
-    );
+    const [row] = byTest(doc, 'BULK bulk orders -- approval-gated @regression');
     expect(row.class).toBe('abstain');
     expect(row.why).toMatch(
       /cannot tell which repository #502 is in \(gh repo view exited 1: no git remotes found\)/,
@@ -735,7 +736,7 @@ describe('GitHub adapter', () => {
     });
     const lookup = githubTracker({
       run: runner.run,
-      defaultRepo: 'acme/loyalty-suite',
+      defaultRepo: 'acme/orders-suite',
     });
     const answer = lookup({
       tracker: 'github',
@@ -781,7 +782,7 @@ describe('GitHub adapter', () => {
     const runner = fakeRunner();
     auditJson(JIRA_ENV, runner);
     const fetches = runner.calls.filter((c) =>
-      c.args.includes('repos/acme/loyalty-suite/issues/502'),
+      c.args.includes('repos/acme/orders-suite/issues/502'),
     );
     expect(fetches).toHaveLength(1);
   });
@@ -814,7 +815,11 @@ describe('Jira adapter', () => {
   const answer = (category: string) => () => ({
     status: 0,
     stdout: JSON.stringify({
-      fields: { status: { statusCategory: { key: category } }, summary: 's' },
+      fields: {
+        status: { statusCategory: { key: category } },
+        resolution: { name: 'Done' },
+        summary: 's',
+      },
     }),
     stderr: '',
     error: '',
@@ -875,7 +880,7 @@ describe('Jira adapter', () => {
     });
     lookup({ ...ref, base: null });
     expect(url).toBe(
-      'https://jira.example.com/rest/api/2/issue/CORE-7?fields=status,assignee,summary',
+      'https://jira.example.com/rest/api/2/issue/CORE-7?fields=status,resolution,assignee,summary',
     );
   });
 });
@@ -933,9 +938,9 @@ describe('resolveRef', () => {
 
 describe('refs', () => {
   it('a case id in the title is never a ticket', () => {
-    const ids = idTokens('TC-065 percent-back bonus points');
+    const ids = idTokens('CASE-065 a reservation carries an expiry');
     expect(
-      extractRefs('TC-065 is parked against #509', {
+      extractRefs('CASE-065 is parked against #509', {
         exclude: ids,
         anyBareJira: true,
       }).map((r) => r.id),
@@ -980,14 +985,14 @@ describe('refs', () => {
     expect(extractRefs('&#39; and ## 12 things').map((r) => r.id)).toEqual([]);
   });
 
-  it('handoffRefs reads only the newest comment that hands off', () => {
+  it('handoffRefs reads every hand-off comment, not only the newest (leans blocked)', () => {
     const refs = handoffRefs({
       comments: [
         { body: 'Filed as **UP-1** first.' },
         { body: 'Re-filed as **UP-2** instead.' },
       ],
     });
-    expect(refs.map((r) => r.id)).toEqual(['UP-2']);
+    expect(refs.map((r) => r.id)).toEqual(['UP-1', 'UP-2']);
   });
 
   it('handoffRefs: a closed issue with no hand-off line has none', () => {
@@ -1108,7 +1113,7 @@ describe('markers', () => {
     );
   });
 
-  it('scanMarkers skips node_modules and other build output', () => {
+  it('scanSuite skips node_modules and other build output', () => {
     const dir = mkTmp();
     fs.mkdirSync(path.join(dir, 'node_modules', 'pkg', 'tests'), {
       recursive: true,
@@ -1122,9 +1127,9 @@ describe('markers', () => {
       path.join(dir, 'tests', 'b.spec.js'),
       "test.fixme('mine', () => {});\n",
     );
-    const scanned = scanSuite(dir);
-    expect(scanned.markers.map((m) => m.test)).toEqual(['mine']);
-    expect(scanned.files).toBe(1);
+    const { files, markers } = scanSuite(dir);
+    expect(files).toBe(1);
+    expect(markers.map((m: any) => m.test)).toEqual(['mine']);
   });
 });
 

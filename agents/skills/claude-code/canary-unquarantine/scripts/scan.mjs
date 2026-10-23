@@ -67,7 +67,7 @@ function testFiles(repo) {
 function markerName(lang, decl, tags) {
   if (lang === 'py') return decl.decorators[0];
   if (STATIC_SKIP.test(decl.callee)) return decl.callee;
-  return tags.find((t) => decl.title.includes(t));
+  return tags.find((t) => decl.title.includes(t) || decl.tags?.includes(t));
 }
 
 /** The markers in one file. Template literals are blanked: fixture source is not a marker. */

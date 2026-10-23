@@ -20,19 +20,9 @@ import { extractRefs, idTokens, pickBlocker } from './refs.mjs';
 import { locate, readSource, runtimeCallee } from './markers.mjs';
 import { scanSuite } from './scan.mjs';
 
-const CLASSES = [
-  'candidate',
-  'blocked',
-  'stale',
-  'unlinked',
-  'abstain',
-  'removed',
-];
+const CLASSES = 'candidate blocked stale unlinked abstain removed'.split(' ');
 
-/**
- * How many issues a hand-off chain may hold before the audit gives up on it:
- * 4 issues is 3 hops (A -> B -> C -> D). SKILL.md states the hop count.
- */
+/** Issues a hand-off chain may hold: 4 is 3 hops (A -> B -> C -> D), as SKILL.md says. */
 export const MAX_HANDOFF_DEPTH = 4;
 
 /**
@@ -64,6 +54,14 @@ function blockerRefs(row, loc, jiraProjects) {
  * Resolve one ref to its terminal blocker(s), following hand-offs from closed
  * issues. Every leaf carries the chain it was reached through.
  */
+/** A tracker's answer for `ref`; an unreadable hand-off or a missing adapter abstains. */
+function ask(ref, lookup, ctx) {
+  if (ref.tracker === 'unreadable') return { state: 'unknown', why: ref.why };
+  const tracker = lookup[ref.tracker];
+  if (tracker) return tracker(ref, ctx);
+  return { state: 'unknown', why: `no ${ref.tracker} adapter` };
+}
+
 export function resolveRef(ref, lookup, ctx, via = [], depth = 0) {
   const chain = [...via, ref.id];
   if (via.includes(ref.id)) {
@@ -76,10 +74,7 @@ export function resolveRef(ref, lookup, ctx, via = [], depth = 0) {
       },
     ];
   }
-  const tracker = lookup[ref.tracker];
-  const answer = tracker
-    ? tracker(ref, ctx)
-    : { state: 'unknown', why: `no ${ref.tracker} adapter` };
+  const answer = ask(ref, lookup, ctx);
   // An adapter may qualify the id (`#12` -> `owner/repo#12`); the chain then
   // carries the qualified form so a hand-off back to the same issue is a cycle.
   const id = answer.id ?? ref.id;
@@ -179,8 +174,8 @@ function auditRow(row, index, ctx) {
   };
   const loc = locate(ctx.source(row.file), row, ctx.tags);
   if (row.kind === 'removed') return removedRow(base, loc, row.file);
-  if (!loc.marked)
-    return { ...base, class: 'stale', line: loc.line, why: loc.why };
+  const cls = loc.unsure ? 'abstain' : 'stale'; // unsure: a module-wide skip
+  if (!loc.marked) return { ...base, class: cls, line: loc.line, why: loc.why };
   return trackedRow(row, base, loc, ctx);
 }
 
@@ -246,7 +241,7 @@ export function audit({
     scannedFiles: suite.files,
     counts,
     denominator,
-    verdict: verdictOf(denominator, counts, unledgered),
+    verdict: verdictOf(denominator, counts, unledgered, suite.files),
   };
 }
 
@@ -279,14 +274,20 @@ function findUnledgered(markers, rows, results, jiraProjects) {
 }
 
 /**
- * The verdict, and the one rule that matters most: zero rows read, or any
- * row abstained, is never "clear".
+ * The verdict, and the one rule that matters most: zero rows read, zero test
+ * files scanned (a wrong --repo), or any row abstained, is never "clear".
  */
-export function verdictOf(den, counts, unledgered) {
+export function verdictOf(den, counts, unledgered, files = null) {
   const actionable =
     counts.candidate + counts.stale + counts.unlinked + unledgered.length;
   if (den.rows_read === 0)
     return { status: 'abstained', actionable, reason: 'zero ledger rows read' };
+  if (files === 0)
+    return {
+      status: 'abstained',
+      actionable,
+      reason: 'no test files were read under --repo',
+    };
   if (den.abstained > 0)
     return {
       status: 'abstained',

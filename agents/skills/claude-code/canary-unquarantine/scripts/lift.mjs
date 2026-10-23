@@ -8,16 +8,25 @@
 // commit plus the lifts that passed, so a failed test's marker comes back byte
 // for byte however many other lifts share its file.
 
-/** `test.skip(` -> `test(`, `test.describe.skip(` -> `test.describe(`, `xit(` -> `it(`. */
+import { pyLine } from './python.mjs';
+
+/**
+ * `test.skip(` -> `test(`, `test.describe.skip(` -> `test.describe(`, `xit(` ->
+ * `it(`, `it.skipIf(cond)(` -> `it(`.
+ */
 const STATIC_LIFT = [
   [
     /\b((?:test|it|describe|context)(?:\.describe)?)\.(?:skip|fixme)\s*\(/,
     '$1(',
   ],
   [/\bx(it|test|describe)\s*\(/, '$1('],
+  [/\b(test|it|describe)\.(?:skipIf|runIf)\([^)]*\)\s*\(/, '$1('],
 ];
 
-const PYTEST_SKIP = /^\s*@pytest\.mark\.(?:skip|skipif|xfail)\b/;
+const PYTEST_SKIP =
+  /^\s*@(?:(?:pytest\.)?mark\.(?:skip|skipif|xfail)|unittest\.(?:skip|skipIf|skipUnless|expectedFailure))\b/;
+const PY_DEF_LINE = /^\s*(?:async\s+)?def\s/;
+const DETAILS_TAG = /\{[^}]*\btag\s*:/;
 
 /** An eslint directive that exists only to permit the skip being lifted. */
 const SKIP_DIRECTIVE =
@@ -25,12 +34,24 @@ const SKIP_DIRECTIVE =
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Every pytest skip decorator in the stack starting at line `n`. */
+/**
+ * Every pytest skip decorator in the stack starting at line `n`, each with
+ * all the lines its wrapped arguments span. Blank and comment lines inside
+ * the stack are kept, as the reader keeps them.
+ */
 function liftPytest(lines, n) {
   const edits = [];
-  for (let i = n - 1; i < lines.length && /^\s*@/.test(lines[i]); i += 1) {
-    if (PYTEST_SKIP.test(lines[i]))
-      edits.push({ line: i + 1, before: lines[i], after: null });
+  for (let i = n - 1; i < lines.length && !PY_DEF_LINE.test(lines[i]); i += 1) {
+    if (!pyLine(lines[i]).code.trim()) continue;
+    if (!/^\s*@/.test(lines[i])) break;
+    const skip = PYTEST_SKIP.test(lines[i]);
+    let depth = pyLine(lines[i]).depth;
+    if (skip) edits.push({ line: i + 1, before: lines[i], after: null });
+    while (depth > 0 && i + 1 < lines.length) {
+      i += 1;
+      depth += pyLine(lines[i]).depth;
+      if (skip) edits.push({ line: i + 1, before: lines[i], after: null });
+    }
   }
   return edits;
 }
@@ -60,6 +81,15 @@ function liftTag(at, n, tags) {
   ];
 }
 
+/** Why a marker on line `at` must be lifted by a person, or ''. */
+function needsPerson(at, tags) {
+  if (PY_DEF_LINE.test(at))
+    return 'skipped through its class decorator, not its own: lift the class by hand, or every method under it is released';
+  if (DETAILS_TAG.test(at) && tags.some((t) => at.includes(t)))
+    return 'the tag is in a Playwright details object; removing it leaves an empty or malformed tag, so lift it by hand';
+  return '';
+}
+
 /**
  * Plan the edits that lift one marker, or say why it cannot be lifted. A
  * runtime guard is never lifted: it skips on a condition about the
@@ -80,6 +110,8 @@ export function planLift(lines, row, tags = []) {
     };
   }
   if (at === undefined) return { why: `line ${n} is past the end of the file` };
+  const byHand = needsPerson(at, tags);
+  if (byHand) return { why: byHand };
   const edits = PYTEST_SKIP.test(at)
     ? liftPytest(lines, n)
     : (liftStatic(lines, n) ?? liftTag(at, n, tags));

@@ -4,12 +4,15 @@
 // Every shape a quarantine takes, read the same way:
 //
 //   static     test.skip('t') / it.skip / describe.skip / test.describe.skip /
-//              test.fixme / xit / xdescribe / xtest
+//              test.fixme / xit / xdescribe / xtest / it.skipIf(c)('t') /
+//              describe.runIf(c)('t')
 //   runtime    a call inside the test body that skips it at run time. The
 //              ledger writes these as `<callee>(condition)`: `test.skip(condition)`
-//              is Playwright's own, `requireLiveWindow(condition)` a suite helper.
-//   pytest     @pytest.mark.skip / skipif / xfail above `def test_*`
-//   tag        a configured tag in the title (`@known-failure`)
+//              is Playwright's own, `requireOpenWarehouse(condition)` a suite helper.
+//   pytest     @pytest.mark.skip / skipif / xfail / unittest.skip, on the test
+//              or a class it is in (python.mjs)
+//   tag        a configured tag in the title (`@known-failure`) or in
+//              Playwright's details object (`{ tag: '@known-failure' }`)
 //
 // Line-oriented with a small lexer pass, like katana: comments are blanked
 // before matching (a commented-out test is not a quarantined one), and the
@@ -20,6 +23,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { commentEnd, literalEnd } from '../../../lib/js-literals.mjs';
+import { pyDeclarations, pyLine, skipsModule } from './python.mjs';
+
+// The scan reads both languages through this module.
+export { pyDeclarations };
 
 export const DEFAULT_TAGS = ['@known-failure', '@quarantine'];
 
@@ -28,10 +35,12 @@ export const PY_EXT = /\.py$/;
 /** Declarations with a literal title; the title may start on the next line. */
 const JS_DECL =
   /\b((?:test|it|describe|context|xit|xtest|xdescribe)(?:\.\w+)*)\s*\(\s*(['"`])((?:\\.|(?!\2)[^\\])*?)\2/gs;
-const PY_DEF = /^(\s*)(?:async\s+)?def\s+(\w+)\s*\(/;
-const PY_SKIP = /^\s*@(pytest\.mark\.(?:skip|skipif|xfail)\b.*)$/;
+/** Vitest's conditional skips: `it.skipIf(cond)('t', ...)`, `describe.runIf(cond)('t', ...)`. */
+const JS_COND =
+  /\b((?:test|it|describe)\.(?:skipIf|runIf))\([^)]*\)\s*\(\s*(['"`])((?:\\.|(?!\2)[^\\])*?)\2/gs;
 
-export const STATIC_SKIP = /(?:^|\.)(?:skip|fixme)$|^x(?:it|test|describe)$/;
+export const STATIC_SKIP =
+  /(?:^|\.)(?:skip|fixme|skipIf|runIf)$|^x(?:it|test|describe)$/;
 
 /** `code` with each span from..to replaced by spaces, newlines kept. */
 function blankSpan(chars, from, to) {
@@ -63,81 +72,32 @@ export function maskJs(code, { templates = false } = {}) {
 
 const lineAt = (text, index) => text.slice(0, index).split('\n').length;
 
-/** Every JS declaration in `masked`: callee, title, 1-based line. */
+/**
+ * The tags in a Playwright details object right after a title:
+ * `test('t', { tag: '@x' }, ...)` or `{ tag: ['@x', '@y'] }`. Read up to the
+ * test body, so a nested `annotation: {...}` does not cut it short.
+ */
+function detailTags(masked, from) {
+  const after = masked.slice(from, from + 400);
+  if (!/^\s*,\s*\{/.test(after)) return [];
+  const head = after.split(/=>|\bfunction\b/)[0];
+  const tag = /\btag\s*:\s*(\[[^\]]*\]|(['"`])[^'"`]*\2)/.exec(head);
+  return tag
+    ? [...tag[1].matchAll(/(['"`])([^'"`]*)\1/g)].map((m) => m[2])
+    : [];
+}
+
+/** Every JS declaration in `masked`: callee, title, details tags, 1-based line. */
 export function jsDeclarations(masked) {
-  return [...masked.matchAll(JS_DECL)].map((m) => ({
-    callee: m[1],
-    title: m[3],
-    line: lineAt(masked, m.index),
-  }));
+  return [...masked.matchAll(JS_DECL), ...masked.matchAll(JS_COND)]
+    .sort((a, b) => a.index - b.index)
+    .map((m) => ({
+      callee: m[1],
+      title: m[3],
+      tags: detailTags(masked, m.index + m[0].length),
+      line: lineAt(masked, m.index),
+    }));
 }
-
-/**
- * One python line with its `#` comment blanked (a `#` inside a string is
- * kept), and the net bracket depth of what is left.
- */
-function pyLine(text) {
-  let quote = '';
-  let depth = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    const c = text[i];
-    if (quote) {
-      if (c === '\\') i += 1;
-      else if (c === quote) quote = '';
-    } else if (c === '"' || c === "'") quote = c;
-    else if (c === '#') return { code: text.slice(0, i), depth };
-    else if ('([{'.includes(c)) depth += 1;
-    else if (')]}'.includes(c)) depth -= 1;
-  }
-  return { code: text, depth };
-}
-
-/**
- * Every python test function, with the skip decorators stacked on it. Read
- * top-down so a decorator whose arguments span lines
- * (`@pytest.mark.skipif(\n  cond,\n  reason=...)`) is joined into one.
- */
-export function pyDeclarations(source) {
-  const lines = source.split('\n');
-  const out = [];
-  let stack = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const def = PY_DEF.exec(lines[i]);
-    if (def) {
-      out.push({
-        callee: 'def',
-        title: def[2],
-        line: i + 1,
-        markerLine: stack.length ? stack[0].line : i + 1,
-        decorators: stack.flatMap((d) => {
-          const skip = PY_SKIP.exec(d.text);
-          return skip ? [skip[1]] : [];
-        }),
-      });
-      stack = [];
-    } else if (/^\s*@/.test(lines[i])) {
-      const at = i;
-      let { code, depth } = pyLine(lines[i]);
-      const parts = [code.trim()];
-      while (depth > 0 && i + 1 < lines.length) {
-        i += 1;
-        const next = pyLine(lines[i]);
-        parts.push(next.code.trim());
-        depth += next.depth;
-      }
-      stack.push({ line: at + 1, text: joinArgs(parts) });
-    } else stack = [];
-  }
-  return out;
-}
-
-/** `['f(', 'a,', 'b', ')']` -> `f(a, b)`: a wrapped call read as one line. */
-const joinArgs = (parts) =>
-  parts
-    .filter(Boolean)
-    .join(' ')
-    .replace(/([([{])\s+/g, '$1')
-    .replace(/,?\s+([)\]}])/g, '$1');
 
 /**
  * The comment block directly above line `n` (1-based), top to bottom, plus
@@ -174,11 +134,25 @@ function statementAt(lines, n) {
   return stmt;
 }
 
-/** Read and lex one file once; null when it does not exist. */
+/** Is `p` strictly inside `root`? */
+function within(root, p) {
+  const rel = path.relative(root, p);
+  const up = rel === '..' || rel.startsWith(`..${path.sep}`);
+  return Boolean(rel) && !up && !path.isAbsolute(rel);
+}
+
+/**
+ * Read and lex one file once; null when it does not exist, or when the ledger
+ * path resolves (symlinks included) outside `repo` -- a row is never a way to
+ * read a file the suite does not own.
+ */
 export function readSource(repo, file) {
-  const abs = path.join(repo, file);
+  const root = path.resolve(repo);
+  const abs = path.resolve(root, String(file ?? ''));
   let source;
   try {
+    if (!within(root, abs)) return null;
+    if (!within(fs.realpathSync(root), fs.realpathSync(abs))) return null;
     source = fs.readFileSync(abs, 'utf8');
   } catch {
     return null;
@@ -187,7 +161,15 @@ export function readSource(repo, file) {
   if (PY_EXT.test(file)) {
     // `code` is the source with comments blanked: what actually runs.
     const code = lines.map((l) => pyLine(l).code);
-    return { file, lines, code, lang: 'py', decls: pyDeclarations(source) };
+    const unsure = skipsModule(source);
+    return {
+      file,
+      lines,
+      code,
+      lang: 'py',
+      unsure,
+      decls: pyDeclarations(source),
+    };
   }
   const masked = maskJs(source);
   return {
@@ -228,7 +210,8 @@ function bodyRange(src, k) {
 export function staticMarkerLine(src, decl, tags) {
   if (src.lang === 'py') return decl.decorators.length ? decl.markerLine : 0;
   if (STATIC_SKIP.test(decl.callee)) return decl.line;
-  if (tags.some((t) => decl.title.includes(t))) return decl.line;
+  if (tags.some((t) => decl.title.includes(t) || decl.tags?.includes(t)))
+    return decl.line;
   return 0;
 }
 
@@ -284,6 +267,15 @@ export function locate(src, row, tags = DEFAULT_TAGS) {
       };
     }
   }
+  if (src.unsure)
+    return {
+      ...NOT_FOUND,
+      found: true,
+      unsure: true,
+      match,
+      line: decls[0].line,
+      why: 'the module sets a skipping pytestmark, so whether this test is still skipped cannot be read',
+    };
   const what = callee
     ? `no ${callee}(...) call in its body`
     : 'it is no longer skipped';

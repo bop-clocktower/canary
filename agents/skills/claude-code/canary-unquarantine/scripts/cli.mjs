@@ -74,7 +74,12 @@ function runAudit(args, run, env, { offline = false } = {}) {
     ? {}
     : {
         github,
-        jira: jiraTracker({ run, projects: company.jiraProjects, env }),
+        jira: jiraTracker({
+          run,
+          projects: company.jiraProjects,
+          env,
+          fixedResolutions: company.fixedResolutions,
+        }),
       };
   const scan = !args.noScan;
   const result = audit({

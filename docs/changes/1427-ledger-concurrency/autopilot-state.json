@@ -1,0 +1,12 @@
+{
+  "item": "#1427",
+  "phase": "done",
+  "steps": [
+    "workflow-audit: inventory force-push sites across .github/workflows",
+    "workflow-audit: M4.5 concurrency check -> harness-security.yml:128 and release.yml:156",
+    "tdd: add #1427 describe block to ts/test/workflow-hygiene.test.ts; red on harness-security.yml job security + release.yml job advance-latest",
+    "fix: job-level concurrency group on harness-security.yml security (push-to-main only) and release.yml advance-latest",
+    "verify: test green, actionlint 1.7.12 clean, build/typecheck/format:check/test green"
+  ],
+  "commits": ["ab52932392007956e5ab35baffcba96090acd6d9"]
+}

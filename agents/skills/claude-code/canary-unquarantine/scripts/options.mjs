@@ -2,7 +2,8 @@
 // kept out of cli.mjs so the entry point stays a dispatcher.
 //
 // company.json keys read: `jira_projects` (which Jira projects may be read and
-// commented on) and `quarantine_tags` (overridden by --tags).
+// commented on), `jira_fixed_resolutions` (the Jira resolutions that mean
+// fixed) and `quarantine_tags` (overridden by --tags).
 
 import fs from 'node:fs';
 
@@ -119,9 +120,11 @@ export function loadCompany(file) {
   if (!fs.existsSync(file)) return { jiraProjects: [], tags: null };
   const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
   const tags = list(doc.quarantine_tags);
+  const fixed = list(doc.jira_fixed_resolutions);
   return {
     jiraProjects: list(doc.jira_projects),
     tags: tags.length ? tags : null,
+    fixedResolutions: fixed.length ? fixed : undefined,
   };
 }
 

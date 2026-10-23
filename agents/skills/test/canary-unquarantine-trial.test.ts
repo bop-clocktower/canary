@@ -43,9 +43,8 @@ const JIRA_ENV = {
 };
 
 const CARD =
-  'FINDING: card series is unreachable, gateway-blocked by an access group (filed 2026-09-22)';
-const EVENT =
-  'FINDING: event_data answers an edge/origin 520, not application data (filed 2026-09-22)';
+  'FINDING: the warehouse list is unreachable, blocked by a missing permission';
+const EVENT = 'FINDING: stock levels answer a proxy 502, not application data';
 const V2 = 'a v2 row whose issue field outranks the comment';
 const REF_FILE = 'tests/api/reference.spec.js';
 
@@ -139,6 +138,7 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
           fields: {
             summary: t.summary,
             status: { statusCategory: { key: t.statusCategory } },
+            resolution: t.resolution ? { name: t.resolution } : null,
           },
         }),
       );
@@ -165,7 +165,7 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
       state.body = args[args.indexOf('--body') + 1];
       state.branch = args[args.indexOf('--head') + 1];
       state.origin = git(o.cwd!, 'remote', 'get-url', 'origin');
-      return ok('https://github.com/acme/loyalty-suite/pull/77\n');
+      return ok('https://github.com/acme/orders-suite/pull/77\n');
     }
     if (args[0] === 'pr' && args[1] === 'view') {
       const head = git(
@@ -178,7 +178,7 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
           body: state.body,
           headRefName: state.branch,
           headRefOid: head,
-          url: 'https://github.com/acme/loyalty-suite/pull/77',
+          url: 'https://github.com/acme/orders-suite/pull/77',
           state: 'OPEN',
         }),
       );
@@ -217,7 +217,7 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
     }
     if (args[0] === 'issue' && args[1] === 'comment')
       return ok(
-        'https://github.com/acme/loyalty-suite/issues/505#issuecomment-1',
+        'https://github.com/acme/orders-suite/issues/505#issuecomment-1',
       );
     return {
       status: 1,
@@ -258,12 +258,12 @@ function report(outcomes: Record<string, string>) {
         file: REF_FILE,
         suites: [
           {
-            title: 'GET /card/series',
+            title: 'GET /warehouses',
             file: REF_FILE,
             specs: [spec(CARD, outcomes.card)],
           },
           {
-            title: 'GET /events/event_data',
+            title: 'GET /inventory/levels',
             file: REF_FILE,
             specs: [spec(EVENT, outcomes.event), spec(V2, outcomes.v2)],
           },
@@ -326,7 +326,7 @@ describe('trial', () => {
     expect(r.stderr).toBe('');
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(
-      'Opened trial PR https://github.com/acme/loyalty-suite/pull/77 lifting 3 test(s)',
+      'Opened trial PR https://github.com/acme/orders-suite/pull/77 lifting 3 test(s)',
     );
 
     // The user's checkout: same branch, same commit, clean, no worktree left behind.
@@ -472,7 +472,7 @@ describe('verdict', () => {
     expect(tests).not.toContain(EVENT);
     expect(tests).toContain(CARD);
     expect(ledger.entries.find((e: any) => e.test === CARD).issue).toBe(
-      'https://github.com/acme/loyalty-suite/issues/505',
+      'https://github.com/acme/orders-suite/issues/505',
     );
     expect(ledger.entries).toHaveLength(15);
 
@@ -759,7 +759,7 @@ describe('selectRows and the manifest', () => {
   it('round-trips through a PR body, including a title with "--" in it', () => {
     const manifest = {
       schema_version: 1,
-      lifts: [{ test: 'TIERED tiered bonus -- coupon-gated' }],
+      lifts: [{ test: 'BULK bulk orders -- approval-gated' }],
     };
     const body = `text\n\n${embedManifest(manifest)}\n`;
     expect(
@@ -778,9 +778,9 @@ describe('results', () => {
       report({ card: 'expected', event: 'unexpected', v2: 'skipped' }),
     );
     expect(cases.map((c) => [c.titlePath.join(' > '), c.outcome])).toEqual([
-      [`GET /card/series > ${CARD}`, 'pass'],
-      [`GET /events/event_data > ${EVENT}`, 'fail'],
-      [`GET /events/event_data > ${V2}`, 'skipped'],
+      [`GET /warehouses > ${CARD}`, 'pass'],
+      [`GET /inventory/levels > ${EVENT}`, 'fail'],
+      [`GET /inventory/levels > ${V2}`, 'skipped'],
     ]);
   });
 
@@ -789,9 +789,9 @@ describe('results', () => {
       report({ card: 'expected', event: 'expected', v2: 'unexpected' }),
     );
     expect(
-      judge({ test: 'GET /events/event_data', file: REF_FILE }, cases),
+      judge({ test: 'GET /inventory/levels', file: REF_FILE }, cases),
     ).toEqual({ outcome: 'fail', cases: 2 });
-    expect(judge({ test: 'GET /card/series', file: REF_FILE }, cases)).toEqual({
+    expect(judge({ test: 'GET /warehouses', file: REF_FILE }, cases)).toEqual({
       outcome: 'pass',
       cases: 1,
     });
