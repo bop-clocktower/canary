@@ -42,9 +42,9 @@ import {
 import { scanMarkers } from '../claude-code/canary-unquarantine/scripts/scan.mjs';
 import {
   githubTracker,
-  jiraTracker,
   resolveGithubRepo,
 } from '../claude-code/canary-unquarantine/scripts/trackers.mjs';
+import { jiraTracker } from '../claude-code/canary-unquarantine/scripts/jira.mjs';
 import { ABSTAINED_LINE } from '../claude-code/canary-unquarantine/scripts/report.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
