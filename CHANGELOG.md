@@ -34,6 +34,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Named-secret redaction no longer garbles its own placeholders (#1400).**
+  `buildPayload` redacts every failure field twice, and the second pass replaced
+  a named value again wherever it appeared inside a placeholder: `TOK='secret'`
+  became `<<secret:TOK>:TOK>`, and a value equal to another variable's name
+  rewrote that name's placeholder even on one pass. Named secrets are now
+  replaced in a single pass that leaves existing `<secret:NAME>` placeholders
+  alone. No value leaked; only the text was mangled.
+
 - **Every workflow's Node comes from `.nvmrc` (#1428).** Seven `setup-node`
   steps in `batwoman.yml`, `docs-lint.yml`, `harness-architecture.yml`,
   `harness-quality.yml` and `leak-gate.yml` still hard-coded

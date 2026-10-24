@@ -100,6 +100,40 @@ test('redaction is idempotent: its own placeholders are never re-redacted', () =
   assert.equal(redactText(once, NAMED_ENV), once);
 });
 
+// #1400 part 2: buildPayload redacts a field twice (errorField, then
+// redactEntry), so a named value that is a substring of its own placeholder
+// must not be replaced again inside it.
+test('a named value inside its own placeholder survives a second pass', () => {
+  const env = { CANARY_INGEST_REDACT_ENV: 'TOK', TOK: 'secret' };
+  const once = redactText('typed secret into the form', env);
+  assert.equal(once, 'typed <secret:TOK> into the form');
+  assert.equal(redactText(once, env), once);
+  assert.equal(redactTitle(redactTitle(once, env), env), once);
+});
+
+test("one named value never lands inside another name's placeholder", () => {
+  // B's value is A's name, so a sequential replace would rewrite A's
+  // placeholder in the same pass: <secret:<secret:B>>.
+  const env = {
+    CANARY_INGEST_REDACT_ENV: 'MEMBER_PASSWORD,ALIAS',
+    MEMBER_PASSWORD: NAMED_VALUE,
+    ALIAS: 'MEMBER_PASSWORD',
+  };
+  const once = redactText(`pw ${NAMED_VALUE} env MEMBER_PASSWORD`, env);
+  assert.equal(once, 'pw <secret:MEMBER_PASSWORD> env <secret:ALIAS>');
+  assert.equal(redactText(once, env), once);
+});
+
+test('only configured placeholders are kept: look-alike text cannot hide a value', () => {
+  const env = {
+    CANARY_INGEST_REDACT_ENV: 'MEMBER_PASSWORD',
+    MEMBER_PASSWORD: NAMED_VALUE,
+  };
+  const out = redactText(`<secret:note ${NAMED_VALUE}>`, env);
+  assert.equal(out, '<secret:note <secret:MEMBER_PASSWORD>>');
+  assert.deepEqual(leaks(out), []);
+});
+
 test('redaction stays linear on long runs with no match (8 KB stacks go through it)', () => {
   // A quadratic rule took ~50 ms per 8 KB field; a run of many failures
   // multiplies that. 20 passes over each shape must stay well under a second.
@@ -183,6 +217,30 @@ test('two titles that redact to the same text become one row, not a rejected run
   assert.equal(p.results[0].status, 'failed', 'worst status wins');
   assert.equal(p.totals.total, 1);
   assert.equal(p.collected.length, 1);
+});
+
+test('buildPayload keeps a row that errorField already redacted intact', () => {
+  // errorField redacts message and stack first; buildPayload's redactEntry is
+  // the second pass over the same text.
+  const env = { ...CI_ENV, CANARY_INGEST_REDACT_ENV: 'TOK', TOK: 'secret' };
+  const message = redactText('login failed with secret', env);
+  const rows = [
+    {
+      full_title: 'a.spec.ts > signs in',
+      test_file: 'a.spec.ts',
+      status: 'failed',
+      error_message: message,
+      error_stack: redactText('Error: secret\n    at a.spec.ts:3:1', env),
+      retries: 0,
+      tags: [],
+    },
+  ];
+  const p = buildPayload(rows, cfg, T, env, 'failed');
+  assert.equal(p.results[0].error_message, 'login failed with <secret:TOK>');
+  assert.equal(
+    p.results[0].error_stack,
+    'Error: <secret:TOK>\n    at a.spec.ts:3:1',
+  );
 });
 
 test('buildPayload sends text untouched when CANARY_INGEST_REDACT=0', () => {

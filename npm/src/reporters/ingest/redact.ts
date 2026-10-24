@@ -79,11 +79,36 @@ function namedSecrets(
     .sort((a, b) => b[1].length - a[1].length);
 }
 
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * One pass over the text, not one per name (#1400). The first alternatives
+ * match a placeholder this pass would write and keep it, so a value that is a
+ * substring of a placeholder (`TOK='secret'`, or one name's value being
+ * another's name) is never replaced inside it. buildPayload redacts every
+ * field twice, so this is what makes the pass idempotent. Only the configured
+ * names' placeholders are kept: a looser `<secret:…>` shape would let failure
+ * text hide a value from redaction. Values go longest first, so a value that
+ * contains a shorter one wins.
+ */
 function replaceNamed(text: string, env: NodeJS.ProcessEnv): string {
-  let out = text;
-  for (const [name, value] of namedSecrets(env))
-    out = out.split(value).join(`<secret:${name}>`);
-  return out;
+  const secrets = namedSecrets(env);
+  if (secrets.length === 0) return text;
+  // Two names with one value: the first listed names it, as before.
+  const byValue = new Map<string, string>();
+  for (const [name, value] of secrets)
+    if (!byValue.has(value)) byValue.set(value, name);
+  const placeholders = [...new Set(byValue.values())].map(
+    (name) => `<secret:${name}>`,
+  );
+  const rule = new RegExp(
+    [...placeholders, ...byValue.keys()].map(escapeRegExp).join('|'),
+    'g',
+  );
+  return text.replace(rule, (hit) => {
+    const name = byValue.get(hit);
+    return name === undefined ? hit : `<secret:${name}>`;
+  });
 }
 
 /** The rules a test title gets: named secrets, JWTs and emails. Never the bare rule. */

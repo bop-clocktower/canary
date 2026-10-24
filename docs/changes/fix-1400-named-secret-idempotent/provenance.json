@@ -1,0 +1,27 @@
+{
+  "issues": [1400],
+  "route": "bug",
+  "fleet": "roadmap-fleet",
+  "runId": "fc1024-roadmap",
+  "scope": "part 2 (redactEntry / named-secret idempotency); part 1 (JWT ReDoS) landed in #1430, so this completes both done-when items",
+  "stages": ["debugging"],
+  "reproducingTest": "npm/scripts/__tests__/ingest-redact.test.js",
+  "reproducingTests": [
+    "npm/scripts/__tests__/ingest-redact.test.js:106 a named value inside its own placeholder survives a second pass",
+    "npm/scripts/__tests__/ingest-redact.test.js:114 one named value never lands inside another name's placeholder",
+    "npm/scripts/__tests__/ingest-redact.test.js:127 only configured placeholders are kept: look-alike text cannot hide a value",
+    "npm/scripts/__tests__/ingest-redact.test.js:222 buildPayload keeps a row that errorField already redacted intact"
+  ],
+  "baseSha": "cba8b101fd2be859704ab6a9c51cb0808c7a6415",
+  "reproFailure": "At base: 'typed <<secret:TOK>:TOK> into the form' (expected 'typed <secret:TOK> into the form'); single pass with ALIAS='MEMBER_PASSWORD' gave 'pw <secret:<secret:ALIAS>> env <secret:ALIAS>'; buildPayload second pass gave 'login failed with <<secret:TOK>:TOK>'. 3 fail at base, 0 after fix; revert-and-fail re-checked.",
+  "closingKeyword": "Closes",
+  "confirmAnswers": {
+    "F2": "(a) fix the code: single combined longest-first escaped regex pass preserving existing placeholders"
+  },
+  "assumptions": [
+    "Only placeholders of the currently configured names are preserved, never any <secret:...>-shaped text: a looser shape would let failure text such as '<secret:note VALUE>' hide a configured value from redaction (pinned by a test). Residual: if the two passes use different CANARY_INGEST_REDACT_ENV name sets, a pass-1 placeholder whose name is not configured on pass 2 is not protected; no value can leak from that, only garbling.",
+    "When two configured names share one value, the first in longest-first order names it, which matches the old sequential behaviour.",
+    "Literal text in a failure that already reads <secret:...> is left as is; it is a placeholder shape, not a credential.",
+    "Closes #1400 because part 1 merged in #1430 and this PR adds the issue's second done-when test (a double pass where the value is a substring of its own placeholder)."
+  ]
+}

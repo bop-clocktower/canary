@@ -138,7 +138,9 @@ pass covers the Playwright reporter, `canary testtracker push`, and the
 - **Named secrets.** Set `CANARY_INGEST_REDACT_ENV=MEMBER_PASSWORD,API_KEY` and
   the literal value of each named variable becomes `<secret:NAME>`. Values
   shorter than 6 characters are skipped, because replacing them everywhere would
-  shred the text.
+  shred the text. A value is never replaced inside a placeholder that is already
+  there, so text redacted twice (the reporter does this) reads the same as text
+  redacted once, even when a value is part of its own `<secret:NAME>`.
 - **Bare credentials.** A run of 32 or more of `A-Z a-z 0-9 _ - + =` that
   contains both a digit and a letter becomes `<token>`. A long CamelCase
   identifier or a long number survives. A 40-hex git SHA does **not**, because
