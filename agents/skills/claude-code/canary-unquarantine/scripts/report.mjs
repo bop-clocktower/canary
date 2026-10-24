@@ -112,3 +112,100 @@ export function jsonPayload(result, { ledger, githubRepo }) {
     unledgered: result.unledgered,
   };
 }
+
+// --- trial and verdict -----------------------------------------------------
+
+const notLiftable = (refused) =>
+  refused.map((r) => `  not liftable: ${r.test} (${r.file}): ${r.why}`);
+
+/** The trial's dry run: what --yes would lift, and what it could not. */
+export function renderTrialPlan({ lifts, refused }) {
+  return [
+    `Trial plan: lift ${lifts.length} quarantined test(s) in one draft PR, so CI runs them live.`,
+    ...lifts.map((l) => `  - ${l.file}:${l.markerLine} ${l.test} [${l.class}]`),
+    ...notLiftable(refused),
+    '',
+    'Nothing has been written. Re-run with --yes to open the draft PR.',
+  ].join('\n');
+}
+
+/** A trial with nothing to lift is an abstention, never "nothing to do". */
+export function renderTrialAbstained(why, refused) {
+  return [
+    `\u{26A0} Abstained \u{2014} nothing to trial: ${why}.`,
+    ...notLiftable(refused),
+  ].join('\n');
+}
+
+const ACTION = {
+  pass: 'release: marker stays lifted, ledger row dropped',
+  fail: 're-quarantine: marker restored, row re-pointed, ticket told',
+  flaky: 're-quarantine: marker restored; hand to canary-flake-hunter',
+  missing: 'not in the run: marker restored, nothing else changed',
+  skipped: 'still skipped in the run: marker restored, nothing else changed',
+};
+
+const noteLine = (n) =>
+  n.commented
+    ? `  told ${n.target}: ${n.test} still fails`
+    : `  NOT told ${n.target ?? '(no ticket)'}: ${n.why}`;
+
+/** The verdict: one line per lifted test, the flake hand-off, and what was (not) written. */
+export function renderVerdict(doc) {
+  const out = [
+    `Trial verdict for PR ${doc.pr}: ${doc.tests.length} lifted test(s), ${doc.cases} case(s) read from ${doc.documents} result document(s).`,
+    ...doc.tests.map(
+      (t) =>
+        `  [${t.outcome}] ${t.file} \u{2014} ${t.test}\n      ${ACTION[t.outcome]}`,
+    ),
+  ];
+  if (doc.flake_hunter.length) {
+    out.push(
+      '',
+      'Hand to canary-flake-hunter (passed only on retry):',
+      ...doc.flake_hunter.map((f) => `  - ${f.test} (${f.file})`),
+    );
+  }
+  out.push(...doc.comments.map(noteLine));
+  if (doc.abstained) {
+    const n = doc.tests.length - doc.checked;
+    out.push(
+      '',
+      `\u{26A0} Abstained on ${n} lifted test(s) the run did not exercise \u{2014} they prove nothing either way.`,
+    );
+  }
+  out.push(
+    '',
+    doc.applied
+      ? 'Applied to the trial PR.'
+      : 'Nothing has been written. Re-run with --apply to rewrite the trial PR and comment on failing tickets.',
+  );
+  return out.join('\n');
+}
+
+/** The --json verdict document. */
+export function verdictDoc(args, plan, comments) {
+  const { judged } = plan;
+  const unrun = judged.filter(
+    (j) => j.outcome === 'missing' || j.outcome === 'skipped',
+  ).length;
+  return {
+    command: 'verdict',
+    pr: args.pr,
+    applied: Boolean(args.apply),
+    checked: judged.length - unrun,
+    abstained: unrun > 0,
+    documents: plan.documents,
+    cases: plan.cases,
+    tests: judged.map(({ test, file, outcome, cases }) => ({
+      test,
+      file,
+      outcome,
+      cases,
+    })),
+    flake_hunter: judged
+      .filter((j) => j.outcome === 'flaky')
+      .map(({ test, file }) => ({ test, file })),
+    comments,
+  };
+}
