@@ -5,15 +5,15 @@
   "runId": "fc1024-roadmap",
   "scope": "part 2 (redactEntry / named-secret idempotency); part 1 (JWT ReDoS) landed in #1430, so this completes both done-when items",
   "stages": ["debugging"],
-  "reproducingTest": "npm/scripts/__tests__/ingest-redact.test.js",
+  "reproducingTest": "npm/scripts/__tests__/ingest-redact-idempotent.test.js",
   "reproducingTests": [
-    "npm/scripts/__tests__/ingest-redact.test.js:106 a named value inside its own placeholder survives a second pass",
-    "npm/scripts/__tests__/ingest-redact.test.js:114 one named value never lands inside another name's placeholder",
-    "npm/scripts/__tests__/ingest-redact.test.js:127 only configured placeholders are kept: look-alike text cannot hide a value",
-    "npm/scripts/__tests__/ingest-redact.test.js:222 buildPayload keeps a row that errorField already redacted intact"
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:24 a named value inside its own placeholder survives a second pass",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:32 one named value never lands inside another name's placeholder",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:45 only configured placeholders are kept: look-alike text cannot hide a value",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:55 buildPayload keeps a row that errorField already redacted intact"
   ],
   "baseSha": "cba8b101fd2be859704ab6a9c51cb0808c7a6415",
-  "reproFailure": "At base: 'typed <<secret:TOK>:TOK> into the form' (expected 'typed <secret:TOK> into the form'); single pass with ALIAS='MEMBER_PASSWORD' gave 'pw <secret:<secret:ALIAS>> env <secret:ALIAS>'; buildPayload second pass gave 'login failed with <<secret:TOK>:TOK>'. 3 fail at base, 0 after fix; revert-and-fail re-checked.",
+  "reproFailure": "At base: 'typed <<secret:TOK>:TOK> into the form' (expected 'typed <secret:TOK> into the form'); single pass with ALIAS='MEMBER_PASSWORD' gave 'pw <secret:<secret:ALIAS>> env <secret:ALIAS>'; buildPayload second pass gave 'login failed with <<secret:TOK>:TOK>'. 3 fail at base (the look-alike test passes at base and pins the fix's narrowing), 0 after fix; revert-and-fail re-checked.",
   "closingKeyword": "Closes",
   "confirmAnswers": {
     "F2": "(a) fix the code: single combined longest-first escaped regex pass preserving existing placeholders"
