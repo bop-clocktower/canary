@@ -111,8 +111,8 @@ ledger misses. Count each class:
 - **unledgered** (marker in code, no row) → flag: run
   `canary-unquarantine migrate`
 
-- **abstained** (tracker unreadable) → not verified. Report it as unknown,
-  never as clean. Zero ledger rows read is the same abstention.
+- **abstained** (tracker unreadable) → not verified. Report it as unknown, never
+  as clean. Zero ledger rows read is the same abstention.
 
 ### 3. Assertion quality
 
