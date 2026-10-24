@@ -1,0 +1,4 @@
+{
+  "jira_projects": ["CORE"],
+  "notes": "Fixture for canary-unquarantine. Pointers only, never secrets."
+}

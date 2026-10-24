@@ -49,7 +49,8 @@ agents/skills/
 │   ├── canary-strix/
 │   ├── canary-sweep/
 │   ├── canary-test-pipeline/
-│   └── canary-test-reporter/
+│   ├── canary-test-reporter/
+│   └── canary-unquarantine/
 └── README.md                       # this file
 ```
 
@@ -165,8 +166,15 @@ slash-command entry points.
 - [`canary-batwoman`](./claude-code/canary-batwoman/SKILL.md) — Reports whether
   the files a closed issue's fix changed have actually **executed** since that
   fix merged. GitHub closes an issue on a keyword match, which checks neither
-  that the fix works nor that it ever ran. Advisory, and the only skill here
-  that requires the network (`gh`): deterministic, network, no agent.
+  that the fix works nor that it ever ran. Advisory, and the first skill here
+  that required the network (`gh`): deterministic, network, no agent.
+- [`canary-unquarantine`](./claude-code/canary-unquarantine/SKILL.md) — Bundled
+  executable skill (`scripts/cli.mjs`). The release half of katana's quarantine:
+  finds the ticket each ledger row waits on (following hand-offs, so a closed
+  issue "filed upstream" waits on the upstream ticket) and classifies every row
+  as candidate, blocked, stale, unlinked or abstained, with a printed
+  denominator. Read-only; needs the network (`gh`, and Jira when company.json
+  configures it). An unreadable tracker abstains, never reads as clear.
 
 ### Run-history gap analysis
 
@@ -312,8 +320,9 @@ executable skills with their own CLI entry point (`cli:` in frontmatter).
 `canary-barda`, `canary-blackhawk`, `canary-cassandra`, `canary-fail-fast`,
 `canary-instrument`, `canary-katana`, `canary-misfit`, `canary-question`,
 `canary-savant`, `canary-screech`, `canary-shadow`, `canary-signal`,
-`canary-starling`, `canary-strix`, `canary-sweep`, and `canary-test-reporter`
-all ship a Node entry (`scripts/cli.mjs`). Run those directly, e.g.:
+`canary-starling`, `canary-strix`, `canary-sweep`, `canary-test-reporter`, and
+`canary-unquarantine` all ship a Node entry (`scripts/cli.mjs`). Run those
+directly, e.g.:
 
 ```bash
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help

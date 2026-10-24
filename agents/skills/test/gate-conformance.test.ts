@@ -35,6 +35,7 @@ import { main as sweepMain } from '../claude-code/canary-sweep/scripts/cli.mjs';
 import { main as signalMain } from '../claude-code/canary-signal/scripts/cli.mjs';
 import { main as starlingMain } from '../claude-code/canary-starling/scripts/cli.mjs';
 import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
+import { main as unquarantineMain } from '../claude-code/canary-unquarantine/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -158,6 +159,16 @@ const ROWS: SkillGateRow[] = [
     forbid: [': 0 run(s)'],
     run: (base) => run(starlingMain, starlingArgs(base)),
     strict: (base) => run(starlingMain, [...starlingArgs(base), '--strict']),
+  },
+  {
+    // A repo with no quarantine ledger: zero rows read. The tempting read is
+    // "nothing is quarantined, nothing to release"; in fact no row was checked
+    // against any tracker (#1455). The scan is off so the row stays offline.
+    command: 'canary-unquarantine (zero ledger rows read)',
+    forbid: ['nothing to release'],
+    run: (base) => run(unquarantineMain, ['--repo', base, '--no-scan']),
+    strict: (base) =>
+      run(unquarantineMain, ['--repo', base, '--no-scan', '--strict']),
   },
   {
     command: 'canary-barda (zero runs in the feed)',
