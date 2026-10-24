@@ -20,14 +20,7 @@ import { extractRefs, idTokens, pickBlocker } from './refs.mjs';
 import { locate, readSource, runtimeCallee } from './markers.mjs';
 import { scanSuite } from './scan.mjs';
 
-const CLASSES = [
-  'candidate',
-  'blocked',
-  'stale',
-  'unlinked',
-  'abstain',
-  'removed',
-];
+const CLASSES = 'candidate blocked stale unlinked abstain removed'.split(' ');
 
 /** Issues a hand-off chain may hold: 4 is 3 hops (A -> B -> C -> D), as SKILL.md says. */
 export const MAX_HANDOFF_DEPTH = 4;
@@ -263,13 +256,21 @@ function findUnledgered(markers, rows, results, jiraProjects) {
   return markers
     .filter((m) => !byLine.has(`${m.file}:${m.markerLine}`))
     .filter((m) => !titles.has(pairKey(m.file, m.test)))
-    .map((m) => ({
-      ...m,
-      names: extractRefs(m.context, {
+    .map((m) => {
+      // A bare key in the comment right above a skip is believed; `links`
+      // keeps each reference verbatim so a migration loses none of them.
+      const opts = {
         jiraProjects,
         exclude: idTokens(m.test),
-      }).map((r) => r.id),
-    }));
+        anyBareJira: true,
+      };
+      const refs = extractRefs(m.context, opts);
+      return {
+        ...m,
+        names: refs.map((r) => r.id),
+        links: refs.map((r) => r.text),
+      };
+    });
 }
 
 /**
