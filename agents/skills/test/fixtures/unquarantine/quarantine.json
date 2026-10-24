@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "test": "POST /customers rejects malformed create payloads",
+      "file": "tests/api/validation.spec.js",
+      "kind": "skipped",
+      "marker": "describe.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: quarantine the create cases -- the platform is wrong, not the tests"
+    },
+    {
+      "test": "POST /customers rejects malformed create payloads",
+      "file": "tests/api/validation.spec.js",
+      "kind": "skipped",
+      "marker": "describe.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: re-apply the create quarantine, with its ticket"
+    },
+    {
+      "test": "an empty JSON body is rejected in the body",
+      "file": "tests/api/validation.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: skip the empty-body case against its own ticket"
+    },
+    {
+      "test": "POST /customers rejects malformed create payloads",
+      "file": "tests/api/validation.spec.js",
+      "kind": "removed",
+      "marker": "",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: skip the empty-body case against its own ticket"
+    },
+    {
+      "test": "FINDING: cancelling an order does not restock its items (#501)",
+      "file": "tests/api/returns.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: quarantine the restock finding; supersedes #510"
+    },
+    {
+      "test": "FINDING: the warehouse list is unreachable, blocked by a missing permission",
+      "file": "tests/api/reference.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: quarantine the warehouse-list finding against its issue"
+    },
+    {
+      "test": "FINDING: stock levels answer a proxy 502, not application data",
+      "file": "tests/api/reference.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: quarantine the stock-levels finding against its issue"
+    },
+    {
+      "test": "a row whose ticket cannot be read",
+      "file": "tests/api/reference.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park it"
+    },
+    {
+      "test": "CASE-030 a confirmation notice is sent when a bulk order is accepted",
+      "file": "tests/orders/bulk.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip(condition)",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "fix: CASE-030 abstains at run time against #503"
+    },
+    {
+      "test": "BULK bulk orders -- approval-gated @regression",
+      "file": "tests/orders/bulk.spec.js",
+      "kind": "skipped",
+      "marker": "describe.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: re-quarantine the cases after their first run (1000001)"
+    },
+    {
+      "test": "a 100-unit order reserves stock and only that",
+      "file": "tests/orders/thresholds.spec.js",
+      "kind": "skipped",
+      "marker": "requireOpenWarehouse(condition)",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park the threshold claims behind the warehouse-hours guard - the standing fix is #504"
+    },
+    {
+      "test": "CASE-065 a reservation carries the configured expiry",
+      "file": "tests/orders/reservations.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park after the run (#511) failed it"
+    },
+    {
+      "test": "a reservation lapses 60 days after the order",
+      "file": "tests/orders/reservations.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park the 60-day lapse case"
+    },
+    {
+      "test": "an unlinked parked case",
+      "file": "tests/orders/reservations.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park it"
+    },
+    {
+      "test": "an old deleted test",
+      "file": "tests/api/gone.spec.js",
+      "kind": "removed",
+      "marker": "",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "chore: drop the old case"
+    },
+    {
+      "test": "a v2 row whose issue field outranks the comment",
+      "file": "tests/api/reference.spec.js",
+      "kind": "skipped",
+      "marker": "test.skip",
+      "commit": "0000000000000000000000000000000000000000",
+      "author": "Ada Lovelace",
+      "date": "2000-01-01T00:00:00Z",
+      "reason": "test: park it",
+      "cause": "product-defect",
+      "issue": "#505",
+      "expiry": ""
+    }
+  ]
+}

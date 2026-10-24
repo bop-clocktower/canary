@@ -1,0 +1,107 @@
+{
+  "github_repo": "acme/orders-suite",
+  "github": {
+    "acme/orders-suite": {
+      "501": {
+        "state": "closed",
+        "title": "finding: a full cancellation does not restock the items",
+        "state_reason": "completed",
+        "body": "",
+        "assignees": [],
+        "comments": [
+          "Read the design doc before raising the ticket.",
+          "Filed as **TRK-1001** -- https://acme.atlassian.net/browse/TRK-1001\n\nStays quarantined until it goes green."
+        ]
+      },
+      "505": {
+        "state": "closed",
+        "title": "finding: the warehouse list is blocked by a missing permission",
+        "state_reason": "completed",
+        "body": "",
+        "assignees": [],
+        "comments": ["Permission granted; this should pass now."]
+      },
+      "506": {
+        "state": "closed",
+        "title": "finding: stock levels answer HTTP 502",
+        "state_reason": "completed",
+        "body": "",
+        "assignees": [],
+        "comments": [
+          "Filed as **CORE-101** -- https://acme.atlassian.net/browse/CORE-101"
+        ]
+      },
+      "502": {
+        "state": "open",
+        "title": "No verified contract for placing a line item in a category",
+        "state_reason": null,
+        "body": "",
+        "assignees": [
+          {
+            "login": "grace"
+          }
+        ],
+        "comments": []
+      },
+      "503": {
+        "state": "open",
+        "title": "No notification surface for CASE-030",
+        "state_reason": null,
+        "body": "",
+        "assignees": [
+          {
+            "login": "ada"
+          }
+        ],
+        "comments": []
+      },
+      "504": {
+        "state": "open",
+        "title": "enablement: model a warehouse-hours read surface",
+        "state_reason": null,
+        "body": "",
+        "assignees": [],
+        "comments": []
+      },
+      "507": {
+        "state": "closed",
+        "title": "CASE-065 cannot read a reservation expiry",
+        "state_reason": "completed",
+        "body": "",
+        "assignees": [],
+        "comments": [
+          "Checked again: no expiry on this surface either.",
+          "Closing: the question this issue asked is answered.\n\nWhat's left has moved:\n- **#508:** point the expiry readers at those surfaces and release the parked cases.\n- **#509:** held stock has no expiry schedule entry. CASE-065 is parked there.\n- **#514:** the probe that found both."
+        ]
+      },
+      "508": {
+        "state": "open",
+        "title": "point reservationExpiry at heldUntil",
+        "state_reason": null,
+        "body": "",
+        "assignees": [],
+        "comments": []
+      },
+      "509": {
+        "state": "open",
+        "title": "held stock has no expiry schedule entry",
+        "state_reason": null,
+        "body": "",
+        "assignees": [
+          {
+            "login": "grace"
+          }
+        ],
+        "comments": []
+      }
+    }
+  },
+  "jira": {
+    "CORE-101": {
+      "statusCategory": "done",
+      "resolution": "Done",
+      "summary": "stock levels proxy 502",
+      "assignee": null
+    }
+  }
+}

@@ -113,6 +113,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-sweep`               | shipped  | 594   | Component-level dedup for axe-core a11y findings (post-processor)          |
 | `canary-test-pipeline`       | shipped  | —     | Multi-phase test intelligence orchestrator                                 |
 | `canary-test-reporter`       | shipped  | —     | Playwright JSON results to Markdown and JSON reports                       |
+| `canary-unquarantine`        | shipped  | 1455  | Release half of quarantine: audit katana ledger rows against their tickets |
 | `oracle`                     | retired  | —     | The pre-rename product name. Never reuse.                                  |
 
 ## What the check does and does not cover
