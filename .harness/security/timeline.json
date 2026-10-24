@@ -2,37 +2,6 @@
   "version": 1,
   "snapshots": [
     {
-      "capturedAt": "2026-05-21T02:25:15.438Z",
-      "commitHash": "27db140eb83ec2b98c5776998e6c67ba957de688",
-      "securityScore": 100,
-      "totalFindings": 1,
-      "bySeverity": {
-        "error": 0,
-        "warning": 0,
-        "info": 1
-      },
-      "byCategory": {
-        "network": {
-          "findingCount": 1,
-          "errorCount": 0,
-          "warningCount": 0,
-          "infoCount": 1
-        }
-      },
-      "supplyChain": {
-        "critical": 0,
-        "high": 0,
-        "moderate": 0,
-        "low": 0,
-        "info": 0,
-        "total": 0
-      },
-      "suppressionCount": 0,
-      "findingIds": [
-        "f648dc252b6f0cc1"
-      ]
-    },
-    {
       "capturedAt": "2026-05-21T02:28:44.367Z",
       "commitHash": "82b11efd7eb2dd217421014fac3f397630aad6f2",
       "securityScore": 100,
@@ -971,6 +940,37 @@
       },
       "suppressionCount": 0,
       "findingIds": []
+    },
+    {
+      "capturedAt": "2026-10-24T19:29:04.137Z",
+      "commitHash": "23e6c96e46e0a0285b1505b3e3aedd475cbb5820",
+      "securityScore": 100,
+      "totalFindings": 1,
+      "bySeverity": {
+        "error": 0,
+        "warning": 0,
+        "info": 1
+      },
+      "byCategory": {
+        "network": {
+          "findingCount": 1,
+          "errorCount": 0,
+          "warningCount": 0,
+          "infoCount": 1
+        }
+      },
+      "supplyChain": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      },
+      "suppressionCount": 0,
+      "findingIds": [
+        "2d7dec6a693fd288"
+      ]
     }
   ],
   "findingLifecycles": [
@@ -1182,6 +1182,17 @@
       "firstSeenCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa",
       "resolvedAt": "2026-07-27T23:27:13.193Z",
       "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
+    },
+    {
+      "findingId": "2d7dec6a693fd288",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "ts/src/core/scaffold-templates.ts",
+      "firstSeenAt": "2026-10-24T19:29:04.141Z",
+      "firstSeenCommit": "23e6c96e46e0a0285b1505b3e3aedd475cbb5820",
+      "resolvedAt": null,
+      "resolvedCommit": null
     }
   ]
 }
