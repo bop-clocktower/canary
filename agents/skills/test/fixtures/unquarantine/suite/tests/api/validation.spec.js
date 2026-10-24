@@ -12,7 +12,9 @@ import { test, expect } from '@playwright/test';
 test.describe('POST /customers rejects malformed create payloads', () => {
   // Quarantined against TRK-1002 -- recorded in the ledger with provenance.
   // eslint-disable-next-line no-skipped-tests
-  test.skip('an empty JSON body is rejected in the body', async ({ request }) => {
+  test.skip('an empty JSON body is rejected in the body', async ({
+    request,
+  }) => {
     const response = await request.post('/customers', { data: {} });
     expect(response.status()).toBe(400);
   });
