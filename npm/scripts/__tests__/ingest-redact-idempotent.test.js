@@ -75,3 +75,66 @@ test('buildPayload keeps a row that errorField already redacted intact', () => {
     'Error: <secret:TOK>\n    at a.spec.ts:3:1',
   );
 });
+
+// #1400 (fc1026b, F1(a)): a value always beats a configured placeholder it
+// overlaps. One regex listing placeholders first matched `<secret:TOK>` at its
+// start and consumed it, so a value starting inside it was never tried.
+const PH = '<secret:TOK>';
+const TAIL = ['fixture', 'tail', '99'].join('-');
+const HEAD = ['fake', 'head'].join('-');
+const outsidePlaceholders = (text) => text.split(PH).join('\u0000');
+
+test("a value that straddles a placeholder's end is redacted, not kept", () => {
+  const env = { CANARY_INGEST_REDACT_ENV: 'TOK', TOK: `K>${TAIL}` };
+  const out = redactText(`x ${PH}${TAIL} y`, env);
+  assert.equal(out.includes(TAIL), false, `value tail survived: ${out}`);
+  assert.equal(out, 'x <secret:TO<secret:TOK> y');
+  assert.equal(redactText(out, env), out);
+});
+
+// Generated overlap shapes between one value and its own placeholder.
+const shapes = [
+  // Straddles the end: starts inside the placeholder, runs past it.
+  ...[1, 6, PH.length - 2, PH.length - 1].map((k) => ({
+    label: `suffix-overlap from ${k}`,
+    value: PH.slice(k) + TAIL,
+    text: `x ${PH}${TAIL} y`,
+    fragments: [TAIL],
+  })),
+  // Starts before the placeholder and ends inside it.
+  ...[1, 6, PH.length - 1].map((k) => ({
+    label: `prefix-overlap to ${k}`,
+    value: HEAD + PH.slice(0, k),
+    text: `x ${HEAD}${PH} y`,
+    fragments: [HEAD],
+  })),
+  {
+    label: 'value contains a whole placeholder',
+    value: `${HEAD}${PH}${TAIL}`,
+    text: `x ${HEAD}${PH}${TAIL} y`,
+    fragments: [HEAD, TAIL],
+  },
+  {
+    label: 'value equals the placeholder',
+    value: PH,
+    text: `x ${PH} y`,
+    fragments: [],
+  },
+];
+
+// Invariant: with every configured placeholder removed, neither the value nor
+// any part of it that lies outside the placeholder is left in the output.
+for (const { label, value, text, fragments } of shapes) {
+  test(`overlap invariant: ${label}`, () => {
+    const env = { CANARY_INGEST_REDACT_ENV: 'TOK', TOK: value };
+    const out = redactText(text, env);
+    const rest = outsidePlaceholders(out);
+    for (const part of [value, ...fragments])
+      assert.equal(
+        rest.includes(part),
+        false,
+        `${JSON.stringify(part)} outside a placeholder in ${JSON.stringify(out)}`,
+      );
+    assert.equal(redactText(out, env), out, 'second pass changed the text');
+  });
+}
