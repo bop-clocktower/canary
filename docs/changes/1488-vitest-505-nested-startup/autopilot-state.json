@@ -1,0 +1,14 @@
+{
+  "item": "#1488",
+  "phase": "parked",
+  "steps": [
+    "determinism: gh run rerun 40154883933 --failed -> attempt 2 Skills (JS) failure (deterministic)",
+    "debugging/investigate: CI log -> TypeError code.charCodeAt in vite module-runner extractInlineSourceMap during prepareStackTrace; #1488 lockfile also bumps transitive vite 8.3.4 -> 8.3.5",
+    "debugging/reproduce: local Node 22.23.2, #1488 lockfile -> 3/3 red; committed 5.0.4 lockfile -> green",
+    "debugging/hypothesize: instrumented getModuleSourceMapById -> meta.code for test/pytest-precondition.ts is a Buffer (vitest ServerModuleRunner readFile(result.tmp) without encoding)",
+    "debugging/isolate: vitest 5.0.5+vite 8.3.4 green 2/2; vitest 5.0.4+vite 8.3.5 red 2/2 -> trigger is vite 8.3.5, latent defect in vitest 5.0.4 and 5.0.5",
+    "debugging/minimal-repro: canary-free 4-file project with a throwing globalSetup -> vite 8.3.5 TypeError, vite 8.3.4 prints real message",
+    "park: F3a upstream-regression branch; no canary fix, no pin, assertion not weakened; upstream issue drafted in plan, not filed"
+  ],
+  "commits": ["5a96324289e625e91df9cd3ebaa31f9f186e24e7"]
+}
