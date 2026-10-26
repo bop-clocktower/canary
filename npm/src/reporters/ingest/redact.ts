@@ -128,36 +128,64 @@ const reachOf = (spans: Span[]) => {
  * thousands of times.
  */
 function replaceNamed(text: string, env: NodeJS.ProcessEnv): string {
-  const secrets = namedSecrets(env);
-  if (secrets.length === 0) return text;
-  // Two names with one value: the first listed names it, as before.
-  const byValue = new Map<string, string>();
-  for (const [name, value] of secrets)
-    if (!byValue.has(value)) byValue.set(value, name);
-  const byStart = (a: Span, b: Span) => a.start - b.start || b.end - a.end;
-  const values = [...byValue]
-    .flatMap(([v, name]) => spansOf(text, v, name))
-    .sort(byStart);
+  const byValue = namesByValue(env);
+  const values = valueSpans(text, byValue);
   if (values.length === 0) return text;
-  const valueReach = reachOf(values);
-  // A value starting before p must end by p.start; one starting inside p must
-  // end by p.end. The reach of everything starting before p.end checks both.
-  const kept = [...new Set(byValue.values())]
-    .flatMap((name) => spansOf(text, `<secret:${name}>`, name))
-    .filter((p) => {
-      const before = countBefore(values, p.start);
-      const upToEnd = countBefore(values, p.end);
-      return (
-        (before === 0 || valueReach[before - 1] <= p.start) &&
-        (upToEnd === 0 || valueReach[upToEnd - 1] <= p.end)
-      );
-    })
-    .sort(byStart);
+  const kept = keptPlaceholders(text, byValue, values);
   const keptReach = reachOf(kept);
-  const hits = values.filter((v) => {
-    const n = countBefore(kept, v.start + 1);
-    return n === 0 || keptReach[n - 1] < v.end;
-  });
+  return renderSpans(
+    text,
+    values.filter((v) => furthestEnd(kept, keptReach, v.start + 1) < v.end),
+  );
+}
+
+/** Two names with one value: the first listed (longest first) names it. */
+function namesByValue(env: NodeJS.ProcessEnv): Map<string, string> {
+  const byValue = new Map<string, string>();
+  for (const [name, value] of namedSecrets(env))
+    if (!byValue.has(value)) byValue.set(value, name);
+  return byValue;
+}
+
+const byStart = (a: Span, b: Span) => a.start - b.start || b.end - a.end;
+
+/** Every occurrence of every configured value, sorted by start. */
+function valueSpans(text: string, byValue: Map<string, string>): Span[] {
+  return [...byValue]
+    .flatMap(([value, name]) => spansOf(text, value, name))
+    .sort(byStart);
+}
+
+/** The furthest end among `spans` that start before `at`, or -1 if none. */
+function furthestEnd(spans: Span[], reach: number[], at: number): number {
+  const n = countBefore(spans, at);
+  return n === 0 ? -1 : reach[n - 1];
+}
+
+/**
+ * The configured placeholders no value overlaps from outside, sorted by
+ * start. A value starting before p must end by p.start; one starting inside
+ * p must end by p.end. The reach of everything starting before p.end checks
+ * both.
+ */
+function keptPlaceholders(
+  text: string,
+  byValue: Map<string, string>,
+  values: Span[],
+): Span[] {
+  const reach = reachOf(values);
+  return [...new Set(byValue.values())]
+    .flatMap((name) => spansOf(text, `<secret:${name}>`, name))
+    .filter(
+      (p) =>
+        furthestEnd(values, reach, p.start) <= p.start &&
+        furthestEnd(values, reach, p.end) <= p.end,
+    )
+    .sort(byStart);
+}
+
+/** Replaces each run of overlapping spans with its first span's placeholder. */
+function renderSpans(text: string, hits: Span[]): string {
   let out = '';
   let pos = 0;
   for (let i = 0; i < hits.length;) {
