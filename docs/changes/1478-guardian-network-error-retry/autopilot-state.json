@@ -8,9 +8,13 @@
     "hypothesize: an unclassified network rejection bypasses both retry and degrade; confirmed by stubbing fetch to reject with a coded TypeError",
     "fix: regression tests red (10/12; the 2 bug-stays-loud guards green), then classify on cause.code, retry GET/PATCH, never re-send POST, throw GitHubNetworkError, degrade in upsertStickyComment; green (12/12)",
     "docs: pr-guardian guide paragraph and CHANGELOG Unreleased/Fixed entry",
-    "verify: build, typecheck, format:check, test (348 files, 6703 passed, 2 skipped); harness check-deps (528 modules) and harness validate passed"
+    "verify: build, typecheck, format:check, test (348 files, 6703 passed, 2 skipped); harness check-deps (528 modules) and harness validate passed",
+    "verify-retry (orchestrator REJECT on a2ad0b6d): CI arch + perf ratchets flagged cyclomaticComplexity 12 > 10 in networkErrorCode and in the test's stubFetch; split networkErrorCode into nestedErrors + knownNetworkCode and stubFetch into nextStep + play + replyBody, with no behaviour or assertion change",
+    "fix: added a 13th case (code nested in an AggregateError cause) to cover the extracted nestedErrors helper; revert-and-fail verified (fails 1/13 without it)",
+    "verify: build, typecheck, format:check, test (348 files, 6704 passed, 2 skipped); harness check-deps (528 modules) passed; local check-arch + arch-verdict: 0 new violations (12 pre-existing, BASELINE TRIP as on main); local perf-ratchet vs merge base 488d9371: 0 new findings (213 = 213), ceiling 220 = 220"
   ],
   "commits": [
-    "fix(guardian): retry network-level fetch failures and degrade them to the verdict (#1478)"
+    "fix(guardian): retry network-level fetch failures and degrade them to the verdict (#1478)",
+    "refactor(guardian): bring #1478 network-error helpers under the complexity ceiling"
   ]
 }

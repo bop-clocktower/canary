@@ -95,17 +95,26 @@ const NETWORK_ERROR_CODES = new Set([
  */
 function networkErrorCode(err: unknown): string | null {
   if (!(err instanceof TypeError)) return null;
-  const cause = (err as { cause?: unknown }).cause as
-    { code?: unknown; errors?: unknown } | undefined;
-  const candidates = [
-    cause,
-    ...(Array.isArray(cause?.errors) ? cause.errors : []),
-  ];
-  for (const c of candidates) {
-    const code = (c as { code?: unknown } | undefined)?.code;
-    if (typeof code === 'string' && NETWORK_ERROR_CODES.has(code)) return code;
+  const cause: unknown = err.cause;
+  for (const candidate of [cause, ...nestedErrors(cause)]) {
+    const code = knownNetworkCode(candidate);
+    if (code !== null) return code;
   }
   return null;
+}
+
+/** An AggregateError's per-attempt `errors`, else none. */
+function nestedErrors(cause: unknown): unknown[] {
+  const errors = (cause as { errors?: unknown } | null | undefined)?.errors;
+  return Array.isArray(errors) ? errors : [];
+}
+
+/** `value.code` when it is one of {@link NETWORK_ERROR_CODES}, else `null`. */
+function knownNetworkCode(value: unknown): string | null {
+  const code = (value as { code?: unknown } | null | undefined)?.code;
+  return typeof code === 'string' && NETWORK_ERROR_CODES.has(code)
+    ? code
+    : null;
 }
 
 /**

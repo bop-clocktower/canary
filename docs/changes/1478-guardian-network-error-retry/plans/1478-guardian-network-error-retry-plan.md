@@ -46,11 +46,13 @@ passed are the guards that a non-network `TypeError` still throws.
 - Docs: a paragraph in `docs/guides/pr-guardian.md`, plus a CHANGELOG
   `Unreleased / Fixed` entry.
 
-## Tests (`ts/test/guardian-network-error.test.ts`, 12 cases)
+## Tests (`ts/test/guardian-network-error.test.ts`, 13 cases)
 
 - The paged GET retries an `ECONNRESET`, then succeeds after one 1s wait.
 - The PATCH retries `ENOTFOUND`, `EAI_AGAIN`, `UND_ERR_SOCKET` and
   `UND_ERR_CONNECT_TIMEOUT`.
+- The PATCH retries a code nested in an `AggregateError` cause (added in the
+  verify retry, to cover the extracted `nestedErrors` helper).
 - A PATCH that keeps resetting stops at 3 attempts with 1s and 2s waits.
 - The comment POST is not re-sent after a network error (1 POST, no sleep).
 - A non-network `TypeError` is not retried and throws as-is.
@@ -86,6 +88,17 @@ The existing #1467 suites (`guardian-transient-5xx`, `guardian-rate-limit-403`,
   filed separately if it is ever seen in CI.
 - `RestBranchProtectionClient` and the adjudication reactions client are
   unchanged, the same scope line #1470 drew.
-- `github-http.ts` grew from 159 to 242 lines and `pr-comment.ts` from 282 to
+- `github-http.ts` grew from 159 to 251 lines and `pr-comment.ts` from 282 to
   292 lines. Both are under the 300-line perf threshold. No new module, so
   `entropy.entryPoints` is unchanged.
+- **Verify retry (orchestrator REJECT on `a2ad0b6d`).** The CI arch and perf
+  ratchets flagged cyclomatic complexity 12 (threshold 10) in `networkErrorCode`
+  and in the test's `stubFetch`. Locally the gates had not covered that: only CI
+  runs these ratchets. I fixed the code rather than the baseline.
+  `networkErrorCode` now delegates to `nestedErrors` (the AggregateError walk)
+  and `knownNetworkCode` (the `Set` lookup). `stubFetch` delegates to
+  `nextStep`, `play` and `replyBody`. Behaviour and assertions are unchanged,
+  and one case was added for the nested-cause path. Local re-run: `check-arch`
+  plus `arch-verdict.mjs` show 0 new violations (the 12 pre-existing ones are
+  the same BASELINE TRIP as on main), and `perf-ratchet.mjs` against merge base
+  `488d9371` shows 0 new findings.

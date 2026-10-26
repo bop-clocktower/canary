@@ -31,11 +31,15 @@ import {
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
 /** A status reply, a network rejection with `cause.code`, or a bug-shaped throw. */
-type Step = number | { net: string } | 'bug';
+type Step = number | { net: string; nested?: boolean } | 'bug';
 
-/** What undici throws for a network failure: `TypeError` + coded `cause`. */
-function networkError(code: string): TypeError {
-  const cause = Object.assign(new Error(`connect ${code}`), { code });
+/**
+ * What undici throws for a network failure: `TypeError` + coded `cause`. With
+ * `nested`, the code sits on an AggregateError's `errors` (dual-stack connect).
+ */
+function networkError(code: string, nested = false): TypeError {
+  const coded = Object.assign(new Error(`connect ${code}`), { code });
+  const cause = nested ? new AggregateError([coded], 'connect failed') : coded;
   return new TypeError('fetch failed', { cause });
 }
 
@@ -50,27 +54,33 @@ function stubFetch(queues: Partial<Record<string, Step[]>>): string[] {
     vi.fn(async (_url: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET';
       calls.push(method);
-      const q = queues[method] ?? [200];
-      const step = q.length > 1 ? q.shift()! : q[0]!;
-      if (step === 'bug') {
-        throw new TypeError(
-          "Cannot read properties of undefined (reading 'x')",
-        );
-      }
-      if (typeof step === 'object') throw networkError(step.net);
-      const body =
-        step >= 300
-          ? '{"message":"error"}'
-          : method === 'GET'
-            ? '[]'
-            : '{"id":77,"body":"x"}';
-      return new Response(body, {
-        status: step,
-        headers: { 'content-type': 'application/json' },
-      });
+      return play(nextStep(queues[method] ?? [200]), method);
     }),
   );
   return calls;
+}
+
+/** The queue's next step; the last one repeats once the rest are used up. */
+function nextStep(queue: Step[]): Step {
+  return queue.length > 1 ? queue.shift()! : queue[0]!;
+}
+
+/** Throw the step's error, or answer with its status. */
+function play(step: Step, method: string): Response {
+  if (step === 'bug') {
+    throw new TypeError("Cannot read properties of undefined (reading 'x')");
+  }
+  if (typeof step === 'object') throw networkError(step.net, step.nested);
+  return new Response(replyBody(step, method), {
+    status: step,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/** An error body, an empty comment page (GET), or a comment row (writes). */
+function replyBody(status: number, method: string): string {
+  if (status >= 300) return '{"message":"error"}';
+  return method === 'GET' ? '[]' : '{"id":77,"body":"x"}';
 }
 
 function recordingSleep(): {
@@ -110,6 +120,18 @@ describe('RestGitHubClient retries network errors on GET and PATCH', () => {
     'UND_ERR_CONNECT_TIMEOUT',
   ])('the PATCH retries a %s', async (code) => {
     const calls = stubFetch({ PATCH: [{ net: code }, 200] });
+    const { sleeps, sleep } = recordingSleep();
+    await client(sleep).updateComment(77, 'body');
+    expect({ patches: count(calls, 'PATCH'), sleeps }).toEqual({
+      patches: 2,
+      sleeps: [1000],
+    });
+  });
+
+  it('the PATCH retries a code nested in an AggregateError cause', async () => {
+    const calls = stubFetch({
+      PATCH: [{ net: 'ECONNREFUSED', nested: true }, 200],
+    });
     const { sleeps, sleep } = recordingSleep();
     await client(sleep).updateComment(77, 'body');
     expect({ patches: count(calls, 'PATCH'), sleeps }).toEqual({
