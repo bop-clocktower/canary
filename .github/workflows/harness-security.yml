@@ -107,6 +107,10 @@ jobs:
       # pushing from here. `.harness/` is a dot-path, which upload-artifact
       # skips unless told otherwise, and a missing file is an error: an
       # artifact without the timeline would read as "ledger unchanged".
+      # #1490: the artifact is rooted at the paths' least common ancestor.
+      # These two share only the repo root, so each keeps its repo path, which
+      # the `ledger` job's restore loop relies on. Drop one and the other
+      # loses its directories. `ts/test/workflow-hygiene.test.ts` pins both.
       - name: Upload security ledger outputs (push to main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7

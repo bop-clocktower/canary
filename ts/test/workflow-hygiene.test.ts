@@ -18,12 +18,25 @@
  * - #1428: five workflows hard-coded `node-version: '20'` while `.nvmrc`
  *   moved on, so the harness CLI ran under an engine it rejects (EBADENGINE,
  *   the #1401 required-check flake).
+ * - #1490: `arch-snapshot.yml` read its timeline from the repo-relative path
+ *   inside the artifact, but upload-artifact had stored it at the artifact
+ *   root, so the push job failed on every run.
  *
- * Offline: every assertion reads the YAML or JSON as data.
+ * Offline: the assertions read the YAML or JSON as data. The #1490 block also
+ * runs one restore script under bash in a temp dir.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { load as loadYaml } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import { advisoryEntries, REPO_ROOT } from './required-checks-testkit.js';
@@ -408,3 +421,141 @@ describe('#1428 setup-node takes its version from .nvmrc', () => {
     expect(bad).toEqual([]);
   });
 });
+
+/**
+ * #1490. `actions/upload-artifact` roots the artifact at the least common
+ * ancestor directory of the paths it uploads. One path,
+ * `.harness/arch/timeline.json`, has its own directory as that ancestor, so
+ * the artifact holds a bare `timeline.json` (artifact 12659041789 on run
+ * 40340731570 listed exactly that). The push job looked for
+ * `$SRC/.harness/arch/timeline.json` and failed on every run after #1461.
+ * `harness-security.yml` uploads two paths whose common ancestor is the repo
+ * root, so its entries keep their repo paths. That holds only while both
+ * paths stay in the list.
+ *
+ * Each hand-off below pins its upload list and the artifact layout that list
+ * produces. Then the real restore step runs against that layout. Editing an
+ * upload list without fixing the matching restore step fails here.
+ */
+function artifactLayout(paths: string[]): string[] {
+  const dirs = paths.map((p) => p.split('/').slice(0, -1));
+  let common = 0;
+  while (dirs.every((d) => common < d.length && d[common] === dirs[0]![common]))
+    common++;
+  return paths.map((p) => p.split('/').slice(common).join('/'));
+}
+
+describe('#1490 the artifact-layout model', () => {
+  it.each([
+    [['.harness/arch/timeline.json'], ['timeline.json']],
+    [
+      ['.harness/security/timeline.json', 'docs/SECURITY_LEDGER.md'],
+      ['.harness/security/timeline.json', 'docs/SECURITY_LEDGER.md'],
+    ],
+    [
+      ['.harness/a/x.json', '.harness/b/y.json'],
+      ['a/x.json', 'b/y.json'],
+    ],
+    [['top.json'], ['top.json']],
+  ])('roots %j at their common ancestor: %j', (paths, entries) => {
+    expect(artifactLayout(paths)).toEqual(entries);
+  });
+});
+
+interface Handoff {
+  file: string;
+  artifact: string;
+  /** The upload list, pinned: changing it must fail this test. */
+  upload: string[];
+  /** Artifact entry -> checkout path the restore step must write. */
+  entries: Record<string, string>;
+}
+
+const HANDOFFS: Handoff[] = [
+  {
+    file: 'arch-snapshot.yml',
+    artifact: 'arch-timeline',
+    upload: ['.harness/arch/timeline.json'],
+    entries: { 'timeline.json': '.harness/arch/timeline.json' },
+  },
+  {
+    file: 'harness-security.yml',
+    artifact: 'security-ledger',
+    upload: ['.harness/security/timeline.json', 'docs/SECURITY_LEDGER.md'],
+    entries: {
+      '.harness/security/timeline.json': '.harness/security/timeline.json',
+      'docs/SECURITY_LEDGER.md': 'docs/SECURITY_LEDGER.md',
+    },
+  },
+];
+
+describe.each(HANDOFFS)(
+  '#1490 $file restores $artifact from where upload-artifact puts it',
+  (h) => {
+    const steps = Object.values(workflow(h.file).jobs ?? {}).flatMap(
+      (j) => j.steps ?? [],
+    );
+    const upload = steps.find(
+      (s) =>
+        s.uses?.startsWith('actions/upload-artifact@') &&
+        s.with?.name === h.artifact,
+    );
+    const downloadJob = Object.values(workflow(h.file).jobs ?? {}).find((j) =>
+      (j.steps ?? []).some(
+        (s) =>
+          s.uses?.startsWith('actions/download-artifact@') &&
+          s.with?.name === h.artifact,
+      ),
+    );
+    const download = downloadJob?.steps?.find((s) =>
+      s.uses?.startsWith('actions/download-artifact@'),
+    );
+    const restore = downloadJob?.steps?.find(
+      (s) => s.env?.SRC !== undefined && s.run !== undefined,
+    );
+
+    it('uploads exactly the pinned path list', () => {
+      const lines = String(upload?.with?.path ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      expect(lines.sort()).toEqual([...h.upload].sort());
+    });
+
+    it('pins the entries that upload list produces', () => {
+      expect(artifactLayout(h.upload).sort()).toEqual(
+        Object.keys(h.entries).sort(),
+      );
+    });
+
+    it('restores from the directory the artifact was downloaded to', () => {
+      expect(restore?.env?.SRC).toBeDefined();
+      expect(restore!.env!.SRC).toBe(download?.with?.path);
+    });
+
+    it('copies every artifact entry to its checkout path', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'artifact-layout-'));
+      try {
+        const src = join(dir, 'artifact');
+        const work = join(dir, 'work');
+        for (const [entry, dest] of Object.entries(h.entries)) {
+          mkdirSync(dirname(join(src, entry)), { recursive: true });
+          writeFileSync(join(src, entry), `from ${entry}\n`);
+          mkdirSync(dirname(join(work, dest)), { recursive: true });
+        }
+        const r = spawnSync('bash', ['-e', '-c', restore!.run!], {
+          cwd: work,
+          encoding: 'utf8',
+          env: { PATH: process.env.PATH ?? '', SRC: src },
+        });
+        expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
+        for (const [entry, dest] of Object.entries(h.entries))
+          expect(readFileSync(join(work, dest), 'utf8')).toBe(
+            `from ${entry}\n`,
+          );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  },
+);
