@@ -1,0 +1,43 @@
+{
+  "issues": [1400],
+  "route": "bug",
+  "fleet": "roadmap-fleet",
+  "runId": "fc1026b-roadmap",
+  "scope": "part 2 (redactEntry / named-secret idempotency); part 1 (JWT ReDoS) landed in #1430, so this completes both done-when items",
+  "stages": ["debugging"],
+  "reproducingTest": "npm/scripts/__tests__/ingest-redact-idempotent.test.js",
+  "reproducingTests": [
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:24 a named value inside its own placeholder survives a second pass",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:32 one named value never lands inside another name's placeholder",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:45 only configured placeholders are kept: look-alike text cannot hide a value",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:55 buildPayload keeps a row that errorField already redacted intact",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:87 a value that straddles a placeholder's end is redacted, not kept",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:128 overlap invariant: <shape> (9 generated shapes: suffix-overlap x4, prefix-overlap x3, value contains a whole placeholder, value equals the placeholder)",
+    "npm/scripts/__tests__/ingest-redact-idempotent.test.js:142 checking placeholders for straddlers stays near-linear (CWE-1333)"
+  ],
+  "baseSha": "cba8b101fd2be859704ab6a9c51cb0808c7a6415",
+  "reproFailure": "At base: 'typed <<secret:TOK>:TOK> into the form' (expected 'typed <secret:TOK> into the form'); single pass with ALIAS='MEMBER_PASSWORD' gave 'pw <secret:<secret:ALIAS>> env <secret:ALIAS>'; buildPayload second pass gave 'login failed with <<secret:TOK>:TOK>'. 3 fail at base (the look-alike test passes at base and pins the fix's narrowing), 0 after fix; revert-and-fail re-checked.",
+  "closingKeyword": "Closes",
+  "confirmAnswers": {
+    "fc1024-F2": "(a) fix the code: single combined longest-first escaped regex pass preserving existing placeholders",
+    "F1": "(a) value beats any placeholder it straddles",
+    "F2": "(a) merge commit"
+  },
+  "assumptions": [
+    "Only placeholders of the currently configured names are preserved, never any <secret:...>-shaped text: a looser shape would let failure text such as '<secret:note VALUE>' hide a configured value from redaction (pinned by a test). Residual: if the two passes use different CANARY_INGEST_REDACT_ENV name sets, a pass-1 placeholder whose name is not configured on pass 2 is not protected; no value can leak from that, only garbling.",
+    "When two configured names share one value, the first in longest-first order names it, which matches the old sequential behaviour.",
+    "Literal text in a failure that already reads <secret:...> is left as is; it is a placeholder shape, not a credential.",
+    "Closes #1400 because part 1 merged in #1430 and this PR adds the issue's second done-when test (a double pass where the value is a substring of its own placeholder).",
+    "fc1026b: 'a value beats a placeholder it overlaps' is applied to every overlap shape, not only start-inside/end-outside: a value starting before a placeholder and ending inside it, or containing it, also unprotects it (this matches the earlier leftmost-match behaviour for those shapes).",
+    "fc1026b: overlapping occurrences of values (including a value overlapping itself, e.g. 'aaaaaa' in 'aaaaaaa') merge into one <secret:NAME> span named by the leftmost, then longest, value. Previously a leftmost non-overlapping match could leave a partial fragment; now strictly more text is redacted.",
+    "fc1026b: a straddled placeholder is broken (e.g. 'x <secret:TO<secret:TOK> y'), matching main's pre-PR output for the same input; garbling is accepted over leaking.",
+    "fc1026b: the overlap check uses sorted spans and prefix reaches (O(n log n)); a first pairwise draft took ~2.4 s on 40k repeated placeholders, so a timing guard test pins it.",
+    "fc1026b VERIFY retry: replaceNamed was split into namesByValue / valueSpans / furthestEnd / keptPlaceholders / renderSpans to clear the cyclomatic-complexity ratchet (13 -> max 4 per function, threshold 10). Behaviour is unchanged: the same 15 idempotency tests and the npm suite pass, and no baseline or deltaAllowances entry was touched."
+  ],
+  "runIds": ["fc1024-roadmap", "fc1026b-roadmap"],
+  "straddleRegression": {
+    "baseSha": "bd58e80a3a87376538fd1d276def028291f47812",
+    "testCommit": "13504e622ddb051742ed0f41e23e2a30f0a1710f",
+    "reproFailure": "At the test commit (PR's single-regex fix): TOK='K>fixture-tail-99' on 'x <secret:TOK>fixture-tail-99 y' returned the input unchanged, so 'fixture-tail-99' survived outside any placeholder. 5 of 15 fail (straddle repro + 4 suffix-overlap shapes); prefix-overlap, containing and equal shapes already passed. 0 fail after the fix; revert-and-fail re-checked."
+  }
+}
