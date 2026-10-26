@@ -87,6 +87,13 @@ export function resolveRef(ref, lookup, ctx, via = [], depth = 0) {
   const id = answer.id ?? ref.id;
   const qualified = [...via, id];
   const leaf = { tracker: ref.tracker, ...answer, id, via: qualified };
+  // A Jira leaf keeps its key and site so a later step can reach the ticket.
+  if (ref.tracker === 'jira')
+    Object.assign(leaf, {
+      key: ref.key,
+      project: ref.project,
+      base: ref.base ?? null,
+    });
   delete leaf.handoff;
   if (via.includes(id)) {
     return [

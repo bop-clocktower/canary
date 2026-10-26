@@ -59,11 +59,15 @@ const manifestLift = (l) => ({
   class: l.class,
   markerLine: l.markerLine,
   edits: l.edits,
+  // A Jira blocker keeps what the verdict's commenter needs to reach it.
   blockers: (l.blockers ?? []).map((b) => ({
     id: b.id,
     tracker: b.tracker,
     state: b.state,
     url: b.url ?? '',
+    ...(b.tracker === 'jira'
+      ? { key: b.key, project: b.project, base: b.base ?? null }
+      : {}),
   })),
   ledgerRows: l.ledgerRows,
 });

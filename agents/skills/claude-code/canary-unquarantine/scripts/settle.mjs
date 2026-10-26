@@ -20,6 +20,7 @@ import {
   writeAt,
   writeLifts,
 } from './git.mjs';
+import { jiraProject } from './refs.mjs';
 
 const sameRow = (a, b) =>
   a.test === b.test &&
@@ -155,10 +156,16 @@ function commentOnGithub(run, repo, target, body) {
   };
 }
 
-/** One Jira comment, through the configured commenter when there is one. */
+/**
+ * One Jira comment, through the configured commenter when there is one. The
+ * target comes from the PR-body manifest, which a PR editor can change, so the
+ * project is re-derived from the key: the per-project gate checks the ticket
+ * actually being written to.
+ */
 function commentOnJira(jiraComment, target, body) {
+  const ref = { ...target, project: jiraProject(target.key ?? '') };
   const r = jiraComment
-    ? jiraComment(target, body)
+    ? jiraComment(ref, body)
     : { ok: false, why: 'Jira is not configured' };
   return r.ok
     ? { commented: true, why: '' }
