@@ -491,6 +491,45 @@ describe('verdict', () => {
     expect(git(repo, 'status', '--porcelain')).toBe('');
   });
 
+  it('--apply tells a Jira blocker through the manifest it wrote at trial time', () => {
+    // EVENT's blocker is #506, whose comment files it as CORE-101 (Jira). The
+    // verdict only has the PR-body manifest, so the manifest must carry what
+    // the commenter needs: the key, its project and the site it linked to.
+    const { repo, h } = opened(
+      report({ card: 'expected', event: 'unexpected', v2: 'expected' }),
+    );
+    const manifest = readManifest(h.state.body!);
+    const lift = manifest.lifts.find((l: any) => l.test === EVENT);
+    expect(lift.blockers.at(-1)).toMatchObject({
+      id: 'CORE-101',
+      tracker: 'jira',
+      key: 'CORE-101',
+      project: 'CORE',
+      base: 'https://acme.atlassian.net',
+    });
+
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    expect(r.stderr).toBe('');
+    const post = h.calls.find(
+      (c) => c.cmd === 'curl' && c.args.includes('POST'),
+    );
+    expect(post?.args.at(-1)).toBe(
+      'https://acme.atlassian.net/rest/api/2/issue/CORE-101/comment',
+    );
+  });
+
   it('a lifted test that never appeared in the run is not a pass', () => {
     const { repo, h } = opened(
       report({ card: 'expected', event: 'expected', v2: 'expected' }),
@@ -647,6 +686,28 @@ describe('commentFailures', () => {
       why: 'Jira is not configured; comment by hand',
     });
     expect(notTold[0].body).toMatch(/still fails/);
+  });
+
+  it('takes a Jira project from the key, never from an edited manifest', () => {
+    // The manifest lives in the PR body, so anyone who can edit the PR can
+    // pair an allowed project with another project's key. The per-project
+    // gate must see the key's own project.
+    const seen: any[] = [];
+    commentFailures({
+      run: () => ({ status: 0 }),
+      repo: '.',
+      judged: [
+        fail([
+          { id: 'OTHER-9', tracker: 'jira', key: 'OTHER-9', project: 'CORE' },
+        ]),
+      ],
+      prUrl: 'u',
+      jiraComment: (ref) => {
+        seen.push(ref);
+        return { ok: true, why: '' };
+      },
+    });
+    expect(seen[0]).toMatchObject({ key: 'OTHER-9', project: 'OTHER' });
   });
 
   it('a failing row with no blocker says so', () => {
@@ -983,6 +1044,23 @@ describe('verdict --apply refuses a manifest that reaches outside the worktree',
         m.base = '--output=/tmp/x';
       }),
       /not a commit id/,
+    );
+  });
+
+  it('a Jira blocker whose key is malformed, or not its own id, is refused (it picks the ticket to write to)', () => {
+    const jiraOf = (m: any) =>
+      m.lifts.find((l: any) => l.test === EVENT).blockers.at(-1);
+    expectRefused(
+      tampered((m) => {
+        jiraOf(m).key = 'CORE-101/../../myself';
+      }),
+      /not a Jira key/,
+    );
+    expectRefused(
+      tampered((m) => {
+        jiraOf(m).key = 'CORE-999';
+      }),
+      /not a Jira key/,
     );
   });
 });

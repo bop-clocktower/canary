@@ -560,3 +560,123 @@ describe('canary-deep-siren.sh — executed, not read', () => {
     expect(readFileSync(join(odd, 'deep.log'), 'utf-8')).toContain('SIREN');
   });
 });
+
+/**
+ * Execution tests for `hooks/canary-session-siren.sh` check 4 (#1491).
+ *
+ * The skew check read the plugin version from the marketplace clone, so after
+ * `claude plugin marketplace update` it went quiet while the plugin Claude Code
+ * actually loads (`installed_plugins.json`) was still behind. These pin the
+ * comparison to the installed copy, and add the commit-level check a version
+ * string cannot do: canary main often ships without a version bump.
+ *
+ * `canary` is a stub on PATH so the CLI version is controlled; no network.
+ */
+describe('canary-session-siren.sh skew check — executed, not read', () => {
+  const SIREN = join(REPO_ROOT, 'hooks', 'canary-session-siren.sh');
+  const GIT_ENV = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'T',
+    GIT_AUTHOR_EMAIL: 't@e',
+    GIT_COMMITTER_NAME: 'T',
+    GIT_COMMITTER_EMAIL: 't@e',
+  };
+  let dir: string;
+  let mkt: string;
+  let mktHead: string;
+
+  /** Commit a marketplace clone at `version`, returning its HEAD sha. */
+  const writeMarketplace = (version: string): string => {
+    mkdirSync(join(mkt, '.claude-plugin'), { recursive: true });
+    writeFileSync(
+      join(mkt, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'canary', version }),
+    );
+    execFileSync('git', ['add', '-A'], { cwd: mkt });
+    execFileSync('git', ['commit', '-q', '-m', version], {
+      cwd: mkt,
+      env: GIT_ENV,
+    });
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: mkt,
+      encoding: 'utf-8',
+    }).trim();
+  };
+
+  const writeInstalled = (entry: Record<string, string>) => {
+    mkdirSync(join(dir, 'plugins'), { recursive: true });
+    writeFileSync(
+      join(dir, 'plugins', 'installed_plugins.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: { 'canary@bop-clocktower': [entry] },
+      }),
+    );
+  };
+
+  /** The siren's findings message; it prints JSON only when it has findings. */
+  const findings = (cliVersion: string): string => {
+    const bin = join(dir, 'bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, 'canary'),
+      `#!/bin/sh\necho "canary v${cliVersion}"\n`,
+      { mode: 0o755 },
+    );
+    const r = runCapture('bash', [SIREN], {
+      env: {
+        ...process.env,
+        PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
+        CANARY_CLAUDE_DIR: dir,
+        CANARY_MARKETPLACE_DIR: mkt,
+        CANARY_SIREN_LOG: join(dir, 'deep.log'),
+      },
+    });
+    expect(r.status).toBe(0);
+    return r.stdout
+      ? (JSON.parse(r.stdout) as { systemMessage: string }).systemMessage
+      : '';
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'session-siren-'));
+    mkt = join(dir, 'marketplace');
+    mkdirSync(mkt, { recursive: true });
+    execFileSync('git', ['init', '--quiet'], { cwd: mkt });
+    mktHead = writeMarketplace('9.5.0');
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('reports skew against the INSTALLED plugin once the marketplace has moved', () => {
+    // The 2026-10-26 false green: marketplace and CLI both at 9.5.0, the loaded
+    // plugin still 9.4.0. Comparing against the marketplace said "in sync".
+    writeInstalled({ version: '9.4.0', gitCommitSha: 'a'.repeat(40) });
+    expect(findings('9.5.0')).toContain(
+      'version skew: canary CLI 9.5.0 vs installed plugin 9.4.0',
+    );
+  });
+
+  it('reports an install behind the marketplace even when the versions match', () => {
+    // canary main lands without bumping plugin.json, so equal version strings
+    // can still mean stale files. Only the commit can tell.
+    writeInstalled({ version: '9.5.0', gitCommitSha: 'b'.repeat(40) });
+    const msg = findings('9.5.0');
+    expect(msg).toContain('installed canary plugin is behind the marketplace');
+    expect(msg).toContain(mktHead.slice(0, 7));
+  });
+
+  it('is silent on skew and staleness when the install matches the marketplace HEAD', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const msg = findings('9.5.0');
+    expect(msg).not.toContain('skew');
+    expect(msg).not.toContain('behind the marketplace');
+  });
+
+  it('abstains loudly when the installed record has no version or commit', () => {
+    // An entry the check cannot read verified nothing; silence would be a pass.
+    writeInstalled({});
+    expect(findings('9.5.0')).toContain(
+      'cannot read the installed canary plugin',
+    );
+  });
+});

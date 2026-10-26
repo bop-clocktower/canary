@@ -52,24 +52,46 @@ else
 fi
 
 # 4. CLI vs plugin version skew (the npm CLI and the plugin must move together).
-PLUGIN_VER=$(python3 -c "
-import json,sys;print(json.load(open(sys.argv[1]))['version'])" "$MKT/.claude-plugin/plugin.json" 2>/dev/null || echo "unknown")
+#    Compared against the INSTALLED plugin — the one Claude Code loads — not
+#    the marketplace clone (#1491). The clone moves on `marketplace update`
+#    while the install stays put, so reading the clone went quiet exactly when
+#    the install was stale.
+INSTALLED_JSON="$CLAUDE_DIR/plugins/installed_plugins.json"
+PLUGIN_INSTALLED=0
+grep -q '"canary@bop-clocktower"' "$INSTALLED_JSON" 2>/dev/null && PLUGIN_INSTALLED=1
+read -r INST_VER INST_SHA <<<"$(python3 -c "
+import json,sys
+e=(json.load(open(sys.argv[1])).get('plugins',{}).get('canary@bop-clocktower') or [{}])[0]
+print(e.get('version') or 'unknown', e.get('gitCommitSha') or 'unknown')" "$INSTALLED_JSON" 2>/dev/null || echo "unknown unknown")"
+if [ "$PLUGIN_INSTALLED" = 1 ] && { [ "$INST_VER" = "unknown" ] || [ "$INST_SHA" = "unknown" ]; }; then
+  # Check 1 already reports a missing install; this is an install whose record
+  # cannot be read, which verifies nothing.
+  FINDINGS+=("cannot read the installed canary plugin's version/commit from $INSTALLED_JSON — CLI-vs-plugin skew and staleness unverifiable")
+fi
 if command -v canary >/dev/null 2>&1; then
   # canary -V prints a decorated ANSI banner; strip codes and pull the semver.
   CLI_VER=$(canary -V 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   CLI_VER=${CLI_VER:-unknown}
-  if [ "$PLUGIN_VER" = "unknown" ] && [ -d "$MKT/.git" ]; then
-    # Check 3's absent-config case abstains loudly; this one used to abstain
-    # SILENTLY, in the same file. A skew comparison that cannot run verified
-    # nothing.
-    FINDINGS+=("cannot read the plugin version from $MKT/.claude-plugin/plugin.json — CLI-vs-plugin skew unverifiable")
-  elif [ "$CLI_VER" = "unknown" ]; then
+  if [ "$CLI_VER" = "unknown" ]; then
     FINDINGS+=("canary CLI did not report a parseable version — skew unverifiable")
-  elif [ "$PLUGIN_VER" != "unknown" ] && [ "$CLI_VER" != "$PLUGIN_VER" ]; then
-    FINDINGS+=("version skew: canary CLI $CLI_VER vs plugin $PLUGIN_VER — sync them")
+  elif [ "$INST_VER" != "unknown" ] && [ "$CLI_VER" != "$INST_VER" ]; then
+    FINDINGS+=("version skew: canary CLI $CLI_VER vs installed plugin $INST_VER — sync them")
   fi
 else
   FINDINGS+=("canary CLI not on PATH")
+fi
+
+# 4b. Installed plugin vs marketplace HEAD. canary main often lands without a
+#     plugin.json bump, and `claude plugin update` compares version strings
+#     only, so equal versions can still mean stale files. The commit is the
+#     only thing that tells.
+if [ "$INST_SHA" != "unknown" ] && [ -d "$MKT/.git" ]; then
+  MKT_HEAD=$(git -C "$MKT" rev-parse HEAD 2>/dev/null || echo "unknown")
+  if [ "$MKT_HEAD" = "unknown" ]; then
+    FINDINGS+=("cannot resolve the marketplace HEAD at $MKT — installed-plugin staleness unverifiable")
+  elif [ "$MKT_HEAD" != "$INST_SHA" ]; then
+    FINDINGS+=("installed canary plugin is behind the marketplace (installed $INST_VER @${INST_SHA:0:7}, marketplace @${MKT_HEAD:0:7}) — claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower --scope user")
+  fi
 fi
 
 # 5. The deep siren must be REGISTERED and RECENT (#758).
