@@ -50,8 +50,11 @@ under the project's former name) are documented in the
   a named value again wherever it appeared inside a placeholder: `TOK='secret'`
   became `<<secret:TOK>:TOK>`, and a value equal to another variable's name
   rewrote that name's placeholder even on one pass. Named secrets are now
-  replaced in a single pass that leaves existing `<secret:NAME>` placeholders
-  alone. No value leaked; only the text was mangled.
+  replaced in a single pass that leaves a value alone only when it lies wholly
+  inside an existing `<secret:NAME>` placeholder. A value that overlaps a
+  placeholder and runs past it is still redacted, so the placeholder is broken
+  rather than any part of the value kept. No value leaked; only the text was
+  mangled.
 
 - **Every workflow's Node comes from `.nvmrc` (#1428).** Seven `setup-node`
   steps in `batwoman.yml`, `docs-lint.yml`, `harness-architecture.yml`,

@@ -79,17 +79,53 @@ function namedSecrets(
     .sort((a, b) => b[1].length - a[1].length);
 }
 
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+type Span = { start: number; end: number; name: string };
+
+/** Every occurrence of `needle` in `text`, overlapping ones included, by start. */
+function spansOf(text: string, needle: string, name: string): Span[] {
+  const spans: Span[] = [];
+  for (
+    let at = text.indexOf(needle);
+    at !== -1;
+    at = text.indexOf(needle, at + 1)
+  )
+    spans.push({ start: at, end: at + needle.length, name });
+  return spans;
+}
+
+/** How many of `spans` (sorted by start) start before `at`. */
+function countBefore(spans: Span[], at: number): number {
+  let lo = 0;
+  let hi = spans.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (spans[mid].start < at) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** reach[i]: the furthest end among spans[0..i]. */
+const reachOf = (spans: Span[]) => {
+  let far = -1;
+  return spans.map((s) => (far = Math.max(far, s.end)));
+};
 
 /**
- * One pass over the text, not one per name (#1400). The first alternatives
- * match a placeholder this pass would write and keep it, so a value that is a
- * substring of a placeholder (`TOK='secret'`, or one name's value being
- * another's name) is never replaced inside it. buildPayload redacts every
- * field twice, so this is what makes the pass idempotent. Only the configured
- * names' placeholders are kept: a looser `<secret:…>` shape would let failure
- * text hide a value from redaction. Values go longest first, so a value that
- * contains a shorter one wins.
+ * One pass over the text, not one per name (#1400). buildPayload redacts every
+ * field twice, so a value that is a substring of a placeholder this pass
+ * writes (`TOK='secret'`, or one name's value being another's name) must not
+ * be replaced again inside it: a configured placeholder is kept when every
+ * value occurrence touching it lies wholly inside it. A value always beats a
+ * placeholder it overlaps (#1400 F1(a)): an occurrence that starts inside a
+ * placeholder and runs past its end, or starts before it, is redacted even
+ * though that breaks the placeholder, because keeping the placeholder would
+ * leave the rest of the value in the text. Only the configured names'
+ * placeholders are kept: a looser `<secret:…>` shape would let failure text
+ * hide a value from redaction. Overlapping value occurrences merge into one
+ * redacted span named by the leftmost (then longest) value. Sorted spans and
+ * prefix reaches keep it O(n log n): failure text can repeat a placeholder
+ * thousands of times.
  */
 function replaceNamed(text: string, env: NodeJS.ProcessEnv): string {
   const secrets = namedSecrets(env);
@@ -98,17 +134,41 @@ function replaceNamed(text: string, env: NodeJS.ProcessEnv): string {
   const byValue = new Map<string, string>();
   for (const [name, value] of secrets)
     if (!byValue.has(value)) byValue.set(value, name);
-  const placeholders = [...new Set(byValue.values())].map(
-    (name) => `<secret:${name}>`,
-  );
-  const rule = new RegExp(
-    [...placeholders, ...byValue.keys()].map(escapeRegExp).join('|'),
-    'g',
-  );
-  return text.replace(rule, (hit) => {
-    const name = byValue.get(hit);
-    return name === undefined ? hit : `<secret:${name}>`;
+  const byStart = (a: Span, b: Span) => a.start - b.start || b.end - a.end;
+  const values = [...byValue]
+    .flatMap(([v, name]) => spansOf(text, v, name))
+    .sort(byStart);
+  if (values.length === 0) return text;
+  const valueReach = reachOf(values);
+  // A value starting before p must end by p.start; one starting inside p must
+  // end by p.end. The reach of everything starting before p.end checks both.
+  const kept = [...new Set(byValue.values())]
+    .flatMap((name) => spansOf(text, `<secret:${name}>`, name))
+    .filter((p) => {
+      const before = countBefore(values, p.start);
+      const upToEnd = countBefore(values, p.end);
+      return (
+        (before === 0 || valueReach[before - 1] <= p.start) &&
+        (upToEnd === 0 || valueReach[upToEnd - 1] <= p.end)
+      );
+    })
+    .sort(byStart);
+  const keptReach = reachOf(kept);
+  const hits = values.filter((v) => {
+    const n = countBefore(kept, v.start + 1);
+    return n === 0 || keptReach[n - 1] < v.end;
   });
+  let out = '';
+  let pos = 0;
+  for (let i = 0; i < hits.length;) {
+    const { start, name } = hits[i];
+    let end = hits[i].end;
+    for (i++; i < hits.length && hits[i].start < end; i++)
+      end = Math.max(end, hits[i].end);
+    out += `${text.slice(pos, start)}<secret:${name}>`;
+    pos = end;
+  }
+  return out + text.slice(pos);
 }
 
 /** The rules a test title gets: named secrets, JWTs and emails. Never the bare rule. */

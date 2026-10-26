@@ -138,3 +138,13 @@ for (const { label, value, text, fragments } of shapes) {
     assert.equal(redactText(out, env), out, 'second pass changed the text');
   });
 }
+
+test('checking placeholders for straddlers stays near-linear (CWE-1333)', () => {
+  // A pairwise placeholder-by-value check took ~2.4 s at 40k repeats.
+  const env = { CANARY_INGEST_REDACT_ENV: 'TOK', TOK: 'secret' };
+  const hostile = PH.repeat(65536);
+  const start = process.hrtime.bigint();
+  assert.equal(redactText(hostile, env), hostile);
+  const ms = Number(process.hrtime.bigint() - start) / 1e6;
+  assert.ok(ms < 500, `took ${ms.toFixed(0)} ms`);
+});
