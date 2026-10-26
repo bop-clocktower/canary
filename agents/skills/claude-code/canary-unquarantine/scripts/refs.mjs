@@ -52,6 +52,12 @@ const ghRef = (repo, number, index, text) => ({
 export const jiraProject = (key) =>
   String(key).slice(0, String(key).lastIndexOf('-'));
 
+/** What a later step needs to reach a Jira ticket again: key, project, site. Empty for other trackers. */
+export const jiraReach = (ref) =>
+  ref.tracker === 'jira'
+    ? { key: ref.key, project: ref.project, base: ref.base ?? null }
+    : {};
+
 const jiraRef = (key, base, index, text) => ({
   tracker: 'jira',
   key,

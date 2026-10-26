@@ -16,6 +16,7 @@
 
 import { must, readAt, withWorktree, writeLifts } from './git.mjs';
 import { embedManifest, planLift } from './lift.mjs';
+import { jiraReach } from './refs.mjs';
 
 /**
  * Which audited rows the trial lifts. Candidates always; abstained rows only
@@ -65,9 +66,7 @@ const manifestLift = (l) => ({
     tracker: b.tracker,
     state: b.state,
     url: b.url ?? '',
-    ...(b.tracker === 'jira'
-      ? { key: b.key, project: b.project, base: b.base ?? null }
-      : {}),
+    ...jiraReach(b),
   })),
   ledgerRows: l.ledgerRows,
 });
