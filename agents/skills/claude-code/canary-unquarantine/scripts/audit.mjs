@@ -258,13 +258,9 @@ function findUnledgered(markers, rows, results, jiraProjects) {
     .filter((m) => !byLine.has(`${m.file}:${m.markerLine}`))
     .filter((m) => !titles.has(pairKey(m.file, m.test)))
     .map((m) => {
-      // A bare key in the comment right above a skip is believed; `links`
-      // keeps each reference verbatim so a migration loses none of them.
-      const opts = {
-        jiraProjects,
-        exclude: idTokens(m.test),
-        anyBareJira: true,
-      };
+      // A key above a skip is a ticket only when anchored ("blocked by") or in
+      // a configured project: `UTF-8` is not one. `links` keeps each verbatim.
+      const opts = { jiraProjects, exclude: idTokens(m.test) };
       const refs = extractRefs(m.context, opts);
       return {
         ...m,

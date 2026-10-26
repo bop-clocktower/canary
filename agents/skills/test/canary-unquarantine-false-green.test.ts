@@ -286,6 +286,26 @@ describe('unledgered markers are never hidden by a shorter title', () => {
   });
 });
 
+describe('an unledgered marker links only real tickets', () => {
+  it('a key-shaped word like UTF-8 is not a ticket; an anchored key is', () => {
+    const repo = suite({
+      'tests/a.spec.js': [
+        '// breaks on UTF-8 input and ISO-8859 headers',
+        "test.skip('decodes the body', () => {});",
+        '// blocked by CORE-7',
+        "test.skip('waits on core', () => {});",
+        '',
+      ].join('\n'),
+    });
+    const result = audit({ repo, rows: [], lookup: {} });
+    const links = Object.fromEntries(
+      result.unledgered.map((m: any) => [m.test, m.links]),
+    );
+    expect(links['decodes the body']).toEqual([]);
+    expect(links['waits on core']).toEqual(['CORE-7']);
+  });
+});
+
 // --- a marker in a comment is not a marker -----------------------------------
 
 describe('runtime skips are read from code, not comments', () => {
