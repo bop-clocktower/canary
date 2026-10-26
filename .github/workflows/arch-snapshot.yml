@@ -89,13 +89,20 @@ jobs:
           SRC: ${{ runner.temp }}/arch-timeline
         # Regular files only: `cp` follows a symlink, and a link planted in the
         # artifact could copy the persisted token into a file this job pushes.
+        #
+        # #1490: upload-artifact roots the artifact at the least common
+        # ancestor of its paths. With the one path above, that is
+        # `.harness/arch/`, so the file arrives as `$SRC/timeline.json`, not
+        # under its repo path. `ts/test/workflow-hygiene.test.ts` pins the
+        # pairing.
         run: |
-          f=.harness/arch/timeline.json
-          if [ ! -f "$SRC/$f" ] || [ -L "$SRC/$f" ]; then
-            echo "::error::artifact entry $f is missing or not a regular file" >&2
+          entry=timeline.json
+          dest=.harness/arch/timeline.json
+          if [ ! -f "$SRC/$entry" ] || [ -L "$SRC/$entry" ]; then
+            echo "::error::artifact entry $entry is missing or not a regular file" >&2
             exit 1
           fi
-          cp -- "$SRC/$f" "$f"
+          cp -- "$SRC/$entry" "$dest"
 
       # Two stacked false greens lived here (#548). First, the guard used
       # `git diff` against a path git had never tracked — git cannot report a

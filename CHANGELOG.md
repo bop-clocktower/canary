@@ -34,6 +34,17 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The session siren checks the installed plugin, not the marketplace clone
+  (#1491).** Check 4 read the plugin version from the marketplace clone, so
+  after `claude plugin marketplace update` it went quiet while the plugin
+  Claude Code loads was still behind. That was a false green. It now compares
+  the CLI with the version in `installed_plugins.json`. A new check 4b reports an
+  install whose `gitCommitSha` differs from the marketplace HEAD, which catches
+  the stale-files-same-version case that a version string can't. If the
+  installed record can't be read, it reports cannot-verify instead of staying
+  silent. The session siren now has its first execution tests, in
+  `ts/test/install-siren.test.ts`.
+
 - **Named-secret redaction no longer garbles its own placeholders (#1400).**
   `buildPayload` redacts every failure field twice, and the second pass replaced
   a named value again wherever it appeared inside a placeholder: `TOK='secret'`

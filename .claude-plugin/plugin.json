@@ -46,7 +46,8 @@
     "./agents/skills/claude-code/canary-strix",
     "./agents/skills/claude-code/canary-sweep",
     "./agents/skills/claude-code/canary-test-pipeline",
-    "./agents/skills/claude-code/canary-test-reporter"
+    "./agents/skills/claude-code/canary-test-reporter",
+    "./agents/skills/claude-code/canary-unquarantine"
   ],
   "hooks": "./.claude-plugin/hooks.json",
   "//": "Canonical canary MCP server identity: 'canary-mcp' (npm bin canary-mcp → dist/engine/mcp-server.js runStdio(), TS engine port #439/#507); tools resolve as mcp__canary-mcp__*. Canary tools also surface via the harness server as mcp__harness__canary_*. Keep .mcp.json and marketplace.json in sync with this name.",

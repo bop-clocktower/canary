@@ -91,13 +91,28 @@ has no `flaky` status) it adds `retry flakes not measurable` so a structural
 zero is never read as a measured one.
 
 A quarantined test is acceptable only when it has a linked open issue (Jira or
-GitHub). Check issue state:
+GitHub). Classify the katana ledger (`.canary/quarantine.json`) with
+`canary skills run canary-unquarantine -- --json` rather than reading issue
+state by hand. It follows hand-offs, so an issue closed because the finding was
+filed upstream is judged on the upstream ticket. It also finds the markers the
+ledger misses. Count each class:
 
-- Linked issue **open** → counts as verified (documented, tracked)
+- **blocked** (linked issue open) → counts as verified (documented, tracked)
 
-- Linked issue **closed** → flag: quarantine should be resolved
+- **candidate** (blocker resolved) → flag: the quarantine should be trialled
+  with `canary-unquarantine trial`, never released on the ticket alone
 
-- **No linked issue** → fail: unlinked quarantine blocks CI-ready
+- **unlinked** (no ticket named anywhere) → fail: unlinked quarantine blocks
+  CI-ready
+
+- **stale** (ledger row, no marker in code) → flag: the ledger claims a
+  quarantine the code no longer has
+
+- **unledgered** (marker in code, no row) → flag: run
+  `canary-unquarantine migrate`
+
+- **abstained** (tracker unreadable) → not verified. Report it as unknown, never
+  as clean. Zero ledger rows read is the same abstention.
 
 ### 3. Assertion quality
 
@@ -238,5 +253,5 @@ Score of 5/5 = CI-READY. Any fail = NOT CI-READY. Warns do not block.
 
 - `/canary-critical-areas` — produces `critical-areas.json` used by check 4
 
-- `canary-unquarantine` (overlay) — resolves quarantined tests once bugs are
-  fixed
+- `canary-unquarantine` — audits quarantined tests against their tickets and
+  releases them through a trial run of CI

@@ -77,6 +77,7 @@ export default defineConfig({
         'claude-code/canary-blackhawk/scripts/**/*.mjs',
         'claude-code/canary-cassandra/scripts/**/*.mjs',
         'claude-code/canary-katana/scripts/**/*.mjs',
+        'claude-code/canary-unquarantine/scripts/**/*.mjs',
         // Top-level only (`*.mjs`, not `**`): the ported cli/run_types/
         // span_reader are tested, but otel_bootstrap/instrument.mjs needs a
         // live OTel SDK and stays out of the coverage gate (see the note
