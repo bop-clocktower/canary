@@ -37,6 +37,16 @@ function denominatorLine(den) {
   );
 }
 
+/** The unledgered scan's own denominator; nothing when the scan was off. */
+function scanLine(files) {
+  if (files === null || files === undefined) return [];
+  if (files === 0)
+    return [
+      '\u{26A0} Unledgered scan read 0 test files \u{2014} markers with no ledger row could not be looked for.',
+    ];
+  return [`Unledgered scan: ${files} test file(s) read.`];
+}
+
 function rowLine(r) {
   const at = r.line ? `${r.file}:${r.markerLine || r.line}` : r.file;
   const dup =
@@ -51,6 +61,7 @@ export function renderText(result, { ledger }) {
     `canary-unquarantine: audit of ${ledger}`,
     '',
     denominatorLine(denominator),
+    ...scanLine(result.scannedFiles),
   ];
   for (const cls of ORDER) {
     const group = rows.filter((r) => r.class === cls);
@@ -108,6 +119,8 @@ export function jsonPayload(result, { ledger, githubRepo }) {
     verdict: result.verdict,
     denominator: result.denominator,
     counts: result.counts,
+    // Test files the unledgered scan read; null when --no-scan.
+    scanned_files: result.scannedFiles,
     rows: result.rows,
     unledgered: result.unledgered,
   };

@@ -171,6 +171,15 @@ const ROWS: SkillGateRow[] = [
       run(unquarantineMain, ['--repo', base, '--no-scan', '--strict']),
   },
   {
+    // A migration over a directory with no test files: zero markers found, but
+    // in zero files read. The tempting read is "nothing left to migrate".
+    command: 'canary-unquarantine migrate (no test files read)',
+    forbid: ['Nothing to migrate'],
+    run: (base) => run(unquarantineMain, ['migrate', '--repo', base]),
+    strict: (base) =>
+      run(unquarantineMain, ['migrate', '--repo', base, '--strict']),
+  },
+  {
     command: 'canary-barda (zero runs in the feed)',
     forbid: ['7 panels,'],
     run: (base) => run(bardaMain, bardaArgs(base)),

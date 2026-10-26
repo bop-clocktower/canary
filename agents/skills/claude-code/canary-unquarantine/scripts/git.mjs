@@ -1,4 +1,4 @@
-// git -- the filesystem and git plumbing `trial` and `verdict` share.
+// git -- the filesystem and git plumbing `trial`, `verdict` and `quarantine` share.
 //
 // Every write happens in a throwaway `git worktree` under the OS temp
 // directory, created and removed here, so the user's own checkout is never

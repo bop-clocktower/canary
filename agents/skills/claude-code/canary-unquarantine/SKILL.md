@@ -12,9 +12,11 @@ description:
   and why", "audit the quarantine ledger", or "trial-release the candidates".
   `audit` is read-only; `trial` opens one draft PR lifting the candidates'
   markers only after an explicit --yes, and `verdict` reads that PR's CI per
-  test to release passes and re-quarantine failures. Never releases a test on
-  ticket state alone. NOT a test runner and NOT a flake diagnosis (that is
-  canary-flake-hunter).
+  test to release passes and re-quarantine failures. `quarantine` writes a
+  marker and its ledger row together, and `migrate` turns tag-style
+  (@known-failure) quarantine into ledger rows without losing a ticket link.
+  Never releases a test on ticket state alone. NOT a test runner and NOT a flake
+  diagnosis (that is canary-flake-hunter).
 cli: scripts/cli.mjs
 requires: [node>=20, gh]
 ---
@@ -286,11 +288,72 @@ covers four cases: no `--results` or `--artifact`, CI not finished, no such
 artifact, or a document with no test cases. It never falls back to the run's
 overall conclusion. `--strict` exits `1` when a lifted test failed or was flaky.
 
-### Still to come
+## The producer side: `quarantine` and `migrate`
 
-The producer side is tracked in #1455: one entry point that writes the ledger
-row and the marker together, and a one-shot migration of tag-style quarantine
-into ledger rows.
+A marker with no ledger row is a skip nobody can chase. A row with no marker is
+stale: it claims a quarantine the code no longer has. So nothing here writes one
+without the other.
+
+### `quarantine`: switch one test off
+
+```bash
+canary skills run canary-unquarantine -- quarantine \
+  --file tests/api/stock.spec.ts --test 'an order reserves stock' \
+  --cause product-defect --issue https://github.com/acme/suite/issues/7
+```
+
+This writes the marker and a caused ledger row together, or writes neither: the
+marker goes in first, and if the ledger cannot be written the test file is
+restored byte for byte. `--file` must resolve (symlinks included) to a file
+inside `--repo`; a `../` path, an absolute path elsewhere or a symlink out of
+the repo is refused, and the row records the repo-relative path.
+
+The marker is `.skip` on the declaration: `test`, `it`, `describe` and
+`test.describe` are handled. A pytest test gets a `@pytest.mark.skip(reason=…)`
+decorator instead. With `--as-tag`, the first quarantine tag is added to the
+title, for suites that quarantine by tag. A comment above the marker names the
+ticket and the cause.
+
+The row records the marker the way katana does (`describe.skip` for a
+`test.describe.skip`), with `cause`, `issue` and `expiry`.
+
+The command refuses, and touches nothing, in these cases:
+
+- `--cause` is not one of katana's causes;
+- `--issue` is missing for `product-defect`, `blocked-data` or
+  `pending-feature`;
+- the test is not in the file, or is already switched off;
+- the ledger is corrupt.
+
+### `migrate`: one-shot, markers to rows
+
+```bash
+# Show the rows the unledgered markers would become (writes nothing):
+canary skills run canary-unquarantine -- migrate
+
+# Append them:
+canary skills run canary-unquarantine -- migrate --yes
+```
+
+For a suite that quarantines by tag (`@known-failure` plus a ticket URL in the
+comment above) or by bare skip, `migrate` turns every unledgered marker into a
+ledger row. It is offline and asks no tracker.
+
+**No ticket link is lost.** Every reference in the comment above the marker is
+kept exactly as written: a URL stays a URL. The first reference becomes the
+row's `issue`, and the rest go into its `reason`.
+
+A tag row records the title without its tag, so the row still matches the test
+after a trial removes the tag.
+
+A marker that names no ticket becomes a row anyway. The audit then shows it as
+`unlinked`, where before it was invisible.
+
+Re-running finds nothing left to migrate, so no row is written twice. A suite
+with no test files abstains rather than reporting "nothing to migrate".
+
+`canary-ci-ready` reads these classes for its flakiness check. A row that is
+`unlinked` or `stale` is a quarantine nobody can release.
 
 ## Fidelity limits
 
