@@ -34,6 +34,28 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The session siren checks the installed plugin, not the marketplace clone
+  (#1491).** Check 4 read the plugin version from the marketplace clone, so
+  after `claude plugin marketplace update` it went quiet while the plugin Claude
+  Code loads was still behind. That was a false green. It now compares the CLI
+  with the version in `installed_plugins.json`. A new check 4b reports an
+  install whose `gitCommitSha` differs from the marketplace HEAD, which catches
+  the stale-files-same-version case that a version string can't. If the
+  installed record can't be read, it reports cannot-verify instead of staying
+  silent. The session siren now has its first execution tests, in
+  `ts/test/install-siren.test.ts`.
+
+- **Named-secret redaction no longer garbles its own placeholders (#1400).**
+  `buildPayload` redacts every failure field twice, and the second pass replaced
+  a named value again wherever it appeared inside a placeholder: `TOK='secret'`
+  became `<<secret:TOK>:TOK>`, and a value equal to another variable's name
+  rewrote that name's placeholder even on one pass. Named secrets are now
+  replaced in a single pass that leaves a value alone only when it lies wholly
+  inside an existing `<secret:NAME>` placeholder. A value that overlaps a
+  placeholder and runs past it is still redacted, so the placeholder is broken
+  rather than any part of the value kept. No value leaked; only the text was
+  mangled.
+
 - **Every workflow's Node comes from `.nvmrc` (#1428).** Seven `setup-node`
   steps in `batwoman.yml`, `docs-lint.yml`, `harness-architecture.yml`,
   `harness-quality.yml` and `leak-gate.yml` still hard-coded
@@ -43,6 +65,23 @@ under the project's former name) are documented in the
   a `matrix.*` or `steps.*.outputs.*` expression is allowed, for jobs that
   deliberately run another runtime.
 
+- **Close releases no longer cancel each other's `latest` advance, and two
+  racing advances cannot both move it (#1481).** `release.yml`'s
+  `advance-latest` job shared one `latest-tag` concurrency group, and GitHub
+  keeps one pending run per group, so a third release close behind a second
+  could cancel the second's pending advance. The group is now keyed per tag
+  (`latest-tag-<tag>`). Without the shared queue, two runs could both pass the
+  highest-stable-tag guard, so the tag push is now a compare-and-swap:
+  `--force-with-lease=refs/tags/latest:<sha>`, leased on the `latest` SHA read
+  from origin before the tags are fetched and ranked. A rejected push re-runs
+  the guard once against the fresh state, which turns an older release into a
+  no-op. A second rejection fails the step loudly, and re-running it is safe.
+  `ts/test/release-advance-latest.test.ts` asserts the per-tag group, the lease
+  read ahead of the guard and the absence of a bare `--force`, and runs the step
+  against a local bare remote with a second run moving `latest` mid-step. CI can
+  only exercise this statically and against local remotes; the next real release
+  is its first live run.
+
 - **Overlapping workflow runs no longer overwrite a force-pushed ref, and
   `latest` never moves backwards (#1427).** `release.yml`'s `advance-latest` job
   force-pushes the `latest` tag, and its runs queue in the order their publish
@@ -50,8 +89,8 @@ under the project's former name) are documented in the
   `latest` back to itself. The step now advances only when the release is the
   highest stable `vX.Y.Z` tag on origin (`scripts/highest-stable-tag.mjs`, which
   ranks numerically and ignores pre-releases); otherwise it logs a notice and
-  leaves `latest` alone. The job's `latest-tag` concurrency group stays, to keep
-  tag moves from overlapping. `ts/test/workflow-hygiene.test.ts` now fails on
+  leaves `latest` alone. The job keeps a non-cancelling concurrency group (keyed
+  per tag since #1481, above). `ts/test/workflow-hygiene.test.ts` now fails on
   any force push outside a non-cancelling concurrency group, and on a group on
   the required `security` job. `ts/test/release-advance-latest.test.ts` runs the
   step against a local bare remote.
@@ -84,6 +123,16 @@ under the project's former name) are documented in the
   retried and still fails loudly. A 403 or rate-limit degrade now also prints
   the verdict to the log and summary. `canary briefing --comment` no longer
   reports a GitHub 5xx as a missing write permission.
+
+- **guardian: a network failure while posting no longer fails the check
+  (#1478).** Node's `fetch` rejects on a reset socket, a DNS failure, or a
+  connect timeout instead of returning a status, so the #1467 retry never saw
+  it. The comment lookup and update now retry those errors with the same 1s/2s
+  backoff. The comment-create POST is never re-sent after one, because the
+  request may already have landed. A failure that outlives the retries degrades
+  like a 5xx: a `::warning::` naming the error code, the verdict in the log and
+  the step summary, and the computed verdict's exit code. Any other thrown error
+  still fails loudly.
 
 ## [9.5.0] - 2026-10-23
 

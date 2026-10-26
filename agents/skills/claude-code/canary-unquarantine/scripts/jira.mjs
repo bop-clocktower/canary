@@ -1,11 +1,11 @@
-// jira -- the Jira adapter: read a ticket's state.
+// jira -- the Jira adapter: read a ticket's state, and comment on it.
 //
 // Enabled per project by company.json `jira_projects`, with credentials from
 // the environment, handed to curl on stdin and never in argv, and sent only to
 // the configured CANARY_JIRA_BASE_URL. A project that is not configured, no
 // credentials, or a ticket link on any other site abstains for that ticket.
 
-import { parseJson } from './exec.mjs';
+import { failure, parseJson } from './exec.mjs';
 
 /** The origin of an https URL, or null for anything else. */
 function httpsOrigin(url) {
@@ -137,8 +137,57 @@ export function jiraTracker({
   };
 }
 
+/**
+ * Post a comment on a Jira ticket (the verdict's "tell the ticket"), under the
+ * same per-project gate, configured-site-only rule and stdin-only credentials
+ * as the reader.
+ *
+ * @param {{run: Function, projects?: string[], env?: Record<string, string|undefined>,
+ *          curl?: string}} opts
+ * @returns {(ref: object, body: string) => {ok: boolean, why: string}}
+ */
+export function jiraCommenter({
+  run,
+  projects = [],
+  env = process.env,
+  curl = 'curl',
+}) {
+  const access = jiraAccess({ projects, env });
+  return (ref, body) => {
+    const ok = access(ref);
+    if ('why' in ok) return { ok: false, why: ok.why };
+    const api = `${ok.base}/rest/api/2/issue/${encodeURIComponent(ref.key)}/comment`;
+    const json = JSON.stringify({ body });
+    const config = `${ok.auth}header = "Content-Type: application/json"\ndata = ${JSON.stringify(json)}\n`;
+    const r = run(
+      curl,
+      [
+        '-sS',
+        '--fail',
+        '--proto',
+        '=https',
+        '--globoff',
+        '-X',
+        'POST',
+        '-K',
+        '-',
+        api,
+      ],
+      { input: config },
+    );
+    return r.status === 0
+      ? { ok: true, why: '' }
+      : { ok: false, why: failure(r, `Jira comment on ${ref.key}`) };
+  };
+}
+
 /** Jira's status categories, as this audit reads them. */
-const JIRA_STATE = { done: 'resolved', new: 'open', indeterminate: 'open' };
+// Null-prototype, so a category named like an Object.prototype key reads as unknown.
+const JIRA_STATE = Object.assign(Object.create(null), {
+  done: 'resolved',
+  new: 'open',
+  indeterminate: 'open',
+});
 
 /** A `done` ticket: resolved only when its resolution is in `fixed`. */
 function doneState(fields, url, fixed) {

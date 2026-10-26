@@ -213,9 +213,12 @@ describe('spawnExec', () => {
   });
 
   it('reports a command that cannot be spawned as exit 127', async () => {
+    // spawnExec merges process.env, so without this the lookup walks the
+    // host's PATH, and an untraversable entry turns ENOENT into EACCES
+    // (#1493). PATH is the per-test empty temp dir: the miss is always ENOENT.
     const res = await spawnExec('canary-rewind-no-such-binary', [], {
       cwd: dir,
-      env: {},
+      env: { PATH: dir },
     });
     expect(res.code).toBe(127);
     expect(res.output).toMatch(/ENOENT/);
