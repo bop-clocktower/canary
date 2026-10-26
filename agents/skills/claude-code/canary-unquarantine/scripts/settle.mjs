@@ -66,6 +66,19 @@ function rebuildFiles(run, work, base, judged) {
 }
 
 /**
+ * A Jira blocker's key picks the ticket a comment is written to, so it must be
+ * a well-formed key and the blocker's own id. Pairing it with another ticket
+ * still needs a PR editor; re-deriving blockers at verdict time would close that.
+ */
+function checkJiraBlocker(b) {
+  if (b.tracker !== 'jira') return;
+  if (!/^[A-Z][A-Z0-9_]{1,9}-\d+$/.test(String(b.key)) || b.key !== b.id)
+    throw new Error(
+      `trial manifest blocker "${b.key}" is not a Jira key matching its id "${b.id}"; refusing to settle`,
+    );
+}
+
+/**
  * Refuse a manifest that reaches outside `root`. The manifest lives in the PR
  * body, which anyone who can edit the PR controls, so every path it names is
  * resolved (symlinks included) and must stay strictly inside the tree, and
@@ -77,6 +90,7 @@ function checkManifest(root, manifest, judged) {
     throw new Error(
       `trial manifest base "${manifest.base}" is not a commit id; refusing to settle`,
     );
+  judged.flatMap((j) => j.blockers ?? []).forEach(checkJiraBlocker);
   for (const p of [manifest.ledger, ...judged.map((j) => j.file)]) {
     if ('why' in insideRepo(root, p))
       throw new Error(

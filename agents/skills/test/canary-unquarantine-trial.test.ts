@@ -1046,4 +1046,21 @@ describe('verdict --apply refuses a manifest that reaches outside the worktree',
       /not a commit id/,
     );
   });
+
+  it('a Jira blocker whose key is malformed, or not its own id, is refused (it picks the ticket to write to)', () => {
+    const jiraOf = (m: any) =>
+      m.lifts.find((l: any) => l.test === EVENT).blockers.at(-1);
+    expectRefused(
+      tampered((m) => {
+        jiraOf(m).key = 'CORE-101/../../myself';
+      }),
+      /not a Jira key/,
+    );
+    expectRefused(
+      tampered((m) => {
+        jiraOf(m).key = 'CORE-999';
+      }),
+      /not a Jira key/,
+    );
+  });
 });
