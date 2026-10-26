@@ -6,6 +6,9 @@
  * {@link fetchWithRetry} gives each request {@link MAX_ATTEMPTS} tries (a POST
  * only on a rate limit, never a 5xx); every other status is a real answer and
  * returns on the first try.
+ * A network-level rejection (ECONNRESET, DNS, socket timeout) gets the same
+ * tries on GET and PATCH, but never a re-sent POST (#1478), and surfaces as a
+ * {@link GitHubNetworkError}.
  * {@link toGitHubError} then types a final failure so the sticky-comment upsert
  * can tell a token problem, a rate limit, and a GitHub outage apart. Split out
  * of `pr-comment.ts`, which owns the comment client and the degrade decision.
@@ -64,21 +67,101 @@ function retryDelayMs(attempt: number, headers: Headers): number {
 }
 
 /**
+ * Error codes Node's `fetch` (undici) puts on `cause.code` when the request
+ * never got an HTTP answer: a reset or refused socket, a DNS failure, or a
+ * connect/socket timeout (#1478). Nothing else counts as a network error, so a
+ * programming error that happens to be a TypeError still throws as-is.
+ */
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ECONNABORTED',
+  'EPIPE',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+]);
+
+/**
+ * The network code behind a `fetch` rejection, else `null`. undici rejects with
+ * `TypeError('fetch failed')` and the reason on `cause`; a dual-stack connect
+ * failure nests per-address errors in an AggregateError's `errors`.
+ */
+function networkErrorCode(err: unknown): string | null {
+  if (!(err instanceof TypeError)) return null;
+  const cause = (err as { cause?: unknown }).cause as
+    { code?: unknown; errors?: unknown } | undefined;
+  const candidates = [
+    cause,
+    ...(Array.isArray(cause?.errors) ? cause.errors : []),
+  ];
+  for (const c of candidates) {
+    const code = (c as { code?: unknown } | undefined)?.code;
+    if (typeof code === 'string' && NETWORK_ERROR_CODES.has(code)) return code;
+  }
+  return null;
+}
+
+/**
+ * A request that never got an HTTP answer (#1478). Like a 5xx it says nothing
+ * about the diff, so `upsertStickyComment` degrades it to a notice.
+ */
+export class GitHubNetworkError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'GitHubNetworkError';
+  }
+}
+
+/**
  * `fetch` with the bounded retry (#1467): up to {@link MAX_ATTEMPTS} tries on a
- * retryable status (method-aware: see {@link isRetryable}). Returns the last response either way, so the caller's
- * status mapping still decides what a final failure means.
+ * retryable status (method-aware: see {@link isRetryable}). Returns the last
+ * response either way, so the caller's status mapping still decides what a
+ * final failure means.
+ *
+ * A network rejection (#1478) is retried with the same backoff on GET and
+ * PATCH. A POST is never re-sent after one: the request may already have
+ * landed, and a second POST would stack a second sticky (SC-9). Either way the
+ * final network failure throws a {@link GitHubNetworkError}; any other
+ * rejection is rethrown untouched.
  */
 export async function fetchWithRetry(
   url: string,
   init: RequestInit,
   sleep: Sleep,
 ): Promise<Response> {
+  const method = init.method ?? 'GET';
   for (let attempt = 1; ; attempt += 1) {
-    const resp = await fetch(url, init);
+    let resp: Response;
+    try {
+      resp = await fetch(url, init);
+    } catch (err) {
+      const code = networkErrorCode(err);
+      if (code === null) throw err;
+      if (method === 'POST' || attempt >= MAX_ATTEMPTS) {
+        throw new GitHubNetworkError(
+          `GitHub API network error (${code}): ${method} ${url}`,
+          code,
+          { cause: err },
+        );
+      }
+      await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1));
+      continue;
+    }
     if (
       resp.ok ||
       attempt >= MAX_ATTEMPTS ||
-      !isRetryable(init.method ?? 'GET', resp.status, resp.headers)
+      !isRetryable(method, resp.status, resp.headers)
     ) {
       return resp;
     }

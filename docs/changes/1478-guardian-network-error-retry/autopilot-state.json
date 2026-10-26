@@ -1,0 +1,16 @@
+{
+  "item": "#1478",
+  "phase": "done",
+  "skill": "harness-debugging",
+  "steps": [
+    "investigate: fetchWithRetry only looped on a returned Response; undici rejects a network failure with TypeError('fetch failed') + cause.code, which escaped on attempt 1 and was rethrown by upsertStickyComment before pr-check could exit with the verdict",
+    "analyze: mirrored the #1470 status-retry and degrade path (GitHubServerError -> degraded notice -> postStickyComment warning + log + step summary)",
+    "hypothesize: an unclassified network rejection bypasses both retry and degrade; confirmed by stubbing fetch to reject with a coded TypeError",
+    "fix: regression tests red (10/12; the 2 bug-stays-loud guards green), then classify on cause.code, retry GET/PATCH, never re-send POST, throw GitHubNetworkError, degrade in upsertStickyComment; green (12/12)",
+    "docs: pr-guardian guide paragraph and CHANGELOG Unreleased/Fixed entry",
+    "verify: build, typecheck, format:check, test (348 files, 6703 passed, 2 skipped); harness check-deps (528 modules) and harness validate passed"
+  ],
+  "commits": [
+    "fix(guardian): retry network-level fetch failures and degrade them to the verdict (#1478)"
+  ]
+}
