@@ -382,8 +382,8 @@ via slash commands.
   - `canary-unquarantine` (#1455): the release half of katana's quarantine
     ledger. `audit` resolves each row's blocker (v2 `issue`, else the comment
     above the marker, the reason, the title), follows hand-offs from closed
-    GitHub issues to the upstream ticket — closed-to-upstream is not fixed —
-    and classifies candidate / blocked / stale / unlinked / abstain. Needs the
+    GitHub issues to the upstream ticket — closed-to-upstream is not fixed — and
+    classifies candidate / blocked / stale / unlinked / abstain. Needs the
     network (`gh`; Jira only for company.json `jira_projects`). Zero rows read
     or any unreadable tracker abstains, never reads as clear.
 - **Slash commands:** `commands/*.md`, loaded by the default `commands/` scan.
@@ -1419,12 +1419,18 @@ queue, and a running push is never killed. A group serialises runs but does not
 order them, so it is enough only where the newest run is also the right writer.
 The push jobs above run only on push to `main` and regenerate from it. The
 required `security` scan job carries no group, so its PR runs never queue.
-`release.yml`'s `advance-latest` is different: its runs queue in the order their
-publish finishes, not tag order, so its step also moves `latest` only when the
+`release.yml`'s `advance-latest` is different: its runs finish in the order
+their publish finishes, not tag order, so its step moves `latest` only when the
 release is the highest stable `vX.Y.Z` tag (`scripts/highest-stable-tag.mjs`)
-and is otherwise a logged no-op. `ts/test/workflow-hygiene.test.ts` fails on a
-force push with no group, and `ts/test/release-advance-latest.test.ts` runs the
-`latest` step against a local bare remote.
+and is otherwise a logged no-op. Since #1481 its group is keyed per tag
+(`latest-tag-<tag>`), so close releases never cancel each other's pending
+advance. Two runs can then both pass the guard, so the push is a
+compare-and-swap (`--force-with-lease=refs/tags/latest:<sha>`) on the `latest`
+SHA read before the guard. A rejected push re-runs the guard once against the
+fresh state, and a second rejection fails the step.
+`ts/test/workflow-hygiene.test.ts` fails on a force push with no group, and
+`ts/test/release-advance-latest.test.ts` runs the `latest` step against a local
+bare remote, including a racing run.
 
 ## Agent Behavior
 
