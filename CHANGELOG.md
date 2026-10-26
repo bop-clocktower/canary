@@ -44,6 +44,18 @@ under the project's former name) are documented in the
   installed record can't be read, it reports cannot-verify instead of staying
   silent. The session siren now has its first execution tests, in
   `ts/test/install-siren.test.ts`.
+
+- **Named-secret redaction no longer garbles its own placeholders (#1400).**
+  `buildPayload` redacts every failure field twice, and the second pass replaced
+  a named value again wherever it appeared inside a placeholder: `TOK='secret'`
+  became `<<secret:TOK>:TOK>`, and a value equal to another variable's name
+  rewrote that name's placeholder even on one pass. Named secrets are now
+  replaced in a single pass that leaves a value alone only when it lies wholly
+  inside an existing `<secret:NAME>` placeholder. A value that overlaps a
+  placeholder and runs past it is still redacted, so the placeholder is broken
+  rather than any part of the value kept. No value leaked; only the text was
+  mangled.
+
 - **Every workflow's Node comes from `.nvmrc` (#1428).** Seven `setup-node`
   steps in `batwoman.yml`, `docs-lint.yml`, `harness-architecture.yml`,
   `harness-quality.yml` and `leak-gate.yml` still hard-coded
@@ -111,6 +123,16 @@ under the project's former name) are documented in the
   retried and still fails loudly. A 403 or rate-limit degrade now also prints
   the verdict to the log and summary. `canary briefing --comment` no longer
   reports a GitHub 5xx as a missing write permission.
+
+- **guardian: a network failure while posting no longer fails the check
+  (#1478).** Node's `fetch` rejects on a reset socket, a DNS failure, or a
+  connect timeout instead of returning a status, so the #1467 retry never saw
+  it. The comment lookup and update now retry those errors with the same 1s/2s
+  backoff. The comment-create POST is never re-sent after one, because the
+  request may already have landed. A failure that outlives the retries degrades
+  like a 5xx: a `::warning::` naming the error code, the verdict in the log and
+  the step summary, and the computed verdict's exit code. Any other thrown error
+  still fails loudly.
 
 ## [9.5.0] - 2026-10-23
 

@@ -1,0 +1,15 @@
+{
+  "item": "#1493",
+  "phase": "done",
+  "skill": "harness-debugging",
+  "steps": [
+    "investigate: spawnExec merges process.env over opts.env; the test passed env {} so lookup walked the host PATH",
+    "analyze: sibling spawnExec test already passes env via opts.env; no product signature change needed",
+    "hypothesize: an untraversable PATH entry yields EACCES; confirmed with a mode-000 dir first on PATH (1 failed, 'spawn canary-rewind-no-such-binary EACCES')",
+    "fix: test passes env { PATH: dir } (per-test empty mkdtemp dir); revert-and-fail verified (1 failed reverted, 22/22 restored)",
+    "verify: 20/20 runs with hostile PATH, 20/20 with host PATH; build, typecheck, format:check, npm test (347 files, 6691 passed, 2 skipped) green"
+  ],
+  "commits": [
+    "test(rewind): pin PATH in the spawnExec exit-127 test so the miss is always ENOENT (#1493)"
+  ]
+}

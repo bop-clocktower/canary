@@ -425,7 +425,12 @@ plain 403, as on a fork), `pr-check` prints a `::warning::` naming the HTTP
 status. It then writes the rendered verdict to the job log and the step summary
 and exits with the **computed verdict's** code, so a GitHub outage cannot turn a
 passing gate red. Any other 4xx, such as a 404 or a 422, is not retried and
-fails the run loudly, because it says the request itself is wrong ([#1467]).
+fails the run loudly, because it says the request itself is wrong ([#1467]). A
+network-level failure, such as a reset socket, a DNS error, or a connect
+timeout, is retried the same way on the lookup and the update. The create POST
+is never re-sent after one, since the request may already have landed. If the
+failure outlives the retries, `pr-check` degrades exactly as it does for a 5xx,
+and the `::warning::` names the error code ([#1478]).
 
 ## Suppression
 
@@ -525,6 +530,7 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#761]: https://github.com/bop-clocktower/canary/issues/761
 [#1305]: https://github.com/bop-clocktower/canary/issues/1305
 [#1467]: https://github.com/bop-clocktower/canary/issues/1467
+[#1478]: https://github.com/bop-clocktower/canary/issues/1478
 
 Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
 config, which makes `canary guardian pr-check` exit non-zero on an unaddressed
