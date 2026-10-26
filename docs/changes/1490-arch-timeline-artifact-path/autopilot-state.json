@@ -7,7 +7,9 @@
     "tdd: add #1490 blocks to ts/test/workflow-hygiene.test.ts (LCA layout model + per-hand-off pins + real restore script under bash); red on arch-snapshot.yml with the exact CI error",
     "tdd: seed ts/test/ledger-push-jobs.test.ts fake artifact at the real layout; red on the two arch push cases",
     "fix: arch-snapshot.yml restore step reads $SRC/timeline.json, guard unchanged; harness-security.yml comment only",
-    "verify: actionlint 1.7.12 clean, build/typecheck/format:check/test green (347 files, 6687 tests), harness check-deps + validate pass"
+    "verify: actionlint 1.7.12 clean, build/typecheck/format:check/test green (347 files, 6687 tests), harness check-deps + validate pass",
+    "dispatch: one workflow_dispatch of arch-snapshot.yml on the branch, run 40353628331 success; chore/arch-timeline force-updated to 5a926203",
+    "ci: Skills (JS) canary-savant SV004 flagged 'after #1461' in the #1490 doc comment as order coupling (false positive); reworded to 'since', savant --strict clean"
   ],
   "commits": ["622e5b965351b64d6ef5554e204ed3ac4cf3f2e6"]
 }

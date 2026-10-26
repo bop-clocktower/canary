@@ -428,7 +428,7 @@ describe('#1428 setup-node takes its version from .nvmrc', () => {
  * `.harness/arch/timeline.json`, has its own directory as that ancestor, so
  * the artifact holds a bare `timeline.json` (artifact 12659041789 on run
  * 40340731570 listed exactly that). The push job looked for
- * `$SRC/.harness/arch/timeline.json` and failed on every run after #1461.
+ * `$SRC/.harness/arch/timeline.json` and failed on every run since #1461.
  * `harness-security.yml` uploads two paths whose common ancestor is the repo
  * root, so its entries keep their repo paths. That holds only while both
  * paths stay in the list.
