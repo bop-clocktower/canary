@@ -36,9 +36,9 @@ under the project's former name) are documented in the
 
 - **The session siren checks the installed plugin, not the marketplace clone
   (#1491).** Check 4 read the plugin version from the marketplace clone, so
-  after `claude plugin marketplace update` it went quiet while the plugin
-  Claude Code loads was still behind. That was a false green. It now compares
-  the CLI with the version in `installed_plugins.json`. A new check 4b reports an
+  after `claude plugin marketplace update` it went quiet while the plugin Claude
+  Code loads was still behind. That was a false green. It now compares the CLI
+  with the version in `installed_plugins.json`. A new check 4b reports an
   install whose `gitCommitSha` differs from the marketplace HEAD, which catches
   the stale-files-same-version case that a version string can't. If the
   installed record can't be read, it reports cannot-verify instead of staying
@@ -65,6 +65,23 @@ under the project's former name) are documented in the
   a `matrix.*` or `steps.*.outputs.*` expression is allowed, for jobs that
   deliberately run another runtime.
 
+- **Close releases no longer cancel each other's `latest` advance, and two
+  racing advances cannot both move it (#1481).** `release.yml`'s
+  `advance-latest` job shared one `latest-tag` concurrency group, and GitHub
+  keeps one pending run per group, so a third release close behind a second
+  could cancel the second's pending advance. The group is now keyed per tag
+  (`latest-tag-<tag>`). Without the shared queue, two runs could both pass the
+  highest-stable-tag guard, so the tag push is now a compare-and-swap:
+  `--force-with-lease=refs/tags/latest:<sha>`, leased on the `latest` SHA read
+  from origin before the tags are fetched and ranked. A rejected push re-runs
+  the guard once against the fresh state, which turns an older release into a
+  no-op. A second rejection fails the step loudly, and re-running it is safe.
+  `ts/test/release-advance-latest.test.ts` asserts the per-tag group, the lease
+  read ahead of the guard and the absence of a bare `--force`, and runs the step
+  against a local bare remote with a second run moving `latest` mid-step. CI can
+  only exercise this statically and against local remotes; the next real release
+  is its first live run.
+
 - **Overlapping workflow runs no longer overwrite a force-pushed ref, and
   `latest` never moves backwards (#1427).** `release.yml`'s `advance-latest` job
   force-pushes the `latest` tag, and its runs queue in the order their publish
@@ -72,8 +89,8 @@ under the project's former name) are documented in the
   `latest` back to itself. The step now advances only when the release is the
   highest stable `vX.Y.Z` tag on origin (`scripts/highest-stable-tag.mjs`, which
   ranks numerically and ignores pre-releases); otherwise it logs a notice and
-  leaves `latest` alone. The job's `latest-tag` concurrency group stays, to keep
-  tag moves from overlapping. `ts/test/workflow-hygiene.test.ts` now fails on
+  leaves `latest` alone. The job keeps a non-cancelling concurrency group (keyed
+  per tag since #1481, above). `ts/test/workflow-hygiene.test.ts` now fails on
   any force push outside a non-cancelling concurrency group, and on a group on
   the required `security` job. `ts/test/release-advance-latest.test.ts` runs the
   step against a local bare remote.

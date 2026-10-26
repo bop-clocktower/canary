@@ -16,11 +16,13 @@
 
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,9 +54,12 @@ function advanceLatest(): Job {
   return job!;
 }
 
+// The push of the floating tag, however it is spelled.
+const PUSH_LATEST = /git push\b[^\n]*\blatest\b/;
+
 function moveStep(): Step {
   const step = (advanceLatest().steps ?? []).find((s) =>
-    /git push origin latest/.test(s.run ?? ''),
+    PUSH_LATEST.test(s.run ?? ''),
   );
   expect(step, 'advance-latest has no step that pushes latest').toBeDefined();
   return step!;
@@ -114,15 +119,73 @@ describe('release.yml advance-latest guards on the highest stable tag', () => {
     expect(run).toMatch(/git fetch[^\n]*--tags/);
     expect(run).toContain('node scripts/highest-stable-tag.mjs');
     expect(run.indexOf('highest-stable-tag.mjs')).toBeLessThan(
-      run.indexOf('git push origin latest'),
+      run.search(PUSH_LATEST),
     );
   });
+});
 
-  it('keeps the job serialised and never cancels a running tag move', () => {
+describe('#1481 release.yml advance-latest: per-tag group, compare-and-swap push', () => {
+  // One shared group let a third close release cancel the second's pending
+  // advance (GitHub keeps one pending run per group). Keyed per tag, runs for
+  // different tags no longer queue behind each other, so two of them can both
+  // pass the highest-tag guard. The push is therefore a compare-and-swap on
+  // the `latest` SHA read before the guard: whoever pushes second is rejected.
+  it('keys the concurrency group per tag and never cancels a running move', () => {
     expect(advanceLatest().concurrency).toEqual({
-      group: 'latest-tag',
+      group: 'latest-tag-${{ github.ref_name }}',
       'cancel-in-progress': false,
     });
+  });
+
+  /** The variable the push leases against, e.g. `LEASE` in `...latest:${LEASE}`. */
+  function leaseVar(run: string): string {
+    const m =
+      /--force-with-lease=["']?refs\/tags\/latest:\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/.exec(
+        run,
+      );
+    expect(
+      m,
+      'push does not lease refs/tags/latest on a variable',
+    ).not.toBeNull();
+    return m![1]!;
+  }
+
+  it('pushes latest with --force-with-lease on refs/tags/latest', () => {
+    const run = moveStep().run!;
+    const push = run.split('\n').find((l) => PUSH_LATEST.test(l))!;
+    expect(push).toMatch(/--force-with-lease=["']?refs\/tags\/latest:/);
+    // The full ref, so `latest` cannot resolve to a branch of the same name.
+    expect(push).toMatch(/\sorigin\s+refs\/tags\/latest\b/);
+  });
+
+  it('reads the lease from origin before fetching and ranking the tags', () => {
+    const run = moveStep().run!;
+    const name = leaseVar(run);
+    const read = run.search(
+      new RegExp(`\\b${name}="\\$\\(git ls-remote origin refs/tags/latest\\b`),
+    );
+    expect(read, `${name} is not read with git ls-remote`).toBeGreaterThan(-1);
+    // Read before the fetch: a newer release tagged after the fetch could
+    // otherwise move latest before the read, and the lease would bless a
+    // stale guard.
+    expect(read).toBeLessThan(run.search(/git fetch[^\n]*--tags/));
+    expect(read).toBeLessThan(run.indexOf('highest-stable-tag.mjs'));
+    expect(read).toBeLessThan(run.search(PUSH_LATEST));
+  });
+
+  it('has no bare force push of latest', () => {
+    const pushes = moveStep()
+      .run!.split('\n')
+      .filter((l) => /\bgit\s+push\b/.test(l));
+    expect(pushes.length).toBeGreaterThan(0);
+    for (const l of pushes) {
+      expect(l).not.toMatch(/\s--force(?!-with-lease=)/);
+      expect(l).not.toMatch(/\s-f\b/);
+      expect(l).not.toMatch(/\s\+\S/);
+      // A bare --force-with-lease leases on an implicit remote-tracking
+      // value, not on the SHA this run read before its guard.
+      expect(l).not.toMatch(/--force-with-lease(?!=["']?refs\/tags\/latest:)/);
+    }
   });
 });
 
@@ -175,7 +238,12 @@ describe('release.yml advance-latest, run against a real remote', () => {
     return { origin, work, sha };
   }
 
-  function runStep(work: string, tag: string, sha: string) {
+  function runStep(
+    work: string,
+    tag: string,
+    sha: string,
+    env: NodeJS.ProcessEnv = {},
+  ) {
     return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', moveStep().run!], {
       cwd: work,
       encoding: 'utf8',
@@ -184,8 +252,60 @@ describe('release.yml advance-latest, run against a real remote', () => {
         RELEASE_TAG: tag,
         RELEASE_SHA: sha,
         GITHUB_STEP_SUMMARY: join(dir!, 'summary.md'),
+        ...env,
       },
     });
+  }
+
+  /**
+   * #1481: a `git` on PATH that runs `race` (a bash snippet, with `$GIT` as
+   * the real git) just before each of the step's first `times` pushes. That is
+   * a second advance-latest run moving origin's `latest` between this run's
+   * guard and its push, which a per-tag concurrency group no longer prevents.
+   */
+  function racingGit(race: string, times: number): NodeJS.ProcessEnv {
+    const bin = join(dir!, 'bin');
+    mkdirSync(bin);
+    const real = spawnSync('bash', ['-c', 'command -v git'], {
+      encoding: 'utf8',
+    }).stdout.trim();
+    const count = join(dir!, 'race-count');
+    writeFileSync(
+      join(bin, 'git'),
+      [
+        '#!/usr/bin/env bash',
+        'if [ "$1" = push ]; then',
+        `  n=$(cat '${count}' 2>/dev/null || echo 0)`,
+        `  if [ "$n" -lt ${times} ]; then`,
+        `    echo $((n + 1)) > '${count}'`,
+        `    GIT='${real}' RACE_N=$((n + 1)) bash -e -c "$RACE"`,
+        '  fi',
+        'fi',
+        `exec '${real}' "$@"`,
+        '',
+      ].join('\n'),
+    );
+    chmodSync(join(bin, 'git'), 0o755);
+    return { PATH: `${bin}:${process.env.PATH ?? ''}`, RACE: race };
+  }
+
+  /** Commit and tag `tag` in the seed repo without pushing it. */
+  function seedTag(tag: string): string {
+    const seed = join(dir!, 'seed');
+    git(
+      seed,
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@t',
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      tag,
+    );
+    git(seed, 'tag', tag);
+    return git(seed, 'rev-parse', 'HEAD');
   }
 
   const latestAt = (origin: string) =>
@@ -236,5 +356,63 @@ describe('release.yml advance-latest, run against a real remote', () => {
     const r = runStep(work, 'v1.0.0', sha['v1.0.0']!);
     expect(r.status).toBe(0);
     expect(latestAt(origin)).toBe('');
+  });
+
+  // #1481: the git semantics the step relies on, rehearsed directly.
+  it('git rejects a lease push whose expected latest SHA is stale', () => {
+    const { origin, work, sha } = setup(['v1.0.0', 'v1.1.0']);
+    const push = (lease: string) =>
+      spawnSync(
+        'git',
+        [
+          'push',
+          `--force-with-lease=refs/tags/latest:${lease}`,
+          'origin',
+          'refs/tags/latest',
+        ],
+        { cwd: work, encoding: 'utf8' },
+      );
+    git(work, 'tag', '-f', 'latest', sha['v1.0.0']!);
+    // An empty expected value means "must not exist yet".
+    expect(push('').status).toBe(0);
+    git(work, 'tag', '-f', 'latest', sha['v1.1.0']!);
+    expect(push('').status).not.toBe(0);
+    expect(push(sha['v1.1.0']!).status).not.toBe(0);
+    expect(latestAt(origin)).toBe(sha['v1.0.0']);
+    expect(push(sha['v1.0.0']!).status).toBe(0);
+    expect(latestAt(origin)).toBe(sha['v1.1.0']);
+  });
+
+  it('a newer release that moves latest between the guard and the push wins', () => {
+    // origin has no `latest` yet, so this run leases on "must not exist".
+    const { origin, work, sha } = setup(['v1.0.0']);
+    const seed = join(dir!, 'seed');
+    const newer = seedTag('v1.1.0');
+    // The v1.1.0 release is tagged and its advance lands after this run
+    // ranked the tags but before it pushed.
+    const env = racingGit(
+      `"$GIT" -C '${seed}' push -q --force '${origin}' refs/tags/v1.1.0 refs/tags/v1.1.0:refs/tags/latest`,
+      1,
+    );
+    const r = runStep(work, 'v1.0.0', sha['v1.0.0']!, env);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    // Before #1481 the unconditional force push moved latest back to v1.0.0.
+    expect(latestAt(origin)).toBe(newer);
+    // The retry re-ranked against the fresh tags and stood down.
+    expect(r.stdout).toMatch(/::notice::.*v1\.0\.0.*v1\.1\.0/);
+  });
+
+  it('fails loudly, never silently, when latest keeps moving under it', () => {
+    const { origin, work, sha } = setup(['v0.9.0', 'v1.0.0']);
+    const seed = join(dir!, 'seed');
+    // Every push attempt finds latest moved again by someone else.
+    const env = racingGit(
+      `"$GIT" -C '${seed}' -c user.name=t -c user.email=t@t tag -f -a latest v0.9.0 -m "race $RACE_N" >/dev/null && "$GIT" -C '${seed}' push -q --force '${origin}' refs/tags/latest`,
+      10,
+    );
+    const r = runStep(work, 'v1.0.0', sha['v1.0.0']!, env);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/::error::.*latest/);
+    expect(latestAt(origin)).toBe(sha['v0.9.0']);
   });
 });
