@@ -27,8 +27,19 @@ import {
   pickBlocker,
 } from '../claude-code/canary-unquarantine/scripts/refs.mjs';
 import { scanSuite } from '../claude-code/canary-unquarantine/scripts/scan.mjs';
-import { jiraTracker } from '../claude-code/canary-unquarantine/scripts/jira.mjs';
+import {
+  jiraCommenter,
+  jiraTracker,
+} from '../claude-code/canary-unquarantine/scripts/jira.mjs';
+import {
+  judge,
+  junitCases,
+} from '../claude-code/canary-unquarantine/scripts/results.mjs';
 import { githubTracker } from '../claude-code/canary-unquarantine/scripts/trackers.mjs';
+import {
+  applyEdits,
+  planLift,
+} from '../claude-code/canary-unquarantine/scripts/lift.mjs';
 
 type Result = { status: number; stdout: string; stderr: string; error: string };
 type Call = { cmd: string; args: string[]; input?: string };
@@ -275,6 +286,26 @@ describe('unledgered markers are never hidden by a shorter title', () => {
   });
 });
 
+describe('an unledgered marker links only real tickets', () => {
+  it('a key-shaped word like UTF-8 is not a ticket; an anchored key is', () => {
+    const repo = suite({
+      'tests/a.spec.js': [
+        '// breaks on UTF-8 input and ISO-8859 headers',
+        "test.skip('decodes the body', () => {});",
+        '// blocked by CORE-7',
+        "test.skip('waits on core', () => {});",
+        '',
+      ].join('\n'),
+    });
+    const result = audit({ repo, rows: [], lookup: {} });
+    const links = Object.fromEntries(
+      result.unledgered.map((m: any) => [m.test, m.links]),
+    );
+    expect(links['decodes the body']).toEqual([]);
+    expect(links['waits on core']).toEqual(['CORE-7']);
+  });
+});
+
 // --- a marker in a comment is not a marker -----------------------------------
 
 describe('runtime skips are read from code, not comments', () => {
@@ -406,6 +437,165 @@ describe('hand-off chain boundary', () => {
       'utf8',
     );
     expect(skill).toMatch(new RegExp(`up to ${HOPS} hops`));
+  });
+});
+
+// --- a trial only releases a test that proved itself (#1457) -----------------
+
+describe('a retry pass is not a pass', () => {
+  const xml = (child: string) =>
+    `<testsuite><testcase classname="tests.a" name="t" file="tests/a.py">${child}</testcase></testsuite>`;
+
+  it.each([
+    ['surefire flakyFailure', '<flakyFailure message="x"/>'],
+    ['surefire flakyError', '<flakyError message="x"></flakyError>'],
+    ['pytest-rerunfailures rerun', '<rerun message="x"/>'],
+  ])('%s reads as flaky, never pass', (_name, child) => {
+    expect(junitCases(xml(child))[0].outcome).toBe('flaky');
+  });
+
+  it('a rerun that never passed is still a fail', () => {
+    expect(
+      junitCases(xml('<rerunFailure/><failure message="x"/>'))[0].outcome,
+    ).toBe('fail');
+  });
+});
+
+describe('the trial lifts the marker shapes the audit now reads, or refuses', () => {
+  const lift = (lines: string[], markerLine: number, marker = 'x') =>
+    planLift(lines, { markerLine, marker, test: 't' }, ['@known-failure']);
+
+  it('lifts @mark.skip and @unittest.skip', () => {
+    for (const deco of ['@mark.skip(reason="#4")', '@unittest.skip("#5")']) {
+      const lines = [deco, 'def test_t():', '    pass'];
+      const plan = lift(lines, 1) as any;
+      expect(plan.edits).toBeDefined();
+      expect(applyEdits(lines, plan.edits)).toEqual([
+        'def test_t():',
+        '    pass',
+      ]);
+    }
+  });
+
+  it('removes every line of a skipif whose arguments wrap, leaving valid source', () => {
+    const lines = [
+      '@pytest.mark.skipif(',
+      '    sys.platform == "win32",',
+      '    reason="blocked by #12",',
+      ')',
+      'def test_p():',
+      '    pass',
+    ];
+    const plan = lift(lines, 1) as any;
+    expect(applyEdits(lines, plan.edits)).toEqual([
+      'def test_p():',
+      '    pass',
+    ]);
+  });
+
+  it('refuses a method skipped only through its class', () => {
+    const lines = [
+      '@pytest.mark.skip(reason="#3")',
+      'class TestC:',
+      '    def test_c(self):',
+      '        pass',
+    ];
+    expect(lift(lines, 3)).toMatchObject({
+      why: expect.stringMatching(/class/),
+    });
+  });
+
+  it('refuses a tag in a Playwright details object rather than leave an empty tag', () => {
+    const lines = [
+      "test('t', { tag: ['@slow', '@known-failure'] }, async () => {});",
+    ];
+    expect(lift(lines, 1)).toMatchObject({
+      why: expect.stringMatching(/details object/),
+    });
+  });
+
+  it('lifts it.skipIf(cond)(...) to it(...)', () => {
+    const lines = ["it.skipIf(process.env.CI)('t', () => {});"];
+    const plan = lift(lines, 1) as any;
+    expect(applyEdits(lines, plan.edits)).toEqual(["it('t', () => {});"]);
+  });
+});
+
+describe('a test missing from the run is never judged on a sibling', () => {
+  const FILE = 'tests/cart.spec.ts';
+  const cases = (outcome: string) => [
+    { file: FILE, titlePath: ['cart', 'adds item twice'], outcome },
+  ];
+
+  it('a passing sibling whose title contains the lifted one is missing, not pass', () => {
+    expect(judge({ test: 'adds item', file: FILE }, cases('pass'))).toEqual({
+      outcome: 'missing',
+      cases: 0,
+    });
+  });
+
+  it('containment may still keep a test quarantined: a failing match demotes', () => {
+    expect(
+      judge({ test: 'adds item', file: FILE }, cases('fail')).outcome,
+    ).toBe('fail');
+  });
+
+  it('an exact segment still passes', () => {
+    expect(
+      judge({ test: 'adds item twice', file: FILE }, cases('pass')),
+    ).toEqual({ outcome: 'pass', cases: 1 });
+  });
+});
+
+describe('the Jira commenter sends credentials only to the configured site', () => {
+  const ENV = {
+    CANARY_JIRA_EMAIL: 'qa@example.com',
+    CANARY_JIRA_API_TOKEN: 'not-a-real-token',
+    CANARY_JIRA_BASE_URL: 'https://acme.atlassian.net',
+  };
+  const recorder = () => {
+    const calls: Call[] = [];
+    const run = (
+      cmd: string,
+      args: string[],
+      opts: { input?: string } = {},
+    ) => {
+      calls.push({ cmd, args, input: opts.input });
+      return ok('{}');
+    };
+    return { run, calls };
+  };
+  const ref = (base: string | null) => ({
+    tracker: 'jira',
+    key: 'CORE-7',
+    project: 'CORE',
+    base,
+    id: 'CORE-7',
+  });
+
+  it('a ticket linked on a foreign host gets no comment and no credentials', () => {
+    const r = recorder();
+    const comment = jiraCommenter({ run: r.run, projects: ['CORE'], env: ENV });
+    const out = comment(ref('https://attacker.example'), 'released');
+    expect(out.ok).toBe(false);
+    expect(out.why).toMatch(/not the configured Jira site/);
+    expect(r.calls).toEqual([]);
+  });
+
+  it('posts to the configured site over https, credentials on stdin only', () => {
+    const r = recorder();
+    const comment = jiraCommenter({ run: r.run, projects: ['CORE'], env: ENV });
+    expect(comment(ref(null), 'say "hi"').ok).toBe(true);
+    const [call] = r.calls;
+    expect(call.args.at(-1)).toBe(
+      'https://acme.atlassian.net/rest/api/2/issue/CORE-7/comment',
+    );
+    expect(call.args).toEqual(expect.arrayContaining(['--proto', '=https']));
+    expect(call.args.join(' ')).not.toContain('not-a-real-token');
+    expect(call.input).toContain('not-a-real-token');
+    expect(call.input).toContain(
+      `data = ${JSON.stringify(JSON.stringify({ body: 'say "hi"' }))}`,
+    );
   });
 });
 

@@ -9,8 +9,13 @@ description:
   UP-123, not on nothing — and classifies every row as candidate, blocked,
   stale, unlinked or abstained, with a printed denominator. Use when the user
   asks "can any of these quarantined tests come back", "what is still skipped
-  and why", or "audit the quarantine ledger". Read-only and advisory; never
-  releases a test on ticket state alone. NOT a test runner and NOT a flake
+  and why", "audit the quarantine ledger", or "trial-release the candidates".
+  `audit` is read-only; `trial` opens one draft PR lifting the candidates'
+  markers only after an explicit --yes, and `verdict` reads that PR's CI per
+  test to release passes and re-quarantine failures. `quarantine` writes a
+  marker and its ledger row together, and `migrate` turns tag-style
+  (@known-failure) quarantine into ledger rows without losing a ticket link.
+  Never releases a test on ticket state alone. NOT a test runner and NOT a flake
   diagnosis (that is canary-flake-hunter).
 cli: scripts/cli.mjs
 requires: [node>=20, gh]
@@ -23,8 +28,9 @@ requires: [node>=20, gh]
 a skipped test never runs, so it can never pass live: a quarantine with no
 release step is permanent by construction.
 
-This skill is that step. Its first command, `audit`, answers one question per
-ledger row: **is the thing this test waits on resolved?**
+This skill is that step. `audit` answers one question per ledger row: **is the
+thing this test waits on resolved?** `trial` and `verdict` then let the suite's
+own CI decide whether each candidate really comes back.
 
 It is deliberately not "is the ticket closed?". The common way a quarantine's
 tracking issue closes is that the finding was filed with the team that owns the
@@ -189,14 +195,165 @@ and every one is blocked on an open ticket. Zero rows read prints
 `counts`, `rows` (each with `class`, `why`, `blockers` and the `via` chain) and
 `unledgered`.
 
-## What comes next
+## Trial release: `trial`, then `verdict`
 
-The audit is the read-only half. The trial release — one confirm, one draft PR
-in the suite that lifts every candidate's marker, and a verdict per test from
-that PR's own CI run (pass: drop the row; fail: re-point it and restore the
-marker; flaky: hand to `canary-flake-hunter`) — and the producer side (one entry
-point that writes the ledger row and the marker together, and a one-shot
-migration of tag-style quarantine into ledger rows) are tracked in #1455.
+A candidate is released only by the suite's own CI, never by ticket state.
+
+### `trial`
+
+```bash
+# Show what would be lifted (writes nothing):
+canary skills run canary-unquarantine -- trial
+
+# The one confirm -- opens ONE draft PR lifting every candidate's marker:
+canary skills run canary-unquarantine -- trial --yes
+```
+
+Without `--yes` the trial prints its plan and writes nothing. An agent running
+this skill shows the user that plan and asks before passing `--yes`. That is the
+single confirm.
+
+With `--yes`:
+
+1. A throwaway `git worktree` is created at `HEAD` on a new branch (`--branch`,
+   default `canary/unquarantine-trial-<date>-<sha>`). The user's checkout is
+   never switched, stashed or dirtied.
+2. Each selected marker is lifted by a checked text edit:
+   - `test.skip(`, `test.describe.skip(`, `it.skip(` and `test.fixme(` become
+     the same call without `.skip` or `.fixme`;
+   - `xit(`, `xtest(` and `xdescribe(` become `it(`, `test(` and `describe(`;
+   - `it.skipIf(cond)(` and `describe.runIf(cond)(` become `it(` and
+     `describe(`;
+   - pytest `skip`, `skipif` and `xfail` decorators (and `@mark.…`,
+     `@unittest.skip…`) are removed, every line of a wrapped one included;
+   - a quarantine tag is removed from the title;
+   - an `eslint-disable-next-line` directive that only permitted the skip goes
+     with the skip.
+
+   If the line no longer looks like the marker the audit saw, that test is not
+   lifted. A runtime guard is never lifted either: it skips on a condition and
+   lifts itself when the condition clears. A method skipped only through its
+   class, and a tag in a Playwright details object, are refused with the reason:
+   lifting them safely needs a person. Duplicate ledger rows lift one marker
+   once.
+
+3. The branch is pushed and `gh pr create --draft` opens the PR (`--pr-base` to
+   choose its base). The trial's plan travels in the PR body as an HTML comment,
+   so `verdict` needs only the PR number.
+
+Candidates are always selected. `--include-abstained` also selects rows whose
+tracker could not be read. Use it when the upstream tracker is out of reach but
+the suite's CI is not: the trial run is the arbiter either way.
+
+### `verdict`
+
+```bash
+# Read the trial PR's CI per test (writes nothing):
+canary skills run canary-unquarantine -- verdict --pr 77 --artifact playwright-report-json
+
+# Apply it: rewrite the trial PR and tell failing tickets:
+canary skills run canary-unquarantine -- verdict --pr 77 --artifact playwright-report-json --apply
+```
+
+Results come from the newest **completed** CI run on the trial commit, through
+`--artifact` (downloaded with `gh run download`). `--results PATH` takes a local
+file or directory instead. Both read a Playwright JSON report or JUnit XML. A
+lifted describe is judged on every case under it. A JUnit case carrying a retry
+record (surefire `<flakyFailure>`/`<flakyError>`, pytest-rerunfailures
+`<rerun>`) is flaky, not a pass. A lifted test is matched in the run by its
+title as a whole segment; a case whose title only contains it can keep the row
+quarantined (fail, flaky, skipped) but never release it, so a passing look-alike
+such as `adds item twice` for `adds item` reads as missing.
+
+| Outcome in the run      | `--apply` does                                                                                                                                                                                                                           |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pass (every case)       | the marker stays lifted; every ledger row for it is dropped                                                                                                                                                                              |
+| fail                    | the marker is restored; the rows' `issue` is re-pointed at the blocker the audit read as resolved, and that ticket gets a comment saying the test still fails (GitHub through `gh`, Jira when configured, otherwise listed for a person) |
+| flaky (passed on retry) | the marker is restored and the test is listed for `canary-flake-hunter`. Dispatch that agent for each one; a retry pass is not a fix                                                                                                     |
+| missing / still skipped | the marker is restored and nothing else changes. A test the run never reached proved nothing                                                                                                                                             |
+
+Every touched file is rebuilt from the trial's base commit plus only the lifts
+that passed. A restored marker comes back byte for byte, however many lifts
+share its file. The rewrite is one commit pushed to the trial branch. A person
+reviews and merges it.
+
+The trial manifest lives in the PR body, so anyone who can edit the PR can
+change it. Before anything is written, every path it names (the lifted files and
+the ledger) must resolve, symlinks included, strictly inside the trial worktree,
+and its `base` must be a commit id. Any escape refuses the whole `--apply`: it
+exits non-zero and writes, pushes and comments nothing.
+
+`verdict` abstains (`--strict` exit `3`) when there is no per-test result. That
+covers four cases: no `--results` or `--artifact`, CI not finished, no such
+artifact, or a document with no test cases. It never falls back to the run's
+overall conclusion. `--strict` exits `1` when a lifted test failed or was flaky.
+
+## The producer side: `quarantine` and `migrate`
+
+A marker with no ledger row is a skip nobody can chase. A row with no marker is
+stale: it claims a quarantine the code no longer has. So nothing here writes one
+without the other.
+
+### `quarantine`: switch one test off
+
+```bash
+canary skills run canary-unquarantine -- quarantine \
+  --file tests/api/stock.spec.ts --test 'an order reserves stock' \
+  --cause product-defect --issue https://github.com/acme/suite/issues/7
+```
+
+This writes the marker and a caused ledger row together, or writes neither: the
+marker goes in first, and if the ledger cannot be written the test file is
+restored byte for byte. `--file` must resolve (symlinks included) to a file
+inside `--repo`; a `../` path, an absolute path elsewhere or a symlink out of
+the repo is refused, and the row records the repo-relative path.
+
+The marker is `.skip` on the declaration: `test`, `it`, `describe` and
+`test.describe` are handled. A pytest test gets a `@pytest.mark.skip(reason=…)`
+decorator instead. With `--as-tag`, the first quarantine tag is added to the
+title, for suites that quarantine by tag. A comment above the marker names the
+ticket and the cause.
+
+The row records the marker the way katana does (`describe.skip` for a
+`test.describe.skip`), with `cause`, `issue` and `expiry`.
+
+The command refuses, and touches nothing, in these cases:
+
+- `--cause` is not one of katana's causes;
+- `--issue` is missing for `product-defect`, `blocked-data` or
+  `pending-feature`;
+- the test is not in the file, or is already switched off;
+- the ledger is corrupt.
+
+### `migrate`: one-shot, markers to rows
+
+```bash
+# Show the rows the unledgered markers would become (writes nothing):
+canary skills run canary-unquarantine -- migrate
+
+# Append them:
+canary skills run canary-unquarantine -- migrate --yes
+```
+
+For a suite that quarantines by tag (`@known-failure` plus a ticket URL in the
+comment above) or by bare skip, `migrate` turns every unledgered marker into a
+ledger row. It is offline and asks no tracker.
+
+**No ticket link is lost.** Every reference in the comment above the marker is
+kept exactly as written: a URL stays a URL. The first reference becomes the
+row's `issue`, and the rest go into its `reason`.
+
+A tag row records the title without its tag, so the row still matches the test
+after a trial removes the tag.
+
+A marker that names no ticket becomes a row anyway. The audit then shows it as
+`unlinked`, where before it was invisible.
+
+Re-running finds nothing left to migrate, so no row is written twice. A suite
+with no test files abstains rather than reporting "nothing to migrate".
+
+`canary-ci-ready` reads these classes for its flakiness check. A row that is
+`unlinked` or `stale` is a quarantine nobody can release.
 
 ## Fidelity limits
 

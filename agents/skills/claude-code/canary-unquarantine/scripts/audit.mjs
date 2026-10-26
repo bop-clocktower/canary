@@ -16,18 +16,11 @@
 // ticket: closed-to-upstream is not fixed, and reading it as fixed would
 // release a test the platform still fails.
 
-import { extractRefs, idTokens, pickBlocker } from './refs.mjs';
+import { extractRefs, idTokens, jiraReach, pickBlocker } from './refs.mjs';
 import { locate, readSource, runtimeCallee } from './markers.mjs';
 import { scanSuite } from './scan.mjs';
 
-const CLASSES = [
-  'candidate',
-  'blocked',
-  'stale',
-  'unlinked',
-  'abstain',
-  'removed',
-];
+const CLASSES = 'candidate blocked stale unlinked abstain removed'.split(' ');
 
 /** Issues a hand-off chain may hold: 4 is 3 hops (A -> B -> C -> D), as SKILL.md says. */
 export const MAX_HANDOFF_DEPTH = 4;
@@ -87,6 +80,7 @@ export function resolveRef(ref, lookup, ctx, via = [], depth = 0) {
   const id = answer.id ?? ref.id;
   const qualified = [...via, id];
   const leaf = { tracker: ref.tracker, ...answer, id, via: qualified };
+  Object.assign(leaf, jiraReach(ref)); // a Jira leaf stays reachable later
   delete leaf.handoff;
   if (via.includes(id)) {
     return [
@@ -263,13 +257,17 @@ function findUnledgered(markers, rows, results, jiraProjects) {
   return markers
     .filter((m) => !byLine.has(`${m.file}:${m.markerLine}`))
     .filter((m) => !titles.has(pairKey(m.file, m.test)))
-    .map((m) => ({
-      ...m,
-      names: extractRefs(m.context, {
-        jiraProjects,
-        exclude: idTokens(m.test),
-      }).map((r) => r.id),
-    }));
+    .map((m) => {
+      // A key above a skip is a ticket only when anchored ("blocked by") or in
+      // a configured project: `UTF-8` is not one. `links` keeps each verbatim.
+      const opts = { jiraProjects, exclude: idTokens(m.test) };
+      const refs = extractRefs(m.context, opts);
+      return {
+        ...m,
+        names: refs.map((r) => r.id),
+        links: refs.map((r) => r.text),
+      };
+    });
 }
 
 /**

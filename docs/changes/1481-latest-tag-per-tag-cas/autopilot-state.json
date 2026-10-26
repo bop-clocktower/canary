@@ -1,0 +1,17 @@
+{
+  "item": "#1481",
+  "phase": "done",
+  "skill": "harness-workflow-audit",
+  "steps": [
+    "inventory: release.yml triggers (v* tags), permissions (top-level read, advance-latest contents: write), concurrency (single latest-tag group)",
+    "mechanical: M4.5 single shared group cancels a close release's pending advance; M3 info softprops/action-gh-release@v3 mutable tag (out of scope, not touched)",
+    "judgment: J1 clean (ref_name via env; group expression is not shell); per-tag group removes serialisation, so the guard needs a compare-and-swap push",
+    "debugging/investigate: lease semantics rehearsed in a temp bare repo (empty = must not exist, stale SHA rejected)",
+    "fix (TDD): 6 tests red (static contract + racing-run rehearsal; latest moved back to v1.0.0), then per-tag group + lease read before fetch/guard + --force-with-lease push + one retry + loud failure; 107/107 across release-advance-latest, workflow-hygiene, release-workflow",
+    "verify: actionlint 1.7.12 (CI's pinned version, shellcheck enabled) clean on all 17 workflows; four gates from ts/",
+    "docs: AGENTS.md force-push paragraph, CHANGELOG Unreleased/Fixed entry and #1427 entry wording"
+  ],
+  "commits": [
+    "fix(release): key the latest-tag group per tag and lease the latest push (#1481)"
+  ]
+}

@@ -55,6 +55,13 @@ interface Case {
   writeJob: string;
   artifact: string;
   paths: string[];
+  /**
+   * Where each of `paths` sits inside the artifact, in the same order.
+   * upload-artifact roots the artifact at the paths' least common ancestor
+   * (#1490), so a lone path loses its directories. `workflow-hygiene.test.ts`
+   * derives these from the upload list.
+   */
+  entries: string[];
   branch: string;
 }
 
@@ -65,6 +72,7 @@ const CASES: Case[] = [
     writeJob: 'ledger',
     artifact: 'security-ledger',
     paths: ['.harness/security/timeline.json', 'docs/SECURITY_LEDGER.md'],
+    entries: ['.harness/security/timeline.json', 'docs/SECURITY_LEDGER.md'],
     branch: 'chore/security-ledger',
   },
   {
@@ -73,6 +81,7 @@ const CASES: Case[] = [
     writeJob: 'push',
     artifact: 'arch-timeline',
     paths: ['.harness/arch/timeline.json'],
+    entries: ['timeline.json'],
     branch: 'chore/arch-timeline',
   },
 ];
@@ -190,8 +199,10 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
     for (const p of c.paths) {
       mkdirSync(dirname(join(work, p)), { recursive: true });
       writeFileSync(join(work, p), 'old\n');
-      mkdirSync(dirname(join(src, p)), { recursive: true });
-      writeFileSync(join(src, p), 'old\n');
+    }
+    for (const e of c.entries) {
+      mkdirSync(dirname(join(src, e)), { recursive: true });
+      writeFileSync(join(src, e), 'old\n');
     }
     git(work, 'add', '.');
     git(
@@ -248,7 +259,7 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
 
   it('pushes the downloaded output to the standing branch', () => {
     const { work, origin, src } = setup();
-    for (const p of c.paths) writeFileSync(join(src, p), 'new\n');
+    for (const e of c.entries) writeFileSync(join(src, e), 'new\n');
     const r = runJob(work);
     expect(r.status, r.log).toBe(0);
     for (const p of c.paths)
@@ -265,7 +276,7 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
 
   it('fails when the push is rejected (#548: no swallowed push)', () => {
     const { work, src } = setup();
-    for (const p of c.paths) writeFileSync(join(src, p), 'new\n');
+    for (const e of c.entries) writeFileSync(join(src, e), 'new\n');
     git(work, 'remote', 'set-url', 'origin', join(dir!, 'missing.git'));
     const r = runJob(work);
     expect(r.status).not.toBe(0);
@@ -275,8 +286,8 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
     const { work, origin, src } = setup();
     const secret = join(dir!, 'secret');
     writeFileSync(secret, 'token\n');
-    rmSync(join(src, c.paths[0]!));
-    symlinkSync(secret, join(src, c.paths[0]!));
+    rmSync(join(src, c.entries[0]!));
+    symlinkSync(secret, join(src, c.entries[0]!));
     const r = runJob(work);
     expect(r.status).not.toBe(0);
     expect(r.log).toMatch(/not a regular file/);
@@ -285,7 +296,7 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
 
   it('fails when the artifact is missing a pushed path', () => {
     const { work, src } = setup();
-    rmSync(join(src, c.paths[0]!));
+    rmSync(join(src, c.entries[0]!));
     const r = runJob(work);
     expect(r.status).not.toBe(0);
   });
