@@ -7,6 +7,7 @@
 
 import { PageReader, readAllPages, restPageReader } from './github-paging.js';
 import {
+  GitHubNetworkError,
   GitHubPermissionError,
   GitHubRateLimitError,
   GitHubServerError,
@@ -149,8 +150,9 @@ function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {
  * Update guardian's own sticky in place, else create one (SC-9: never stacks).
  * A 403 degrades to a `degraded` result instead of crashing the job (OT-4) --
  * on the lookup as well as the write, since the paged read maps 403 the same
- * way (#528). So does a 429 or 5xx that outlived the client's retries (#1467):
- * none of them says anything about the diff. Any other 4xx still throws.
+ * way (#528). So does a 429 or 5xx that outlived the client's retries (#1467),
+ * and a network-level failure (#1478): none of them says anything about the
+ * diff. Any other 4xx, and any other thrown error, still throws.
  */
 export async function upsertStickyComment(
   client: GitHubClient,
@@ -187,6 +189,13 @@ export async function upsertStickyComment(
         notice: `guardian: GitHub API server error (HTTP ${err.status}) after ${MAX_ATTEMPTS} attempts — findings not posted as a comment; the check's result is the computed verdict`,
       };
     }
+    if (err instanceof GitHubNetworkError) {
+      return {
+        action: 'degraded',
+        comment_id: null,
+        notice: `guardian: GitHub API network error (${err.code}) — findings not posted as a comment; the check's result is the computed verdict`,
+      };
+    }
     throw err;
   }
 }
@@ -204,6 +213,7 @@ export function degradationAnnotation(notice: string): string {
  * the default {@link restPageReader}. Both go through {@link fetchWithRetry}
  * (#1467), so a 5xx/429/rate-limited 403 is retried on reads and the PATCH,
  * while the comment POST retries only a rate limit (a 5xx may have posted);
+ * a network error (#1478) is retried on reads and the PATCH, never the POST;
  * `sleep` is the seam that keeps those retries out of real time in tests, and
  * the paged read path is also covered through the injected `read` seam (#528).
  * A 403 (fork read-only token) surfaces as {@link GitHubPermissionError} so the
