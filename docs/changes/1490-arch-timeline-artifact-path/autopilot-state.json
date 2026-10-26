@@ -1,0 +1,13 @@
+{
+  "item": "#1490",
+  "phase": "done",
+  "steps": [
+    "confirm: downloaded artifact 12659041789 (run 40340731570) into an empty scratch dir; unzip -l lists one entry, timeline.json, at the root",
+    "workflow-audit: artifact-path-pairing ERROR arch-snapshot.yml:93-98, WARNING harness-security.yml:115-117 (LCA = repo root by coincidence)",
+    "tdd: add #1490 blocks to ts/test/workflow-hygiene.test.ts (LCA layout model + per-hand-off pins + real restore script under bash); red on arch-snapshot.yml with the exact CI error",
+    "tdd: seed ts/test/ledger-push-jobs.test.ts fake artifact at the real layout; red on the two arch push cases",
+    "fix: arch-snapshot.yml restore step reads $SRC/timeline.json, guard unchanged; harness-security.yml comment only",
+    "verify: actionlint 1.7.12 clean, build/typecheck/format:check/test green (347 files, 6687 tests), harness check-deps + validate pass"
+  ],
+  "commits": ["622e5b965351b64d6ef5554e204ed3ac4cf3f2e6"]
+}
