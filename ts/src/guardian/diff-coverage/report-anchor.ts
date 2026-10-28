@@ -7,10 +7,10 @@
  * the report cover?) and per-unit matching (which file does this key name?).
  */
 
-// canary:allow-untested fp: module-load imports/signature scored via line 0 (#1408)
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { globDirs, isFile } from '../../core/fs-glob.js';
 import type { ReportIndex } from './types.js';
 
 /**
@@ -48,15 +48,15 @@ function commonDir(paths: string[]): string {
 }
 
 /**
- * Every report key as `[key, path, anchored]`, `path` being the repo-relative
+ * Every report key as `[key, path, prefix]`, `path` being the repo-relative
  * file it names: grouped by top-level segment, each group under its
- * {@link anchorPrefix}. `anchored` is whether that prefix was found.
+ * {@link anchorPrefix}; `prefix` is that anchor, `null` when none was found.
  */
 function anchoredGroups(
   index: ReportIndex,
   reportPath: string,
   repoRoot: string,
-): [string, string, boolean][][] {
+): [string, string, string | null][][] {
   const root = resolve(repoRoot);
   const groups = new Map<string, [string, string][]>();
   for (const raw of Object.keys(index)) {
@@ -68,7 +68,7 @@ function anchoredGroups(
   return [...groups.values()].map((pairs) => {
     const paths = pairs.map(([, p]) => p);
     const prefix = anchorPrefix(paths, reportPath, root);
-    return pairs.map(([raw, p]) => [raw, (prefix ?? '') + p, prefix !== null]);
+    return pairs.map(([raw, p]) => [raw, (prefix ?? '') + p, prefix]);
   });
 }
 
@@ -92,6 +92,8 @@ export function instrumentedTrees(
  * report under `pkg-a/` naming `src/index.ts` suffix-bind a changed
  * `pkg-b/src/index.ts`; an anchored entry now binds by exact match only (see
  * `FileCoverage.anchored`). Absolute and colliding keys are left as they were.
+ * #1415: a key rooted at the repo, or nowhere, names no package; it is dropped
+ * when it exists under several directories, else bound to its only one.
  */
 export function anchorIndex(
   index: ReportIndex,
@@ -99,12 +101,28 @@ export function anchorIndex(
   repoRoot: string,
 ): ReportIndex {
   const out: ReportIndex = Object.assign(Object.create(null), index);
-  const keys = anchoredGroups(index, reportPath, repoRoot).flat();
-  for (const [raw, path, anchored] of keys) {
-    if (isAbsolute(raw) || (raw !== path && Object.hasOwn(out, path))) continue;
-    const file = out[raw]!;
-    delete out[raw];
-    out[path] = anchored ? { ...file, anchored } : file;
+  const keys = anchoredGroups(index, reportPath, repoRoot)
+    .flat()
+    .filter(([raw]) => !isAbsolute(raw));
+  const tops = new Set(
+    keys.filter((k) => !k[2]).map((k) => k[1].split('/')[0]),
+  );
+  const dirs = [...tops].flatMap((t) => globDirs(repoRoot, `**/${t}`));
+  const rel = (d: string) =>
+    relative(repoRoot, dirname(d)).split(sep).join('/');
+  const owners = [...new Set(dirs.map(rel))];
+  for (const [raw, path, prefix] of keys) {
+    const at = prefix
+      ? ['']
+      : owners.filter((o) => isFile(join(repoRoot, o, path)));
+    const base = prefix === '' ? '' : at[0];
+    const target = base ? `${base}/${path}` : path;
+    if (at.length > 1) delete out[raw];
+    else if (raw === target || !Object.hasOwn(out, target)) {
+      const file = out[raw]!;
+      delete out[raw];
+      out[target] = base === undefined ? file : { ...file, anchored: true };
+    }
   }
   return out;
 }

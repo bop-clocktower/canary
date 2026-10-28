@@ -227,6 +227,75 @@ describe('attributeLines: the lexical continuation judgement', () => {
   });
 });
 
+/**
+ * #1408: a source the lexer loses (here a regex literal ending in `//`, which
+ * the comment stripper reads as a line comment, leaving `p.replace(` open) falls
+ * back to "nearest record above". With no record above, that pointed a line at
+ * line 0, which has no hits, so module-load imports became a finding. Synthesized
+ * from the `report-anchor.ts` shape on PR #1406; v8 records nothing before line 26.
+ */
+describe('#1408: no recorded line above means no attribution, not line 0', () => {
+  const HEAD = Array.from({ length: 9 }, (_, i) => `// header ${i + 1}`);
+  const ORPHAN_SRC = [
+    ...HEAD, // 1-9
+    "import { existsSync } from 'node:fs';", // 10
+    "import { join, relative } from 'node:path';", // 11
+    '', // 12
+    "import type { Index } from './types.js';", // 13
+    ...Array.from({ length: 7 }, (_, i) => `// doc ${i + 14}`), // 14-20
+    'function anchor(', // 21
+    '  samples: string[],', // 22
+    '  reportPath: string,', // 23
+    '  root: string,', // 24
+    '): string | null {', // 25
+    '  const rel = relative(root, reportPath);', // 26
+    "  const clean = rel.replace(/^\\.\\//, '');", // 27
+    '  return existsSync(join(root, clean)) ? clean : null;', // 28
+    '}', // 29
+    '', // 30
+    'export const used = (i: Index) => anchor([], i.p, i.r);', // 31
+  ];
+  const MEASURED_FROM_26 = [26, 27, 28, 31];
+  const ALL = ORPHAN_SRC.map((_, i) => i + 1);
+  const attribute = () =>
+    attributeLines(ALL, new Set(MEASURED_FROM_26), ORPHAN_SRC.join('\n'))!;
+
+  it('lines above the first record are left unattributed (not coverable)', () => {
+    const out = attribute();
+    for (let ln = 1; ln <= 25; ln++) expect(out.has(ln)).toBe(false);
+    expect([...out.values()]).not.toContain(0);
+  });
+
+  it('control: lines at and below the first record attribute as before', () => {
+    expect(Object.fromEntries(attribute())).toEqual({
+      26: 26,
+      27: 27,
+      28: 28,
+      29: 28,
+      31: 31,
+    });
+  });
+
+  it('end to end: an import-only edit is non-coverable, not a finding', () => {
+    const dir = join(tmp, 'src');
+    writeFileSync(join(dir, 'anchor.ts'), ORPHAN_SRC.join('\n'), 'utf-8');
+    const report = join(tmp, 'anchor.info');
+    const da = MEASURED_FROM_26.map((l) => `DA:${l},1`).join('\n');
+    writeFileSync(report, `SF:src/anchor.ts\n${da}\nend_of_record\n`);
+    const unit: ChangedUnit = {
+      path: 'src/anchor.ts',
+      added_ranges: [[10, 25]],
+    };
+    const { results, coverage } = resolveCoverageWithInput([unit], {
+      coveragePath: report,
+      graphPath: join(tmp, 'missing-graph.json'),
+      repoRoot: tmp,
+    });
+    expect(coverage.unitsNonCoverable).toBe(1);
+    expect(results[0]?.uncovered_lines ?? []).toEqual([]);
+  });
+});
+
 describe('#1314 positive controls: genuinely non-executable edits stay non-coverable', () => {
   it.each([
     ['a comment line', [1, 1]],

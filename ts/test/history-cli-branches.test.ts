@@ -443,12 +443,19 @@ describe('history push', () => {
     }
   });
 
+  // #1412 control: with a remote configured, the dry run still reports.
   it('--dry-run reports the run without pushing it', async () => {
     const tmp = mkTmp();
     try {
       const path = join(tmp, 'history.jsonl');
       writeFileSync(path, `${JSON.stringify({ run_id: 'r1' })}\n`, 'utf-8');
-      const res = await runHistory(['push', path, '--dry-run']);
+      const res = await runHistory([
+        'push',
+        path,
+        '--dry-run',
+        '--db-url',
+        DB_URL,
+      ]);
       expect(res.code).toBe(0);
       expect(res.pushed).toEqual([]);
       expect(res.stdout).toContain('dry-run: would push run r1');

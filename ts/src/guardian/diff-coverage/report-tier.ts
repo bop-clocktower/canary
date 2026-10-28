@@ -88,23 +88,6 @@ function readReportText(reportPath: string): string | null {
 }
 
 /**
- * Tier 1: resolve coverage from an explicit report (`COVERAGE_VERIFIED`).
- *
- * Supports `lcov.info` (`DA:<line>,<hits>`), the canary coverage-json shape,
- * and Cobertura `coverage.xml` (line-level). Unrecognized/empty/unreadable →
- * `null` (caller falls through to a lower fidelity tier — absence never
- * blocks).
- */
-export function resolveFromReport(
-  units: ChangedUnit[],
-  reportPath: string,
-): CoverageResult[] | null {
-  const { index } = readReportIndex(reportPath);
-  if (index === null) return null;
-  return matchUnitsToIndex(units, index);
-}
-
-/**
  * What a coverage-report read actually yielded (#554).
  *
  * `found` is "a file exists at that path"; `index` is non-null only when the
