@@ -155,3 +155,34 @@ describe('rule jobOrQuality (criterion 11)', () => {
     expect(paths(doc)).toEqual(['findings[0]']);
   });
 });
+
+describe('rule noCompositeScore (criterion 15)', () => {
+  it('refuses the invalid fixture: a score on the report and a rating on a finding', () => {
+    expect(paths(load('no-composite-score.invalid'))).toEqual([
+      'score',
+      'findings[1].rating',
+    ]);
+  });
+
+  it.each(['score', 'overall', 'composite', 'rating'])(
+    'refuses %s on the report and on a finding, even as null (key presence)',
+    (key) => {
+      const doc = valid();
+      doc[key] = null;
+      doc.findings[1][key] = 9;
+      const { errors } = validateToolReview(doc);
+      expect(errors.map((e: { path: string }) => e.path)).toEqual([
+        key,
+        `findings[1].${key}`,
+      ]);
+      for (const e of errors) expect(e.message).toMatch(/noCompositeScore/);
+    },
+  );
+
+  it('still tolerates other unknown fields (ADR 0035 D3)', () => {
+    const doc = valid();
+    doc.notes = 'second pass after the redesign';
+    doc.findings[0].notes = 'seen on two browsers';
+    expect(validateToolReview(doc).valid).toBe(true);
+  });
+});

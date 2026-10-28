@@ -23,9 +23,13 @@ const checkSchema = auditedValidator({
   [ID]: JSON.parse(readFileSync(new URL(`./${ID}`, import.meta.url), 'utf8')),
 });
 
+/** The roll-up keys D8 refuses: a composite hides the persona that was failed. */
+const SCORE_KEYS = ['score', 'overall', 'composite', 'rating'];
+
 const listOf = (doc, key) => (Array.isArray(doc?.[key]) ? doc[key] : []);
 const isObject = (v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
+const at = (prefix, key) => (prefix ? `${prefix}.${key}` : key);
 
 /**
  * Rule `jobOrQuality`: a finding names the job it failed, the quality it
@@ -43,15 +47,32 @@ function jobOrQuality(finding, prefix) {
   ];
 }
 
-const FINDING_RULES = [jobOrQuality];
+/**
+ * Rule `noCompositeScore` (D8, ADR 0036): no roll-up score on the report or on
+ * any finding. Key presence counts, as with rules.mjs's authorExcluded: even
+ * `null` is refused, because unknown fields are otherwise tolerated and that
+ * tolerance must not become a way back in for a score.
+ */
+function noCompositeScore(record, prefix) {
+  return SCORE_KEYS.filter((key) => Object.hasOwn(record, key)).map((key) => ({
+    path: at(prefix, key),
+    message:
+      'must not be supplied: a tool review carries no composite score (rule noCompositeScore)',
+  }));
+}
+
+const FINDING_RULES = [jobOrQuality, noCompositeScore];
 
 function ruleErrors(doc) {
   if (!isObject(doc)) return [];
-  return listOf(doc, 'findings').flatMap((finding, i) =>
-    isObject(finding)
-      ? FINDING_RULES.flatMap((rule) => rule(finding, `findings[${i}]`))
-      : [],
-  );
+  return [
+    ...noCompositeScore(doc, ''),
+    ...listOf(doc, 'findings').flatMap((finding, i) =>
+      isObject(finding)
+        ? FINDING_RULES.flatMap((rule) => rule(finding, `findings[${i}]`))
+        : [],
+    ),
+  ];
 }
 
 /**
