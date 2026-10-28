@@ -125,7 +125,7 @@ describe('TestLoadValidFile', () => {
       ],
       internal_domains: ['corp.example.com', 'engage.example.com'],
       mcp_servers: ['plugin_atlassian_atlassian'],
-      claude_code_skills: ['team:ui', 'team:vulcan'],
+      claude_code_skills: ['team:ui', 'team:platform'],
       notes: 'Use idiomatic Playwright helpers.',
     });
     ck = load(tmp);
