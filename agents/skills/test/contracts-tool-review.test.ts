@@ -186,3 +186,32 @@ describe('rule noCompositeScore (criterion 15)', () => {
     expect(validateToolReview(doc).valid).toBe(true);
   });
 });
+
+describe('rule evidenceRequired (criterion 11)', () => {
+  it('refuses the invalid fixture: a finding with an empty evidence list', () => {
+    expect(
+      validateToolReview(load('evidence-required.invalid')).errors,
+    ).toEqual([
+      {
+        path: 'findings[1].evidence',
+        message:
+          'is empty; a finding cites at least one screenshot, snapshot or file (rule evidenceRequired)',
+      },
+    ]);
+  });
+
+  it('leaves a non-array evidence to the schema: one error, not two', () => {
+    const doc = valid();
+    doc.findings[1].evidence = 'see the screenshot';
+    expect(paths(doc)).toEqual(['findings[1].evidence']);
+  });
+
+  it('does not apply to ledger rows: not-assessed and not-applicable carry []', () => {
+    const doc = valid();
+    expect(doc.ledger[2]).toMatchObject({
+      state: 'not-assessed',
+      evidence: [],
+    });
+    expect(validateToolReview(doc).valid).toBe(true);
+  });
+});

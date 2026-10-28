@@ -61,7 +61,24 @@ function noCompositeScore(record, prefix) {
   }));
 }
 
-const FINDING_RULES = [jobOrQuality, noCompositeScore];
+/**
+ * Rule `evidenceRequired`: a finding cites at least one piece of evidence. The
+ * subset has no `minItems`, so `evidence: []` passes the schema; a non-array is
+ * the schema's error, not a second one here.
+ */
+function evidenceRequired(finding, prefix) {
+  const { evidence } = finding;
+  if (!Array.isArray(evidence) || evidence.length > 0) return [];
+  return [
+    {
+      path: at(prefix, 'evidence'),
+      message:
+        'is empty; a finding cites at least one screenshot, snapshot or file (rule evidenceRequired)',
+    },
+  ];
+}
+
+const FINDING_RULES = [jobOrQuality, noCompositeScore, evidenceRequired];
 
 function ruleErrors(doc) {
   if (!isObject(doc)) return [];
