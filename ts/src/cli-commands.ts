@@ -567,10 +567,34 @@ function migrateReportOnly(
   }
 }
 
-export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
+/**
+ * #1416: reject an unknown `--framework` before any mode runs or writes --
+ * falling back to detection answered a question the user did not ask. Exit 1,
+ * as for an unknown `--from`: on `--check`, 2 already means "local edits".
+ */
+function rejectUnknownFramework(
+  framework: string | undefined,
+  migrator: ReturnType<MainDeps['makeMigrator']>,
+  deps: MainDeps,
+): void {
+  const unknown = framework
+    ? migrator.unknownFrameworkMessage(framework)
+    : null;
+  if (unknown === null) return;
+  deps.err(`\n${pc.bold(pc.red(CROSS))} ${unknown}`);
+  throw new CliExitError(1);
+}
+
+export function migrateCmd(rawOpts: MigrateOptions, deps: MainDeps): void {
+  const migrator = deps.makeMigrator();
+  rejectUnknownFramework(rawOpts.framework, migrator, deps);
+  // Case-insensitive, as the scaffolder always was: every mode sees one key.
+  const opts: MigrateOptions =
+    rawOpts.framework === undefined
+      ? rawOpts
+      : { ...rawOpts, framework: rawOpts.framework.toLowerCase() };
   const root = resolve(opts.path);
   const overlayPath = resolveMigrateOverlay(opts.from, opts.overlay, deps);
-  const migrator = deps.makeMigrator();
 
   // Both report-only modes exit here; neither ever reaches the writing path.
   migrateReportOnly(opts, migrator, root, overlayPath, deps);
