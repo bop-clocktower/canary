@@ -609,9 +609,13 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     }).trim();
   };
 
-  /** Age the clone's last fetch by `days`, as an unattended machine would. */
-  const ageFetch = (days: number) => {
-    const t = new Date(Date.now() - days * 86_400_000);
+  /**
+   * Backdate the clone's last fetch, as an unattended machine would. A fixed
+   * past instant rather than now-minus-N, so the fixture never reads the wall
+   * clock; any instant years back is far past the hook's 1-day threshold.
+   */
+  const ageFetch = () => {
+    const t = new Date('2020-01-01T00:00:00Z');
     utimesSync(join(mkt, '.git', 'FETCH_HEAD'), t, t);
   };
 
@@ -695,7 +699,7 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     // still equals the stale install and check 3 waits 14 days to speak.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     writeUpstream('9.5.0-next');
-    ageFetch(3);
+    ageFetch();
     const msg = findings('9.5.0');
     expect(msg).toContain('compared against a stale reference');
     expect(msg).toContain('unverifiable');
