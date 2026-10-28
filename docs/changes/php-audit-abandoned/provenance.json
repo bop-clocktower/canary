@@ -1,0 +1,37 @@
+{
+  "issues": [1469],
+  "slug": "php-audit-abandoned",
+  "route": "bug",
+  "branch": "fix/1469-php-audit-abandoned",
+  "base": "origin/main @ a4aa9c94",
+  "date": "2026-10-28",
+  "fleet": "roadmap-fleet",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/php-audit.test.ts",
+  "closingKeyword": "Closes",
+  "rootCause": "auditResult() abstained whenever exit bit 1 was set and zero advisories parsed. Composer 2.10's audit.abandoned=fail default sets bit 1 for abandoned packages alone, so an abandoned-only report (advisories [], abandoned {...}) abstained although its abandoned findings had already been parsed.",
+  "fix": "Bit 1 is treated as parser drift only when neither advisories nor abandoned parsed anything. abandoned is also read when written as a list of package names.",
+  "pipelineStages": [
+    {
+      "stage": "investigate",
+      "ran": true,
+      "detail": "Read ts/src/core/composer-audit.ts: abandonedFindings already parsed the object form; the bit-1 cross-check looked only at advisories."
+    },
+    {
+      "stage": "tdd-red",
+      "ran": true,
+      "detail": "ts/test/php-audit.test.ts before the fix: 5 failed | 15 passed (20); the 3-abandoned exit-1 fixture exited 3 instead of 1."
+    },
+    {
+      "stage": "tdd-green",
+      "ran": true,
+      "detail": "Same file plus gate-conformance after the fix: 50 passed (50). Revert check: reverse-applying only the source patch returns the same 5 failures."
+    }
+  ],
+  "assumptions": [
+    "The list form of abandoned is a JSON array of package-name strings with no replacement; non-string entries are dropped and the exit-bit cross-check turns an all-dropped list into an abstention.",
+    "Exit bit 2 keeps its existing meaning: set with zero abandoned parsed still abstains.",
+    "The bit-1 abstain message now says 'findings' rather than 'advisories', since bit 1 no longer implies advisories; the gate-conformance row only asserts exit 3 and no 'passed', so it is unaffected.",
+    "Fixtures use generic acme/* package names instead of the package names quoted in the issue."
+  ]
+}

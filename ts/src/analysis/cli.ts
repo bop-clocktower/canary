@@ -882,6 +882,3 @@ export function createAnalyzeCommand(
 
   return program;
 }
-
-/** The production `analyze` command (process-backed defaults). */
-export const analyzeCommand: Command = createAnalyzeCommand();

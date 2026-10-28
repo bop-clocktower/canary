@@ -7,7 +7,7 @@
 // since rewriting it would rebase every SHA this repo cites.
 import { execFileSync } from 'node:child_process';
 
-export const AUTHOR_RANGE_ENV = 'CANARY_AUTHOR_SCAN_RANGE';
+const AUTHOR_RANGE_ENV = 'CANARY_AUTHOR_SCAN_RANGE';
 
 /** Identities that appear in a `Name <email>` trailer. */
 const TRAILER =
@@ -39,7 +39,7 @@ function reEscape(s) {
  * than `\b`. Boundaries are still enforced, so `Acme` must not match
  * `acmecorp`.
  */
-export function authorshipPatterns(denylist) {
+function authorshipPatterns(denylist) {
   return denylist
     .map(
       ([rx, , term]) =>

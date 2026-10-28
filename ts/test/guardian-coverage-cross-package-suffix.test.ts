@@ -19,6 +19,7 @@ import {
   resolveCoverage,
   resolveCoverageDelta,
   resolveCoverageWithInput,
+  resolveFromReport,
 } from '../src/guardian/coverage.js';
 
 let root: string;
@@ -177,7 +178,9 @@ describe('report tier: cross-package suffix binding', () => {
 
   it("does not verify pkg-b/src/index.ts from a repo-root report's record", () => {
     // A report rooted at the repo itself anchors at prefix '': its key is
-    // already the repo path, so it too must bind by exact match only.
+    // already the repo path, so it too must bind by exact match only. #1415:
+    // `src/index.ts` exists at the root AND under pkg-b, so the report path
+    // cannot say which one it measured; the root file fails closed too.
     write('src/index.ts', 'export const root = 0;\n');
     write('pkg-b/src/index.ts', 'export const b = 2;\n');
     write('coverage/lcov.info', 'SF:src/index.ts\nDA:1,5\nend_of_record\n');
@@ -194,7 +197,120 @@ describe('report tier: cross-package suffix binding', () => {
       },
     );
 
-    expect(rootFile!.fidelity).toBe(Fidelity.CoverageVerified);
+    expect(rootFile!.fidelity).toBe(Fidelity.Heuristic);
     expect(sibling!.fidelity).toBe(Fidelity.Heuristic);
+  });
+});
+
+describe('public resolveFromReport with a repo root (#1414)', () => {
+  it("does not verify a sibling package's same-named file", () => {
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('pkg-b/src/index.ts', 'export const b = 2;\n');
+    write(
+      'pkg-a/coverage/lcov.info',
+      'SF:src/index.ts\nDA:1,5\nend_of_record\n',
+    );
+
+    const results = resolveFromReport(
+      [{ path: 'pkg-b/src/index.ts', added_ranges: [[1, 1]] }],
+      join(root, 'pkg-a/coverage/lcov.info'),
+      root,
+    );
+
+    // No result: the unit falls through to a lower tier, never verified.
+    expect(results).toEqual([]);
+  });
+
+  it("still verifies the owning package's file", () => {
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('pkg-b/src/index.ts', 'export const b = 2;\n');
+    write(
+      'pkg-a/coverage/lcov.info',
+      'SF:src/index.ts\nDA:1,5\nend_of_record\n',
+    );
+
+    const [result] = resolveFromReport(
+      [{ path: 'pkg-a/src/index.ts', added_ranges: [[1, 1]] }],
+      join(root, 'pkg-a/coverage/lcov.info'),
+      root,
+    )!;
+
+    expect(result!.fidelity).toBe(Fidelity.CoverageVerified);
+    expect(result!.covered).toBe(true);
+  });
+});
+
+describe('a root coverage/ report whose key names several packages (#1415)', () => {
+  const report = 'SF:src/index.ts\nDA:1,5\nend_of_record\n';
+  const opts = () => ({
+    coveragePath: join(root, 'coverage/lcov.info'),
+    graphPath: join(root, 'no-graph.json'),
+    repoRoot: root,
+  });
+
+  it('does not verify the never-instrumented pkg-b/src/index.ts', () => {
+    // vitest ran in pkg-a with reportsDirectory ../coverage.
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('pkg-b/src/index.ts', 'export const b = 2;\n');
+    write('coverage/lcov.info', report);
+
+    const [result] = resolveCoverage(
+      [{ path: 'pkg-b/src/index.ts', added_ranges: [[1, 1]] }],
+      opts(),
+    );
+
+    expect(result!.fidelity).not.toBe(Fidelity.CoverageVerified);
+  });
+
+  it('fails closed for every candidate, the producing package included', () => {
+    // The report path cannot say which package wrote the key, so neither
+    // candidate may claim its hit counts.
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('pkg-b/src/index.ts', 'export const b = 2;\n');
+    write('coverage/lcov.info', report);
+
+    const results = resolveFromReport(
+      [
+        { path: 'pkg-a/src/index.ts', added_ranges: [[1, 1]] },
+        { path: 'pkg-b/src/index.ts', added_ranges: [[1, 1]] },
+      ],
+      join(root, 'coverage/lcov.info'),
+      root,
+    );
+
+    expect(results).toEqual([]);
+  });
+
+  it("does not verify a root src/index.ts from a package's record", () => {
+    // Root-file variant: the key also exists at the repo root, so it anchors
+    // there by exact match; the root file must not take pkg-a's hit counts.
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('src/index.ts', 'export const root = 0;\n');
+    write('coverage/lcov.info', report);
+
+    const [rootFile, pkgA] = resolveCoverage(
+      [
+        { path: 'src/index.ts', added_ranges: [[1, 1]] },
+        { path: 'pkg-a/src/index.ts', added_ranges: [[1, 1]] },
+      ],
+      opts(),
+    );
+
+    expect(rootFile!.fidelity).toBe(Fidelity.Heuristic);
+    expect(pkgA!.fidelity).toBe(Fidelity.Heuristic);
+  });
+
+  it('still verifies a key that exists under exactly one package', () => {
+    write('pkg-a/src/index.ts', 'export const a = 1;\n');
+    write('pkg-b/src/other.ts', 'export const b = 2;\n');
+    write('coverage/lcov.info', report);
+
+    const [result] = resolveCoverage(
+      [{ path: 'pkg-a/src/index.ts', added_ranges: [[1, 1]] }],
+      opts(),
+    );
+
+    expect(result!.fidelity).toBe(Fidelity.CoverageVerified);
+    expect(result!.covered).toBe(true);
   });
 });
