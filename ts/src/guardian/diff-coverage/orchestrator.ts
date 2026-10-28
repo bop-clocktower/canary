@@ -45,6 +45,26 @@ export function resolveCoverage(
 }
 
 /**
+ * Tier 1: resolve coverage from an explicit report (`COVERAGE_VERIFIED`).
+ *
+ * Supports `lcov.info` (`DA:<line>,<hits>`), the canary coverage-json shape,
+ * and Cobertura `coverage.xml` (line-level). Unrecognized/empty/unreadable →
+ * `null` (caller falls through to a lower fidelity tier — absence never
+ * blocks). Given `repoRoot`, keys are anchored as the ladder does (#1414), so
+ * a sibling package's same-named file never binds; without it, raw keys.
+ */
+export function resolveFromReport(
+  units: ChangedUnit[],
+  reportPath: string,
+  repoRoot?: string,
+): CoverageResult[] | null {
+  const { index } = readReportIndex(reportPath);
+  if (index === null) return null;
+  const keyed = repoRoot ? anchorIndex(index, reportPath, repoRoot) : index;
+  return matchUnitsToIndex(units, keyed);
+}
+
+/**
  * What the coverage input actually was on one run (#554): observed counts and
  * facts, never a verdict. `unitsMatched` of `unitsTotal` separates "checked and
  * clean" from "never checked".

@@ -192,11 +192,18 @@ where its files exist, the repo root included, and an anchored entry then binds
 by exact path only, so neither a sibling's `pkg-b/src/index.ts` nor a root-level
 `src/index.ts` can claim it. A report rooted at the repo itself
 (`coverage/lcov.info` naming `src/index.ts`) anchors at the root the same way.
-The ladder, the delta and the instrumented-tree denominator all read that one
-anchoring. Only two kinds of entry keep the suffix fallback: absolute keys, and
-relative keys whose group has no file under any ancestor of the report's
-directory (for example a package's report written to a root `coverage/`
-directory, whose keys are relative to the package).
+The ladder, the delta, the public `resolveFromReport` when given a repo root
+([#1414]), and the instrumented-tree denominator all read that one anchoring.
+
+A key anchored at the repo root, or under no ancestor at all, says nothing about
+which package wrote it ([#1415]). A package's report written to a root
+`coverage/` directory names `src/index.ts`, relative to the package. So such a
+key is looked up across the repo (dependency and build trees skipped). If it
+exists under exactly one directory, it binds there by exact path. If it exists
+under more than one (`pkg-a/` and `pkg-b/`, or the root and a package), the
+entry is dropped and every candidate falls through to a lower tier: fail closed,
+never a borrowed coverage-verified verdict. Only absolute keys, and relative
+keys found nowhere, keep the suffix fallback.
 
 A coverage-json producer can opt in to the lcov rule per file by declaring
 `instrumented_lines` ([#657]) — the set of lines its tool actually measured.
@@ -527,6 +534,8 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#657]: https://github.com/bop-clocktower/canary/issues/657
 [#1314]: https://github.com/bop-clocktower/canary/issues/1314
 [#1291]: https://github.com/bop-clocktower/canary/issues/1291
+[#1414]: https://github.com/bop-clocktower/canary/issues/1414
+[#1415]: https://github.com/bop-clocktower/canary/issues/1415
 [#738]: https://github.com/bop-clocktower/canary/issues/738
 [#747]: https://github.com/bop-clocktower/canary/issues/747
 [#761]: https://github.com/bop-clocktower/canary/issues/761
