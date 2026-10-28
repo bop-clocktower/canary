@@ -1,5 +1,5 @@
 /**
- * `defaultDeps()` -- the production wiring behind `guardianCommand`.
+ * `defaultDeps()` -- the production wiring behind `createGuardianCommand`.
  *
  * Every other guardian suite injects fakes, so the process-backed defaults
  * (real `git`/`gh` spawns, the stdout/stderr sinks, the GitHub client
