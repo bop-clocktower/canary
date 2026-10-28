@@ -1,0 +1,13 @@
+{
+  "issues": [1412],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/history-push-local-noop.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Confirmed fork F4a: `history push --dry-run` with no remote store abstains exactly like the real push (exit 3, the same 'no remote store is configured' message), via the existing #1296 abstain path; the fix reorders the guard ahead of the dry-run branch rather than duplicating the message.",
+    "A dry run WITH a remote configured (--db-url or CANARY_HISTORY_DB_URL) keeps today's 'would push run' output and exit 0; the two pre-existing dry-run tests that ran with no remote (they encoded the bug) now configure one and serve as the control.",
+    "`history migrate --dry-run` (publish/cli.ts L192) is out of scope: migrate with no db-url writes a real local store, so it is not a guaranteed no-op and has no #1296 abstention to mirror.",
+    "No CHANGELOG line: the brief permits none, and CHANGELOG conflicts kill PR CI in a batch run."
+  ]
+}
