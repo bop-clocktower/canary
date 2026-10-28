@@ -163,13 +163,18 @@ function groupStatements(code: string[], measured: ReadonlySet<number>) {
   return { map, lost: p.lost || p.frames.length > 0 || p.inTemplate === true };
 }
 
-/** Lost lexer: every non-blank line is code, scored by the nearest record above. */
+/**
+ * Lost lexer: every non-blank line is code, scored by the nearest record above.
+ * A line with no record above it (imports, a signature before the first `DA:`)
+ * gets none: there is no statement to inherit from, so it stays non-coverable,
+ * as a statement recorded nowhere does in a trusted pass (#1408).
+ */
 function nearestRecordAbove(code: string[], measured: ReadonlySet<number>) {
   const map: LineMap = new Map();
-  let last = 0; // line 0 has no hits, so an orphan line reads as uncovered
+  let last: number | null = null;
   for (let ln = 1; ln < code.length; ln++) {
     if (measured.has(ln)) last = ln;
-    if (code[ln]!.trim() !== '') map.set(ln, last);
+    if (last !== null && code[ln]!.trim() !== '') map.set(ln, last);
   }
   return map;
 }

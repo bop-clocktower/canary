@@ -1,0 +1,14 @@
+{
+  "issues": [1408],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-multiline-continuation.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Root cause (confirmed by reproduction on report-anchor.ts): the line-0 mapping came from the unbalanced-bracket fallback nearestRecordAbove, which started its 'last record' cursor at 0 (deliberately, so orphans read uncovered). The trusted grouping pass never produces 0; it parks owner-less lines as pending and drops them.",
+    "The lexer was lost on report-anchor.ts because stripComments (type-only.ts) reads the '//' inside the regex literal /^\\.\\// as a line comment, leaving an open paren. That trigger is filed separately as #1515 and left unchanged here (shared with the type-only detector; out of this item's surface).",
+    "A line with no recorded line at or above it in a lost pass is now left unattributed, so it stays not-coverable: the same representation (absent from the attribution map) the trusted pass already uses for a statement recorded nowhere.",
+    "Lines at and below the first record keep their nearest-record-above attribution unchanged (control test).",
+    "The PR #1406 canary:allow-untested fp suppression in report-anchor.ts existed only for this line-0 attribution, so it is removed."
+  ]
+}
