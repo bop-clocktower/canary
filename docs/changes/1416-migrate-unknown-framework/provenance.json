@@ -1,0 +1,17 @@
+{
+  "issues": [1416],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/migrate-unknown-framework-cli.test.ts",
+  "baseSha": "a4aa9c94",
+  "reproFailure": "At base with the fix reverted: (1) `--framework locsut --check` -> AssertionError: expected 3 to be 1 (fell back to detection and abstained); (2) `--framework locsut --apply` -> AssertionError: expected true to be false (.canary/ was written: overlay skills deployed before the scaffolder rejected the name, then exit 1). Both controls passed before and after.",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "DECIDED (human, F5a): unknown --framework fails fast, non-zero, lists known frameworks, identical on --apply and --check, before any write.",
+    "Exit code is 1, not 2. The code-check F5a asked for found migrate's own bad-flag sibling (unknown --from overlay) exits 1, while `init` uses 2; on `migrate --check`, exit 2 is documented as 'local edits', so 2 would read as a real finding to a gate consumer.",
+    "'Known' = a FrameworkRegistry entry, the test Scaffolder and migrate() already apply. The migrator's KNOWN_FRAMEWORKS (6 names) omits phpunit/pest, which are valid, scaffoldable overrides today; using it would have broken them. Not hardcoded: the list printed is the registry's.",
+    "Matching is exact (case-sensitive), as registry lookup already is; `--framework Playwright` was silently dropped before and is now rejected.",
+    "The check runs on every mode, including --adoption-report and plain dry run, since a mistyped flag is a usage error wherever it appears.",
+    "The MCP `canary__migrate` tool never forwards a framework, so it needs no guard."
+  ]
+}

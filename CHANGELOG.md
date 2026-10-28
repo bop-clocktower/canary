@@ -34,6 +34,8 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`migrate --framework` rejects an unknown name (#1416)** with exit 1 and the
+  known list, before any write, instead of silently using detection.
 - **The session siren checks the installed plugin, not the marketplace clone
   (#1491).** Check 4 read the plugin version from the marketplace clone, so
   after `claude plugin marketplace update` it went quiet while the plugin Claude

@@ -1742,6 +1742,20 @@ export class HarnessMigrator {
     });
   }
 
+  /**
+   * The usage error for a `--framework` name canary does not know, else null.
+   *
+   * #1416: an unknown name used to fall back to detection silently. Known
+   * means a registry entry -- the test `Scaffolder` applies -- so `phpunit` and
+   * `pest` (absent from KNOWN_FRAMEWORKS) stay valid overrides.
+   */
+  unknownFrameworkMessage(framework: string): string | null {
+    const reg = new FrameworkRegistry();
+    if (reg.findByName(framework) !== null) return null;
+    const names = reg.getAllFrameworks().map((f) => f.name);
+    return `Unknown --framework '${framework}'. Known frameworks: ${names.join(', ')}.`;
+  }
+
   migrate(projectRoot: string, options: MigrateOptions = {}): MigrationReport {
     const dryRun = options.dryRun ?? true;
     const framework = options.framework ?? null;
