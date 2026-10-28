@@ -24,6 +24,35 @@ const checkSchema = auditedValidator({
 });
 
 const listOf = (doc, key) => (Array.isArray(doc?.[key]) ? doc[key] : []);
+const isObject = (v) =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Rule `jobOrQuality`: a finding names the job it failed, the quality it
+ * failed, or both. Only an explicit null pair is refused: an absent or
+ * wrong-typed field is the schema's error, not a second one here.
+ */
+function jobOrQuality(finding, prefix) {
+  if (finding.job !== null || finding.quality !== null) return [];
+  return [
+    {
+      path: prefix,
+      message:
+        'names neither a job nor a quality; set job, quality or both (rule jobOrQuality)',
+    },
+  ];
+}
+
+const FINDING_RULES = [jobOrQuality];
+
+function ruleErrors(doc) {
+  if (!isObject(doc)) return [];
+  return listOf(doc, 'findings').flatMap((finding, i) =>
+    isObject(finding)
+      ? FINDING_RULES.flatMap((rule) => rule(finding, `findings[${i}]`))
+      : [],
+  );
+}
 
 /**
  * Validate a parsed canary.tool-review/1 report.
@@ -34,7 +63,7 @@ const listOf = (doc, key) => (Array.isArray(doc?.[key]) ? doc[key] : []);
  *   denominator a caller reports.
  */
 export function validateToolReview(doc) {
-  const errors = checkSchema(ID, doc);
+  const errors = [...checkSchema(ID, doc), ...ruleErrors(doc)];
   const checked =
     1 + listOf(doc, 'ledger').length + listOf(doc, 'findings').length;
   return { valid: errors.length === 0, checked, errors };

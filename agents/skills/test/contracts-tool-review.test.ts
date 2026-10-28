@@ -121,3 +121,37 @@ describe('tool-review contract: schema', () => {
     ]);
   });
 });
+
+describe('rule jobOrQuality (criterion 11)', () => {
+  it('refuses the invalid fixture: a finding with both job and quality null', () => {
+    expect(validateToolReview(load('job-or-quality.invalid')).errors).toEqual([
+      {
+        path: 'findings[0]',
+        message:
+          'names neither a job nor a quality; set job, quality or both (rule jobOrQuality)',
+      },
+    ]);
+  });
+
+  it('accepts job only, quality only, and both set', () => {
+    const doc = valid();
+    expect(doc.findings[0]).toMatchObject({ job: null, quality: 'Q2' });
+    expect(doc.findings[1].job).not.toBeNull();
+    expect(doc.findings[1].quality).not.toBeNull();
+    doc.findings[0].job = 'report.read-release-status-at-a-glance';
+    doc.findings[0].quality = null;
+    expect(validateToolReview(doc).valid).toBe(true);
+  });
+
+  it('leaves an absent job to the schema: one error, not two', () => {
+    const doc = load('job-or-quality.invalid');
+    delete doc.findings[0].job;
+    expect(paths(doc)).toEqual(['findings[0].job']);
+  });
+
+  it('skips a finding that is not an object, which the schema reports', () => {
+    const doc = valid();
+    doc.findings = [7];
+    expect(paths(doc)).toEqual(['findings[0]']);
+  });
+});
