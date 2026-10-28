@@ -16,36 +16,45 @@ import { describe, expect, it } from 'vitest';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 describe('history push without a remote store', () => {
-  it('does not report success when no db-url is configured', async () => {
-    const tmp = mkTmp();
-    try {
-      const path = join(tmp, 'h.jsonl');
-      const record = {
-        schema_version: 2,
-        run_id: 'r-old',
-        suite: 'api',
-        repo: 'o/r',
-        branch: 'main',
-        commit_sha: 'abc',
-        timestamp: '2026-01-01T00:00:00+00:00',
-        total: 1,
-        passed: 1,
-        failed: 0,
-        flaky: 0,
-        skipped: 0,
-        tests: [{ test_name: 't', status: 'passed' }],
-      };
-      writeFileSync(path, JSON.stringify(record) + '\n');
-      const before = readFileSync(path, 'utf-8');
-      const res = await invokeCanary(['history', 'push', path], { cwd: tmp });
-      // The file is untouched: nothing was pushed anywhere.
-      expect(readFileSync(path, 'utf-8')).toBe(before);
-      expect(res.code).not.toBe(0);
-      // The repo-wide abstention code, not a generic failure (D4).
-      expect(res.code).toBe(3);
-      expect(res.stdout).not.toContain('Pushed run');
-    } finally {
-      rmTmp(tmp);
-    }
-  });
+  // #1412: --dry-run must abstain the same way -- a dry run promising a push
+  // the real run refuses is the same false green.
+  it.each([[[]], [['--dry-run']]])(
+    'does not report success when no db-url is configured (%j)',
+    async (extra: string[]) => {
+      const tmp = mkTmp();
+      try {
+        const path = join(tmp, 'h.jsonl');
+        const record = {
+          schema_version: 2,
+          run_id: 'r-old',
+          suite: 'api',
+          repo: 'o/r',
+          branch: 'main',
+          commit_sha: 'abc',
+          timestamp: '2026-01-01T00:00:00+00:00',
+          total: 1,
+          passed: 1,
+          failed: 0,
+          flaky: 0,
+          skipped: 0,
+          tests: [{ test_name: 't', status: 'passed' }],
+        };
+        writeFileSync(path, JSON.stringify(record) + '\n');
+        const before = readFileSync(path, 'utf-8');
+        const res = await invokeCanary(['history', 'push', path, ...extra], {
+          cwd: tmp,
+        });
+        // The file is untouched: nothing was pushed anywhere.
+        expect(readFileSync(path, 'utf-8')).toBe(before);
+        expect(res.code).not.toBe(0);
+        // The repo-wide abstention code, not a generic failure (D4).
+        expect(res.code).toBe(3);
+        expect(res.stdout).not.toContain('Pushed run');
+        expect(res.stdout).not.toContain('would push run');
+        expect(res.stdout).toContain('no remote store is configured');
+      } finally {
+        rmTmp(tmp);
+      }
+    },
+  );
 });

@@ -49,7 +49,7 @@ export interface AgentCapabilityProbe {
  *
  * Imports no agent/LLM module (SC-11).
  */
-export class NoAgentProbe implements AgentCapabilityProbe {
+class NoAgentProbe implements AgentCapabilityProbe {
   availableTier(): number {
     return 0;
   }

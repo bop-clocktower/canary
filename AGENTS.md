@@ -1196,10 +1196,11 @@ Two related facts worth not rediscovering:
   contract (#1071, ADR 0034).** `issue-fleet` computes a route per triaged issue
   and has nowhere to put it; the skill is vendored under
   `~/.claude/plugins/marketplaces/harness/` and overwritten by every CLI
-  release, so the durable half lives here. 13 labels: one `route:<fleet>` per
-  destination (`adr`, `bug`, `cicd`, `cleanup`, `craft`, `docs`, `ideate`,
-  `perf`, `pr`, `roadmap`, `security`, `test` — the installed roster minus the
-  `fleet-command` conductor and the `issue-fleet` producer), plus
+  release, so the durable half lives here. 11 labels: one `route:<fleet>` per
+  destination (`adr`, `cicd`, `cleanup`, `craft`, `docs`, `perf`, `pr`,
+  `roadmap`, `security`, `test` — the installed roster minus the `fleet-command`
+  conductor, the `issue-fleet` producer, and its documented Non-destinations
+  `ideate-fleet` and `bug-fleet`, whose labels #1216 deleted), plus
   `route:unroutable`. **`route:unroutable` is a label, not an absence** — a
   missing route label means "not yet triaged", and collapsing those two is the
   silent drop. `node scripts/route-queue.mjs ensure-labels [--apply]` reconciles

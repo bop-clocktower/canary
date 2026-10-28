@@ -97,8 +97,10 @@ describe('canary history', () => {
         ],
       };
       writeFileSync(path, JSON.stringify(record) + '\n', 'utf-8');
+      // #1412: a remote must be configured, or the dry run abstains (exit 3).
       const res = await invokeCanary(['history', 'push', path, '--dry-run'], {
         cwd: tmp,
+        env: { CANARY_HISTORY_DB_URL: 'postgres://fake' },
       });
       expect(res.code).toBe(0);
       expect(res.stdout).toContain('dry-run:');
