@@ -34,6 +34,9 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`migrate --framework` rejects an unknown name (#1416)** with exit 1 and the
+  known list, before any write, instead of silently using detection.
+
 - **`canary ci-ready` windows flakiness per suite, by timestamp (#1506).**
 
 - **`canary php audit` fails on abandoned-only lockfiles (#1469).** Composer
