@@ -56,6 +56,7 @@ export {
   coverageStatus,
   resolveCoverage,
   resolveCoverageWithInput,
+  resolveFromReport,
   type CoverageInputState,
   type CoverageStatus,
   type ResolveCoverageOptions,
@@ -66,7 +67,6 @@ export {
   isTestPath,
   isTestSupportPath,
 } from './diff-coverage/paths.js';
-export { resolveFromReport } from './diff-coverage/report-tier.js';
 export { isTypeOnlyModule } from './diff-coverage/type-only.js';
 export {
   fidelityRank,

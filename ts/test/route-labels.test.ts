@@ -134,13 +134,44 @@ const issue = (n: number, ...labels: string[]): StubIssue => ({
   labels: labels.map((name) => ({ name })),
 });
 
+/**
+ * The installed fleet roster minus `issue-fleet`'s documented Non-destinations
+ * (`ideate-fleet`, `bug-fleet` — labels deleted under #1216) and minus the
+ * `fleet-command` conductor and the `issue` producer. Pinned by hand: the only
+ * roster source is the vendored plugin under `~/.claude`, which CI lacks, so a
+ * roster change must update this list deliberately (#1507).
+ */
+const EXPECTED_DESTINATIONS = [
+  'adr',
+  'cicd',
+  'cleanup',
+  'craft',
+  'docs',
+  'perf',
+  'pr',
+  'roadmap',
+  'security',
+  'test',
+];
+
 describe('vocabulary', () => {
-  it('is exactly the 13 roster-derived labels, all route:-prefixed', () => {
-    expect(lib.ROUTE_LABELS).toHaveLength(13);
+  it('is exactly the pinned roster-derived destinations', () => {
+    expect([...lib.DESTINATIONS].sort()).toEqual(EXPECTED_DESTINATIONS);
+  });
+
+  it('is exactly 11 labels, all route:-prefixed', () => {
+    expect(lib.ROUTE_LABELS).toHaveLength(11);
     for (const label of lib.ROUTE_LABELS) {
       expect(label.startsWith(lib.ROUTE_PREFIX)).toBe(true);
     }
-    expect(new Set(lib.ROUTE_LABELS).size).toBe(13);
+    expect(new Set(lib.ROUTE_LABELS).size).toBe(11);
+  });
+
+  it('never lists the non-destinations deleted under #1216', () => {
+    // ensure-labels --apply only CREATES, so a stale entry here would silently
+    // recreate a label the tracker deliberately removed.
+    expect(lib.DESTINATIONS).not.toContain('bug');
+    expect(lib.DESTINATIONS).not.toContain('ideate');
   });
 
   it('covers the six destinations the vendored enum already had', () => {

@@ -1,0 +1,22 @@
+{
+  "issues": [1414, 1415],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-coverage-cross-package-suffix.test.ts",
+  "baseSha": "a4aa9c94a9935868a80f8b54d09a0d6974f4e2dc",
+  "reproFailure": "At base: 5 failed | 8 passed. resolveFromReport with repoRoot: 'expected [ { unit: ... } ] to deeply equal []' (x2); root coverage/ report: 'expected 'coverage-verified' not to be 'coverage-verified'' and 'expected 'coverage-verified' to be 'heuristic'' (x2). Reverting only the #1415 lookup: 4 red. Reverting only the #1414 anchoring: 2 red.",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "F2a (human-confirmed): resolveFromReport gains an OPTIONAL third parameter repoRoot. Given, it anchors with anchorIndex exactly as the ladder does. Omitted, it keeps the raw-key behaviour, so existing 2-argument callers are unchanged.",
+    "F3a (human-confirmed): a relative key that is anchored at the repo root (prefix '') or not anchored at all (prefix null) names no package. It is looked up across the repo. If it exists under more than one directory, the entry is dropped from the anchored index, and every candidate falls through to a lower tier (fail closed, never coverage-verified). No producer hint was added.",
+    "A key that no report ancestor anchors (prefix null) and that exists under exactly one directory is re-keyed to that full path and marked anchored, so it binds by exact match only. This is the 'unambiguous single-package key still verifies' control.",
+    "A key anchored at a strict ancestor of the report's directory (for example pkg-a/coverage/lcov.info anchoring at pkg-a/) is unchanged. The report living inside the package is treated as sufficient evidence of the producer.",
+    "Root-file variant (behaviour chosen and recorded): when the key exists at the repo root AND under a package, it is ambiguous, so the root file is NOT verified either. This deliberately flips one assertion in #1406's test 'does not verify pkg-b/src/index.ts from a repo-root report's record': rootFile was coverage-verified and is now heuristic. A genuinely root-rooted report in a repo that also holds a same-named file under a package now fails closed for that file.",
+    "A root-anchored key (prefix '') whose only on-disk location is under a package stays anchored at the root path. It is not re-keyed into the package, because a root-rooted report naming a file the root lacks is a stale entry, not that package's file.",
+    "Candidate directories come from core/fs-glob globDirs('**/<top segment>'), which skips WORKSPACE_SKIP_DIRS (node_modules, .git, dist, build, coverage, .venv, and others). A key whose top segment is one of those, or a single-segment key (a bare filename), finds no candidates and keeps the pre-existing behaviour: the suffix fallback when unanchored, exact root binding when root-anchored.",
+    "The walk runs only when the report has unscoped relative keys, once per distinct top segment. Ordinary per-package reports (anchored at a strict ancestor) pay nothing.",
+    "resolveFromReport moved from report-tier.ts to orchestrator.ts, which already imports anchorIndex, readReportIndex and matchUnitsToIndex. Importing anchorIndex into report-tier added a new check-perf coupling finding (report-tier.ts coupling ratio 1.00). The public export from guardian/coverage.ts is unchanged.",
+    "The ts/src/guardian/diff-coverage module is at exactly 1799 of 1800 LOC after this change (base 1777). The code was compacted to fit; no doc comment was stripped. There is now effectively no headroom left in that module.",
+    "docs/guides/pr-guardian.md's anchoring paragraph said a root coverage/ report's keys keep the suffix fallback. That was made wrong by this change, so it was updated."
+  ]
+}
