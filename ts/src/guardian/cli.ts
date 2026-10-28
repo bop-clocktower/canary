@@ -5,8 +5,8 @@
  *
  *   - A **factory** {@link createGuardianCommand} builds a fresh `commander`
  *     `Command` wired to an injectable {@link GuardianDeps} (stdout/stderr sinks,
- *     stdin, env, git/gh runners, network client factories). The production
- *     export {@link guardianCommand} uses process-backed defaults; tests build a
+ *     stdin, env, git/gh runners, network client factories). Unset deps fall
+ *     back to the process-backed {@link defaultDeps}; tests build a
  *     command with capturing sinks and fake clients -- no global monkeypatching,
  *     no network. This is exactly how Python's `_build_client` /
  *     `_branch_protection_client` seams were replaced.
@@ -289,7 +289,7 @@ function spawnGh(args: string[]): GhResult {
   };
 }
 
-/** Process-backed defaults for production (the `guardianCommand` export). */
+/** Process-backed production defaults; `createGuardianCommand` merges over. */
 export function defaultDeps(): GuardianDeps {
   return {
     out: (s) => process.stdout.write(`${s}\n`),
@@ -2282,9 +2282,3 @@ export function createGuardianCommand(
 
   return program;
 }
-
-/**
- * The production `guardian` command, wired to process-backed defaults. A future
- * root CLI mounts it via `rootProgram.addCommand(guardianCommand)`.
- */
-export const guardianCommand: Command = createGuardianCommand();
