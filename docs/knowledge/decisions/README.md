@@ -101,3 +101,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0042](0042-bin-verification-gates-latest-not-github-release.md)          | Bin verification gates the latest advance, not the GitHub Release         | accepted |
 | [0043](0043-route-roadmap-issues-get-a-roadmap-row-at-routing.md)         | `route:roadmap` issues get a roadmap row at routing time                  | accepted |
 | [0044](0044-npm-latest-dist-tag-waits-for-bin-verification.md)            | The npm `latest` dist-tag waits for bin verification                      | accepted |
+| [0045](0045-tool-review-ledger-first-contract.md)                         | `canary.tool-review/1` is a ledger-first review contract                  | accepted |

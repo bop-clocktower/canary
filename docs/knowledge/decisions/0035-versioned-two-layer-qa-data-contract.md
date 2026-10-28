@@ -15,7 +15,7 @@ source: docs/changes/canary-qa-site/proposal.md
 **Related:** [#1151](https://github.com/bop-clocktower/canary/issues/1151);
 `docs/changes/canary-qa-site/proposal.md` (D1–D5); ADR 0009 (exit 3 reserved for
 "abstained"); ADR 0029 (repo-relative `file` join key); ADR 0030 (additive
-schema versions)
+schema versions); ADR 0045 (extends D3's naming to standalone contracts)
 
 ## Context
 
