@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tool-review.v1.schema.json",
+  "title": "canary.tool-review/1",
+  "description": "One review of a QA tool from the seats of the people who use it: a coverage ledger in which every job and result surface ends in exactly one state, and the findings the review made. Spec: docs/specs/canary-tool-review-contract.md. A standalone contract, not a canary.* layer, so it is validated by tool-review.mjs and not by validate.mjs (ADR 0045). Unknown fields are tolerated. Rules the subset cannot express (jobOrQuality, noCompositeScore, evidenceRequired) live in tool-review.mjs.",
+  "type": "object",
+  "required": [
+    "contract",
+    "tool",
+    "reviewed_at",
+    "catalog_version",
+    "overlay_sha",
+    "ledger",
+    "findings",
+    "not_assessed"
+  ],
+  "properties": {
+    "contract": { "const": "canary.tool-review/1" },
+    "tool": { "$ref": "#/$defs/tool" },
+    "reviewed_at": { "$ref": "#/$defs/timestamp" },
+    "catalog_version": { "$ref": "#/$defs/text" },
+    "overlay_sha": {
+      "$comment": "null when the review ran without an overlay.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "ledger": { "type": "array", "items": { "$ref": "#/$defs/row" } },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "not_assessed": {
+      "$comment": "Run-level abstentions only: a phase or capability the run could not exercise at all. Required; [] means none. Per-row not-assessed states stay in ledger and are never repeated here.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/text" }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1 },
+    "timestamp": {
+      "$comment": "A hand copy of run.v1.schema.json#/$defs/timestamp, so this file loads alone; contracts-schemas.test.ts pins the two equal.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "tool": {
+      "type": "object",
+      "required": ["name", "commit_sha", "url"],
+      "properties": {
+        "name": { "$ref": "#/$defs/text" },
+        "commit_sha": { "$ref": "#/$defs/text" },
+        "url": { "$ref": "#/$defs/text" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "enum": ["screenshot", "snapshot", "file"] },
+        "ref": { "$ref": "#/$defs/text" }
+      }
+    },
+    "row": {
+      "type": "object",
+      "required": ["id", "kind", "state", "reason", "evidence"],
+      "properties": {
+        "id": { "$ref": "#/$defs/text" },
+        "kind": { "enum": ["job", "surface"] },
+        "state": {
+          "$comment": "pending is a ledger-file state only; a report never carries it.",
+          "enum": ["walked", "mapped", "not-assessed", "not-applicable"]
+        },
+        "reason": { "type": ["string", "null"], "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "id",
+        "severity",
+        "persona",
+        "job",
+        "quality",
+        "surface",
+        "what_happened",
+        "cost",
+        "evidence",
+        "file_candidate"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/text" },
+        "severity": { "enum": ["blocker", "friction", "polish"] },
+        "persona": {
+          "enum": [
+            "manual-tester",
+            "sdet",
+            "qa-lead",
+            "developer",
+            "pm-owner",
+            "external-viewer"
+          ]
+        },
+        "job": { "type": ["string", "null"], "minLength": 1 },
+        "quality": { "enum": ["Q1", "Q2", "Q3", "Q4", null] },
+        "surface": { "type": ["string", "null"], "minLength": 1 },
+        "what_happened": { "$ref": "#/$defs/text" },
+        "cost": { "$ref": "#/$defs/text" },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "file_candidate": { "type": "boolean" }
+      }
+    }
+  }
+}
