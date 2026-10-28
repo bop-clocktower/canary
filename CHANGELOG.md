@@ -45,6 +45,10 @@ under the project's former name) are documented in the
   silent. The session siren now has its first execution tests, in
   `ts/test/install-siren.test.ts`.
 
+- **Session siren check 4b compares against origin, not an unfetched HEAD
+  (#1495).** It now uses the clone's `origin/<branch>` and abstains loudly when
+  the clone's last fetch is over a day old or missing, instead of passing.
+
 - **Named-secret redaction no longer garbles its own placeholders (#1400).**
   `buildPayload` redacts every failure field twice, and the second pass replaced
   a named value again wherever it appeared inside a placeholder: `TOK='secret'`

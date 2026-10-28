@@ -38,6 +38,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -582,25 +583,36 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     GIT_COMMITTER_EMAIL: 't@e',
   };
   let dir: string;
+  let upstream: string;
   let mkt: string;
   let mktHead: string;
 
-  /** Commit a marketplace clone at `version`, returning its HEAD sha. */
-  const writeMarketplace = (version: string): string => {
-    mkdirSync(join(mkt, '.claude-plugin'), { recursive: true });
+  /**
+   * Commit `version` to the UPSTREAM repo the marketplace clone tracks,
+   * returning the new tip sha. The clone only learns about it on a fetch —
+   * which is the whole of #1495.
+   */
+  const writeUpstream = (version: string): string => {
+    mkdirSync(join(upstream, '.claude-plugin'), { recursive: true });
     writeFileSync(
-      join(mkt, '.claude-plugin', 'plugin.json'),
+      join(upstream, '.claude-plugin', 'plugin.json'),
       JSON.stringify({ name: 'canary', version }),
     );
-    execFileSync('git', ['add', '-A'], { cwd: mkt });
+    execFileSync('git', ['add', '-A'], { cwd: upstream });
     execFileSync('git', ['commit', '-q', '-m', version], {
-      cwd: mkt,
+      cwd: upstream,
       env: GIT_ENV,
     });
     return execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: mkt,
+      cwd: upstream,
       encoding: 'utf-8',
     }).trim();
+  };
+
+  /** Age the clone's last fetch by `days`, as an unattended machine would. */
+  const ageFetch = (days: number) => {
+    const t = new Date(Date.now() - days * 86_400_000);
+    utimesSync(join(mkt, '.git', 'FETCH_HEAD'), t, t);
   };
 
   const writeInstalled = (entry: Record<string, string>) => {
@@ -640,10 +652,15 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'session-siren-'));
+    upstream = join(dir, 'upstream');
     mkt = join(dir, 'marketplace');
-    mkdirSync(mkt, { recursive: true });
-    execFileSync('git', ['init', '--quiet'], { cwd: mkt });
-    mktHead = writeMarketplace('9.5.0');
+    mkdirSync(upstream, { recursive: true });
+    execFileSync('git', ['init', '--quiet'], { cwd: upstream });
+    mktHead = writeUpstream('9.5.0');
+    // A real clone, so origin/<branch> and the branch upstream exist, then a
+    // fetch so FETCH_HEAD is present and fresh — a healthy marketplace.
+    execFileSync('git', ['clone', '-q', upstream, mkt]);
+    execFileSync('git', ['fetch', '-q'], { cwd: mkt });
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -670,6 +687,36 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     const msg = findings('9.5.0');
     expect(msg).not.toContain('skew');
     expect(msg).not.toContain('behind the marketplace');
+    expect(msg).not.toContain('stale reference');
+  });
+
+  it('abstains loudly when the clone has not been fetched in days (#1495)', () => {
+    // The false green: upstream moved, the clone never fetched, so its HEAD
+    // still equals the stale install and check 3 waits 14 days to speak.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    writeUpstream('9.5.0-next');
+    ageFetch(3);
+    const msg = findings('9.5.0');
+    expect(msg).toContain('compared against a stale reference');
+    expect(msg).toContain('unverifiable');
+  });
+
+  it('abstains loudly when the clone has never been fetched (#1495)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    rmSync(join(mkt, '.git', 'FETCH_HEAD'));
+    expect(findings('9.5.0')).toContain('compared against a stale reference');
+  });
+
+  it('reports an install behind origin when the clone fetched but never merged (#1495)', () => {
+    // HEAD is not the reference: a fetch moves origin/<branch> and leaves
+    // HEAD where the stale install is.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const tip = writeUpstream('9.5.0-next');
+    execFileSync('git', ['fetch', '-q'], { cwd: mkt });
+    const msg = findings('9.5.0');
+    expect(msg).toContain('installed canary plugin is behind the marketplace');
+    expect(msg).toContain(tip.slice(0, 7));
+    expect(msg).not.toContain('stale reference');
   });
 
   it('abstains loudly when the installed record has no version or commit', () => {
