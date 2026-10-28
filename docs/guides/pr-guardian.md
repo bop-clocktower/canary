@@ -163,9 +163,11 @@ the instrumenter itself judged non-executable (a type, a signature, an import),
 and only it, blank lines and comments stay "not coverable". Everything else
 fails **closed**, toward "code", since a wrong "code" costs one noisy finding
 and a wrong "not code" hides untested code. If the brackets do not balance,
-every non-blank line is scored by the nearest recorded line above it. If the
-source is unreadable, larger than 2 MB, or shorter than the diff (not the source
-the diff describes), the file is scored as if the report never said what it
+every non-blank line is scored by the nearest recorded line above it; a line
+with no recorded line above it (the imports and signature before the first
+record) has nothing to inherit and stays "not coverable" (#1408). If the source
+is unreadable, larger than 2 MB, or shorter than the diff (not the source the
+diff describes), the file is scored as if the report never said what it
 measured: every changed line counts, and absence means uncovered.
 
 The rule is per-**report**, because absence only means "not coverable" where the
