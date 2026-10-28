@@ -12,9 +12,9 @@
  * an eager `-V/--version` global option + `_main` callback analog.
  *
  * Sub-app mounting note: `guardian`/`history`/`analyze` are mounted as FRESH
- * instances via their `createXCommand()` factories (functionally identical to
- * the `guardianCommand`/`historyCommand`/`analyzeCommand` singletons but safe to
- * mount into multiple `createCanaryCommand()` calls, e.g. across tests).
+ * instances via their `createXCommand()` factories, so they are safe to mount
+ * into multiple `createCanaryCommand()` calls (e.g. across tests). There are no
+ * module-level singleton instances.
  *
  * Sub-app builders come from the `commands/cli.ts` registry array (#988): a new
  * subcommand joins a per-domain registry under `commands/`, never an import here.

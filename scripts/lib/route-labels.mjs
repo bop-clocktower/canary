@@ -24,19 +24,19 @@ export const ROUTE_PREFIX = 'route:';
  *
  * Derived from the installed fleet roster rather than from the vendored
  * skill's comment, which lists only six (`adr | roadmap | pr | cicd | test |
- * cleanup`) and is exactly the omission #886 exists to fix. Two roster members
+ * cleanup`) and is exactly the omission #886 exists to fix. Four roster members
  * are deliberately absent: `fleet-command` conducts the fleets rather than
- * receiving issues, and `issue` is the producer that computes the route —
- * routing an issue back to the router is a cycle.
+ * receiving issues; `issue` is the producer that computes the route — routing
+ * an issue back to the router is a cycle; and `ideate` and `bug` are
+ * issue-fleet's documented Non-destinations, whose labels were deleted under
+ * #1216 (#1507).
  */
 export const DESTINATIONS = [
   'adr',
-  'bug',
   'cicd',
   'cleanup',
   'craft',
   'docs',
-  'ideate',
   'perf',
   'pr',
   'roadmap',

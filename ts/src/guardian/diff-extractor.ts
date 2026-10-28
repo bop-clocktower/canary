@@ -78,7 +78,7 @@ const HTTP_METHODS = [
 
 // Frozen vocabulary for a changed endpoint (see
 // docs/specs/api-delta-contract.md).
-export const VALID_CHANGES = [
+const VALID_CHANGES = [
   'params',
   'request-body',
   'response',
