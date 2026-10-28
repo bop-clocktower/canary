@@ -304,7 +304,8 @@ backstopjs). Its `--apply` writes no config that detection can find later, so a
 
 A `--framework` name canary does not know is rejected on every mode before
 anything runs or is written: the command exits `1` and lists the known names,
-rather than falling back to detection (#1416).
+rather than falling back to detection (#1416). Names match case-insensitively,
+so `--framework Playwright` is the same as `--framework playwright`.
 
 ### `migrate --apply` abstains on the same tree
 

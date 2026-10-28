@@ -1747,11 +1747,13 @@ export class HarnessMigrator {
    *
    * #1416: an unknown name used to fall back to detection silently. Known
    * means a registry entry -- the test `Scaffolder` applies -- so `phpunit` and
-   * `pest` (absent from KNOWN_FRAMEWORKS) stay valid overrides.
+   * `pest` (absent from KNOWN_FRAMEWORKS) stay valid overrides. Matching is
+   * case-insensitive, as the scaffolder's has always been; the message echoes
+   * the name as typed.
    */
   unknownFrameworkMessage(framework: string): string | null {
     const reg = new FrameworkRegistry();
-    if (reg.findByName(framework) !== null) return null;
+    if (reg.findByName(framework.toLowerCase()) !== null) return null;
     const names = reg.getAllFrameworks().map((f) => f.name);
     return `Unknown --framework '${framework}'. Known frameworks: ${names.join(', ')}.`;
   }

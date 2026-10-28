@@ -585,9 +585,16 @@ function rejectUnknownFramework(
   throw new CliExitError(1);
 }
 
-export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
+export function migrateCmd(rawOpts: MigrateOptions, deps: MainDeps): void {
   const migrator = deps.makeMigrator();
-  rejectUnknownFramework(opts.framework, migrator, deps);
+  rejectUnknownFramework(rawOpts.framework, migrator, deps);
+  // Framework names are case-insensitive (the scaffolder always lowercased
+  // them), so normalize once here: every mode -- including `--check`'s shape
+  // lookup -- then sees the same registry key `--apply` deployed to.
+  const opts: MigrateOptions =
+    rawOpts.framework === undefined
+      ? rawOpts
+      : { ...rawOpts, framework: rawOpts.framework.toLowerCase() };
   const root = resolve(opts.path);
   const overlayPath = resolveMigrateOverlay(opts.from, opts.overlay, deps);
 

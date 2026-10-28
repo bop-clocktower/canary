@@ -137,6 +137,57 @@ describe('#1416 migrate rejects an unknown --framework', () => {
     }
   });
 
+  // The name is case-insensitive, as it was before the guard: the scaffolder
+  // lowercases it, so `--framework Playwright --apply` already worked and the
+  // guard must not start rejecting it.
+  it('accepts a mixed-case known name on --apply and --check', async () => {
+    const base = mkTmp();
+    try {
+      const { project, home, overlay } = fixture(base);
+      const args = ['--from', overlay, '--framework', 'Locust'];
+      const applied = await run(project, home, ...args, '--apply', '--json');
+      expect(applied.stderr).not.toContain('Unknown --framework');
+      expect(applied.code).toBe(0);
+      expect(jsonOf(applied.stdout)['framework']).toBe('locust');
+      expect(
+        existsSync(join(project, '.canary', 'skills', 'sample-skill')),
+      ).toBe(true);
+
+      // The gate sees the same lowercased shape set the apply deployed to.
+      const checked = await run(project, home, ...args, '--check');
+      expect(checked.stderr).not.toContain('Unknown --framework');
+      expect(checked.code).toBe(0);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('still rejects an unknown mixed-case name on --apply and --check', async () => {
+    const base = mkTmp();
+    try {
+      const { project, home, overlay } = fixture(base);
+      for (const mode of ['--apply', '--check']) {
+        const res = await run(
+          project,
+          home,
+          '--from',
+          overlay,
+          '--framework',
+          'Locsut',
+          mode,
+        );
+        expect(res.code).toBe(1);
+        // The message echoes what the user typed.
+        expect(res.stderr).toContain("Unknown --framework 'Locsut'");
+        expect(res.stderr).toContain('playwright');
+        expect(res.stdout).not.toContain('Canary Migrate');
+      }
+      expect(existsSync(join(project, '.canary'))).toBe(false);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
   it('control: omitting --framework still uses detection', async () => {
     const base = mkTmp();
     try {
