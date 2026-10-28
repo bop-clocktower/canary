@@ -31,7 +31,9 @@ function refusedPaths(doc: unknown, opts = {}): string[] {
 }
 
 describe('valid corpus (planted positives)', () => {
-  it('holds one valid document per layer (a zero denominator is not a pass)', () => {
+  it('holds one valid document per layer, plus each standalone contract (a zero denominator is not a pass)', () => {
+    // tool-review.valid.json is canary.tool-review/1, validated by
+    // tool-review.mjs (ADR 0045), not by validateDocument.
     const corpus = fs
       .readdirSync(FIXTURES)
       .filter((f) => f.endsWith('.valid.json'))
@@ -40,6 +42,20 @@ describe('valid corpus (planted positives)', () => {
       'assessment.valid.json',
       'run.valid.json',
       'site.valid.json',
+      'tool-review.valid.json',
+    ]);
+  });
+
+  it('refuses canary.tool-review/1: a standalone contract has its own entry point (ADR 0045)', () => {
+    // Pins the decision not to widen CONTRACT_RE or LAYERS in document.mjs.
+    const doc = JSON.parse(
+      fs.readFileSync(path.join(FIXTURES, 'tool-review.valid.json'), 'utf8'),
+    );
+    expect(validateDocument(doc).errors).toEqual([
+      {
+        path: 'contract',
+        message: 'not a canary contract string: "canary.tool-review/1"',
+      },
     ]);
   });
 
