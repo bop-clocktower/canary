@@ -149,6 +149,58 @@ describe('canary php audit', () => {
     expect(r.stdout).toContain('laminas/laminas-mvc');
   });
 
+  // #1469: composer 2.10 defaults to audit.abandoned=fail, so abandoned
+  // packages alone set exit bit 1 -- the same bit it uses for advisories.
+  it('abandoned-only report on exit 1 fails with one finding each', async () => {
+    lockfile(['acme/config', 'acme/json', 'acme/loader']);
+    const composer = fakeComposer(
+      {
+        advisories: [],
+        abandoned: {
+          'acme/config': null,
+          'acme/json': null,
+          'acme/loader': null,
+        },
+      },
+      1,
+    );
+    const r = await audit(composer.runSubprocess, ['--json']);
+    expect(r.code).toBe(1);
+    const out = JSON.parse(r.stdout);
+    expect(out.abstained).toBe(false);
+    expect(out.findings).toHaveLength(3);
+    expect(out.findings.map((f: { package: string }) => f.package)).toEqual([
+      'acme/config',
+      'acme/json',
+      'acme/loader',
+    ]);
+  });
+
+  it('abandoned on exit 1 names a replacement-package string', async () => {
+    lockfile(['acme/old']);
+    const composer = fakeComposer(
+      { advisories: [], abandoned: { 'acme/old': 'acme/new' } },
+      1,
+    );
+    const r = await audit(composer.runSubprocess);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain('acme/old: abandoned; replaced by acme/new');
+    expect(r.stdout).toContain('1 finding(s) across 1 checked');
+  });
+
+  it('reads abandoned written as a list of package names', async () => {
+    lockfile(['acme/a', 'acme/b']);
+    const composer = fakeComposer(
+      { advisories: [], abandoned: ['acme/a', 'acme/b'] },
+      1,
+    );
+    const r = await audit(composer.runSubprocess);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain('acme/a: abandoned; no replacement named');
+    expect(r.stdout).toContain('acme/b: abandoned; no replacement named');
+    expect(r.stdout).toContain('2 finding(s) across 2 checked');
+  });
+
   it('--composer runs the named binary', async () => {
     lockfile(['acme/a']);
     const composer = fakeComposer(CLEAN);
@@ -220,7 +272,18 @@ describe('canary php audit abstains instead of passing', () => {
       fakeComposer({ advisories: { 'acme/a': 'unexpected' } }, 1).runSubprocess,
     );
     expect(r.code).toBe(EXIT_ABSTAINED);
-    expect(r.stdout).toContain('composer reported advisories');
+    expect(r.stdout).toContain('composer reported findings (exit bit 1)');
+  });
+
+  it('exit bit 1 with advisories and abandoned both empty abstains', async () => {
+    // #1469: bit 1 can mean either now, so only "neither parsed" is drift.
+    lockfile(['acme/a']);
+    const r = await audit(
+      fakeComposer({ advisories: [], abandoned: [] }, 1).runSubprocess,
+    );
+    expect(r.code).toBe(EXIT_ABSTAINED);
+    expect(r.stdout).toContain('composer reported findings (exit bit 1)');
+    expect(r.stdout).not.toContain('passed');
   });
 
   it('exit bit 2 with no parsed abandoned package abstains', async () => {

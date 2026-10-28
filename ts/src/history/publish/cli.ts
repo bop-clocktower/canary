@@ -108,15 +108,9 @@ async function pushCmd(
   const run = pick<RunInput>(latest, RUN_FIELDS);
   const results = testsRaw.map((t) => pick<TestResultInput>(t, RESULT_FIELDS));
 
-  if (opts.dryRun) {
-    deps.out(
-      `${pc.cyan('dry-run:')} would push run ${pc.bold(run.run_id)} (${results.length} tests)`,
-    );
-    throw new CliExitError(0);
-  }
-
   // #1296: no db-url means a local store AT historyFile, whose run_id dedup
   // makes this a guaranteed no-op -- `Pushed` over it would be a false green.
+  // #1412: checked before --dry-run, which must not promise a refused push.
   if (!(opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'])) {
     const gate = gateOutcome({ checked: 0, findings: [] }, 'gate');
     deps.out(
@@ -124,6 +118,12 @@ async function pushCmd(
         `(pass --db-url or set CANARY_HISTORY_DB_URL).`,
     );
     throw new CliExitError(gate.exitCode);
+  }
+  if (opts.dryRun) {
+    deps.out(
+      `${pc.cyan('dry-run:')} would push run ${pc.bold(run.run_id)} (${results.length} tests)`,
+    );
+    throw new CliExitError(0);
   }
   await deps.makeStore(opts.dbUrl).pushRun(run, results);
   deps.out(

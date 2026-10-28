@@ -81,16 +81,30 @@ else
   FINDINGS+=("canary CLI not on PATH")
 fi
 
-# 4b. Installed plugin vs marketplace HEAD. canary main often lands without a
-#     plugin.json bump, and `claude plugin update` compares version strings
-#     only, so equal versions can still mean stale files. The commit is the
-#     only thing that tells.
+# 4b. Installed plugin vs the marketplace's ORIGIN tip. canary main often
+#     lands without a plugin.json bump, and `claude plugin update` compares
+#     version strings only, so equal versions can still mean stale files. The
+#     commit is the only thing that tells.
+#
+#     The reference is origin/<branch>, not HEAD (#1495): a fetch moves the
+#     remote-tracking ref and leaves HEAD where the stale install is. And no
+#     local ref is better than the last fetch, so a fetch older than a day (or
+#     none at all) is a loud abstention, never a pass — otherwise 4b compares
+#     equal against a reference that cannot show drift, for the 14 days check 3
+#     takes to notice. No network here: the hook stays offline and <1s.
 if [ "$INST_SHA" != "unknown" ] && [ -d "$MKT/.git" ]; then
-  MKT_HEAD=$(git -C "$MKT" rev-parse HEAD 2>/dev/null || echo "unknown")
-  if [ "$MKT_HEAD" = "unknown" ]; then
-    FINDINGS+=("cannot resolve the marketplace HEAD at $MKT — installed-plugin staleness unverifiable")
-  elif [ "$MKT_HEAD" != "$INST_SHA" ]; then
-    FINDINGS+=("installed canary plugin is behind the marketplace (installed $INST_VER @${INST_SHA:0:7}, marketplace @${MKT_HEAD:0:7}) — claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower --scope user")
+  MKT_REF=$(git -C "$MKT" rev-parse --verify -q '@{upstream}' 2>/dev/null ||
+    git -C "$MKT" rev-parse --verify -q refs/remotes/origin/HEAD 2>/dev/null ||
+    echo "unknown")
+  if [ "$MKT_REF" = "unknown" ]; then
+    FINDINGS+=("cannot resolve the marketplace's origin tip at $MKT — installed-plugin staleness unverifiable")
+  elif [ "$MKT_REF" != "$INST_SHA" ]; then
+    FINDINGS+=("installed canary plugin is behind the marketplace (installed $INST_VER @${INST_SHA:0:7}, origin @${MKT_REF:0:7}) — claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower --scope user")
+  fi
+  # -mmin is in both BSD and GNU find; stat's flags are not.
+  FETCHED="$MKT/.git/FETCH_HEAD"
+  if [ ! -f "$FETCHED" ] || [ -n "$(find "$FETCHED" -mmin +1440 2>/dev/null)" ]; then
+    FINDINGS+=("installed-plugin staleness compared against a stale reference, unverifiable — the marketplace clone has not been fetched in >1 day (claude plugin marketplace update bop-clocktower)")
   fi
 fi
 

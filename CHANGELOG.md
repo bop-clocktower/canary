@@ -36,6 +36,11 @@ under the project's former name) are documented in the
 
 - **`migrate --framework` rejects an unknown name (#1416)** with exit 1 and the
   known list, before any write, instead of silently using detection.
+
+- **`canary php audit` fails on abandoned-only lockfiles (#1469).** Composer
+  2.10 sets exit bit 1 for abandoned packages too, which the parser read as
+  drifted advisories and abstained; each abandoned package is now a finding.
+
 - **The session siren checks the installed plugin, not the marketplace clone
   (#1491).** Check 4 read the plugin version from the marketplace clone, so
   after `claude plugin marketplace update` it went quiet while the plugin Claude
@@ -46,6 +51,10 @@ under the project's former name) are documented in the
   installed record can't be read, it reports cannot-verify instead of staying
   silent. The session siren now has its first execution tests, in
   `ts/test/install-siren.test.ts`.
+
+- **Session siren check 4b compares against origin, not an unfetched HEAD
+  (#1495).** It now uses the clone's `origin/<branch>` and abstains loudly when
+  the clone's last fetch is over a day old or missing, instead of passing.
 
 - **Named-secret redaction no longer garbles its own placeholders (#1400).**
   `buildPayload` redacts every failure field twice, and the second pass replaced

@@ -1,0 +1,13 @@
+{
+  "issues": [1507],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/route-labels.test.ts",
+  "assumptions": [
+    "No deterministic, CI-available in-repo source for the installed fleet roster exists (the only roster is the vendored plugin under ~/.claude, absent in CI), so the expected destination list is pinned explicitly in the test rather than derived.",
+    "The live tracker is the target state: gh label list --search route: returns 10 destinations plus route:unroutable (11), which the pinned list matches.",
+    "ADR 0034 states the derivation rule without an enumerated list, so it is not made wrong by this change and is left untouched.",
+    "scripts/route-queue.mjs derives every label from ROUTE_LABELS and needed no change."
+  ],
+  "closingKeyword": "Closes"
+}

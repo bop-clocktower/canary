@@ -1,0 +1,14 @@
+{
+  "issue": [1495],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/install-siren.test.ts",
+  "assumptions": [
+    "The origin tip is resolved as the branch's @{upstream}, falling back to refs/remotes/origin/HEAD; a clone with neither reports cannot-verify rather than comparing against HEAD.",
+    "Staleness threshold is 1 day (find -mmin +1440, portable across BSD and GNU find; stat is avoided). A missing FETCH_HEAD is treated as stale.",
+    "When the fetch is stale, 4b emits the abstention finding even if the SHA comparison also differs; both findings are reported so a stale clone never reads as a pass.",
+    "Check 3 (>14 days) is left unchanged; at >14 days both check 3 and the 4b abstention fire, which is redundant but not wrong.",
+    "No network fetch was added to the hook; it stays offline and sub-second as its header promises."
+  ],
+  "closingKeyword": "Closes"
+}

@@ -26,7 +26,7 @@ export const DENYLIST_ENV = 'CANARY_PROPRIETARY_DENYLIST';
 export const DENYLIST_FILE = '.proprietary-denylist';
 export const COMPANY_FILE = '.canary/company.json';
 /** The company.json key. Array of strings. */
-export const COMPANY_KEY = 'proprietary_denylist';
+const COMPANY_KEY = 'proprietary_denylist';
 
 /**
  * Terms from a comma- or newline-separated source.
