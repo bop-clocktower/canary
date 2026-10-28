@@ -10,7 +10,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { globDirs, isFile } from '../../core/fs-glob.js'; // canary:allow-untested fp: module-load import scored via line 0 (#1408)
+import { globDirs, isFile } from '../../core/fs-glob.js';
 import type { ReportIndex } from './types.js';
 
 /**
