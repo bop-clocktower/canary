@@ -588,9 +588,7 @@ function rejectUnknownFramework(
 export function migrateCmd(rawOpts: MigrateOptions, deps: MainDeps): void {
   const migrator = deps.makeMigrator();
   rejectUnknownFramework(rawOpts.framework, migrator, deps);
-  // Framework names are case-insensitive (the scaffolder always lowercased
-  // them), so normalize once here: every mode -- including `--check`'s shape
-  // lookup -- then sees the same registry key `--apply` deployed to.
+  // Case-insensitive, as the scaffolder always was: every mode sees one key.
   const opts: MigrateOptions =
     rawOpts.framework === undefined
       ? rawOpts
