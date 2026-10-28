@@ -1,0 +1,17 @@
+{
+  "issues": [1506],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/ci-ready-suite-window.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Test identity is unchanged (#1350 not touched): within a suite a test is keyed by test_name alone, the same identity queryFlaky uses. Grouping is by the run-level suite field, so a same-named test in two suites is now scored separately, once per suite.",
+    "Runs with no suite field are grouped together under the label '(no suite)'.",
+    "Time order follows queryFlaky: a stable string sort on timestamp with absent timestamps as '', so untimestamped runs keep append order. A single-suite history whose file is already in time order renders byte-for-byte as before; one whose file is out of time order now windows by time (the intended fix).",
+    "Multi-suite clean result: passes only when every suite clears MIN_WINDOW_RUNS (10). One thin suite makes the check warn with measure null and names that suite, rather than passing on its zero (ADR 0009 abstention doctrine).",
+    "Multi-suite clean measure denominator is the total runs scored across all suite windows; a flaky result's denominator stays the worst test's own appearances, as before.",
+    "Multi-suite worst-test label is '<test_name> in <suite>'; suites are listed sorted by name, so the reason does not depend on file order.",
+    "suite-runtime's window (also file-order slice) is out of scope for #1506 and unchanged.",
+    "Retired-test filtering (#1500) is deferred; suiteWindows() in core/flake-signals.ts is the single place a window is chosen, so that filter can slot in there."
+  ]
+}

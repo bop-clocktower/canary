@@ -98,3 +98,61 @@ function worstAxis(tally: TestTally): FlakeSignal | null {
 function alternationRate(alt: AlternationResult): number {
   return isAlternating(alt, 0) ? alt.flip_rate_pct / 100 : 0;
 }
+
+/** The run fields {@link suiteWindows} reads to group and order runs. */
+interface WindowedRun {
+  suite?: string | null;
+  timestamp?: string | null;
+}
+
+/** One suite's flake window: its label and its newest runs, oldest first. */
+export interface SuiteWindow<R> {
+  suite: string;
+  runs: R[];
+}
+
+/** The label a run without a `suite` is grouped under. */
+const NO_SUITE = '(no suite)';
+
+/**
+ * Split runs into per-suite windows of each suite's newest `size` runs (#1506).
+ *
+ * File order is APPEND order, not time: a history built by concatenating
+ * per-suite files holds one suite's runs and then the next's, so the file's
+ * last N lines are one suite's tail. Each suite therefore gets its own window,
+ * ordered by `timestamp` the way `history/ndjson-store.queryFlaky` orders its
+ * window (a stable sort with absent timestamps as '', so untimestamped runs
+ * sort oldest and keep their append order among themselves). Suites come back
+ * sorted by label, so the result
+ * does not depend on file order either.
+ *
+ * Within a suite, tests are still keyed by `test_name` alone -- the identity
+ * `queryFlaky` uses (see #1350); this does not change it.
+ *
+ * The one place a window is chosen: a filter on which runs or tests count
+ * (e.g. retired tests, #1500) belongs here.
+ */
+export function suiteWindows<R extends WindowedRun>(
+  runs: readonly R[],
+  size: number,
+): SuiteWindow<R>[] {
+  const bySuite = new Map<string, R[]>();
+  for (const run of runs) {
+    const suite = run.suite ?? NO_SUITE;
+    const list = bySuite.get(suite) ?? [];
+    list.push(run);
+    bySuite.set(suite, list);
+  }
+  const ts = (r: R): string => r.timestamp ?? '';
+  return [...bySuite.keys()].sort(byString).map((suite) => ({
+    suite,
+    runs: [...bySuite.get(suite)!]
+      .sort((a, b) => byString(ts(a), ts(b)))
+      .slice(-size),
+  }));
+}
+
+function byString(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
