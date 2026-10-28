@@ -75,6 +75,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-barda`               | shipped  | 1151  | QA site builder (static site from a validated canary.site/1 feed)          |
 | `canary-batgirl`             | reserved | 619   | Developer and team quality scorecard                                       |
 | `canary-batwoman`            | shipped  | 749   | Closure-verification detector (renamed out of the 2026-08-23 collision)    |
+| `canary-blackalice`          | reserved | 1524  | QA tool review from six personas' seats (job catalog, Q1–Q4, ledger-first) |
 | `canary-blackhawk`           | shipped  | —     | Temporal-dependency linter for test files                                  |
 | `canary-cassandra`           | shipped  | 612   | Vacuous-test detection                                                     |
 | `canary-ci-ready`            | shipped  | —     | Suite CI-readiness analysis                                                |

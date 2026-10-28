@@ -144,6 +144,16 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#1151
 
+### canary-blackalice — review a QA tool from the seats of the people who use it
+
+- **Status:** planned
+- **Spec:** docs/changes/canary-blackalice/proposal.md
+- **Summary:** Issue #1524. A skill that reviews a QA tool from six personas' seats: manual tester, SDET, QA lead, developer, PM/owner, and external client viewer. It maps the tool's capabilities against a generic job catalog, plus an overlay that lives in the tool's own repo, then walks the 5–8 highest-risk jobs live. Every result surface is checked against Q1–Q4: plain language, loud states (failure, all-green and not-run each unmistakable), glance then drill-down, and trace and history for RCA. The output is a ledger-first `canary.tool-review/1` report (walked / mapped / not-assessed / not-applicable) with no composite score, and issues are filed only for the findings a human ticks. It has a deterministic, LLM-free core plus an agent layer. Four phases, one PR each, merged serially. Dogfoods first on the canary QA site's demo scope (row above), then on TestTracker, whose overlay and report stay in its own repo.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1524
+
 ## Engine and Platform
 
 ## Product Surface Gaps
