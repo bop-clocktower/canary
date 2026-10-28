@@ -60,6 +60,3 @@ export function createHistoryCommand(
 
   return program;
 }
-
-/** The production `history` command (process-backed defaults). */
-export const historyCommand: Command = createHistoryCommand();
