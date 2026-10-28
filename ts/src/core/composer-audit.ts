@@ -92,8 +92,19 @@ function advisoryFindings(report: Record<string, unknown>): AuditFinding[] {
   );
 }
 
+// `{pkg: replacement|null}` is composer's shape; a bare list of package names
+// carries no replacement. Anything else is dropped, and the exit-bit
+// cross-check below turns "dropped everything" into an abstention.
+function abandonedEntries(v: unknown): Array<[string, unknown]> {
+  if (!Array.isArray(v)) return entries(v);
+  return v.flatMap((name): Array<[string, unknown]> => {
+    const pkg = str(name);
+    return pkg ? [[pkg, null]] : [];
+  });
+}
+
 function abandonedFindings(report: Record<string, unknown>): AuditFinding[] {
-  return entries(report['abandoned']).map(([pkg, replacement]) => ({
+  return abandonedEntries(report['abandoned']).map(([pkg, replacement]) => ({
     package: pkg,
     kind: 'abandoned' as const,
     id: null,
@@ -142,8 +153,14 @@ export function auditResult(
   // Composer's exit bitmask (1 vulnerable, 2 abandoned) is the cross-check on
   // this parser: a bit set with nothing parsed means the shape drifted, and
   // reading it as clean would be the false green this gate exists to refuse.
-  if (run.status & 1 && advisories.length === 0) {
-    return abstain('composer reported advisories (exit bit 1) but none parsed');
+  // Composer 2.10's `audit.abandoned=fail` default also sets bit 1 for
+  // abandoned packages alone (#1469), so bit 1 is only drift when neither
+  // list parsed anything.
+  if (run.status & 1 && advisories.length === 0 && abandoned.length === 0) {
+    return abstain(
+      'composer reported findings (exit bit 1) but no advisory or ' +
+        'abandoned package parsed',
+    );
   }
   if (run.status & 2 && abandoned.length === 0) {
     return abstain(
