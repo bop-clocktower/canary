@@ -169,7 +169,7 @@ from any context:
 
 > "Help me log in as a test user on stage"
 
-Claude will walk you through the HealthSafe ID flow step by step, including
+Claude will walk you through the SSO sign-in flow step by step, including
 which OTP code to enter and what to do if the T&C or passkey pages appear.
 No extension, no spreadsheet, no guessing.
 
