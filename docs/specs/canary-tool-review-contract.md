@@ -142,7 +142,7 @@ the schema refuses it.
 
 | Field            | Type    | Nullable | Notes                                                                                |
 | ---------------- | ------- | -------- | ------------------------------------------------------------------------------------ |
-| `id`             | string  | no       | Non-empty, unique within the report, e.g. `f-003`.                                   |
+| `id`             | string  | no       | Non-empty, e.g. `f-003`.                                                             |
 | `severity`       | enum    | no       | `blocker`, `friction` or `polish`.                                                   |
 | `persona`        | enum    | no       | `manual-tester`, `sdet`, `qa-lead`, `developer`, `pm-owner` or `external-viewer`.    |
 | `job`            | string  | yes      | The catalog job id the finding is about.                                             |
@@ -182,7 +182,9 @@ string (rule `non-blank`).
   `canary.<layer>/<major>`; a standalone contract's `<name>` may contain hyphens
   (ADR 0045, extending ADR 0035 D3). Any other contract string or major version
   is refused. A minor version only adds optional fields.
-- **Unknown fields are tolerated**, except the four score keys.
+- **Unknown fields are tolerated**, except the four score keys on the report
+  root and on each finding (`noCompositeScore`). Anywhere else, such as a ledger
+  row or `tool`, a score key is an unknown field and is tolerated.
 - **No composite score** (D8, ADR 0036). A roll-up hides the persona that was
   failed.
 - **Public boundary** (spec D11). The format is generic. Tool-specific overlays,
@@ -213,6 +215,11 @@ ships (spec phase 3). They are **not shipped yet**:
   0, or 3 under `--strict`.
 - Exit codes: 0 ok, 1 refused, 2 usage error, 3 abstention (only under
   `--strict`).
+
+Nothing checks this one yet, and the spec assigns it to no phase:
+
+- **Id uniqueness.** A report whose findings share an `id`, or whose ledger rows
+  share an `id`, validates.
 
 ## Consumers
 

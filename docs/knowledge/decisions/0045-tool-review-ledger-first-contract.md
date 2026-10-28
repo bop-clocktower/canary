@@ -53,8 +53,8 @@ tool can be diffed. The existing family does not fit it as-is:
 3. **Ledger first.** Every merged job and every discovered result surface is a
    ledger row in exactly one of four states: `walked`, `mapped`, `not-assessed`
    or `not-applicable`. `pending` is a working-file state that a report never
-   carries, and the schema refuses it. The Markdown render opens with the ledger
-   counts, before any finding.
+   carries, and the schema refuses it. The Markdown render (phase 3) must open
+   with the ledger counts, before any finding.
 4. **Run-level abstentions are a required list.** `not_assessed` holds what the
    run could not exercise at all. An absent list is refused and `[]` means none,
    so "nothing was skipped" is a statement, not a missing key. Per-row
