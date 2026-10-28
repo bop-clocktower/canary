@@ -34,6 +34,8 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary ci-ready` windows flakiness per suite, by timestamp (#1506).**
+
 - **The session siren checks the installed plugin, not the marketplace clone
   (#1491).** Check 4 read the plugin version from the marketplace clone, so
   after `claude plugin marketplace update` it went quiet while the plugin Claude

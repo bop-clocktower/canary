@@ -22,7 +22,12 @@ import {
   type CriticalAreasInput,
   type InventoryInput,
 } from './inventory-checks.js';
-import { flakeSignals, type FlakeSignal } from './flake-signals.js';
+import {
+  flakeSignals,
+  suiteWindows,
+  type FlakeSignal,
+  type SuiteWindow,
+} from './flake-signals.js';
 import {
   MIN_WINDOW_RUNS,
   NOT_MEASURABLE_NOTE,
@@ -33,6 +38,9 @@ import {
 } from '../util/flake-window.js';
 
 interface ScoredRun {
+  /** The flakiness window is per suite, newest first by timestamp (#1506). */
+  suite?: string | null;
+  timestamp?: string | null;
   duration_ms?: number | null;
   /** Which reader produced the run (#604); absent on legacy rows. */
   reporter_format?: string | null;
@@ -157,31 +165,90 @@ function scoreFlakiness(runs: RunsInput, historyPath: string): CiCheck {
       measure: null,
     };
   }
-  const window = runs.slice(-FLAKY_WINDOW_RUNS);
-  const signals = flakeSignals(window);
-  if (signals.size === 0) return scoreCleanWindow(window);
-  let worstName = '';
-  let worst: FlakeSignal = { rate: 0, axis: 'retry-flake', denominator: 0 };
-  for (const [nm, sig] of signals) {
-    if (sig.rate > worst.rate) {
-      worst = sig;
-      worstName = nm;
-    }
-  }
+  const windows = suiteWindows(runs, FLAKY_WINDOW_RUNS);
+  // One suite reads exactly as it always has; several name each denominator.
+  return windows.length === 1
+    ? scoreWindow(windows[0]!.runs)
+    : scoreSuites(windows);
+}
+
+/** The worst of a set of signals; a tie keeps the first seen. */
+function worstOf(
+  signals: Iterable<[string, FlakeSignal]>,
+): [string, FlakeSignal] {
+  let worst: [string, FlakeSignal] = [
+    '',
+    { rate: 0, axis: 'retry-flake', denominator: 0 },
+  ];
+  for (const entry of signals) if (entry[1].rate > worst[1].rate) worst = entry;
+  return worst;
+}
+
+function flakyCheck(
+  count: number,
+  across: string,
+  [worstName, worst]: [string, FlakeSignal],
+): CiCheck {
   const pct = Math.round(worst.rate * 100);
-  const verdict: CheckVerdict = worst.rate >= FLAKY_FAIL_RATE ? 'fail' : 'warn';
   return {
-    name,
-    verdict,
+    name: 'flakiness',
+    verdict: worst.rate >= FLAKY_FAIL_RATE ? 'fail' : 'warn',
     reason:
-      `${signals.size} flaky or alternating test(s) across ${window.length} ` +
-      `run(s) (window ${FLAKY_WINDOW_RUNS}); worst is ${worstName} at ` +
-      `${pct}% on ${worst.axis}`,
+      `${count} flaky or alternating test(s) across ${across}; worst is ` +
+      `${worstName} at ${pct}% on ${worst.axis}`,
     measure: {
       value: worst.rate,
       unit: 'ratio',
       denominator: worst.denominator,
     },
+  };
+}
+
+/** A single suite's window -- the pre-#1506 output, byte for byte. */
+function scoreWindow(window: ScoredRun[]): CiCheck {
+  const signals = flakeSignals(window);
+  if (signals.size === 0) return scoreCleanWindow(window);
+  const across = `${window.length} run(s) (window ${FLAKY_WINDOW_RUNS})`;
+  return flakyCheck(signals.size, across, worstOf(signals));
+}
+
+/**
+ * Several suites (#1506): each test is scored over its own suite's window, and
+ * the reason names every suite's denominator, so "across 30 run(s)" can no
+ * longer pass for 30 runs of each test. A clean result passes only when EVERY
+ * suite clears the sample floor -- one thin suite's zero is an abstention.
+ */
+function scoreSuites(windows: SuiteWindow<ScoredRun>[]): CiCheck {
+  const across =
+    windows.map((w) => `${w.suite}: ${w.runs.length} run(s)`).join(', ') +
+    ` (window ${FLAKY_WINDOW_RUNS} per suite)`;
+  const found: [string, FlakeSignal][] = [];
+  for (const w of windows) {
+    for (const [nm, sig] of flakeSignals(w.runs)) {
+      found.push([`${nm} in ${w.suite}`, sig]);
+    }
+  }
+  if (found.length > 0) return flakyCheck(found.length, across, worstOf(found));
+  const thin = windows.filter((w) => w.runs.length < MIN_WINDOW_RUNS);
+  if (thin.length > 0) {
+    const notes = thin.map(
+      (w) => `${w.suite}: ${insufficientHistoryNote(w.runs.length)}`,
+    );
+    return {
+      name: 'flakiness',
+      verdict: 'warn',
+      reason: `${notes.join(', ')}; across ${across} \u{2014} no flake verdict`,
+      measure: null,
+    };
+  }
+  const all = windows.flatMap((w) => w.runs);
+  return {
+    name: 'flakiness',
+    verdict: 'pass',
+    reason:
+      `0 flaky or alternating tests across ${across}` +
+      measurabilitySuffix(measurabilityOf(all)),
+    measure: cleanMeasure(all),
   };
 }
 
