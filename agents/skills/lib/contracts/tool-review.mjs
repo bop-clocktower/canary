@@ -15,6 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
 
+import { TIMESTAMP_RE, isTimestamp } from './field-checks.mjs';
 import { auditedValidator } from './schema-problems.mjs';
 
 const ID = 'tool-review.v1.schema.json';
@@ -78,11 +79,30 @@ function evidenceRequired(finding, prefix) {
   ];
 }
 
+/**
+ * Rule `real-dates` on `reviewed_at`, the check every canary contract with a
+ * timestamp shares (#1225): the pattern admits month 13 and 2025-02-29, and
+ * phase 3 orders reviews by this field. A string the pattern refuses, or a
+ * non-string, is the schema's error, not a second one here.
+ */
+function realReviewedAt(doc) {
+  const value = doc.reviewed_at;
+  if (typeof value !== 'string' || !TIMESTAMP_RE.test(value)) return [];
+  if (isTimestamp(value)) return [];
+  return [
+    {
+      path: 'reviewed_at',
+      message: `${JSON.stringify(value)} matches the timestamp pattern but is not a real date`,
+    },
+  ];
+}
+
 const FINDING_RULES = [jobOrQuality, noCompositeScore, evidenceRequired];
 
 function ruleErrors(doc) {
   if (!isObject(doc)) return [];
   return [
+    ...realReviewedAt(doc),
     ...noCompositeScore(doc, ''),
     ...listOf(doc, 'findings').flatMap((finding, i) =>
       isObject(finding)

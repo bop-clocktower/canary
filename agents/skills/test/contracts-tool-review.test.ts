@@ -102,6 +102,30 @@ describe('tool-review contract: schema', () => {
     expect(paths(doc)).toEqual(['reviewed_at']);
   });
 
+  it.each(['2026-13-45T25:61:61Z', '2025-02-29T12:00:00Z'])(
+    'refuses a reviewed_at that matches the pattern but is not a real date: %s (rule real-dates)',
+    (stamp) => {
+      const doc = valid();
+      doc.reviewed_at = stamp;
+      expect(validateToolReview(doc).errors).toEqual([
+        {
+          path: 'reviewed_at',
+          message: `${JSON.stringify(stamp)} matches the timestamp pattern but is not a real date`,
+        },
+      ]);
+    },
+  );
+
+  it('accepts a real leap day: 2024-02-29 exists', () => {
+    const doc = valid();
+    doc.reviewed_at = '2024-02-29T12:00:00+02:00';
+    expect(validateToolReview(doc).valid).toBe(true);
+  });
+
+  it('refuses the real-dates invalid fixture with only that error', () => {
+    expect(paths(load('real-dates.invalid'))).toEqual(['reviewed_at']);
+  });
+
   it('refuses a report that is not an object, and still counts it', () => {
     expect(paths([])).toEqual(['$']);
     expect(paths(null)).toEqual(['$']);

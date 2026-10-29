@@ -80,8 +80,9 @@ tool can be diffed. The existing family does not fit it as-is:
   when a row is recorded and when a report is built. A hand-assembled report
   could carry a `walked` row without evidence and still validate. Making those
   contract rules is additive (a minor version) if a second producer appears.
-- `reviewed_at` is checked against the timestamp pattern only. The `real-dates`
-  rule is not applied, so a month 13 is accepted.
+- `reviewed_at` gets the same `real-dates` check as every other canary timestamp
+  (`isTimestamp` from `field-checks.mjs`, #1225), so a month 13 or a 2025-02-29
+  is refused. Phase 3 orders reviews by this field.
 - Two validator entry points now exist for contracts with a `contract` field. A
   reader picks one by contract string; `document.mjs` stays the entry point for
   the layer family only.

@@ -115,7 +115,7 @@ Every field is **required**. "Nullable" means the key must be present and may be
 | `tool.name`       | string           | no       | Non-empty. The reviewed tool.                                                            |
 | `tool.commit_sha` | string           | no       | Non-empty. The revision reviewed; for a hosted tool, the deployed version.               |
 | `tool.url`        | string           | no       | Non-empty. Where the review reached the tool.                                            |
-| `reviewed_at`     | string           | no       | Timestamp with a zone, the run contract's pattern.                                       |
+| `reviewed_at`     | string           | no       | Timestamp with a zone, the run contract's pattern, naming a real date (`real-dates`).    |
 | `catalog_version` | string           | no       | The generic job catalog the review used, e.g. `jobs.v1`.                                 |
 | `overlay_sha`     | string           | yes      | Content hash of the tool overlay; `null` when the review ran without one.                |
 | `ledger`          | array            | no       | One row per merged job and per result surface. See [Ledger](#ledger).                    |
@@ -174,7 +174,10 @@ what the subset cannot:
 | `evidenceRequired` | A finding with `evidence: []`                                                                  | `findings[i].evidence`         |
 
 Like every canary contract, a `minLength` of 1 also refuses a whitespace-only
-string (rule `non-blank`).
+string (rule `non-blank`), and `reviewed_at` must name a real date, not just
+match the pattern: `2026-13-45T25:61:61Z` and `2025-02-29T12:00:00Z` are refused
+(rule `real-dates`, the shared `isTimestamp` check in
+[`field-checks.mjs`](../../agents/skills/lib/contracts/field-checks.mjs)).
 
 ## Conventions (frozen)
 
