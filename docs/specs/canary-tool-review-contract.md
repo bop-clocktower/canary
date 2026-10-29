@@ -135,9 +135,11 @@ A row is `{id, kind, state, reason, evidence}`: `kind` is `job` or `surface`,
 | `not-assessed`   | Not examined this run          | a reason                  |
 | `not-applicable` | Disabled by the tool overlay   | the overlay's reason      |
 
-The validator refuses a row without its companion (`ledgerCompanion`). It checks
-the evidence `kind`, not the `ref`: that a `file` ref names a line, and that a
-`not-applicable` reason is the overlay's own, are not checked.
+The validator refuses a row without its companion (`ledgerCompanion`), so every
+validation of a report enforces it: the spec's `report build` validates the
+report it assembles, and its `record` also refuses a missing reason or evidence
+when the row is recorded (spec phase 3). The rule checks the evidence `kind`,
+not the `ref`.
 
 `pending` is a state of the ledger file a review works in, never of a report:
 the schema refuses it.
@@ -190,7 +192,8 @@ match the pattern: `2026-13-45T25:61:61Z` and `2025-02-29T12:00:00Z` are refused
 - **Version.** `contract` is `canary.<name>/<major>`. Layer contracts keep
   `canary.<layer>/<major>`; a standalone contract's `<name>` may contain hyphens
   (ADR 0045, extending ADR 0035 D3). Any other contract string or major version
-  is refused. A minor version only adds optional fields.
+  is refused. A minor version only adds optional fields, so a new rule that
+  refuses a report which validates today needs `canary.tool-review/2`.
 - **Unknown fields are tolerated**, except the four score keys on the report
   root and on each finding (`noCompositeScore`). Anywhere else, such as a ledger
   row or `tool`, a score key is an unknown field and is tolerated.
@@ -223,10 +226,13 @@ ships (spec phase 3). They are **not shipped yet**:
 - Exit codes: 0 ok, 1 refused, 2 usage error, 3 abstention (only under
   `--strict`).
 
-Nothing checks this one, and the spec assigns it to no phase:
+Nothing checks these, and the spec assigns them to no phase:
 
 - **A finding's `job` names a ledger row.** A finding whose `job` is not the
   `id` of any `kind: job` row validates.
+- **A `file` ref names a line.** `mapped` needs a `file:line`, but the rule
+  checks only that a `file` item is cited; `"ref": "src/a.ts"` passes.
+- **A `not-applicable` reason is the overlay's.** Any non-null reason passes.
 
 ## Consumers
 

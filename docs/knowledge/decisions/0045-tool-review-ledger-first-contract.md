@@ -36,16 +36,19 @@ tool can be diffed. The existing family does not fit it as-is:
   and their producers depend on.
 - The schemas must stay inside ADR 0035's audited keyword subset: no `oneOf`, no
   `additionalProperties`, no `minItems`. "A finding names a job, a quality or
-  both", "no score key on the report or a finding" and "at least one piece of
-  evidence" cannot be stated there.
+  both", "no score key on the report or a finding", "at least one piece of
+  evidence", "each ledger state carries its companion" and "no two findings
+  share an id" cannot be stated there.
 
 ## Decision
 
 1. **A standalone contract, `canary.tool-review/1`.** Its schema is
    `agents/skills/lib/contracts/tool-review.v1.schema.json`. It is **validated
    by its own entry point**, `tool-review.mjs` (`validateToolReview`), following
-   `critical-areas.mjs`. `document.mjs`, `validate.mjs` and `rules.mjs` are not
-   changed. A test pins that the shared validator refuses this contract string.
+   `critical-areas.mjs`. `validate.mjs`, `rules.mjs` and `document.mjs`'s
+   dispatch (`CONTRACT_RE`, `LAYERS`) are not changed. The shared validator
+   refuses this contract string with a message naming `tool-review.mjs`, and a
+   test pins that refusal.
 2. **Naming extends ADR 0035 D3.** Layer contracts stay
    `canary.<layer>/<major>`. Standalone contracts use `canary.<name>/<major>`,
    and `<name>` may contain hyphens. The schema's `const` is the whole check, so
@@ -59,11 +62,17 @@ tool can be diffed. The existing family does not fit it as-is:
    run could not exercise at all. An absent list is refused and `[]` means none,
    so "nothing was skipped" is a statement, not a missing key. Per-row
    abstentions stay in the ledger.
-5. **Three named rules, in the entry point.** `jobOrQuality`, `noCompositeScore`
+5. **Five named rules, in the entry point.** `jobOrQuality`, `noCompositeScore`
    (the keys `score`, `overall`, `composite` and `rating`, refused by key
-   presence on the report and every finding) and `evidenceRequired`. They live
-   in `tool-review.mjs`, as `critical-areas.mjs` keeps its own rules, because
-   they belong to this contract alone and `rules.mjs` serves the layer family.
+   presence on the report and every finding), `evidenceRequired`,
+   `ledgerCompanion` (each ledger state carries the companion the spec's ledger
+   table requires: a `walked` row a snapshot or screenshot, a `mapped` row a
+   file, a `not-assessed` or `not-applicable` row a reason) and `idsUnique` (no
+   two findings, and no two ledger rows, share an `id`). They live in
+   `tool-review.mjs`, as `critical-areas.mjs` keeps its own rules, because they
+   belong to this contract alone and `rules.mjs` serves the layer family.
+   `reviewed_at` also gets the shared `real-dates` check, `isTimestamp` from
+   `field-checks.mjs`, as every other canary timestamp does.
 6. **No composite score** (spec D8). This applies ADR 0036 to tool reviews. It
    needs no new principle, only the rule that enforces it.
 
@@ -74,14 +83,25 @@ tool can be diffed. The existing family does not fit it as-is:
   and neither can a finding with nothing to point at. The rule covers those four
   exact keys on the report root and on findings only; on a ledger row or on
   `tool` they are tolerated unknown fields.
-- The four layer-family modules are untouched, so this decision cannot regress
-  `canary.run/1`, `canary.assessment/1` or `canary.site/1`.
-- **The validator does not check per-row companions** (a walked row's
-  screenshot, a not-assessed row's reason) or the zero-walked abstention. These
-  are producer obligations of the `canary-blackalice` CLI, which enforces them
-  when a row is recorded and when a report is built. A hand-assembled report
-  could carry a `walked` row without evidence and still validate. Making those
-  contract rules is additive (a minor version) if a second producer appears.
+- The layer family's schemas, rules and dispatch are unchanged. `document.mjs`
+  gained one refusal message, for this contract string only, so `canary.run/1`,
+  `canary.assessment/1` and `canary.site/1` validate exactly as before.
+- **Tightening this contract needs `canary.tool-review/2`.** A minor version
+  only adds optional fields (the contract doc's Conventions, after ADR 0035 D3),
+  so a rule that refuses a report which validates today is a new major, not a
+  minor. That is why `ledgerCompanion` and `idsUnique` are in `/1`, before any
+  report exists, rather than left to the CLI.
+- **Where companions are enforced.** Every validation of a report enforces them,
+  because they are contract rules. In the spec, `record` refuses a missing
+  reason or evidence when a row is recorded, and `report build` validates the
+  report it assembles (proposal.md, CLI). So a hand-edited ledger file that
+  drops a companion is refused at `report build` too.
+- **The zero-walked abstention stays a CLI concern.** A report with no `walked`
+  row validates. `report build` prints the abstention line, writes no report and
+  exits 0, or 3 under `--strict` (spec phase 3).
+- **Not checked by the validator:** that a finding's `job` names a ledger row,
+  that a `file` ref names a line, and that a `not-applicable` reason is the
+  overlay's own.
 - `reviewed_at` gets the same `real-dates` check as every other canary timestamp
   (`isTimestamp` from `field-checks.mjs`, #1225), so a month 13 or a 2025-02-29
   is refused. Phase 3 orders reviews by this field.
@@ -98,5 +118,8 @@ tool can be diffed. The existing family does not fit it as-is:
   0035's audited subset, which refuses at load any keyword it does not enforce.
 - **The rules in `rules.mjs`**, as the spec's file layout first said. Rejected:
   that module is the layer family's, dispatched by layer, and at 258 lines it
-  sits under `check-perf`'s 300-line threshold. Three more rules would cross it.
+  sits under `check-perf`'s 300-line threshold. Five more rules would cross it.
 - **A score out of 10.** Rejected by spec D8 and ADR 0036.
+- **Leave per-row companions and id uniqueness to the CLI.** Rejected: a
+  hand-edited ledger file reaches `report build`, and adding the rules once
+  reports exist would need `canary.tool-review/2`.
