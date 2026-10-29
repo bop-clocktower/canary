@@ -21,6 +21,15 @@ export const LAYERS = ['run', 'assessment', 'site'];
 const SUPPORTED_MAJOR = 1;
 const CONTRACT_RE = /^canary\.([a-z]+)\/(\d+)$/;
 
+/**
+ * Standalone contracts this module does not validate, and where they are
+ * validated instead (ADR 0045). A pointer, not a route: CONTRACT_RE and LAYERS
+ * stay as they are.
+ */
+const STANDALONE = {
+  'canary.tool-review/1': 'validateToolReview from tool-review.mjs',
+};
+
 const schemaId = (layer) => `${layer}.v1.schema.json`;
 
 /** One leading U+FEFF is an encoding marker, not JSON (#1154 S7). */
@@ -54,6 +63,11 @@ const contractError = (message) => ({
 function readContract(doc, expected) {
   if (!Object.hasOwn(doc, 'contract')) {
     return contractError('missing required field');
+  }
+  if (Object.hasOwn(STANDALONE, doc.contract)) {
+    return contractError(
+      `${JSON.stringify(doc.contract)} is a standalone contract: validate it with ${STANDALONE[doc.contract]}, not validate.mjs (ADR 0045)`,
+    );
   }
   const m =
     typeof doc.contract === 'string' ? CONTRACT_RE.exec(doc.contract) : null;

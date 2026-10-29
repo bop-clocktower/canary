@@ -46,15 +46,34 @@ describe('valid corpus (planted positives)', () => {
     ]);
   });
 
-  it('refuses canary.tool-review/1: a standalone contract has its own entry point (ADR 0045)', () => {
-    // Pins the decision not to widen CONTRACT_RE or LAYERS in document.mjs.
+  it('refuses canary.tool-review/1 and points to its own entry point (ADR 0045)', () => {
+    // Pins the decision not to widen CONTRACT_RE or LAYERS in document.mjs:
+    // the contract is refused here, with a message naming where it IS validated.
     const doc = JSON.parse(
       fs.readFileSync(path.join(FIXTURES, 'tool-review.valid.json'), 'utf8'),
     );
-    expect(validateDocument(doc).errors).toEqual([
+    expect(validateDocument(doc)).toEqual({
+      valid: false,
+      contract: null,
+      checked: 1,
+      errors: [
+        {
+          path: 'contract',
+          message:
+            '"canary.tool-review/1" is a standalone contract: validate it with validateToolReview from tool-review.mjs, not validate.mjs (ADR 0045)',
+        },
+      ],
+    });
+  });
+
+  it('still calls any other hyphenated contract string not a canary contract string', () => {
+    // The pointer is for known standalone contracts only, not a widened regex.
+    expect(
+      validateDocument({ contract: 'canary.tool-review/2' }).errors,
+    ).toEqual([
       {
         path: 'contract',
-        message: 'not a canary contract string: "canary.tool-review/1"',
+        message: 'not a canary contract string: "canary.tool-review/2"',
       },
     ]);
   });
