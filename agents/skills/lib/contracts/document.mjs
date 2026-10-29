@@ -64,7 +64,12 @@ function readContract(doc, expected) {
   if (!Object.hasOwn(doc, 'contract')) {
     return contractError('missing required field');
   }
-  if (Object.hasOwn(STANDALONE, doc.contract)) {
+  // The string check comes first: Object.hasOwn coerces its key, so an array
+  // holding a standalone contract string would otherwise match.
+  if (
+    typeof doc.contract === 'string' &&
+    Object.hasOwn(STANDALONE, doc.contract)
+  ) {
     return contractError(
       `${JSON.stringify(doc.contract)} is a standalone contract: validate it with ${STANDALONE[doc.contract]}, not validate.mjs (ADR 0045)`,
     );

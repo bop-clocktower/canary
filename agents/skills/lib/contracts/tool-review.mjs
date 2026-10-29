@@ -109,6 +109,8 @@ const REASON_COMPANION = {
  */
 function ledgerCompanion(row, prefix) {
   const { state, reason, evidence } = row;
+  // Object.hasOwn coerces its key, so ['walked'] would match 'walked'.
+  if (typeof state !== 'string') return [];
   if (Object.hasOwn(REASON_COMPANION, state)) {
     if (reason !== null) return [];
     const message = `${REASON_COMPANION[state]} (rule ledgerCompanion)`;

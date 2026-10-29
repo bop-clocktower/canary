@@ -78,6 +78,18 @@ describe('valid corpus (planted positives)', () => {
     ]);
   });
 
+  it('matches the standalone pointer on the exact string only, not an array holding it', () => {
+    // Object.hasOwn would coerce ['canary.tool-review/1'] to the string key.
+    expect(
+      validateDocument({ contract: ['canary.tool-review/1'] }).errors,
+    ).toEqual([
+      {
+        path: 'contract',
+        message: 'not a canary contract string: ["canary.tool-review/1"]',
+      },
+    ]);
+  });
+
   it.each(LAYERS)('accepts the valid %s document with zero errors', (layer) => {
     const res = validateDocument(valid(layer));
     expect(res.errors).toEqual([]);

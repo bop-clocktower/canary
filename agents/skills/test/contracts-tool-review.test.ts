@@ -332,6 +332,20 @@ describe('rule ledgerCompanion (ledger table)', () => {
     ]);
   });
 
+  it.each([
+    ['walked', 0, 'evidence', []],
+    ['not-assessed', 2, 'reason', null],
+  ])(
+    'leaves a non-string state [%j] to the schema: one enum error, not two',
+    (state, row, field, value) => {
+      // Object.hasOwn coerces ['walked'] to the key 'walked'; the rule must not.
+      const doc = valid();
+      doc.ledger[row].state = [state];
+      doc.ledger[row][field] = value;
+      expect(paths(doc)).toEqual([`ledger[${row}].state`]);
+    },
+  );
+
   it('leaves an evidence item with a known kind but no ref to the schema: one error, not two', () => {
     const doc = valid();
     doc.ledger[0].evidence = [{ kind: 'file' }];
