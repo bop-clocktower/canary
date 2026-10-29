@@ -239,3 +239,88 @@ describe('rule evidenceRequired (criterion 11)', () => {
     expect(validateToolReview(doc).valid).toBe(true);
   });
 });
+
+describe('rule ledgerCompanion (ledger table)', () => {
+  const WALKED =
+    'cites no snapshot or screenshot; a walked row was driven live in the browser (rule ledgerCompanion)';
+  const MAPPED =
+    'cites no file; a mapped row is judged from code and docs (rule ledgerCompanion)';
+  const NOT_ASSESSED =
+    'is null; a not-assessed row says why it was not examined (rule ledgerCompanion)';
+  const NOT_APPLICABLE =
+    "is null; a not-applicable row carries the overlay's reason (rule ledgerCompanion)";
+
+  it('refuses the invalid fixture: a walked row with file-only evidence and a not-assessed row with a null reason', () => {
+    expect(validateToolReview(load('ledger-companion.invalid')).errors).toEqual(
+      [
+        { path: 'ledger[0].evidence', message: WALKED },
+        { path: 'ledger[2].reason', message: NOT_ASSESSED },
+      ],
+    );
+  });
+
+  it('refuses a walked row with no evidence at all', () => {
+    const doc = valid();
+    doc.ledger[4].evidence = [];
+    expect(validateToolReview(doc).errors).toEqual([
+      { path: 'ledger[4].evidence', message: WALKED },
+    ]);
+  });
+
+  it.each(['snapshot', 'screenshot'])(
+    'accepts a walked row whose live evidence is a %s, alongside a file',
+    (kind) => {
+      const doc = valid();
+      doc.ledger[0].evidence = [
+        { kind: 'file', ref: 'src/routes/release.ts:9' },
+        { kind, ref: 'walk/release-status' },
+      ];
+      expect(validateToolReview(doc).valid).toBe(true);
+    },
+  );
+
+  it('refuses a mapped row with no file evidence, even with a snapshot', () => {
+    const doc = valid();
+    doc.ledger[1].evidence = [{ kind: 'snapshot', ref: 'snapshots/x.md' }];
+    expect(validateToolReview(doc).errors).toEqual([
+      { path: 'ledger[1].evidence', message: MAPPED },
+    ]);
+  });
+
+  it('refuses a not-applicable row with a null reason', () => {
+    const doc = valid();
+    doc.ledger[3].reason = null;
+    expect(validateToolReview(doc).errors).toEqual([
+      { path: 'ledger[3].reason', message: NOT_APPLICABLE },
+    ]);
+  });
+
+  it('leaves a blank reason to the schema (non-blank): one error, not two', () => {
+    const doc = valid();
+    doc.ledger[2].reason = '   ';
+    expect(validateToolReview(doc).errors).toEqual([
+      { path: 'ledger[2].reason', message: 'must not be blank' },
+    ]);
+  });
+
+  it('leaves malformed evidence and an unknown state to the schema: one error, not two', () => {
+    const doc = valid();
+    doc.ledger[0].evidence = 'see the walk';
+    doc.ledger[1].evidence = [7];
+    doc.ledger[4].evidence = [{ kind: 'video', ref: 'walk.mp4' }];
+    doc.ledger[2].state = 'skipped';
+    doc.ledger[2].reason = null;
+    expect(paths(doc)).toEqual([
+      'ledger[0].evidence',
+      'ledger[1].evidence[0]',
+      'ledger[2].state',
+      'ledger[4].evidence[0].kind',
+    ]);
+  });
+
+  it('skips a ledger row that is not an object, which the schema reports', () => {
+    const doc = valid();
+    doc.ledger = [null];
+    expect(paths(doc)).toEqual(['ledger[0]']);
+  });
+});

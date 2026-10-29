@@ -79,6 +79,50 @@ function evidenceRequired(finding, prefix) {
   ];
 }
 
+const EVIDENCE_KINDS = ['screenshot', 'snapshot', 'file'];
+
+/** Per state, the evidence kinds of which a row cites at least one. */
+const EVIDENCE_COMPANION = {
+  walked: [
+    ['snapshot', 'screenshot'],
+    'cites no snapshot or screenshot; a walked row was driven live in the browser',
+  ],
+  mapped: [
+    ['file'],
+    'cites no file; a mapped row is judged from code and docs',
+  ],
+};
+
+/** Per state, why a row whose reason is null is refused. */
+const REASON_COMPANION = {
+  'not-assessed': 'is null; a not-assessed row says why it was not examined',
+  'not-applicable':
+    "is null; a not-applicable row carries the overlay's reason",
+};
+
+/**
+ * Rule `ledgerCompanion`: each state carries the companion the spec's ledger
+ * table requires. A walked row cites live evidence, not only a file; a mapped
+ * row cites a file; a not-assessed or not-applicable row has a reason. Malformed
+ * evidence, a blank reason or an unknown state is the schema's error, not a
+ * second one here.
+ */
+function ledgerCompanion(row, prefix) {
+  const { state, reason, evidence } = row;
+  if (Object.hasOwn(REASON_COMPANION, state)) {
+    if (reason !== null) return [];
+    const message = `${REASON_COMPANION[state]} (rule ledgerCompanion)`;
+    return [{ path: at(prefix, 'reason'), message }];
+  }
+  if (!Object.hasOwn(EVIDENCE_COMPANION, state)) return [];
+  const wellFormed = (e) => isPlainObject(e) && EVIDENCE_KINDS.includes(e.kind);
+  if (!Array.isArray(evidence) || !evidence.every(wellFormed)) return [];
+  const [kinds, why] = EVIDENCE_COMPANION[state];
+  if (evidence.some((e) => kinds.includes(e.kind))) return [];
+  const message = `${why} (rule ledgerCompanion)`;
+  return [{ path: at(prefix, 'evidence'), message }];
+}
+
 /**
  * Rule `real-dates` on `reviewed_at`, the check every canary contract with a
  * timestamp shares (#1225): the pattern admits month 13 and 2025-02-29, and
@@ -104,6 +148,9 @@ function ruleErrors(doc) {
   return [
     ...realReviewedAt(doc),
     ...noCompositeScore(doc, ''),
+    ...listOf(doc, 'ledger').flatMap((row, i) =>
+      isPlainObject(row) ? ledgerCompanion(row, `ledger[${i}]`) : [],
+    ),
     ...listOf(doc, 'findings').flatMap((finding, i) =>
       isPlainObject(finding)
         ? FINDING_RULES.flatMap((rule) => rule(finding, `findings[${i}]`))

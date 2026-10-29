@@ -135,6 +135,10 @@ A row is `{id, kind, state, reason, evidence}`: `kind` is `job` or `surface`,
 | `not-assessed`   | Not examined this run          | a reason                  |
 | `not-applicable` | Disabled by the tool overlay   | the overlay's reason      |
 
+The validator refuses a row without its companion (`ledgerCompanion`). It checks
+the evidence `kind`, not the `ref`: that a `file` ref names a line, and that a
+`not-applicable` reason is the overlay's own, are not checked.
+
 `pending` is a state of the ledger file a review works in, never of a report:
 the schema refuses it.
 
@@ -167,11 +171,12 @@ The schema stays inside ADR 0035's keyword subset (no `oneOf`, no
 `additionalProperties`, no `minItems`). These rules, in `tool-review.mjs`, state
 what the subset cannot:
 
-| Rule               | Refuses                                                                                        | Path                           |
-| ------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------ |
-| `jobOrQuality`     | A finding whose `job` and `quality` are both `null`                                            | `findings[i]`                  |
-| `noCompositeScore` | A `score`, `overall`, `composite` or `rating` key on the report or on any finding, even `null` | `<key>` or `findings[i].<key>` |
-| `evidenceRequired` | A finding with `evidence: []`                                                                  | `findings[i].evidence`         |
+| Rule               | Refuses                                                                                                                                                                                                     | Path                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `jobOrQuality`     | A finding whose `job` and `quality` are both `null`                                                                                                                                                         | `findings[i]`                              |
+| `noCompositeScore` | A `score`, `overall`, `composite` or `rating` key on the report or on any finding, even `null`                                                                                                              | `<key>` or `findings[i].<key>`             |
+| `evidenceRequired` | A finding with `evidence: []`                                                                                                                                                                               | `findings[i].evidence`                     |
+| `ledgerCompanion`  | A row without its [Ledger](#ledger) companion: `walked` with no `snapshot` or `screenshot` (a `file` alone is not enough), `mapped` with no `file`, `not-assessed` or `not-applicable` with a `null` reason | `ledger[i].evidence` or `ledger[i].reason` |
 
 Like every canary contract, a `minLength` of 1 also refuses a whitespace-only
 string (rule `non-blank`), and `reviewed_at` must name a real date, not just
@@ -211,8 +216,6 @@ command-line entry point in this release.
 The `canary-blackalice` CLI is to enforce these producer obligations when it
 ships (spec phase 3). They are **not shipped yet**:
 
-- A row's companion from the [Ledger](#ledger) table, enforced when the row is
-  recorded.
 - **Zero `walked` rows is an abstention, not a review with no findings.**
   `report build` prints the abstention line first, writes no report, and exits
   0, or 3 under `--strict`.

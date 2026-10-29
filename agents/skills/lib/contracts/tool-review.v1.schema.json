@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "tool-review.v1.schema.json",
   "title": "canary.tool-review/1",
-  "description": "One review of a QA tool from the seats of the people who use it: a coverage ledger in which every job and result surface ends in exactly one state, and the findings the review made. Spec: docs/specs/canary-tool-review-contract.md. A standalone contract, not a canary.* layer, so it is validated by tool-review.mjs and not by validate.mjs (ADR 0045). Unknown fields are tolerated. Rules the subset cannot express (jobOrQuality, noCompositeScore, evidenceRequired) live in tool-review.mjs.",
+  "description": "One review of a QA tool from the seats of the people who use it: a coverage ledger in which every job and result surface ends in exactly one state, and the findings the review made. Spec: docs/specs/canary-tool-review-contract.md. A standalone contract, not a canary.* layer, so it is validated by tool-review.mjs and not by validate.mjs (ADR 0045). Unknown fields are tolerated. Rules the subset cannot express (jobOrQuality, noCompositeScore, evidenceRequired, ledgerCompanion) live in tool-review.mjs.",
   "type": "object",
   "required": [
     "contract",
