@@ -424,8 +424,8 @@ host Claude Code session via `/canary-write-test` — no API key required.
   [ADR 0035][adr-0035]. `canary.tool-review/1` (`canary-blackalice`'s report) is
   a standalone contract outside the layer family: its schema sits in the same
   directory, and it is validated by its own API-only entry point,
-  `tool-review.mjs` (`validateToolReview`), never by `validate.mjs` ([ADR
-  0045][adr-0045]).
+  `tool-review.mjs` (`validateToolReview`, five named rules), never by
+  `validate.mjs`, which refuses it with a pointer there ([ADR 0045][adr-0045]).
 
 ### Generated Artifacts
 

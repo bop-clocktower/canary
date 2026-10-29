@@ -22,9 +22,13 @@ under the project's former name) are documented in the
   (walked, mapped, not-assessed, not-applicable), findings that carry a persona,
   a plain-language cost and evidence, and a required `not_assessed` list of
   run-level abstentions. It is validated by its own entry point,
-  `agents/skills/lib/contracts/tool-review.mjs`, with three named rules:
-  `jobOrQuality`, `noCompositeScore` and `evidenceRequired`. Spec:
-  `docs/specs/canary-tool-review-contract.md`; ADR 0045.
+  `agents/skills/lib/contracts/tool-review.mjs`, with five named rules:
+  `jobOrQuality`, `noCompositeScore`, `evidenceRequired`, `ledgerCompanion`
+  (each ledger state carries its companion, e.g. a walked row a snapshot or
+  screenshot) and `idsUnique`, plus the shared `real-dates` check on
+  `reviewed_at`. `validate.mjs` refuses the contract string and names
+  `tool-review.mjs`. Spec: `docs/specs/canary-tool-review-contract.md`;
+  ADR 0045.
 
 ### Security
 
