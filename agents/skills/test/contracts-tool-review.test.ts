@@ -353,6 +353,22 @@ describe('rule ledgerCompanion (ledger table)', () => {
     },
   );
 
+  it.each([
+    ['', 'must be at least 1 character(s)'],
+    ['   ', 'must not be blank'],
+  ])(
+    'leaves an evidence item with a blank ref %j to the schema: one error, not two',
+    (ref, message) => {
+      // The schema refuses a ref whose trim() is '' (rule non-blank), so the
+      // companion rule must not count that item and add a second error.
+      const doc = valid();
+      doc.ledger[0].evidence = [{ kind: 'file', ref }];
+      expect(validateToolReview(doc).errors).toEqual([
+        { path: 'ledger[0].evidence[0].ref', message },
+      ]);
+    },
+  );
+
   it('leaves an evidence item with a known kind but no ref to the schema: one error, not two', () => {
     const doc = valid();
     doc.ledger[0].evidence = [{ kind: 'file' }];

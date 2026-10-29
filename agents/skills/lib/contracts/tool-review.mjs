@@ -120,7 +120,8 @@ function ledgerCompanion(row, prefix) {
   const wellFormed = (e) =>
     isPlainObject(e) &&
     EVIDENCE_KINDS.includes(e.kind) &&
-    typeof e.ref === 'string';
+    typeof e.ref === 'string' &&
+    e.ref.trim() !== ''; // schema-check.mjs's non-blank test, exactly
   if (!Array.isArray(evidence) || !evidence.every(wellFormed)) return [];
   const [kinds, why] = EVIDENCE_COMPANION[state];
   if (evidence.some((e) => kinds.includes(e.kind))) return [];
