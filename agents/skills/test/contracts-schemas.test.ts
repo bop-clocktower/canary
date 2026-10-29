@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 
 import { checkValue } from '../lib/contracts/schema-check.mjs';
 import { schemaProblems } from '../lib/contracts/schema-problems.mjs';
+import { validateDocument } from '../lib/contracts/document.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = path.join(HERE, '..', 'lib', 'contracts');
@@ -72,6 +73,27 @@ describe('contract schemas', () => {
       const schema = REGISTRY[`${name}.v1.schema.json`];
       expect(schema.$id).toBe(`${name}.v1.schema.json`);
       expect(schema.properties.contract.const).toBe(`canary.${name}/1`);
+    },
+  );
+
+  it.each(STANDALONE_CONTRACTS)(
+    '%s: validateDocument points its contract const to its own entry point (ADR 0045)',
+    (name) => {
+      // Ties document.mjs's STANDALONE map to these schemas: a new standalone
+      // contract or major (canary.tool-review/2) fails here until it has an
+      // entry, instead of getting "not a canary contract string".
+      const contract = REGISTRY[`${name}.v1.schema.json`].properties.contract
+        .const as string;
+      const { errors } = validateDocument({ contract });
+      expect(errors).toHaveLength(1);
+      expect(errors[0].path).toBe('contract');
+      const { message } = errors[0];
+      expect(
+        message.startsWith(`"${contract}" is a standalone contract:`),
+      ).toBe(true);
+      expect(
+        message.endsWith(`from ${name}.mjs, not validate.mjs (ADR 0045)`),
+      ).toBe(true);
     },
   );
 
