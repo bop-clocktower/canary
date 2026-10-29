@@ -157,14 +157,15 @@ describe('rule jobOrQuality (criterion 11)', () => {
     ]);
   });
 
-  it('accepts job only, quality only, and both set', () => {
+  it.each([
+    ['job only', 'report.read-release-status-at-a-glance', null],
+    ['quality only', null, 'Q2'],
+    ['both set', 'report.read-release-status-at-a-glance', 'Q2'],
+  ])('accepts a finding with %s', (_case, job, quality) => {
     const doc = valid();
-    expect(doc.findings[0]).toMatchObject({ job: null, quality: 'Q2' });
-    expect(doc.findings[1].job).not.toBeNull();
-    expect(doc.findings[1].quality).not.toBeNull();
-    doc.findings[0].job = 'report.read-release-status-at-a-glance';
-    doc.findings[0].quality = null;
-    expect(validateToolReview(doc).valid).toBe(true);
+    doc.findings[0].job = job;
+    doc.findings[0].quality = quality;
+    expect(validateToolReview(doc)).toMatchObject({ valid: true, errors: [] });
   });
 
   it('leaves an absent job to the schema: one error, not two', () => {
@@ -200,6 +201,19 @@ describe('rule noCompositeScore (criterion 15)', () => {
         `findings[1].${key}`,
       ]);
       for (const e of errors) expect(e.message).toMatch(/noCompositeScore/);
+    },
+  );
+
+  it.each(['score', 'overall', 'composite', 'rating'])(
+    'tolerates %s on a ledger row and on tool: the rule covers the report and findings only',
+    (key) => {
+      const doc = valid();
+      doc.ledger[0][key] = 7;
+      doc.tool[key] = 'A+';
+      expect(validateToolReview(doc)).toMatchObject({
+        valid: true,
+        errors: [],
+      });
     },
   );
 
