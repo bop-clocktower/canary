@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
 
 import { TIMESTAMP_RE, isTimestamp } from './field-checks.mjs';
+import { isPlainObject } from './schema-check.mjs';
 import { auditedValidator } from './schema-problems.mjs';
 
 const ID = 'tool-review.v1.schema.json';
@@ -28,8 +29,7 @@ const checkSchema = auditedValidator({
 const SCORE_KEYS = ['score', 'overall', 'composite', 'rating'];
 
 const listOf = (doc, key) => (Array.isArray(doc?.[key]) ? doc[key] : []);
-const isObject = (v) =>
-  v !== null && typeof v === 'object' && !Array.isArray(v);
+// A copy of rules.mjs's `at`, which that module does not export.
 const at = (prefix, key) => (prefix ? `${prefix}.${key}` : key);
 
 /**
@@ -100,12 +100,12 @@ function realReviewedAt(doc) {
 const FINDING_RULES = [jobOrQuality, noCompositeScore, evidenceRequired];
 
 function ruleErrors(doc) {
-  if (!isObject(doc)) return [];
+  if (!isPlainObject(doc)) return [];
   return [
     ...realReviewedAt(doc),
     ...noCompositeScore(doc, ''),
     ...listOf(doc, 'findings').flatMap((finding, i) =>
-      isObject(finding)
+      isPlainObject(finding)
         ? FINDING_RULES.flatMap((rule) => rule(finding, `findings[${i}]`))
         : [],
     ),
