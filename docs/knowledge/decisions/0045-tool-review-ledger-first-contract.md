@@ -36,8 +36,8 @@ tool can be diffed. The existing family does not fit it as-is:
   and their producers depend on.
 - The schemas must stay inside ADR 0035's audited keyword subset: no `oneOf`, no
   `additionalProperties`, no `minItems`. "A finding names a job, a quality or
-  both", "no score key anywhere" and "at least one piece of evidence" cannot be
-  stated there.
+  both", "no score key on the report or a finding" and "at least one piece of
+  evidence" cannot be stated there.
 
 ## Decision
 
@@ -69,9 +69,11 @@ tool can be diffed. The existing family does not fit it as-is:
 
 ## Consequences
 
-- A tool review can be validated and diffed run over run, and a report that
-  hides a persona behind a score, or a finding with nothing to point at, cannot
-  validate.
+- A tool review can be validated and diffed run over run. A report or finding
+  carrying a `score`, `overall`, `composite` or `rating` key cannot validate,
+  and neither can a finding with nothing to point at. The rule covers those four
+  exact keys on the report root and on findings only; on a ledger row or on
+  `tool` they are tolerated unknown fields.
 - The four layer-family modules are untouched, so this decision cannot regress
   `canary.run/1`, `canary.assessment/1` or `canary.site/1`.
 - **The validator does not check per-row companions** (a walked row's
