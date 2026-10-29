@@ -324,3 +324,58 @@ describe('rule ledgerCompanion (ledger table)', () => {
     expect(paths(doc)).toEqual(['ledger[0]']);
   });
 });
+
+describe('rule idsUnique', () => {
+  it('refuses the invalid fixture: two findings that share an id', () => {
+    expect(validateToolReview(load('ids-unique.invalid')).errors).toEqual([
+      {
+        path: 'findings[1].id',
+        message:
+          'duplicates findings[0].id "f-001"; ids are unique within findings (rule idsUnique)',
+      },
+    ]);
+  });
+
+  it('refuses ledger rows that share an id, naming each repeat', () => {
+    const doc = valid();
+    doc.ledger[1].id = doc.ledger[0].id;
+    doc.ledger[3].id = doc.ledger[0].id;
+    expect(validateToolReview(doc).errors).toEqual(
+      [1, 3].map((i) => ({
+        path: `ledger[${i}].id`,
+        message:
+          'duplicates ledger[0].id "report.read-release-status-at-a-glance"; ids are unique within ledger (rule idsUnique)',
+      })),
+    );
+  });
+
+  it('keeps findings and ledger as separate namespaces: a finding may share a row id', () => {
+    const doc = valid();
+    doc.findings[0].id = doc.ledger[0].id;
+    expect(validateToolReview(doc).valid).toBe(true);
+  });
+
+  it('does not check that finding.job names a ledger row (documented as unchecked)', () => {
+    const doc = valid();
+    doc.findings[1].job = 'no.such-job';
+    expect(validateToolReview(doc).valid).toBe(true);
+  });
+
+  it('leaves a missing, non-string or blank id to the schema: one error each, not two', () => {
+    const doc = valid();
+    delete doc.findings[0].id;
+    delete doc.findings[1].id;
+    doc.ledger[0].id = 7;
+    doc.ledger[1].id = 7;
+    doc.ledger[2].id = ' ';
+    doc.ledger[3].id = ' ';
+    expect(paths(doc)).toEqual([
+      'ledger[0].id',
+      'ledger[1].id',
+      'ledger[2].id',
+      'ledger[3].id',
+      'findings[0].id',
+      'findings[1].id',
+    ]);
+  });
+});

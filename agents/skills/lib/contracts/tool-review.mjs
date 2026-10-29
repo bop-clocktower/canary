@@ -141,6 +141,27 @@ function realReviewedAt(doc) {
   ];
 }
 
+/**
+ * Rule `idsUnique`: within `ledger`, and within `findings`, no two records
+ * share an `id`. Phase 3's diff and `file --pick` select findings by id. Each
+ * repeat is refused at its own path; the first is the one it names. The two
+ * lists are separate namespaces. A missing, non-string or blank id is the
+ * schema's error, not a second one here.
+ */
+function idsUnique(doc, key) {
+  const first = new Map();
+  return listOf(doc, key).flatMap((record, i) => {
+    const id = isPlainObject(record) ? record.id : undefined;
+    if (typeof id !== 'string' || id.trim() === '') return [];
+    if (!first.has(id)) {
+      first.set(id, i);
+      return [];
+    }
+    const message = `duplicates ${key}[${first.get(id)}].id ${JSON.stringify(id)}; ids are unique within ${key} (rule idsUnique)`;
+    return [{ path: `${key}[${i}].id`, message }];
+  });
+}
+
 const FINDING_RULES = [jobOrQuality, noCompositeScore, evidenceRequired];
 
 function ruleErrors(doc) {
@@ -151,11 +172,13 @@ function ruleErrors(doc) {
     ...listOf(doc, 'ledger').flatMap((row, i) =>
       isPlainObject(row) ? ledgerCompanion(row, `ledger[${i}]`) : [],
     ),
+    ...idsUnique(doc, 'ledger'),
     ...listOf(doc, 'findings').flatMap((finding, i) =>
       isPlainObject(finding)
         ? FINDING_RULES.flatMap((rule) => rule(finding, `findings[${i}]`))
         : [],
     ),
+    ...idsUnique(doc, 'findings'),
   ];
 }
 

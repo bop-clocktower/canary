@@ -177,6 +177,7 @@ what the subset cannot:
 | `noCompositeScore` | A `score`, `overall`, `composite` or `rating` key on the report or on any finding, even `null`                                                                                                              | `<key>` or `findings[i].<key>`             |
 | `evidenceRequired` | A finding with `evidence: []`                                                                                                                                                                               | `findings[i].evidence`                     |
 | `ledgerCompanion`  | A row without its [Ledger](#ledger) companion: `walked` with no `snapshot` or `screenshot` (a `file` alone is not enough), `mapped` with no `file`, `not-assessed` or `not-applicable` with a `null` reason | `ledger[i].evidence` or `ledger[i].reason` |
+| `idsUnique`        | A second finding with an `id` already used by a finding, or a second ledger row with an `id` already used by a row (the two lists are separate)                                                             | `findings[i].id` or `ledger[i].id`         |
 
 Like every canary contract, a `minLength` of 1 also refuses a whitespace-only
 string (rule `non-blank`), and `reviewed_at` must name a real date, not just
@@ -222,10 +223,10 @@ ships (spec phase 3). They are **not shipped yet**:
 - Exit codes: 0 ok, 1 refused, 2 usage error, 3 abstention (only under
   `--strict`).
 
-Nothing checks this one yet, and the spec assigns it to no phase:
+Nothing checks this one, and the spec assigns it to no phase:
 
-- **Id uniqueness.** A report whose findings share an `id`, or whose ledger rows
-  share an `id`, validates.
+- **A finding's `job` names a ledger row.** A finding whose `job` is not the
+  `id` of any `kind: job` row validates.
 
 ## Consumers
 
