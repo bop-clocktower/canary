@@ -421,7 +421,11 @@ host Claude Code session via `/canary-write-test` — no API key required.
   checks rather than a weaker copy (#1225). The ingest reporter writes a
   `canary.run/1` file when `runFile` is set, and `canary ci-ready --json` checks
   carry `measure` for assessments. Specs in `docs/specs/canary-*-contract.md`;
-  [ADR 0035][adr-0035].
+  [ADR 0035][adr-0035]. `canary.tool-review/1` (`canary-blackalice`'s report) is
+  a standalone contract outside the layer family: its schema sits in the same
+  directory, and it is validated by its own API-only entry point,
+  `tool-review.mjs` (`validateToolReview`, five named rules), never by
+  `validate.mjs`, which refuses it with a pointer there ([ADR 0045][adr-0045]).
 
 ### Generated Artifacts
 
@@ -1810,3 +1814,4 @@ nothing. Ignore any root manifest, or delete it. The invariants are pinned by
 [fw-json]: ts/src/data/frameworks/registry.json
 [adr-0035]:
   docs/knowledge/decisions/0035-versioned-two-layer-qa-data-contract.md
+[adr-0045]: docs/knowledge/decisions/0045-tool-review-ledger-first-contract.md

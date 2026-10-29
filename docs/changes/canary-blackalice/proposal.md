@@ -127,16 +127,17 @@ agents/skills/claude-code/canary-blackalice/
   scripts/diff.mjs              # finding and ledger deltas between two reports
 agents/skills/lib/contracts/
   tool-review.v1.schema.json    # the contract's schema (ADR 0035 subset)
-  tool-review.mjs               # its own validator entry point, like critical-areas.mjs
-  rules.mjs                     # + the two named rules below
+  tool-review.mjs               # its own validator entry point and named rules, like critical-areas.mjs
 docs/specs/canary-tool-review-contract.md
 ```
 
 `tool-review.mjs` is a standalone entry point, following `critical-areas.mjs`.
-The shared `document.mjs` stays untouched: its `CONTRACT_RE` admits no hyphen
+The shared `document.mjs` does not route it: its `CONTRACT_RE` admits no hyphen
 and its `LAYERS` list is fixed to run/assessment/site, so routing
 `canary.tool-review/1` through it would mean widening a validator three other
-contracts depend on.
+contracts depend on. Its dispatch is unchanged; it gains only a refusal message
+that points `canary.tool-review/1` to `tool-review.mjs`
+([ADR 0045](../../knowledge/decisions/0045-tool-review-ledger-first-contract.md)).
 
 ### Job catalog — `catalog/jobs.v1.json`
 
@@ -270,13 +271,22 @@ env var unset"). Per-row `not-assessed` states stay in `ledger`; the two never
 duplicate each other.
 
 The schema stays inside ADR 0035's subset (no `oneOf`, no
-`additionalProperties`), so two constraints are named rules in `rules.mjs`,
-following the `authorExcluded` precedent:
+`additionalProperties`), so five constraints are named rules in
+`tool-review.mjs`, which keeps its own rules as `critical-areas.mjs` does
+([ADR 0045](../../knowledge/decisions/0045-tool-review-ledger-first-contract.md)):
 
 - **`jobOrQuality`** — a finding with both `job` and `quality` null is refused;
   setting both is allowed.
 - **`noCompositeScore`** — the keys `score`, `overall`, `composite` and `rating`
   are refused on the report and on every finding.
+- **`evidenceRequired`** — a finding with `evidence: []` is refused.
+- **`ledgerCompanion`** — each ledger state carries its companion from the
+  ledger table: a `walked` row a snapshot or screenshot, a `mapped` row a file,
+  a `not-assessed` or `not-applicable` row a reason.
+- **`idsUnique`** — no two findings, and no two ledger rows, share an `id`.
+
+`reviewed_at` also gets the shared `real-dates` check that every other canary
+timestamp has.
 
 The Markdown render opens with the ledger counts ("walked 7 · mapped 21 · not
 assessed 12 · not applicable 3") and any run-level abstentions before any
@@ -320,8 +330,10 @@ input, failed validation), **2** usage error, **3** abstention — only under
 - New contract `canary.tool-review/1`: schema
   `agents/skills/lib/contracts/tool-review.v1.schema.json`, validated by its own
   entry point `agents/skills/lib/contracts/tool-review.mjs` (the
-  `critical-areas.mjs` pattern) plus two named rules in `rules.mjs`. The shared
-  `validate.mjs` / `document.mjs` are not changed.
+  `critical-areas.mjs` pattern), which holds its five named rules and the
+  `real-dates` check. `validate.mjs` and `rules.mjs` are not changed;
+  `document.mjs` gains only the refusal message that points
+  `canary.tool-review/1` to `tool-review.mjs`.
 - New tool-side file `.canary/blackalice.overlay.json`, which lives in the
   reviewed tool's repository and never in canary.
 - No new `canary` TypeScript CLI subcommand.
@@ -377,7 +389,7 @@ Derived from the most recent new-skill PR (`canary-unquarantine`, #1456,
 
 - **D9 → ADR "`canary.tool-review/1`: a ledger-first review contract"** — a new
   public contract alongside ADRs 0035/0036; records the four ledger states, the
-  run-level `not_assessed`, the two named rules, and why the contract gets its
+  run-level `not_assessed`, the five named rules, and why the contract gets its
   own validator entry point. It also extends ADR 0035 D3's naming convention:
   layer contracts stay `canary.<layer>/<major>`, while standalone contracts use
   `canary.<name>/<major>`, and `<name>` may contain hyphens.
@@ -462,9 +474,11 @@ Derived from the most recent new-skill PR (`canary-unquarantine`, #1456,
 re-measured after each, because the repository's absolute ratchets do not
 compose):
 
-1. **Contract** — schema, `tool-review.mjs` entry point, the `jobOrQuality` and
-   `noCompositeScore` rules, contract doc, valid and per-rule invalid fixtures,
-   ADR (ledger-first contract). Criteria 11, 12, 15.
+1. **Contract** — schema, `tool-review.mjs` entry point, the `jobOrQuality`,
+   `noCompositeScore`, `evidenceRequired`, `ledgerCompanion` and `idsUnique`
+   rules plus `real-dates` on `reviewed_at`, the `document.mjs` refusal pointer,
+   contract doc, valid and per-rule invalid fixtures, ADR (ledger-first
+   contract). Criteria 11, 12, 15.
 2. **Catalog + overlay** — `jobs.v1.json`, `qualities.v1.json`, overlay merge,
    `catalog check`, ADR (catalog + tool-owned overlay). Criteria 1–5.
 3. **Ledger + report CLI** — `plan`, `record` (incl. `--surface`),

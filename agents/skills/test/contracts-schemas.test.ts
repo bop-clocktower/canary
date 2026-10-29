@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 
 import { checkValue } from '../lib/contracts/schema-check.mjs';
 import { schemaProblems } from '../lib/contracts/schema-problems.mjs';
+import { validateDocument } from '../lib/contracts/document.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = path.join(HERE, '..', 'lib', 'contracts');
@@ -18,6 +19,12 @@ const FIXTURES = path.join(HERE, 'fixtures', 'contracts');
 const LAYERS = ['run', 'assessment', 'site'];
 /** Non-layer input files (#1242): critical-areas.json, validated by critical-areas.mjs. */
 const INPUT_SCHEMAS = ['critical-areas.v1.schema.json'];
+/**
+ * Standalone contracts (ADR 0045): a document with a `contract` const that is
+ * not a canary.* layer, so each has its own entry point (tool-review.mjs).
+ * Named `canary.<name>/<major>`; `<name>` may contain hyphens.
+ */
+const STANDALONE_CONTRACTS = ['tool-review'];
 
 type Doc = Record<string, any>;
 const readJson = (p: string): Doc => JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -47,12 +54,62 @@ function errorsFor(layer: string, doc: unknown) {
 }
 
 describe('contract schemas', () => {
-  it('ships one schema per layer plus the declared input schemas, and nothing else (a zero denominator is not a pass)', () => {
+  it('ships one schema per layer plus the declared input and standalone schemas, and nothing else (a zero denominator is not a pass)', () => {
     // Plus the input files canary skills read that are not canary.* layers
-    // (no `contract` field to dispatch on), each with its own entry point.
+    // (no `contract` field to dispatch on), and the standalone contracts
+    // (a `contract` const, but no layer), each with its own entry point.
     expect(Object.keys(REGISTRY).sort()).toEqual(
-      [...LAYERS.map((l) => `${l}.v1.schema.json`), ...INPUT_SCHEMAS].sort(),
+      [
+        ...LAYERS.map((l) => `${l}.v1.schema.json`),
+        ...INPUT_SCHEMAS,
+        ...STANDALONE_CONTRACTS.map((c) => `${c}.v1.schema.json`),
+      ].sort(),
     );
+  });
+
+  it.each(STANDALONE_CONTRACTS)(
+    '%s: $id is its file name, contract its const (canary.<name>/1)',
+    (name) => {
+      const schema = REGISTRY[`${name}.v1.schema.json`];
+      expect(schema.$id).toBe(`${name}.v1.schema.json`);
+      expect(schema.properties.contract.const).toBe(`canary.${name}/1`);
+    },
+  );
+
+  it.each(STANDALONE_CONTRACTS)(
+    '%s: validateDocument points its contract const to its own entry point (ADR 0045)',
+    (name) => {
+      // Ties document.mjs's STANDALONE map to these schemas: a new standalone
+      // contract or major (canary.tool-review/2) fails here until it has an
+      // entry, instead of getting "not a canary contract string".
+      const contract = REGISTRY[`${name}.v1.schema.json`].properties.contract
+        .const as string;
+      const { errors } = validateDocument({ contract });
+      expect(errors).toHaveLength(1);
+      expect(errors[0].path).toBe('contract');
+      const { message } = errors[0];
+      expect(
+        message.startsWith(`"${contract}" is a standalone contract:`),
+      ).toBe(true);
+      expect(
+        message.endsWith(`from ${name}.mjs, not validate.mjs (ADR 0045)`),
+      ).toBe(true);
+    },
+  );
+
+  it.each(STANDALONE_CONTRACTS)(
+    '%s: the valid fixture has zero schema errors',
+    (name) => {
+      expect(errorsFor(name, fixture(name))).toEqual([]);
+    },
+  );
+
+  it('tool-review: reviewed_at uses the run timestamp pattern verbatim', () => {
+    // A hand copy, not a cross-file $ref, so tool-review.mjs loads one file.
+    const own = REGISTRY['tool-review.v1.schema.json'].$defs.timestamp;
+    const run = REGISTRY['run.v1.schema.json'].$defs.timestamp;
+    expect(own.type).toBe(run.type);
+    expect(own.pattern).toBe(run.pattern);
   });
 
   it.each(INPUT_SCHEMAS)(

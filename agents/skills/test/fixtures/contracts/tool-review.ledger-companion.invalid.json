@@ -1,0 +1,77 @@
+{
+  "contract": "canary.tool-review/1",
+  "tool": {
+    "name": "example-tracker",
+    "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+    "url": "https://staging.example.test"
+  },
+  "reviewed_at": "2026-10-28T14:00:00Z",
+  "catalog_version": "jobs.v1",
+  "overlay_sha": "89abcdef0123456789abcdef0123456789abcdef",
+  "ledger": [
+    {
+      "id": "report.read-release-status-at-a-glance",
+      "kind": "job",
+      "state": "walked",
+      "reason": null,
+      "evidence": [{ "kind": "file", "ref": "src/routes/release.ts:9" }]
+    },
+    {
+      "id": "triage.find-when-it-started-failing",
+      "kind": "job",
+      "state": "mapped",
+      "reason": null,
+      "evidence": [{ "kind": "file", "ref": "src/routes/history.ts:42" }]
+    },
+    {
+      "id": "report.see-only-my-results",
+      "kind": "job",
+      "state": "not-assessed",
+      "reason": null,
+      "evidence": []
+    },
+    {
+      "id": "plan.import-from-external-tracker",
+      "kind": "job",
+      "state": "not-applicable",
+      "reason": "the tool has no external tracker",
+      "evidence": []
+    },
+    {
+      "id": "/dashboard",
+      "kind": "surface",
+      "state": "walked",
+      "reason": null,
+      "evidence": [{ "kind": "screenshot", "ref": "screenshots/dashboard.png" }]
+    }
+  ],
+  "findings": [
+    {
+      "id": "f-001",
+      "severity": "blocker",
+      "persona": "pm-owner",
+      "job": null,
+      "quality": "Q2",
+      "surface": "/dashboard",
+      "what_happened": "A suite with no runs this week shows a green tick",
+      "cost": "A PM reads 'all good' for a suite nobody ran",
+      "evidence": [
+        { "kind": "screenshot", "ref": "screenshots/dashboard.png" }
+      ],
+      "file_candidate": true
+    },
+    {
+      "id": "f-002",
+      "severity": "friction",
+      "persona": "developer",
+      "job": "triage.find-when-it-started-failing",
+      "quality": "Q4",
+      "surface": null,
+      "what_happened": "A result links to its run but not to its build or its previous result",
+      "cost": "A developer cannot tell when a test started failing without opening every older run",
+      "evidence": [{ "kind": "file", "ref": "src/routes/history.ts:42" }],
+      "file_candidate": false
+    }
+  ],
+  "not_assessed": []
+}

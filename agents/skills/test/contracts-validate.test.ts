@@ -31,7 +31,9 @@ function refusedPaths(doc: unknown, opts = {}): string[] {
 }
 
 describe('valid corpus (planted positives)', () => {
-  it('holds one valid document per layer (a zero denominator is not a pass)', () => {
+  it('holds one valid document per layer, plus each standalone contract (a zero denominator is not a pass)', () => {
+    // tool-review.valid.json is canary.tool-review/1, validated by
+    // tool-review.mjs (ADR 0045), not by validateDocument.
     const corpus = fs
       .readdirSync(FIXTURES)
       .filter((f) => f.endsWith('.valid.json'))
@@ -40,6 +42,51 @@ describe('valid corpus (planted positives)', () => {
       'assessment.valid.json',
       'run.valid.json',
       'site.valid.json',
+      'tool-review.valid.json',
+    ]);
+  });
+
+  it('refuses canary.tool-review/1 and points to its own entry point (ADR 0045)', () => {
+    // Pins the decision not to widen CONTRACT_RE or LAYERS in document.mjs:
+    // the contract is refused here, with a message naming where it IS validated.
+    const doc = JSON.parse(
+      fs.readFileSync(path.join(FIXTURES, 'tool-review.valid.json'), 'utf8'),
+    );
+    expect(validateDocument(doc)).toEqual({
+      valid: false,
+      contract: null,
+      checked: 1,
+      errors: [
+        {
+          path: 'contract',
+          message:
+            '"canary.tool-review/1" is a standalone contract: validate it with validateToolReview from tool-review.mjs, not validate.mjs (ADR 0045)',
+        },
+      ],
+    });
+  });
+
+  it('still calls any other hyphenated contract string not a canary contract string', () => {
+    // The pointer is for known standalone contracts only, not a widened regex.
+    expect(
+      validateDocument({ contract: 'canary.tool-review/2' }).errors,
+    ).toEqual([
+      {
+        path: 'contract',
+        message: 'not a canary contract string: "canary.tool-review/2"',
+      },
+    ]);
+  });
+
+  it('matches the standalone pointer on the exact string only, not an array holding it', () => {
+    // Object.hasOwn would coerce ['canary.tool-review/1'] to the string key.
+    expect(
+      validateDocument({ contract: ['canary.tool-review/1'] }).errors,
+    ).toEqual([
+      {
+        path: 'contract',
+        message: 'not a canary contract string: ["canary.tool-review/1"]',
+      },
     ]);
   });
 

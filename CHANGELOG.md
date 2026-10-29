@@ -14,6 +14,22 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary.tool-review/1` contract (#1524, phase 1 of `canary-blackalice`).** A
+  versioned report for reviewing a QA tool from its users' seats: a coverage
+  ledger in which every job and result surface ends in exactly one state
+  (walked, mapped, not-assessed, not-applicable), findings that carry a persona,
+  a plain-language cost and evidence, and a required `not_assessed` list of
+  run-level abstentions. It is validated by its own entry point,
+  `agents/skills/lib/contracts/tool-review.mjs`, with five named rules:
+  `jobOrQuality`, `noCompositeScore`, `evidenceRequired`, `ledgerCompanion`
+  (each ledger state carries its companion, e.g. a walked row a snapshot or
+  screenshot) and `idsUnique`, plus the shared `real-dates` check on
+  `reviewed_at`. `validate.mjs` refuses the contract string and names
+  `tool-review.mjs`. Spec: `docs/specs/canary-tool-review-contract.md`;
+  ADR 0045.
+
 ### Security
 
 - **`ip-address` bumped to 10.7.4 (GHSA-rxp7-6hxx-x8q5).** The transitive
