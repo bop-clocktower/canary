@@ -141,7 +141,7 @@ function realReviewedAt(doc) {
   return [
     {
       path: 'reviewed_at',
-      message: `${JSON.stringify(value)} matches the timestamp pattern but is not a real date`,
+      message: `${JSON.stringify(value)} matches the timestamp pattern but is not a real date (rule real-dates)`,
     },
   ];
 }

@@ -110,7 +110,7 @@ describe('tool-review contract: schema', () => {
       expect(validateToolReview(doc).errors).toEqual([
         {
           path: 'reviewed_at',
-          message: `${JSON.stringify(stamp)} matches the timestamp pattern but is not a real date`,
+          message: `${JSON.stringify(stamp)} matches the timestamp pattern but is not a real date (rule real-dates)`,
         },
       ]);
     },
