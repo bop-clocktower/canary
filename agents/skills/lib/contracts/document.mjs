@@ -59,21 +59,25 @@ const contractError = (message) => ({
   error: { path: 'contract', message },
 });
 
+/** The pointer refusal for a standalone contract string, otherwise null. */
+function standaloneError(contract) {
+  // The string check comes first: Object.hasOwn coerces its key, so an array
+  // holding a standalone contract string would otherwise match.
+  if (typeof contract !== 'string' || !Object.hasOwn(STANDALONE, contract)) {
+    return null;
+  }
+  return contractError(
+    `${JSON.stringify(contract)} is a standalone contract: validate it with ${STANDALONE[contract]}, not validate.mjs (ADR 0045)`,
+  );
+}
+
 /** Which layer a document claims, or the error that refuses the claim. */
 function readContract(doc, expected) {
   if (!Object.hasOwn(doc, 'contract')) {
     return contractError('missing required field');
   }
-  // The string check comes first: Object.hasOwn coerces its key, so an array
-  // holding a standalone contract string would otherwise match.
-  if (
-    typeof doc.contract === 'string' &&
-    Object.hasOwn(STANDALONE, doc.contract)
-  ) {
-    return contractError(
-      `${JSON.stringify(doc.contract)} is a standalone contract: validate it with ${STANDALONE[doc.contract]}, not validate.mjs (ADR 0045)`,
-    );
-  }
+  const standalone = standaloneError(doc.contract);
+  if (standalone !== null) return standalone;
   const m =
     typeof doc.contract === 'string' ? CONTRACT_RE.exec(doc.contract) : null;
   if (m === null) {

@@ -100,33 +100,56 @@ const REASON_COMPANION = {
     "is null; a not-applicable row carries the overlay's reason",
 };
 
+/** An evidence item the schema accepts; anything else is the schema's error. */
+const wellFormedEvidence = (e) =>
+  isPlainObject(e) &&
+  EVIDENCE_KINDS.includes(e.kind) &&
+  typeof e.ref === 'string' &&
+  e.ref.trim() !== ''; // schema-check.mjs's non-blank test, exactly
+
+/** A not-assessed or not-applicable row: its reason must not be null. */
+function reasonCompanion(row, prefix) {
+  const { state, reason } = row;
+  if (reason !== null) return [];
+  const message = `${REASON_COMPANION[state]} (rule ledgerCompanion)`;
+  return [{ path: at(prefix, 'reason'), message }];
+}
+
+/**
+ * A walked or mapped row: its evidence cites one of the state's kinds. Only a
+ * fully well-formed evidence array is judged, so a malformed item is reported
+ * once, by the schema.
+ */
+function evidenceCompanion(row, prefix) {
+  const { state, evidence } = row;
+  if (!Array.isArray(evidence) || !evidence.every(wellFormedEvidence)) {
+    return [];
+  }
+  const [kinds, why] = EVIDENCE_COMPANION[state];
+  if (evidence.some((e) => kinds.includes(e.kind))) return [];
+  const message = `${why} (rule ledgerCompanion)`;
+  return [{ path: at(prefix, 'evidence'), message }];
+}
+
 /**
  * Rule `ledgerCompanion`: each state carries the companion the spec's ledger
  * table requires. A walked row cites live evidence, not only a file; a mapped
  * row cites a file; a not-assessed or not-applicable row has a reason. Malformed
  * evidence, a blank reason or an unknown state is the schema's error, not a
- * second one here.
+ * second one here. Split into one helper per companion kind to stay under
+ * check-perf's complexity threshold of 10.
  */
 function ledgerCompanion(row, prefix) {
-  const { state, reason, evidence } = row;
+  const { state } = row;
   // Object.hasOwn coerces its key, so ['walked'] would match 'walked'.
   if (typeof state !== 'string') return [];
   if (Object.hasOwn(REASON_COMPANION, state)) {
-    if (reason !== null) return [];
-    const message = `${REASON_COMPANION[state]} (rule ledgerCompanion)`;
-    return [{ path: at(prefix, 'reason'), message }];
+    return reasonCompanion(row, prefix);
   }
-  if (!Object.hasOwn(EVIDENCE_COMPANION, state)) return [];
-  const wellFormed = (e) =>
-    isPlainObject(e) &&
-    EVIDENCE_KINDS.includes(e.kind) &&
-    typeof e.ref === 'string' &&
-    e.ref.trim() !== ''; // schema-check.mjs's non-blank test, exactly
-  if (!Array.isArray(evidence) || !evidence.every(wellFormed)) return [];
-  const [kinds, why] = EVIDENCE_COMPANION[state];
-  if (evidence.some((e) => kinds.includes(e.kind))) return [];
-  const message = `${why} (rule ledgerCompanion)`;
-  return [{ path: at(prefix, 'evidence'), message }];
+  if (Object.hasOwn(EVIDENCE_COMPANION, state)) {
+    return evidenceCompanion(row, prefix);
+  }
+  return [];
 }
 
 /**
