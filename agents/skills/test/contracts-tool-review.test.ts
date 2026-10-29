@@ -332,6 +332,12 @@ describe('rule ledgerCompanion (ledger table)', () => {
     ]);
   });
 
+  it('leaves an evidence item with a known kind but no ref to the schema: one error, not two', () => {
+    const doc = valid();
+    doc.ledger[0].evidence = [{ kind: 'file' }];
+    expect(paths(doc)).toEqual(['ledger[0].evidence[0].ref']);
+  });
+
   it('skips a ledger row that is not an object, which the schema reports', () => {
     const doc = valid();
     doc.ledger = [null];

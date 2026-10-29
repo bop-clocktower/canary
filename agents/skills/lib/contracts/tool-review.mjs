@@ -115,7 +115,10 @@ function ledgerCompanion(row, prefix) {
     return [{ path: at(prefix, 'reason'), message }];
   }
   if (!Object.hasOwn(EVIDENCE_COMPANION, state)) return [];
-  const wellFormed = (e) => isPlainObject(e) && EVIDENCE_KINDS.includes(e.kind);
+  const wellFormed = (e) =>
+    isPlainObject(e) &&
+    EVIDENCE_KINDS.includes(e.kind) &&
+    typeof e.ref === 'string';
   if (!Array.isArray(evidence) || !evidence.every(wellFormed)) return [];
   const [kinds, why] = EVIDENCE_COMPANION[state];
   if (evidence.some((e) => kinds.includes(e.kind))) return [];
