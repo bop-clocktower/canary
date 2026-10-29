@@ -309,13 +309,20 @@ describe('rule ledgerCompanion (ledger table)', () => {
     ]);
   });
 
-  it('leaves a blank reason to the schema (non-blank): one error, not two', () => {
-    const doc = valid();
-    doc.ledger[2].reason = '   ';
-    expect(validateToolReview(doc).errors).toEqual([
-      { path: 'ledger[2].reason', message: 'must not be blank' },
-    ]);
-  });
+  it.each([
+    ['', 'must be at least 1 character(s)'],
+    ['   ', 'must not be blank'],
+  ])(
+    'leaves a blank reason %j to the schema: one error, not two',
+    (reason, message) => {
+      // '' is falsy and '   ' is not, so both are needed to pin `!== null`.
+      const doc = valid();
+      doc.ledger[2].reason = reason;
+      expect(validateToolReview(doc).errors).toEqual([
+        { path: 'ledger[2].reason', message },
+      ]);
+    },
+  );
 
   it('leaves malformed evidence and an unknown state to the schema: one error, not two', () => {
     const doc = valid();
