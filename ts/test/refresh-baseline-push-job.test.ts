@@ -49,6 +49,17 @@ const BRANCH = 'feat/some-pr';
 const BASELINE = '.harness/arch/baselines.json';
 const AUDIT = '.harness/audit.log';
 
+/** A baseline as the refresh script reads it, with one metric at `value`. */
+const baseline = (value: unknown, stamp: string, ids = ['v1']): string =>
+  `${JSON.stringify({
+    version: 1,
+    updatedAt: stamp,
+    updatedFrom: stamp,
+    metrics: { complexity: { value, violationIds: ids } },
+  })}\n`;
+const OLD_BASELINE = baseline(1, 'old');
+const NEW_BASELINE = baseline(2, 'new');
+
 let dir: string;
 let origin: string;
 let work: string;
@@ -80,24 +91,28 @@ function expand(value: string): string {
     .replace(/\$\{\{\s*github\.token\s*\}\}/, 'not-a-token');
 }
 
+function stepEnv(step: Step, path: string, summary: string) {
+  const env: Record<string, string> = {
+    PATH: path,
+    HOME: dir,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GITHUB_STEP_SUMMARY: summary,
+    GITHUB_REPOSITORY: 'o/r',
+  };
+  for (const [k, v] of Object.entries(step.env ?? {})) env[k] = expand(v);
+  return env;
+}
+
 function runSteps(jobId: string, cwd: string, path = process.env.PATH ?? '') {
   const summary = join(dir, 'summary.md');
   let last = { status: 0 as number | null, log: '' };
   const scripts = (wf.jobs[jobId]?.steps ?? []).filter((s) => s.run);
   expect(scripts.length, `${jobId} has no run steps`).toBeGreaterThan(0);
   for (const step of scripts) {
-    const env: Record<string, string> = {
-      PATH: path,
-      HOME: dir,
-      GIT_CONFIG_NOSYSTEM: '1',
-      GITHUB_STEP_SUMMARY: summary,
-      GITHUB_REPOSITORY: 'o/r',
-    };
-    for (const [k, v] of Object.entries(step.env ?? {})) env[k] = expand(v);
     const r = spawnSync('bash', ['-e', '-c', step.run!], {
       cwd,
       encoding: 'utf8',
-      env,
+      env: stepEnv(step, path, summary),
     });
     last = { status: r.status, log: `${r.stdout}${r.stderr}` };
     if (r.status !== 0) break;
@@ -117,7 +132,7 @@ beforeEach(() => {
   git(dir, 'init', '-q', '--bare', '-b', 'main', origin);
   git(dir, 'clone', '-q', origin, work);
   git(work, 'checkout', '-q', '-b', BRANCH);
-  write(join(work, BASELINE), 'old\n');
+  write(join(work, BASELINE), OLD_BASELINE);
   write(join(work, AUDIT), 'log\n');
   git(work, 'add', '.');
   git(work, 'commit', '-q', '-m', 'seed');
@@ -126,7 +141,7 @@ beforeEach(() => {
   // actions/checkout with `ref: <sha>` leaves a detached HEAD.
   git(work, 'checkout', '-q', '--detach', headSha);
   // The default artifact: the refresh moved the baseline, the CLI left the log.
-  write(join(src, 'arch/baselines.json'), 'new\n');
+  write(join(src, 'arch/baselines.json'), NEW_BASELINE);
   write(join(src, 'audit.log'), 'log\n');
 });
 
@@ -138,7 +153,9 @@ describe('refresh-arch-baseline.yml push job', () => {
   it('commits the refreshed baseline on top of the measured commit', () => {
     const r = runSteps('push', work);
     expect(r.status, r.log).toBe(0);
-    expect(git(origin, 'show', `${BRANCH}:${BASELINE}`)).toBe('new');
+    expect(git(origin, 'show', `${BRANCH}:${BASELINE}`)).toBe(
+      NEW_BASELINE.trim(),
+    );
     expect(git(origin, 'rev-parse', `${BRANCH}~1`)).toBe(headSha);
     expect(git(origin, 'log', '-1', '--format=%s', BRANCH)).toMatch(
       /refresh arch baseline/,
@@ -162,7 +179,7 @@ describe('refresh-arch-baseline.yml push job', () => {
   });
 
   it('fails when the baseline did not change (#634), and pushes nothing', () => {
-    write(join(src, 'arch/baselines.json'), 'old\n');
+    write(join(src, 'arch/baselines.json'), OLD_BASELINE);
     const r = runSteps('push', work);
     expect(r.status).toBe(1);
     expect(r.log).toMatch(/baselines\.json is unchanged/);
@@ -172,7 +189,7 @@ describe('refresh-arch-baseline.yml push job', () => {
   // #749: the guard names the intended artifact, so a change to anything else
   // cannot satisfy it.
   it('fails when only audit.log changed (#749)', () => {
-    write(join(src, 'arch/baselines.json'), 'old\n');
+    write(join(src, 'arch/baselines.json'), OLD_BASELINE);
     write(join(src, 'audit.log'), 'log\nappended\n');
     const r = runSteps('push', work);
     expect(r.status).toBe(1);
@@ -206,6 +223,30 @@ describe('refresh-arch-baseline.yml push job', () => {
     const r = runSteps('push', work);
     expect(r.status).toBe(1);
     expect(tip()).toBe(rewound);
+  });
+
+  // ls-remote matches by path suffix, so another ref ending in the same path
+  // must not answer for the branch.
+  it('reads the exact branch ref, not a ref that ends in the same path', () => {
+    git(work, 'commit', '-q', '--allow-empty', '-m', 'second');
+    git(work, 'push', '-q', 'origin', `HEAD:refs/heads/${BRANCH}`);
+    const rewound = headSha;
+    headSha = git(work, 'rev-parse', 'HEAD');
+    git(work, 'push', '-q', 'origin', `HEAD:refs/a/refs/heads/${BRANCH}`);
+    git(work, 'push', '-q', '-f', 'origin', `${rewound}:refs/heads/${BRANCH}`);
+
+    const r = runSteps('push', work);
+    expect(r.status).toBe(1);
+    expect(tip()).toBe(rewound);
+  });
+
+  it('stages only the two named files', () => {
+    write(join(work, 'stray.txt'), 'stray\n');
+    const r = runSteps('push', work);
+    expect(r.status, r.log).toBe(0);
+    expect(git(origin, 'show', '--format=', '--name-only', BRANCH)).toBe(
+      BASELINE,
+    );
   });
 
   it('skips with a warning when the branch was deleted mid-run', () => {
@@ -286,12 +327,58 @@ describe('refresh-arch-baseline.yml push job distrusts its input', () => {
     expect(readFileSync(config, 'utf8')).toBe(before);
   });
 
+  it('refuses a .harness directory that is a symlink in the checkout', () => {
+    const real = join(dir, 'real-harness');
+    mkdirSync(real);
+    write(join(real, 'arch/baselines.json'), OLD_BASELINE);
+    write(join(real, 'audit.log'), 'log\n');
+    rmSync(join(work, '.harness'), { recursive: true });
+    symlinkSync(real, join(work, '.harness'));
+    expectRefused(/symlink/);
+  });
+
   it('refuses a parent directory that is a symlink in the checkout', () => {
     const target = join(work, '.git');
     rmSync(join(work, '.harness/arch'), { recursive: true });
     symlinkSync(target, join(work, '.harness/arch'));
     expectRefused(/symlink/);
     expect(existsSync(join(target, 'baselines.json'))).toBe(false);
+  });
+
+  // The artifact comes from a job that ran registry code, so its content has
+  // to be checked here, not only in the script that wrote it.
+  it.each([
+    ['banks a violation', baseline(2, 'new', ['v1', 'v2'])],
+    ['drops a violation', baseline(2, 'new', [])],
+    ['sets a non-numeric value', baseline('2', 'new')],
+    [
+      'adds a metric',
+      `${JSON.stringify({
+        version: 1,
+        metrics: {
+          complexity: { value: 2, violationIds: ['v1'] },
+          coupling: { value: 9, violationIds: [] },
+        },
+      })}\n`,
+    ],
+    ['is not JSON', 'not json\n'],
+  ])('refuses a baseline that %s', (_name, text) => {
+    write(join(src, 'arch/baselines.json'), text);
+    expectRefused(/more than metric values/);
+    expect(readFileSync(join(work, BASELINE), 'utf8')).toBe(OLD_BASELINE);
+  });
+
+  it.each([
+    ['rewrites existing lines', 'forged\nlog\n'],
+    ['truncates the log', ''],
+  ])('refuses an audit.log that %s', (_name, text) => {
+    write(join(src, 'audit.log'), text);
+    expectRefused(/not an append/);
+  });
+
+  it('refuses a baseline the PR deleted from its tree', () => {
+    rmSync(join(work, BASELINE));
+    expectRefused(/not a regular file/);
   });
 
   it('refuses a destination that is a directory in the checkout', () => {

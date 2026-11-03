@@ -11,8 +11,10 @@
     "audit.log always travels with the baseline, because it is tracked. A PR that deleted it changes the artifact's root, and push refuses that as a missing entry and goes red. That is a narrow regression against the old tolerant git add, accepted to keep one artifact layout.",
     "A branch that moved is a red failure with the label kept, not a retry. A re-run replays the original event's SHA, so that case needs the label re-applied. The previous comment's 'the label need not be re-applied' still holds when the branch has not moved.",
     "A failed label removal stays green but now warns instead of the old silent || true, because the baseline is already pushed. gh pr edit under only pull-requests: write is unexercised.",
-    "Artifact content is not validated, only its paths and file types. A compromised CLI could still write a wrong baselines.json to the PR branch, where it shows in the diff under normal review. It can no longer use the write token.",
+    "push checks artifact content: only metric values and the updatedAt/updatedFrom stamps may differ from the checkout, values must be numbers, and audit.log must be an append. It cannot check that a raised value is the measured one, so a compromised CLI could still raise a metric value on the PR branch, where it shows as a reviewable diff.",
     "Same-repo PR authors already hold push access, and a pull_request run uses the PR's own copy of this workflow. This fix removes the token from the floating CLI and the PR-head script. It does not change what a same-repo author can do.",
-    "git commit and git push in the push job run no repo-supplied hooks, because actions/checkout does not populate .git/hooks or set core.hooksPath."
+    "git commit and git push in the push job run no repo-supplied hooks, because actions/checkout does not populate .git/hooks or set core.hooksPath.",
+    "A baseline or audit.log absent from the checkout is refused, rather than accepted as a new file.",
+    "The moved-branch guard and the push are not atomic. A plain push still rejects any non-fast-forward; only a rewind to an ancestor inside that window of seconds would pass. --force-with-lease would close it, but it is a force push under the #1427 invariant, which requires a non-cancelling concurrency group, and this workflow cancels in progress. Declined; stated on the PR."
   ]
 }

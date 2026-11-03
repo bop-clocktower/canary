@@ -345,6 +345,26 @@ describe('#1463 refresh-arch-baseline.yml runs no registry or PR-head code under
     ).toEqual([]);
   });
 
+  it('runs only for its opt-in label, and only for same-repo PRs', () => {
+    const gate = String((measure as { if?: unknown } | undefined)?.if);
+    expect(gate).toContain("github.event.label.name == 'refresh-baseline'");
+    expect(gate).toContain(
+      'github.event.pull_request.head.repo.full_name == github.repository',
+    );
+  });
+
+  // A swallowed `git add` is the green run with an empty commit #634 forbids.
+  it('stages by name, and lets a failed add fail the step', () => {
+    const script = steps(push)
+      .map((s) => s.run ?? '')
+      .join('\n');
+    const adds = script.split('\n').filter((l) => /^\s*git add\b/.test(l));
+    expect(adds.map((l) => l.trim())).toEqual([
+      'git add .harness/arch/baselines.json',
+      'git add .harness/audit.log',
+    ]);
+  });
+
   it('gives each write job the one scope it uses', () => {
     expect(push?.permissions).toEqual({ contents: 'write' });
     // Not `contents: write`: this job only edits a label. #1426's "contents:
@@ -664,6 +684,8 @@ interface Handoff {
   upload: string[];
   /** Artifact entry -> checkout path the restore step must write. */
   entries: Record<string, string>;
+  /** Entry -> real content, for a restore step that checks what it copies. */
+  seed?: Record<string, { tree: string; artifact: string }>;
 }
 
 const HANDOFFS: Handoff[] = [
@@ -689,6 +711,14 @@ const HANDOFFS: Handoff[] = [
     entries: {
       'arch/baselines.json': '.harness/arch/baselines.json',
       'audit.log': '.harness/audit.log',
+    },
+    // #1463: this restore checks content, so it needs real files on both sides.
+    seed: {
+      'arch/baselines.json': {
+        tree: '{"metrics":{"m":{"value":1,"violationIds":[]}}}\n',
+        artifact: '{"metrics":{"m":{"value":2,"violationIds":[]}}}\n',
+      },
+      'audit.log': { tree: 'log\n', artifact: 'log\nmore\n' },
     },
   },
 ];
@@ -738,14 +768,18 @@ describe.each(HANDOFFS)(
     });
 
     it('copies every artifact entry to its checkout path', () => {
+      const contentOf = (entry: string): string =>
+        h.seed?.[entry]?.artifact ?? `from ${entry}\n`;
       const dir = mkdtempSync(join(tmpdir(), 'artifact-layout-'));
       try {
         const src = join(dir, 'artifact');
         const work = join(dir, 'work');
         for (const [entry, dest] of Object.entries(h.entries)) {
           mkdirSync(dirname(join(src, entry)), { recursive: true });
-          writeFileSync(join(src, entry), `from ${entry}\n`);
+          writeFileSync(join(src, entry), contentOf(entry));
           mkdirSync(dirname(join(work, dest)), { recursive: true });
+          const tree = h.seed?.[entry]?.tree;
+          if (tree !== undefined) writeFileSync(join(work, dest), tree);
         }
         const r = spawnSync('bash', ['-e', '-c', restore!.run!], {
           cwd: work,
@@ -754,9 +788,7 @@ describe.each(HANDOFFS)(
         });
         expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
         for (const [entry, dest] of Object.entries(h.entries))
-          expect(readFileSync(join(work, dest), 'utf8')).toBe(
-            `from ${entry}\n`,
-          );
+          expect(readFileSync(join(work, dest), 'utf8')).toBe(contentOf(entry));
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

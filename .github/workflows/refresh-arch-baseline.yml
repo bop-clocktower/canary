@@ -175,12 +175,32 @@ jobs:
               echo "::error::$dest is a symlink in the PR's tree" >&2
               exit 1
             fi
-            if [ -e "$dest" ] && [ ! -f "$dest" ]; then
+            if [ ! -f "$dest" ]; then
               echo "::error::$dest is not a regular file in the PR's tree" >&2
               exit 1
             fi
-            cp -- "$SRC/$entry" "$dest"
           done
+          # The artifact's content is as untrusted as its shape. A refresh moves
+          # metric values and its own provenance stamps, so anything else that
+          # differs did not come from the refresh script. This holds the #689
+          # rule (no violation is banked) in the job that can push. It cannot
+          # check that a raised value is the measured one: that is the diff a
+          # reviewer reads on the PR.
+          shape='del(.updatedAt, .updatedFrom) | .metrics |= map_values(del(.value))'
+          if ! jq -e '.metrics | all(.[]; .value | type == "number")' \
+                "$SRC/arch/baselines.json" > /dev/null ||
+             [ "$(jq -S "$shape" "$SRC/arch/baselines.json")" != \
+               "$(jq -S "$shape" .harness/arch/baselines.json)" ]; then
+            echo "::error::the refreshed baseline changes more than metric values" >&2
+            exit 1
+          fi
+          if ! head -c "$(( $(wc -c < .harness/audit.log) ))" "$SRC/audit.log" |
+               cmp -s - .harness/audit.log; then
+            echo "::error::the refreshed audit.log is not an append to the PR's" >&2
+            exit 1
+          fi
+          cp -- "$SRC/arch/baselines.json" .harness/arch/baselines.json
+          cp -- "$SRC/audit.log" .harness/audit.log
 
       - name: Commit & push the refreshed baseline
         env:
@@ -231,7 +251,10 @@ jobs:
           # would apply. Equality, not a fast-forward check: a rewound branch
           # would accept this commit and get its dropped commits back. The plain
           # push below is still rejected if the branch moves after this line.
-          if [ "${remote%%[[:space:]]*}" != "$HEAD_SHA" ]; then
+          # ls-remote matches by path suffix, so read the exact ref: another
+          # ref ending in the same path must not answer for the branch.
+          tip="$(printf '%s\n' "$remote" | awk -v ref="refs/heads/$BRANCH" '$2 == ref { print $1 }')"
+          if [ "$tip" != "$HEAD_SHA" ]; then
             echo "::error::'$BRANCH' moved after $HEAD_SHA was measured, so this" \
               "baseline is stale and was not pushed. Remove and re-apply the" \
               "refresh-baseline label to measure the new head."
