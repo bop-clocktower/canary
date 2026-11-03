@@ -8,7 +8,13 @@
  *   - 3 (EXIT_ABSTAINED): nothing to rank, so NOTHING is written. An empty map
  *     would also overwrite a good one.
  */
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { Command } from 'commander';
 
@@ -158,6 +164,37 @@ function signalsFor(
   }));
 }
 
+function readDeclaredSymbols(out: string): Map<string, string[]> {
+  let data: { areas?: unknown };
+  try {
+    data = JSON.parse(readFileSync(out, 'utf-8')) as { areas?: unknown };
+  } catch {
+    return new Map();
+  }
+  const rows = Array.isArray(data?.areas) ? data.areas : [];
+  const declared = new Map<string, string[]>();
+  for (const row of rows as { path?: unknown; symbols?: unknown }[]) {
+    const valid =
+      Array.isArray(row?.symbols) &&
+      row.symbols.length > 0 &&
+      row.symbols.every((s) => typeof s === 'string' && s !== '');
+    if (valid && typeof row.path === 'string') {
+      declared.set(row.path, row.symbols as string[]);
+    }
+  }
+  return declared;
+}
+
+/** A person chose these (D13); only a path gone from HEAD loses them. */
+function keepSymbols(out: string, facts: GitFacts) {
+  const tracked = new Set(facts.tracked);
+  const declared = [...readDeclaredSymbols(out)];
+  return {
+    kept: new Map(declared.filter(([path]) => tracked.has(path))),
+    dropped: declared.map(([path]) => path).filter((p) => !tracked.has(p)),
+  };
+}
+
 function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
   const explicit = readExplicitReport(opts, deps);
   const facts = readGitFacts(resolve(opts.root ?? deps.cwd()));
@@ -169,14 +206,17 @@ function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
     opts.out === undefined
       ? join(facts.top, '.canary', 'critical-areas.json')
       : resolve(deps.cwd(), opts.out);
+  const { kept, dropped } = keepSymbols(out, facts);
+  const candidates = new Set(facts.candidates);
+  const extraPaths = [...kept.keys()].filter((p) => !candidates.has(p));
   const importers = countImporters(facts.top, facts.candidates);
   const coverage = loadCoverage(explicit, facts);
   const doc = buildDocument({
     generated: new Date().toISOString(),
     base: facts.head,
     files: signalsFor(facts.candidates, facts, importers, coverage.pctOf),
-    extras: [],
-    symbols: new Map(),
+    extras: signalsFor(extraPaths, facts, importers, coverage.pctOf),
+    symbols: kept,
     sources: {
       churn: churnSource(facts),
       importers: { status: 'measured' },
@@ -191,6 +231,11 @@ function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
   deps.out(
     `Wrote ${out}: ${doc.areas.length} area(s) from ${doc.files_analyzed} file(s).`,
   );
+  if (dropped.length > 0) {
+    deps.out(
+      `Dropped symbols for paths no longer in HEAD: ${dropped.join(', ')}.`,
+    );
+  }
 }
 
 export function buildCriticalAreasCommand(deps: MainDeps): Command {

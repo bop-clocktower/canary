@@ -372,6 +372,122 @@ describe('canary critical-areas', () => {
     });
   });
 
+  describe('declared symbols (D13)', () => {
+    /** Plant an existing map holding `areas`, as a person or the skill would. */
+    const plant = (areas: unknown[], at = join(root, OUT)): void => {
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, JSON.stringify({ areas }), 'utf-8');
+    };
+    const run = () => invokeCanary(['critical-areas', '--root', root]);
+
+    it('keeps symbols through a rewrite (criterion 9)', async () => {
+      ranked(root);
+      plant([{ path: 'src/a.ts', symbols: ['chargeCard'] }]);
+      expect((await run()).code).toBe(0);
+      const doc = readDoc(join(root, OUT));
+      expect(areaOf(doc, 'src/a.ts').symbols).toEqual(['chargeCard']);
+      expect(areaOf(doc, 'src/b.ts').symbols).toBeUndefined();
+    });
+
+    it('lists a signal-less declared path outside the top 25 (criterion 9)', async () => {
+      git(root, ['init', '-q']);
+      const tree: Record<string, string> = { 'src/quiet.ts': 'export {};\n' };
+      const names = Array.from({ length: 26 }, (_, i) => `m${i}`);
+      for (const name of names) {
+        tree[`src/${name}.ts`] = 'export {};\n';
+      }
+      tree['src/entry.ts'] = names.map((n) => `import './${n}.js';\n`).join('');
+      commit(root, tree);
+      // A year later, so the first commit falls outside the churn window:
+      // `src/quiet.ts` has neither churn nor importers, and 26 others score.
+      const touched = Object.fromEntries(
+        names.map((n) => [`src/${n}.ts`, 'export const x = 1;\n']),
+      );
+      commit(root, touched, '2021-06-01T00:00:00Z');
+      plant([{ path: 'src/quiet.ts', symbols: ['keep'] }]);
+      expect((await run()).code).toBe(0);
+      const doc = readDoc(join(root, OUT));
+      const quiet = areaOf(doc, 'src/quiet.ts');
+      expect(quiet.risk_score).toBe(0);
+      expect(quiet.symbols).toEqual(['keep']);
+      expect(doc.areas.filter((a) => a.path !== 'src/quiet.ts').length).toBe(
+        25,
+      );
+    });
+
+    it('drops a path gone from HEAD and says so', async () => {
+      ranked(root);
+      plant([{ path: 'gone/old.ts', symbols: ['s'] }]);
+      const res = await run();
+      expect(res.code).toBe(0);
+      expect(res.stdout).toMatch(/Dropped symbols.*gone\/old\.ts/);
+      const doc = readDoc(join(root, OUT));
+      expect(doc.areas.map((a) => a.path)).not.toContain('gone/old.ts');
+    });
+
+    it('lists a tracked non-candidate without counting it as analyzed', async () => {
+      ranked(root);
+      commit(root, { 'tests/x.test.ts': "import '../src/a.js';\n" });
+      plant([{ path: 'tests/x.test.ts', symbols: ['s'] }]);
+      expect((await run()).code).toBe(0);
+      const doc = readDoc(join(root, OUT));
+      expect(areaOf(doc, 'tests/x.test.ts').symbols).toEqual(['s']);
+      expect(doc.files_analyzed).toBe(2);
+    });
+
+    it('overwrites a malformed existing file (D17)', async () => {
+      ranked(root);
+      mkdirSync(join(root, '.canary'));
+      writeFileSync(join(root, OUT), 'not json', 'utf-8');
+      expect((await run()).code).toBe(0);
+      expect(readDoc(join(root, OUT)).areas.length).toBeGreaterThan(0);
+    });
+
+    it.each([
+      ['empty', []],
+      ['non-string', [1]],
+      ['empty-string', ['']],
+      ['not an array', 'charge'],
+    ])('does not carry a %s symbols value', async (_name, symbols) => {
+      ranked(root);
+      plant([{ path: 'src/a.ts', symbols }]);
+      expect((await run()).code).toBe(0);
+      const a = areaOf(readDoc(join(root, OUT)), 'src/a.ts');
+      expect('symbols' in a).toBe(false);
+    });
+
+    it('reads symbols from --out, not the default path', async () => {
+      ranked(root);
+      plant([{ path: 'src/a.ts', symbols: ['fromDefault'] }]);
+      const out = join(root, 'other.json');
+      plant([{ path: 'src/b.ts', symbols: ['fromOut'] }], out);
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        root,
+        '--out',
+        out,
+      ]);
+      expect(res.code).toBe(0);
+      const doc = readDoc(out);
+      expect(areaOf(doc, 'src/b.ts').symbols).toEqual(['fromOut']);
+      expect(areaOf(doc, 'src/a.ts').symbols).toBeUndefined();
+    });
+
+    it('stays deterministic with symbols (criterion 10)', async () => {
+      ranked(root);
+      plant([{ path: 'src/a.ts', symbols: ['s'] }]);
+      await run();
+      const first = readDoc(join(root, OUT));
+      await run();
+      const second = readDoc(join(root, OUT));
+      expect({ ...first, generated: '' }).toEqual({
+        ...second,
+        generated: '',
+      });
+    });
+  });
+
   it('ranks a shallow clone on importers alone (criterion 8)', async () => {
     const source = join(root, 'source');
     mkdirSync(source);
