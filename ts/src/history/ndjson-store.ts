@@ -160,7 +160,11 @@ export class NdjsonHistoryStore implements HistoryStore {
 
     const record = serializeLocalRecord(run, results);
     mkdirSync(dirname(this.path), { recursive: true });
-    appendFileSync(this.path, JSON.stringify(record) + '\n', 'utf-8');
+    // A tail with no newline (another tool, a hand edit) would swallow this row
+    // and make every later read throw (#1297). 'a+' reads a new file as empty.
+    const text = readFileSync(this.path, { encoding: 'utf-8', flag: 'a+' });
+    const sep = text === '' || text.endsWith('\n') ? '' : '\n';
+    appendFileSync(this.path, sep + JSON.stringify(record) + '\n', 'utf-8');
   }
 
   queryFlaky(
