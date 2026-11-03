@@ -31,9 +31,11 @@ webhook-queue.sqlite-shm
 # Maintenance task run history (regenerated each tick)
 maintenance/
 
-# security/: track timeline.json (trend ledger), ignore everything else
+# security/: track timeline.json (trend ledger) and supply-chain.json (the
+# ledger's audit input, #1436), ignore everything else
 security/*
 !security/timeline.json
+!security/supply-chain.json
 state.events.jsonl
 state.snapshot.json
 tokens.json*
