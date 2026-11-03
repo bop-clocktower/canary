@@ -1,0 +1,186 @@
+/**
+ * Unique-importer counts for `canary critical-areas` (#1529). The count is a
+ * floor: an ambiguous suffix counts nothing, and a bare package never binds a
+ * file that shares its name.
+ */
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { countImporters } from '../src/critical-areas/importers.js';
+import { mkTmp, rmTmp } from './canary-cli-testkit.js';
+
+describe('countImporters', () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkTmp();
+  });
+  afterEach(() => {
+    rmTmp(root);
+  });
+
+  function counts(tree: Record<string, string>): Map<string, number> {
+    for (const [path, body] of Object.entries(tree)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), body, 'utf-8');
+    }
+    return countImporters(root, Object.keys(tree));
+  }
+
+  describe('JS/TS', () => {
+    it.each([
+      ['import', "import { a } from './a.js';\n"],
+      ['export from', "export { a } from './a.js';\n"],
+      ['require', "const a = require('./a.js');\n"],
+      ['dynamic import', "const a = await import('./a.js');\n"],
+      ['side-effect import', "import './a.js';\n"],
+    ])('%s counts for src/a.ts', (_name, body) => {
+      const c = counts({
+        'src/a.ts': 'export const a = 1;\n',
+        'src/m.ts': body,
+      });
+      expect(c.get('src/a.ts')).toBe(1);
+    });
+
+    it('resolves an extensionless specifier', () => {
+      const c = counts({ 'src/a.ts': '', 'src/m.ts': "import './a';\n" });
+      expect(c.get('src/a.ts')).toBe(1);
+    });
+
+    it('resolves a directory to its index', () => {
+      const c = counts({
+        'src/dir/index.ts': '',
+        'src/m.ts': "import './dir';\n",
+      });
+      expect(c.get('src/dir/index.ts')).toBe(1);
+    });
+
+    it('counts two imports from one file once', () => {
+      const c = counts({
+        'src/a.ts': '',
+        'src/m.ts': "import './a.js';\nimport { x } from './a.js';\n",
+      });
+      expect(c.get('src/a.ts')).toBe(1);
+    });
+
+    it('counts two importing files twice', () => {
+      const c = counts({
+        'src/a.ts': '',
+        'src/m.ts': "import './a.js';\n",
+        'src/n.ts': "import './a.js';\n",
+      });
+      expect(c.get('src/a.ts')).toBe(2);
+    });
+
+    it('does not count a file importing itself', () => {
+      const c = counts({ 'src/a.ts': "import './a.js';\n" });
+      expect(c.get('src/a.ts')).toBe(0);
+    });
+
+    it.each(['@', '~', '#'])('resolves the %s/ alias by unique suffix', (a) => {
+      const c = counts({
+        'src/lib/a.ts': '',
+        'src/m.ts': `import '${a}/lib/a';\n`,
+      });
+      expect(c.get('src/lib/a.ts')).toBe(1);
+    });
+
+    it('counts nothing for an ambiguous alias', () => {
+      const c = counts({
+        'x/a.ts': '',
+        'y/a.ts': '',
+        'src/m.ts': "import '@/a';\n",
+      });
+      expect(c.get('x/a.ts')).toBe(0);
+      expect(c.get('y/a.ts')).toBe(0);
+    });
+
+    it('does not bind a bare package to a file of the same name', () => {
+      const c = counts({ 'src/react.ts': '', 'src/m.ts': "import 'react';\n" });
+      expect(c.get('src/react.ts')).toBe(0);
+    });
+  });
+
+  describe('Python', () => {
+    it.each([
+      ['import a.b', 'import a.b\n'],
+      ['from a.b import c', 'from a.b import c\n'],
+      ['import x, a.b', 'import x, a.b\n'],
+    ])('%s counts for src/a/b.py', (_name, body) => {
+      const c = counts({ 'src/a/b.py': '', 'src/m.py': body });
+      expect(c.get('src/a/b.py')).toBe(1);
+    });
+
+    it('resolves leading dots relative to the file', () => {
+      const c = counts({
+        'src/a/b.py': '',
+        'src/a/m.py': 'from .b import c\n',
+        'src/a/n/k.py': 'from ..b import c\n',
+      });
+      expect(c.get('src/a/b.py')).toBe(2);
+    });
+
+    it('resolves a two-dot import through a sibling package', () => {
+      const c = counts({
+        'pkg/a/b.py': '',
+        'pkg/z/m.py': 'from ..a.b import c\n',
+      });
+      expect(c.get('pkg/a/b.py')).toBe(1);
+    });
+
+    it('counts nothing for an ambiguous suffix', () => {
+      const c = counts({
+        'x/util.py': '',
+        'y/util.py': '',
+        'src/m.py': 'import util\n',
+      });
+      expect(c.get('x/util.py')).toBe(0);
+      expect(c.get('y/util.py')).toBe(0);
+    });
+  });
+
+  describe('PHP', () => {
+    it('counts require_once of a path relative to the file', () => {
+      const c = counts({
+        'web/lib/x.php': '',
+        'web/m.php': "<?php\nrequire_once 'lib/x.php';\n",
+      });
+      expect(c.get('web/lib/x.php')).toBe(1);
+    });
+
+    it('counts include with parentheses', () => {
+      const c = counts({
+        'web/x.php': '',
+        'web/m.php': "<?php\ninclude('x.php');\n",
+      });
+      expect(c.get('web/x.php')).toBe(1);
+    });
+
+    it('counts a use statement by unique suffix', () => {
+      const c = counts({
+        'src/App/Billing/Charge.php': '',
+        'web/m.php': '<?php\nuse App\\Billing\\Charge;\n',
+      });
+      expect(c.get('src/App/Billing/Charge.php')).toBe(1);
+    });
+  });
+
+  it('does not match across languages', () => {
+    const c = counts({ 'a.ts': '', 'm.py': 'import a\n' });
+    expect(c.get('a.ts')).toBe(0);
+  });
+
+  it('skips a listed file missing from disk without throwing', () => {
+    const c = countImporters(root, ['missing.ts']);
+    expect(c.get('missing.ts')).toBe(0);
+  });
+
+  it('gives every listed file a key, 0 when nothing imports it', () => {
+    const c = counts({ 'a.ts': '', 'b.py': '', 'c.php': '' });
+    expect([...c.entries()].sort()).toEqual([
+      ['a.ts', 0],
+      ['b.py', 0],
+      ['c.php', 0],
+    ]);
+  });
+});
