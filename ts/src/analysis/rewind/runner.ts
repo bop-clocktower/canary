@@ -4,11 +4,13 @@
  * JSON report.
  *
  * The status is read with the same readers `history record` uses, so the name
- * a replay looks for is built exactly the way the stored name was.
+ * a replay looks for is built the way the stored name was, before `record` made
+ * a synthetic row's path repo-relative (see `isStoredName`).
  */
 
 import { buildRunFromPlaywrightReport } from '../../history/formats/playwright-report.js';
 import { readVitestReport } from '../../history/formats/vitest-report.js';
+import { FILE_FAILURE_SUFFIX } from '../../history/schema.js';
 
 export type ReplayRunner = 'vitest' | 'playwright';
 
@@ -114,5 +116,17 @@ export function readReplayStatus(
     runner === 'vitest'
       ? readVitestReport(parsed, CTX)
       : buildRunFromPlaywrightReport(parsed, CTX);
-  return results.find((r) => r.test_name === testName)?.status ?? null;
+  return (
+    results.find((r) => isStoredName(r.test_name, testName))?.status ?? null
+  );
+}
+
+/**
+ * Whether a row a reader just built is the stored test. Names are equal, except
+ * a synthetic row's (#1411): the store holds its repo-relative path, and the
+ * reader still holds the path as the runner reported it.
+ */
+function isStoredName(built: string, stored: string): boolean {
+  if (built === stored) return true;
+  return stored.includes(FILE_FAILURE_SUFFIX) && built.endsWith(`/${stored}`);
 }
