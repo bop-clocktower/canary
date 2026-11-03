@@ -10,5 +10,5 @@
     "fix: SMALL = 30_000, LARGE = 300_000, MAX_RATIO unchanged, doc comment records why; no product code changed",
     "cost: test file about +4.5 s locally under coverage (2.6 s to 7.0 s); CI estimated, not measured"
   ],
-  "commits": []
+  "commits": ["b20b5f94c2fc981fb195afed20d6f054320561a9"]
 }
