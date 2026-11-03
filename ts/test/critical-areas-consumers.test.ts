@@ -4,7 +4,7 @@
  * can read would be a map nothing follows.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -85,6 +85,20 @@ interface WrittenArea {
   risk_score: number;
   rank_score: number;
 }
+
+it('the command names no agent that does not exist', () => {
+  const text = readFileSync(
+    join(REPO_ROOT, 'commands/canary-critical-areas.md'),
+    'utf-8',
+  );
+  const agents = [...text.matchAll(/`([\w-]+)` agent/g)].map((m) => m[1]!);
+  for (const name of agents) {
+    expect(
+      existsSync(join(REPO_ROOT, 'agents/agents/claude-code', `${name}.md`)),
+    ).toBe(true);
+  }
+  expect(text).toContain('`canary-critical-areas` skill');
+});
 
 describe('generated critical-areas output', () => {
   let root: string;
