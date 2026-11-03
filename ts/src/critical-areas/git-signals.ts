@@ -1,5 +1,5 @@
 /** Everything `canary critical-areas` asks git (#1529). All of it names HEAD. */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 import { CHURN_WINDOW_DAYS } from './scoring.js';
 
@@ -9,11 +9,13 @@ export interface GitFacts {
   head: string;
   tracked: string[];
   candidates: string[];
-  /** `null` in a shallow clone, where every file reads as one commit (D9). */
+  /** `null` is unmeasured, never "no commits"; the reason says why (D9). */
   churn: Map<string, number> | null;
+  churnAbsentReason: string | null;
 }
 
 type GitRead = GitFacts | { ok: false; reason: string };
+type ChurnRead = Pick<GitFacts, 'churn' | 'churnAbsentReason'>;
 
 const SOURCE = /\.(?:[cm]?[jt]sx?|py|php)$/;
 const EXCLUDED_DIR =
@@ -22,11 +24,31 @@ const EXCLUDED_FILE =
   /\.d\.[cm]?ts$|\.min\.js$|\.(?:test|spec)\.[^./]+$|(?:^|\/)test_[^/]+\.py$|_test\.py$|(?:^|\/)conftest\.py$|Test\.php$/;
 const MAX_BUFFER = 256 * 1024 * 1024;
 
+/**
+ * Git hooks export these, and each one outranks the working directory, so run
+ * from a hook this command would read the hook's repository. `--root` decides.
+ */
+const REPOSITORY_LOCAL_ENV = new Set([
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+]);
+
+const gitEnv = (): NodeJS.ProcessEnv =>
+  Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => !REPOSITORY_LOCAL_ENV.has(k)),
+  );
+
 function git(cwd: string, args: string[]): string | null {
   try {
     return execFileSync('git', args, {
       cwd,
       encoding: 'utf-8',
+      env: gitEnv(),
       maxBuffer: MAX_BUFFER,
       stdio: ['ignore', 'pipe', 'ignore'],
     });
@@ -35,37 +57,67 @@ function git(cwd: string, args: string[]): string | null {
   }
 }
 
+/**
+ * Asked with no working directory because a missing `cwd` also spawns ENOENT,
+ * which would blame git for a mistyped `--root`.
+ */
+const gitIsMissing = (): boolean => {
+  const { error } = spawnSync('git', ['--version'], {
+    env: gitEnv(),
+    stdio: 'ignore',
+  });
+  return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
+};
+
 const isCandidate = (path: string): boolean =>
   SOURCE.test(path) && !EXCLUDED_DIR.test(path) && !EXCLUDED_FILE.test(path);
 
 const nulList = (text: string | null): string[] =>
   (text ?? '').split('\0').filter((p) => p !== '');
 
-/** Commits per path in the window ending at HEAD's commit time (D8). */
-function readChurn(top: string): Map<string, number> {
-  const seconds = Number(git(top, ['show', '-s', '--format=%ct', 'HEAD']));
-  const since = seconds - CHURN_WINDOW_DAYS * 86_400;
-  const log = git(top, [
+function readLog(top: string): string | null {
+  const headTime = git(top, ['show', '-s', '--format=%ct', 'HEAD']);
+  if (headTime === null) return null;
+  const since = Number(headTime) - CHURN_WINDOW_DAYS * 86_400;
+  // `--since` stops the walk at the first older commit, so one backdated commit
+  // would hide everything behind it. The filter form walks the whole history.
+  return git(top, [
     'log',
-    `--since=${new Date(since * 1000).toISOString()}`,
+    `--since-as-filter=${new Date(since * 1000).toISOString()}`,
     '--format=',
     '--name-only',
     '--no-renames',
     '-z',
     'HEAD',
   ]);
+}
+
+/** Commits per path in the window ending at HEAD's commit time (D8). */
+function readChurn(top: string): ChurnRead {
+  const log = readLog(top);
+  if (log === null) {
+    return { churn: null, churnAbsentReason: 'git log failed' };
+  }
   const churn = new Map<string, number>();
   for (const path of nulList(log)) {
     const name = path.trim();
     if (name !== '') churn.set(name, (churn.get(name) ?? 0) + 1);
   }
-  return churn;
+  return { churn, churnAbsentReason: null };
 }
+
+const SHALLOW: ChurnRead = {
+  churn: null,
+  churnAbsentReason: 'shallow clone: every file reads as one commit',
+};
 
 export function readGitFacts(start: string): GitRead {
   const top = git(start, ['rev-parse', '--show-toplevel'])?.trim();
   if (top === undefined) {
-    return { ok: false, reason: `${start} is not in a git repository` };
+    const reason = gitIsMissing()
+      ? 'git was not found on PATH'
+      : `${start} is not in a git repository`;
+    return { ok: false, reason };
   }
   const head = git(top, [
     'rev-parse',
@@ -86,6 +138,6 @@ export function readGitFacts(start: string): GitRead {
     head,
     tracked,
     candidates: tracked.filter(isCandidate),
-    churn: shallow === 'true' ? null : readChurn(top),
+    ...(shallow === 'true' ? SHALLOW : readChurn(top)),
   };
 }

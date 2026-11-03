@@ -1,7 +1,7 @@
 /**
- * Unique-importer counts for `canary critical-areas` (#1529). The count is a
- * floor: an ambiguous suffix counts nothing, and a bare package never binds a
- * file that shares its name.
+ * Unique-importer counts for `canary critical-areas` (#1529). The count is
+ * approximate: an ambiguous suffix counts nothing, a bare package never binds a
+ * file that shares its name, and a mention in a string can count.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -95,6 +95,66 @@ describe('countImporters', () => {
       expect(c.get('y/a.ts')).toBe(0);
     });
 
+    it('keeps a dotted name whole in an alias', () => {
+      const c = counts({
+        'src/lib/inv.service.ts': '',
+        'src/lib/inv.ts': '',
+        'src/m.ts': "import '@/lib/inv.service';\n",
+      });
+      expect(c.get('src/lib/inv.service.ts')).toBe(1);
+      expect(c.get('src/lib/inv.ts')).toBe(0);
+    });
+
+    it('strips a known code extension from an alias', () => {
+      const c = counts({
+        'src/lib/a.ts': '',
+        'src/m.ts': "import '@/lib/a.ts';\n",
+      });
+      expect(c.get('src/lib/a.ts')).toBe(1);
+    });
+
+    it('does not read a stylesheet alias as the code beside it', () => {
+      const c = counts({
+        'src/lib/a.ts': '',
+        'src/m.ts': "import '@/lib/a.css';\n",
+      });
+      expect(c.get('src/lib/a.ts')).toBe(0);
+    });
+
+    it.each([
+      ['//', "// import './a.js';\n"],
+      ['indented //', "  // import './a.js';\n"],
+      ['/*', "/* import './a.js'; */\n"],
+      ['*', "/**\n * import('./a.js')\n */\n"],
+    ])('skips a whole-line %s comment', (_name, body) => {
+      const c = counts({ 'src/a.ts': '', 'src/m.ts': body });
+      expect(c.get('src/a.ts')).toBe(0);
+    });
+
+    it('still counts an import after a comment line', () => {
+      const c = counts({
+        'src/a.ts': '',
+        'src/m.ts': "// note\nimport './a.js';\n",
+      });
+      expect(c.get('src/a.ts')).toBe(1);
+    });
+
+    it('still counts a star import', () => {
+      const c = counts({
+        'src/a.ts': '',
+        'src/m.ts': "import * as a from './a.js';\n",
+      });
+      expect(c.get('src/a.ts')).toBe(1);
+    });
+
+    it('counts a mention in a string: the count is approximate', () => {
+      const c = counts({
+        'src/a.ts': '',
+        'src/m.ts': 'const s = "import \'./a.js\'";\n',
+      });
+      expect(c.get('src/a.ts')).toBe(1);
+    });
+
     it('does not bind a bare package to a file of the same name', () => {
       const c = counts({ 'src/react.ts': '', 'src/m.ts': "import 'react';\n" });
       expect(c.get('src/react.ts')).toBe(0);
@@ -139,7 +199,78 @@ describe('countImporters', () => {
     });
   });
 
+  describe('Python comments and the stdlib', () => {
+    it('skips a whole-line # comment', () => {
+      const c = counts({ 'src/a/b.py': '', 'src/m.py': '# import a.b\n' });
+      expect(c.get('src/a/b.py')).toBe(0);
+    });
+
+    it.each(['import os\n', 'from os import path\n', 'import os.path\n'])(
+      'does not bind %j to py/os.py',
+      (body) => {
+        const c = counts({ 'py/os.py': '', 'src/m.py': body });
+        expect(c.get('py/os.py')).toBe(0);
+      },
+    );
+
+    it('still binds a relative import of a stdlib-named file', () => {
+      const c = counts({ 'py/os.py': '', 'py/m.py': 'from .os import x\n' });
+      expect(c.get('py/os.py')).toBe(1);
+    });
+  });
+
+  describe('extra targets', () => {
+    const tree = (files: Record<string, string>): void => {
+      for (const [path, body] of Object.entries(files)) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), body, 'utf-8');
+      }
+    };
+
+    it('counts a candidate importing an extra', () => {
+      tree({
+        'tests/helper.ts': '',
+        'src/uses.ts': "import '../tests/helper.js';\n",
+      });
+      const c = countImporters(root, ['src/uses.ts'], ['tests/helper.ts']);
+      expect(c.get('tests/helper.ts')).toBe(1);
+    });
+
+    it('never treats an extra as an importer (D7)', () => {
+      tree({
+        'src/a.ts': '',
+        'tests/x.test.ts': "import '../src/a.js';\n",
+      });
+      const c = countImporters(root, ['src/a.ts'], ['tests/x.test.ts']);
+      expect(c.get('src/a.ts')).toBe(0);
+      expect(c.get('tests/x.test.ts')).toBe(0);
+    });
+
+    it('does not make a candidate suffix ambiguous', () => {
+      tree({
+        'src/util.py': '',
+        'tests/util.py': '',
+        'src/m.py': 'import util\n',
+      });
+      const c = countImporters(
+        root,
+        ['src/util.py', 'src/m.py'],
+        ['tests/util.py'],
+      );
+      expect(c.get('src/util.py')).toBe(1);
+      expect(c.get('tests/util.py')).toBe(0);
+    });
+  });
+
   describe('PHP', () => {
+    it.each(['#', '//', '*', '/*'])('skips a whole-line %s comment', (mark) => {
+      const c = counts({
+        'web/x.php': '',
+        'web/m.php': `<?php\n${mark} require 'x.php';\n`,
+      });
+      expect(c.get('web/x.php')).toBe(0);
+    });
+
     it('counts require_once of a path relative to the file', () => {
       const c = counts({
         'web/lib/x.php': '',

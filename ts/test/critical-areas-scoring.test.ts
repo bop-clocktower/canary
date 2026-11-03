@@ -166,6 +166,17 @@ describe('buildDocument area selection', () => {
     expect(doc(quiet, new Map([['a.ts', ['s']]])).areas).toEqual([]);
   });
 
+  it('gives an extra no slot in the top 25 (D5)', () => {
+    const files = Array.from({ length: 25 }, (_, i) =>
+      file(`f${String(i).padStart(2, '0')}.ts`, 25 - i, 0),
+    );
+    const extra = file('tests/x.test.ts', 100, 0);
+    const d = doc(files, new Map([['tests/x.test.ts', ['s']]]), [extra]);
+    expect(d.areas.length).toBe(26);
+    expect(area(d, 'f24.ts').risk_score).toBeGreaterThan(0);
+    expect(area(d, 'tests/x.test.ts').symbols).toEqual(['s']);
+  });
+
   it('lists a declared extra without moving another file`s score', () => {
     const files = [file('a.ts', 2, 0), file('b.ts', 1, 0)];
     const extra = file('tests/x.test.ts', 100, 0);

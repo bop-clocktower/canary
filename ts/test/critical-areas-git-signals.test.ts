@@ -4,7 +4,7 @@
  * window would read 0 for all of them.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -141,6 +141,36 @@ describe('readGitFacts', () => {
     expect(churn.get('src/b.ts')).toBe(1);
   });
 
+  it('keeps walking past a backdated commit in the window (D8)', () => {
+    git(root, ['init', '-q']);
+    commit(root, { 'src/early.ts': '1\n' }, '2020-05-01T00:00:00Z');
+    commit(root, { 'src/old.ts': '1\n' }, '2019-01-01T00:00:00Z');
+    commit(root, { 'src/mid.ts': '1\n' }, '2020-05-10T00:00:00Z');
+    commit(root, { 'src/late.ts': '1\n' }, '2020-06-01T00:00:00Z');
+    const churn = facts(root).churn!;
+    expect(churn.get('src/late.ts')).toBe(1);
+    expect(churn.get('src/mid.ts')).toBe(1);
+    expect(churn.get('src/early.ts')).toBe(1);
+    expect(churn.has('src/old.ts')).toBe(false);
+  });
+
+  it('reads a failed git log as unmeasured churn with a reason', () => {
+    git(root, ['init', '-q']);
+    commit(root, { 'src/a.ts': '1\n' });
+    const parent = git(root, ['rev-parse', 'HEAD']).trim();
+    commit(root, { 'src/a.ts': '2\n' });
+    rmSync(join(root, '.git', 'objects', parent.slice(0, 2), parent.slice(2)));
+    const f = facts(root);
+    expect(f.churn).toBeNull();
+    expect(f.churnAbsentReason).toMatch(/git log failed/);
+  });
+
+  it('gives no reason when churn was measured', () => {
+    git(root, ['init', '-q']);
+    commit(root, { 'src/a.ts': '1\n' });
+    expect(facts(root).churnAbsentReason).toBeNull();
+  });
+
   it('keeps a file name with a space whole', () => {
     git(root, ['init', '-q']);
     commit(root, { 'src/a b.ts': '1\n', 'src/c.ts': '1\n' });
@@ -166,6 +196,7 @@ describe('readGitFacts', () => {
     ]);
     const f = facts(clone);
     expect(f.churn).toBeNull();
+    expect(f.churnAbsentReason).toMatch(/shallow/);
     expect(f.candidates).toEqual(['src/a.ts']);
   });
 });

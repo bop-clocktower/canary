@@ -1,9 +1,12 @@
 /**
  * Unique-importer counts (#1529). Read, not resolved, as in katana's
- * imports.mjs: an ambiguous suffix counts nothing, so the count is a floor.
+ * imports.mjs, so the count is approximate: it can miss an aliased or ambiguous
+ * import, and it can count a mention in a string.
  */
 import { readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
+
+import { isPythonStdlibModule } from '../core/vacuity-scanner.js';
 
 type Lang = 'js' | 'py' | 'php';
 
@@ -28,6 +31,11 @@ const PY_STMT =
   /^[ \t]*(?:from[ \t]+(\.*[\w.]*)[ \t]+import|import[ \t]+([\w., \t]+))/gm;
 const PHP_PATH = /\b(?:require|include)(?:_once)?\s*\(?\s*['"]([^'"\n]+)['"]/g;
 const PHP_USE = /^[ \t]*use[ \t]+\\?([\w\\]+)/gm;
+const COMMENT_LINE: Record<Lang, RegExp> = {
+  js: /^\s*(?:\/\/|\/\*|\*)/,
+  py: /^\s*#/,
+  php: /^\s*(?:#|\/\/|\/\*|\*)/,
+};
 
 function langOf(path: string): Lang | null {
   if (path.endsWith('.py')) return 'py';
@@ -71,7 +79,8 @@ function jsCandidates(base: string): string[] {
 
 function resolveJs(spec: string, from: string, scope: Scope): string | null {
   if (JS_ALIAS.test(spec)) {
-    const key = spec.slice(2).replace(/\.[^./]+$/, '');
+    // Only a code extension: `.service` in `inv.service` is part of the name.
+    const key = spec.slice(2).replace(JS_FILE, '');
     return uniqueSuffix(scope, 'js', key);
   }
   if (!spec.startsWith('.')) return null;
@@ -82,7 +91,12 @@ function resolveJs(spec: string, from: string, scope: Scope): string | null {
 function resolvePy(module: string, from: string, scope: Scope): string | null {
   const dots = /^\.*/.exec(module)![0].length;
   const key = module.slice(dots).replaceAll('.', '/');
-  if (dots === 0) return uniqueSuffix(scope, 'py', key);
+  if (dots === 0) {
+    // `import os` names the standard library, even beside a `py/os.py`.
+    return isPythonStdlibModule(key.split('/')[0]!)
+      ? null
+      : uniqueSuffix(scope, 'py', key);
+  }
   const up = '../'.repeat(dots - 1);
   const base = posix.join(posix.dirname(from), up, key);
   return firstFile(scope, [`${base}.py`, `${base}/__init__.py`]);
@@ -126,18 +140,38 @@ function readSource(path: string): string | null {
   }
 }
 
-/** Unique non-self importers per file. Pass only non-test sources (D7). */
+const withoutCommentLines = (text: string, lang: Lang): string =>
+  text
+    .split('\n')
+    .filter((line) => !COMMENT_LINE[lang].test(line))
+    .join('\n');
+
+/**
+ * Unique non-self importers per file. Only `files` act as importers, so pass
+ * only non-test sources (D7). `extraTargets` can be imported but import nothing,
+ * and resolve in their own scope: naming one must not make a suffix ambiguous
+ * and so change a count in `files`.
+ */
 export function countImporters(
   root: string,
   files: string[],
+  extraTargets: string[] = [],
 ): Map<string, number> {
   const scope = buildScope(files);
-  const counts = new Map(files.map((f) => [f, 0]));
+  const widerScope = buildScope([...files, ...extraTargets]);
+  const extras = new Set(extraTargets);
+  const counts = new Map([...files, ...extraTargets].map((f) => [f, 0]));
   for (const from of files) {
     const lang = langOf(from);
     const text = readSource(join(root, from));
     if (lang === null || text === null) continue;
-    const targets = new Set(TARGETS[lang](text, from, scope));
+    const code = withoutCommentLines(text, lang);
+    const targets = new Set([
+      ...TARGETS[lang](code, from, scope),
+      ...TARGETS[lang](code, from, widerScope).filter(
+        (t) => t !== null && extras.has(t),
+      ),
+    ]);
     for (const target of targets) {
       if (target !== null && target !== from) {
         counts.set(target, counts.get(target)! + 1);

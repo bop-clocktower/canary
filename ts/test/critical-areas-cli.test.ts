@@ -5,10 +5,13 @@
  */
 import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -372,6 +375,258 @@ describe('canary critical-areas', () => {
     });
   });
 
+  describe('binding a report to a file', () => {
+    const unhit = (key: string): string => `SF:${key}\nDA:1,0\nend_of_record\n`;
+    const repo = (files: Record<string, string>): void => {
+      git(root, ['init', '-q']);
+      commit(root, files);
+    };
+    const report = (name: string, body: string): void => {
+      mkdirSync(dirname(join(root, name)), { recursive: true });
+      writeFileSync(join(root, name), body, 'utf-8');
+    };
+    const run = async (...extra: string[]): Promise<Doc> => {
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        root,
+        ...extra,
+      ]);
+      expect(res.code).toBe(0);
+      return readDoc(join(root, OUT));
+    };
+    const ROOT_FILES = {
+      'src/index.ts': 'export {};\n',
+      'index.ts': 'export {};\n',
+    };
+
+    it.each([
+      [
+        'an absolute key outside the repository',
+        '/ci/build/pkg-a/src/index.ts',
+      ],
+      ['a relative key in a directory that is gone', 'gone/src/index.ts'],
+    ])('%s binds nothing by suffix', async (_name, key) => {
+      repo(ROOT_FILES);
+      report('coverage/lcov.info', unhit(key));
+      const doc = await run();
+      expect(areaOf(doc, 'src/index.ts').coverage_pct).toBeNull();
+      expect(areaOf(doc, 'index.ts').coverage_pct).toBeNull();
+      expect(doc.signal_sources.coverage!.status).toBe('absent');
+    });
+
+    it('a bare key binds neither of two same-named files', async () => {
+      repo({ 'pkg-a/lib.ts': 'export {};\n', 'pkg-b/lib.ts': 'export {};\n' });
+      report('coverage/lcov.info', unhit('lib.ts'));
+      const doc = await run();
+      expect(areaOf(doc, 'pkg-a/lib.ts').coverage_pct).toBeNull();
+      expect(areaOf(doc, 'pkg-b/lib.ts').coverage_pct).toBeNull();
+    });
+
+    it('an absolute key under the top level binds that file only', async () => {
+      repo(ROOT_FILES);
+      report('coverage/lcov.info', unhit(`${realpathSync(root)}/src/index.ts`));
+      const doc = await run();
+      expect(areaOf(doc, 'src/index.ts').coverage_pct).toBe(0);
+      expect(areaOf(doc, 'index.ts').coverage_pct).toBeNull();
+      expect(doc.signal_sources.coverage!.files_matched).toBe(1);
+    });
+
+    it('a subpackage report still binds through its anchor', async () => {
+      repo({ 'pkg/src/a.ts': 'export {};\n', 'src/other.ts': 'export {};\n' });
+      report('pkg/coverage/lcov.info', unhit('src/a.ts'));
+      const doc = await run(
+        '--coverage',
+        join(root, 'pkg', 'coverage', 'lcov.info'),
+      );
+      expect(areaOf(doc, 'pkg/src/a.ts').coverage_pct).toBe(0);
+      expect(areaOf(doc, 'src/other.ts').coverage_pct).toBeNull();
+    });
+  });
+
+  describe('a report without a denominator', () => {
+    const json = (files: unknown): void => {
+      mkdirSync(join(root, 'coverage'));
+      writeFileSync(
+        join(root, 'coverage', 'coverage.json'),
+        JSON.stringify({ files }),
+        'utf-8',
+      );
+    };
+    const run = async (): Promise<Doc> => {
+      const res = await invokeCanary(['critical-areas', '--root', root]);
+      expect(res.code).toBe(0);
+      return readDoc(join(root, OUT));
+    };
+
+    it('reads covered_lines alone as unknown, not 100%', async () => {
+      ranked(root);
+      json({ 'src/a.ts': { covered_lines: [1] } });
+      const doc = await run();
+      expect(areaOf(doc, 'src/a.ts').coverage_pct).toBeNull();
+    });
+
+    it('still reads a declared denominator', async () => {
+      ranked(root);
+      json({ 'src/a.ts': { covered_lines: [1], instrumented_lines: [1, 2] } });
+      const doc = await run();
+      expect(areaOf(doc, 'src/a.ts').coverage_pct).toBe(50);
+      expect(doc.signal_sources.coverage!.status).toBe('measured');
+    });
+
+    it('does not call a coverage.py report measured', async () => {
+      ranked(root);
+      json({
+        'src/a.ts': {
+          executed_lines: [1],
+          missing_lines: [2],
+          summary: { percent_covered: 50 },
+        },
+      });
+      const source = (await run()).signal_sources.coverage!;
+      expect(source.status).toBe('absent');
+      expect(source.reason).toContain('coverage/coverage.json');
+      expect(source.reason).toMatch(/0 of 2/);
+    });
+
+    it('counts only files with a percentage in files_matched', async () => {
+      ranked(root);
+      json({
+        'src/a.ts': { covered_lines: [1], instrumented_lines: [1, 2] },
+        'src/b.ts': { covered_lines: [1] },
+      });
+      const source = (await run()).signal_sources.coverage!;
+      expect(source.files_matched).toBe(1);
+    });
+  });
+
+  describe('failing to write', () => {
+    const run = (out: string) =>
+      invokeCanary(['critical-areas', '--root', root, '--out', out]);
+    const expectOneLine = (stderr: string, out: string, code: RegExp): void => {
+      expect(stderr.trim().split('\n')).toHaveLength(1);
+      expect(stderr).toContain(out);
+      expect(stderr).toMatch(code);
+    };
+
+    it('exits 1 naming the path when --out is a directory, leaving no temp file', async () => {
+      ranked(root);
+      const out = join(root, 'adir');
+      mkdirSync(out);
+      const res = await run(out);
+      expect(res.code).toBe(1);
+      expectOneLine(res.stderr, out, /\bE[A-Z]+\b/);
+      expect(readdirSync(root).filter((n) => n.includes('tmp'))).toEqual([]);
+      expect(readdirSync(out)).toEqual([]);
+    });
+
+    it('exits 1 when a parent of --out is a file', async () => {
+      ranked(root);
+      writeFileSync(join(root, 'afile'), 'x', 'utf-8');
+      const out = join(root, 'afile', 'x.json');
+      const res = await run(out);
+      expect(res.code).toBe(1);
+      expectOneLine(res.stderr, out, /\b(?:ENOTDIR|EEXIST)\b/);
+    });
+
+    // Root ignores the mode bits, so there is nothing to prove there.
+    it.skipIf(process.getuid?.() === 0)(
+      'leaves an existing file intact in a read-only directory',
+      async () => {
+        ranked(root);
+        const dir = join(root, 'locked');
+        mkdirSync(dir);
+        const out = join(dir, 'x.json');
+        writeFileSync(out, 'planted', 'utf-8');
+        chmodSync(dir, 0o555);
+        try {
+          const res = await run(out);
+          expect(res.code).toBe(1);
+          expectOneLine(res.stderr, out, /\bEACCES\b/);
+          expect(readFileSync(out, 'utf-8')).toBe('planted');
+          expect(readdirSync(dir)).toEqual(['x.json']);
+        } finally {
+          chmodSync(dir, 0o755);
+        }
+      },
+    );
+
+    it('leaves nothing beside the file on success', async () => {
+      ranked(root);
+      const dir = join(root, 'ok');
+      const res = await run(join(dir, 'x.json'));
+      expect(res.code).toBe(0);
+      expect(readdirSync(dir)).toEqual(['x.json']);
+    });
+  });
+
+  describe('git', () => {
+    it('lets --root decide the repository, not the hook environment', async () => {
+      const decoy = join(root, 'decoy');
+      const real = join(root, 'real');
+      mkdirSync(decoy);
+      mkdirSync(real);
+      git(decoy, ['init', '-q']);
+      commit(decoy, { 'decoy.ts': 'export {};\n' });
+      ranked(real);
+      const dotGit = join(decoy, '.git');
+      const res = await invokeCanary(
+        ['critical-areas', '--root', join(real, 'src')],
+        {
+          env: {
+            GIT_DIR: dotGit,
+            GIT_WORK_TREE: decoy,
+            GIT_INDEX_FILE: join(dotGit, 'index'),
+            GIT_OBJECT_DIRECTORY: join(dotGit, 'objects'),
+            GIT_ALTERNATE_OBJECT_DIRECTORIES: join(dotGit, 'objects'),
+            GIT_COMMON_DIR: dotGit,
+            GIT_PREFIX: 'decoy/',
+          },
+        },
+      );
+      expect(res.code).toBe(0);
+      const doc = readDoc(join(realpathSync(real), OUT));
+      expect(areaOf(doc, 'src/b.ts').importers).toBe(1);
+      expect(existsSync(join(real, 'src', '.canary'))).toBe(false);
+    });
+
+    it('says git was not found when it cannot be spawned', async () => {
+      ranked(root);
+      const res = await invokeCanary(['critical-areas', '--root', root], {
+        env: { PATH: join(root, 'no-such-bin') },
+      });
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(res.stdout).toContain('git was not found');
+      expect(res.stdout).not.toContain('not in a git repository');
+    });
+
+    it('still blames the directory when only the directory is wrong', async () => {
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        join(root, 'no-such-dir'),
+      ]);
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(res.stdout).toContain('not in a git repository');
+    });
+
+    it('records a failed git log as unmeasured churn, never 0', async () => {
+      ranked(root);
+      const parent = git(root, ['rev-parse', 'HEAD~1']).trim();
+      rmSync(
+        join(root, '.git', 'objects', parent.slice(0, 2), parent.slice(2)),
+      );
+      const res = await invokeCanary(['critical-areas', '--root', root]);
+      expect(res.code).toBe(0);
+      const doc = readDoc(join(root, OUT));
+      const b = areaOf(doc, 'src/b.ts');
+      expect(b.churn_commits).toBeNull();
+      expect(b.risk_score).toBe(1);
+      expect(doc.signal_sources.churn!.status).toBe('absent');
+      expect(doc.signal_sources.churn!.reason).toMatch(/git log failed/);
+    });
+  });
+
   describe('declared symbols (D13)', () => {
     /** Plant an existing map holding `areas`, as a person or the skill would. */
     const plant = (areas: unknown[], at = join(root, OUT)): void => {
@@ -417,10 +672,10 @@ describe('canary critical-areas', () => {
 
     it('drops a path gone from HEAD and says so', async () => {
       ranked(root);
-      plant([{ path: 'gone/old.ts', symbols: ['s'] }]);
+      plant([{ path: 'gone/old.ts', symbols: ['charge'] }]);
       const res = await run();
       expect(res.code).toBe(0);
-      expect(res.stdout).toMatch(/Dropped symbols.*gone\/old\.ts/);
+      expect(res.stdout).toMatch(/not a tracked file.*gone\/old\.ts/);
       const doc = readDoc(join(root, OUT));
       expect(doc.areas.map((a) => a.path)).not.toContain('gone/old.ts');
     });
@@ -428,11 +683,71 @@ describe('canary critical-areas', () => {
     it('lists a tracked non-candidate without counting it as analyzed', async () => {
       ranked(root);
       commit(root, { 'tests/x.test.ts': "import '../src/a.js';\n" });
-      plant([{ path: 'tests/x.test.ts', symbols: ['s'] }]);
+      plant([{ path: 'tests/x.test.ts', symbols: ['spec'] }]);
       expect((await run()).code).toBe(0);
       const doc = readDoc(join(root, OUT));
-      expect(areaOf(doc, 'tests/x.test.ts').symbols).toEqual(['s']);
+      expect(areaOf(doc, 'tests/x.test.ts').symbols).toEqual(['spec']);
       expect(doc.files_analyzed).toBe(2);
+    });
+
+    it('counts an importer of a kept extra, but no test as an importer', async () => {
+      git(root, ['init', '-q']);
+      commit(root, {
+        'src/uses.ts': "import '../tests/helper.js';\n",
+        'src/other.ts': 'export {};\n',
+        'tests/helper.ts': 'export {};\n',
+        'tests/x.test.ts': "import '../src/other.js';\n",
+      });
+      plant([
+        { path: 'tests/helper.ts', symbols: ['help'] },
+        { path: 'tests/x.test.ts', symbols: ['spec'] },
+      ]);
+      expect((await run()).code).toBe(0);
+      const doc = readDoc(join(root, OUT));
+      expect(areaOf(doc, 'tests/helper.ts').importers).toBe(1);
+      expect(areaOf(doc, 'tests/x.test.ts').importers).toBe(0);
+      expect(areaOf(doc, 'src/other.ts').importers).toBe(0);
+    });
+
+    it('says a directory path is not a tracked file, not that it left HEAD', async () => {
+      ranked(root);
+      plant([{ path: 'src', symbols: ['charge'] }]);
+      const res = await run();
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain(
+        'Dropped symbols for paths that are not a tracked file in HEAD: src.',
+      );
+      expect(res.stdout).not.toContain('no longer in HEAD');
+    });
+
+    it.each([
+      ['too short', ['ab']],
+      ['blank', ['  ']],
+      ['short once normalized', ['a-b']],
+      ['one bad among good', ['chargeCard', 'ab']],
+    ])('does not carry a list katana rejects: %s', async (_name, symbols) => {
+      ranked(root);
+      plant([{ path: 'src/a.ts', symbols }]);
+      const res = await run();
+      expect(res.code).toBe(0);
+      expect('symbols' in areaOf(readDoc(join(root, OUT)), 'src/a.ts')).toBe(
+        false,
+      );
+      const lines = res.stdout
+        .split('\n')
+        .filter((l) => l.includes('src/a.ts'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(/under 3 letters or digits/);
+    });
+
+    it('keeps a three-character symbol, the shortest katana accepts', async () => {
+      ranked(root);
+      plant([{ path: 'src/a.ts', symbols: ['a-bc'] }]);
+      const res = await run();
+      expect(areaOf(readDoc(join(root, OUT)), 'src/a.ts').symbols).toEqual([
+        'a-bc',
+      ]);
+      expect(res.stdout).not.toContain('under 3 letters');
     });
 
     it('overwrites a malformed existing file (D17)', async () => {
@@ -476,9 +791,10 @@ describe('canary critical-areas', () => {
 
     it('stays deterministic with symbols (criterion 10)', async () => {
       ranked(root);
-      plant([{ path: 'src/a.ts', symbols: ['s'] }]);
+      plant([{ path: 'src/a.ts', symbols: ['charge'] }]);
       await run();
       const first = readDoc(join(root, OUT));
+      expect(areaOf(first, 'src/a.ts').symbols).toEqual(['charge']);
       await run();
       const second = readDoc(join(root, OUT));
       expect({ ...first, generated: '' }).toEqual({

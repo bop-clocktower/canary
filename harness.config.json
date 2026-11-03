@@ -80,7 +80,7 @@
     {
       "name": "critical-areas",
       "pattern": "ts/src/critical-areas/**",
-      "allowedDependencies": []
+      "allowedDependencies": ["core"]
     },
     {
       "name": "guardian",
@@ -329,6 +329,7 @@
       "ts/src/analysis/order/vitest-sequencer.ts",
       "ts/src/order/order-cli.ts",
       "ts/src/critical-areas/critical-areas-cli.ts",
+      "ts/src/critical-areas/declared-symbols.ts",
       "ts/src/critical-areas/git-signals.ts",
       "ts/src/critical-areas/importers.ts",
       "ts/src/critical-areas/scoring.ts",
@@ -493,6 +494,7 @@
       "ts/src/analysis/order/vitest-sequencer.ts",
       "ts/src/order/order-cli.ts",
       "ts/src/critical-areas/critical-areas-cli.ts",
+      "ts/src/critical-areas/declared-symbols.ts",
       "ts/src/critical-areas/git-signals.ts",
       "ts/src/critical-areas/importers.ts",
       "ts/src/critical-areas/scoring.ts",

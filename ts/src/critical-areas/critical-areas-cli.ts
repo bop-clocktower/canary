@@ -4,6 +4,7 @@
  *
  * Exit codes follow the CLI-wide gate contract:
  *   - 0: the file was written.
+ *   - 1: the file could not be written. Any existing file is left intact.
  *   - 2: an explicit --coverage report is missing or unparseable.
  *   - 3 (EXIT_ABSTAINED): nothing to rank, so NOTHING is written. An empty map
  *     would also overwrite a good one.
@@ -11,11 +12,12 @@
 import {
   existsSync,
   mkdirSync,
-  readFileSync,
   realpathSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Command } from 'commander';
 
 import { CliExitError, jsonIndent2 } from '../cli-common.js';
@@ -24,13 +26,12 @@ import {
   anchorIndex,
   readReportIndex,
 } from '../guardian/diff-coverage/report-tier.js';
-import {
-  matchFile,
-  recordedLines,
-  type FileCoverage,
-  type ReportIndex,
+import type {
+  FileCoverage,
+  ReportIndex,
 } from '../guardian/diff-coverage/types.js';
 import type { MainDeps } from '../main-deps.js';
+import { keepSymbols } from './declared-symbols.js';
 import { readGitFacts, type GitFacts } from './git-signals.js';
 import { countImporters } from './importers.js';
 import {
@@ -70,10 +71,14 @@ const absentCoverage = (reason: string): CoverageRead => ({
   source: { status: 'absent', reason },
 });
 
-/** Hit lines over measured lines; a file with none measured is unknown. */
+/**
+ * Hit lines over measured lines; a file with none measured is unknown. With no
+ * declared set, recorded lines are not a denominator: a coverage-json carrying
+ * only covered_lines would read 100%.
+ */
 function linePct(file: FileCoverage): number | null {
-  const measured = file.coverable ?? recordedLines(file.hits);
-  if (measured.size === 0) return null;
+  const measured = file.coverable;
+  if (measured === null || measured.size === 0) return null;
   const hit = [...measured].filter((l) => (file.hits[l] ?? 0) > 0).length;
   return Math.round((1000 * hit) / measured.size) / 10;
 }
@@ -108,17 +113,35 @@ function discoverReport(top: string): CoverageRead | ParsedReport {
     : { path, index };
 }
 
+/**
+ * Report entries by repo-relative path, for exact lookup only. A suffix match
+ * would give a file a same-named stranger's coverage. An absolute key outside
+ * the top level becomes a `../` path, which no tracked file has.
+ */
+function byRepoPath(index: ReportIndex, top: string) {
+  const files = new Map<string, FileCoverage>();
+  for (const [key, file] of Object.entries(index)) {
+    const path = isAbsolute(key)
+      ? relative(top, key).split(sep).join('/')
+      : key;
+    files.set(path, file);
+  }
+  return files;
+}
+
 function coverageFrom(report: ParsedReport, facts: GitFacts): CoverageRead {
   const anchored = anchorIndex(report.index, report.path, facts.top);
+  const files = byRepoPath(anchored, facts.top);
   const name = relative(facts.top, report.path);
-  const pcts = new Map<string, number | null>();
+  const pcts = new Map<string, number>();
   for (const path of facts.candidates) {
-    const file = matchFile(path, anchored);
-    if (file !== null) pcts.set(path, linePct(file));
+    const file = files.get(path);
+    const pct = file === undefined ? null : linePct(file);
+    if (pct !== null) pcts.set(path, pct);
   }
   if (pcts.size === 0) {
     return absentCoverage(
-      `${name} matched 0 of ${facts.candidates.length} source file(s)`,
+      `${name} measured 0 of ${facts.candidates.length} source file(s)`,
     );
   }
   return {
@@ -141,13 +164,13 @@ function abstain(deps: MainDeps, why: string): never {
 }
 
 function churnSource(facts: GitFacts): SignalSource {
-  return facts.churn === null
-    ? {
+  return facts.churnAbsentReason === null
+    ? { status: 'measured', window_days: CHURN_WINDOW_DAYS }
+    : {
         status: 'absent',
-        reason: 'shallow clone: every file reads as one commit',
+        reason: facts.churnAbsentReason,
         window_days: CHURN_WINDOW_DAYS,
-      }
-    : { status: 'measured', window_days: CHURN_WINDOW_DAYS };
+      };
 }
 
 function signalsFor(
@@ -164,39 +187,42 @@ function signalsFor(
   }));
 }
 
-/** The existing file's rows, or none when it is absent or malformed (D17). */
-function existingRows(out: string): { path?: unknown; symbols?: unknown }[] {
+const reportDropped = (deps: MainDeps, why: string, paths: string[]): void => {
+  if (paths.length > 0) {
+    deps.out(`Dropped symbols for ${why}: ${paths.join(', ')}.`);
+  }
+};
+
+const removeQuietly = (path: string): void => {
   try {
-    const data = JSON.parse(readFileSync(out, 'utf-8')) as { areas?: unknown };
-    return Array.isArray(data?.areas) ? data.areas : [];
+    rmSync(path, { force: true });
   } catch {
-    return [];
+    // The temp file was never created: its parent is what failed.
+  }
+};
+
+/** Beside the target, so a failed write can never leave it half-written. */
+function writeAtomically(out: string, text: string, deps: MainDeps): void {
+  const temp = `${out}.${process.pid}.tmp`;
+  try {
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(temp, text, 'utf-8');
+    renameSync(temp, out);
+  } catch (err) {
+    removeQuietly(temp);
+    deps.err(`Could not write ${out}: ${(err as NodeJS.ErrnoException).code}.`);
+    throw new CliExitError(1);
   }
 }
 
-const isSymbolList = (value: unknown): value is string[] =>
-  Array.isArray(value) &&
-  value.length > 0 &&
-  value.every((s) => typeof s === 'string' && s !== '');
-
-function readDeclaredSymbols(out: string): Map<string, string[]> {
-  const declared = new Map<string, string[]>();
-  for (const row of existingRows(out)) {
-    if (isSymbolList(row?.symbols) && typeof row.path === 'string') {
-      declared.set(row.path, row.symbols);
-    }
-  }
-  return declared;
-}
-
-/** A person chose these (D13); only a path gone from HEAD loses them. */
-function keepSymbols(out: string, facts: GitFacts) {
-  const tracked = new Set(facts.tracked);
-  const declared = [...readDeclaredSymbols(out)];
-  return {
-    kept: new Map(declared.filter(([path]) => tracked.has(path))),
-    dropped: declared.map(([path]) => path).filter((p) => !tracked.has(p)),
-  };
+function resolveOut(
+  opts: CriticalAreasOpts,
+  top: string,
+  deps: MainDeps,
+): string {
+  return opts.out === undefined
+    ? join(top, '.canary', 'critical-areas.json')
+    : resolve(deps.cwd(), opts.out);
 }
 
 function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
@@ -206,14 +232,11 @@ function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
   if (facts.candidates.length === 0) {
     abstain(deps, `0 source files in HEAD of ${facts.top}`);
   }
-  const out =
-    opts.out === undefined
-      ? join(facts.top, '.canary', 'critical-areas.json')
-      : resolve(deps.cwd(), opts.out);
-  const { kept, dropped } = keepSymbols(out, facts);
+  const out = resolveOut(opts, facts.top, deps);
+  const { kept, dropped, rejected } = keepSymbols(out, facts.tracked);
   const candidates = new Set(facts.candidates);
   const extraPaths = [...kept.keys()].filter((p) => !candidates.has(p));
-  const importers = countImporters(facts.top, facts.candidates);
+  const importers = countImporters(facts.top, facts.candidates, extraPaths);
   const coverage = loadCoverage(explicit, facts);
   const doc = buildDocument({
     generated: new Date().toISOString(),
@@ -230,16 +253,16 @@ function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
   if (doc.areas.length === 0) {
     abstain(deps, `every score is 0 across ${facts.candidates.length} file(s)`);
   }
-  mkdirSync(dirname(out), { recursive: true });
-  writeFileSync(out, jsonIndent2(doc) + '\n', 'utf-8');
+  writeAtomically(out, jsonIndent2(doc) + '\n', deps);
   deps.out(
     `Wrote ${out}: ${doc.areas.length} area(s) from ${doc.files_analyzed} file(s).`,
   );
-  if (dropped.length > 0) {
-    deps.out(
-      `Dropped symbols for paths no longer in HEAD: ${dropped.join(', ')}.`,
-    );
-  }
+  reportDropped(deps, 'paths that are not a tracked file in HEAD', dropped);
+  reportDropped(
+    deps,
+    'paths whose list katana rejects (empty, not strings, or a name under 3 letters or digits)',
+    rejected,
+  );
 }
 
 export function buildCriticalAreasCommand(deps: MainDeps): Command {

@@ -117,20 +117,18 @@ type Area = ReturnType<typeof areaOf>;
 const byRank = (a: Area, b: Area): number =>
   b.risk_score - a.risk_score || (a.path < b.path ? -1 : 1);
 
-/** The top scored areas, plus any path a person gave symbols to (D5, D13). */
+/**
+ * The top scored candidates, plus any path a person gave symbols to (D5, D13).
+ * An extra is listed for its symbols alone, so it never takes a top slot.
+ */
 export function buildDocument(input: DocumentInput) {
   const { files, extras, symbols } = input;
   const max = maximaOf(files);
-  const ranked = [...files, ...extras]
-    .map((f) => areaOf(f, max, symbols.get(f.path)))
-    .sort(byRank);
-  const top = new Set(
-    ranked
-      .filter((a) => a.risk_score > 0)
-      .slice(0, MAX_AREAS)
-      .map((a) => a.path),
-  );
-  const scored = ranked.some((a) => a.risk_score > 0);
+  const toArea = (f: FileSignals) => areaOf(f, max, symbols.get(f.path));
+  const candidates = files.map(toArea).sort(byRank);
+  const scored = candidates.filter((a) => a.risk_score > 0);
+  const top = new Set(scored.slice(0, MAX_AREAS).map((a) => a.path));
+  const ranked = [...candidates, ...extras.map(toArea)].sort(byRank);
   return {
     generated: input.generated,
     base: input.base,
@@ -138,8 +136,9 @@ export function buildDocument(input: DocumentInput) {
     files_analyzed: files.length,
     signal_sources: input.sources,
     // No score means nothing to rank, so symbols alone do not make a map.
-    areas: scored
-      ? ranked.filter((a) => top.has(a.path) || a.symbols !== undefined)
-      : [],
+    areas:
+      scored.length > 0
+        ? ranked.filter((a) => top.has(a.path) || a.symbols !== undefined)
+        : [],
   };
 }

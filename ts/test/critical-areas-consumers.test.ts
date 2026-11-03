@@ -143,7 +143,7 @@ describe('generated critical-areas output', () => {
     );
     return JSON.parse(res.stdout) as {
       degraded_notice?: string;
-      areas: { total: number };
+      areas: { total: number; not_assessed: { reason: string }[] };
       findings: { kind: string; area: string }[];
     };
   }
@@ -165,6 +165,33 @@ describe('generated critical-areas output', () => {
     expect(run.degraded_notice).toBeDefined();
     expect(run.findings).toEqual([]);
   });
+
+  it.each([
+    ['too short', ['ab']],
+    ['blank', ['  ']],
+  ])(
+    'stays valid for katana after an existing %s symbol',
+    async (_name, symbols) => {
+      writeFileSync(
+        out,
+        JSON.stringify({ areas: [{ path: 'src/points.py', symbols }] }),
+        'utf-8',
+      );
+      const res = await invokeCanary(['critical-areas', '--root', root]);
+      expect(res.code).toBe(0);
+      const run = katana(out);
+      expect(run.degraded_notice).toBeUndefined();
+      expect(run.areas.not_assessed.map((n) => n.reason)).not.toContain(
+        'invalid-area',
+      );
+      expect(run.findings).toContainEqual(
+        expect.objectContaining({
+          kind: 'last-coverage-removed',
+          area: 'src/points.py',
+        }),
+      );
+    },
+  );
 
   it('reads through parseCriticalAreas (criterion 6)', () => {
     const rows = written();
