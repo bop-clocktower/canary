@@ -17,6 +17,7 @@
     "Totals are summed per lockfile, as the issue asks, so one advisory in two lockfiles counts twice.",
     "The per-snapshot Supply column is removed: it only ever printed harness's unpopulated field, and no audit history exists to fill it.",
     "The audit step runs on PRs as well as main, so a broken step shows up before merge. Only main's result is uploaded.",
+    ".harness/.gitignore gains an exception for the sidecar: it ignores security/* except named files, so the ledger job's git add would otherwise refuse it. Only reading the diff against the real repo found this; a test now pins it, in case a harness rescaffold drops the line.",
     "docs/SECURITY_LEDGER.md is regenerated in this PR because the freshness guard requires it. No sidecar is committed here, so the line reads 'not measured' until the first scan on main lands through chore/security-ledger."
   ]
 }
