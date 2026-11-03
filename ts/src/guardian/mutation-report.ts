@@ -1,6 +1,5 @@
 /**
- * Mapping, suppression and rendering for the diff-scoped mutation report
- * (#486).
+ * Mapping, suppression and rendering for the mutation report (#486).
  *
  * Split from `mutation.ts` only to keep both inside the 300-line perf budget.
  *
