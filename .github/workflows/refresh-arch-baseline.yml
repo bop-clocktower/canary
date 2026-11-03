@@ -22,8 +22,17 @@ concurrency:
 env:
   HARNESS_CLI: '@harness-engineering/cli@13'
 
+# #1463 (CWE-250): read-only by default. `measure` runs a floating
+# `@harness-engineering/cli` and a script from the PR's own head, so neither may
+# run beside a write token. Each write lives in its own job, with the one scope
+# it uses, and those jobs run no registry code and no PR-head code.
+# `ts/test/workflow-hygiene.test.ts` holds the shape, and
+# `ts/test/refresh-baseline-push-job.test.ts` runs the write jobs' scripts.
+permissions:
+  contents: read
+
 jobs:
-  refresh:
+  measure:
     # Only for our opt-in label, and only for same-repo PRs — fork PRs get a
     # read-only token and their head branch lives on the fork, so we cannot
     # push a refreshed baseline back to them.
@@ -31,14 +40,14 @@ jobs:
       github.event.label.name == 'refresh-baseline' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
+      # The commit, not the branch: `push` checks out this same SHA, so its
+      # no-change guard compares against the tree that was measured.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -85,9 +94,98 @@ jobs:
           path: arch-report.json
           if-no-files-found: warn
 
+      # #1463: hand the refreshed files to `push`, and only after the refresh
+      # step succeeded. Exit 1 and exit 3 stop here, red on the step above with
+      # the script's own message, and `push` never runs.
+      #
+      # `.harness/` is a dot-path, which upload-artifact skips unless told
+      # otherwise, and the artifact would then be empty.
+      #
+      # #1490: the artifact is rooted at the paths' least common ancestor, here
+      # `.harness/`, so `push` reads `arch/baselines.json` and `audit.log`. Both
+      # are tracked. The CLI may append to audit.log, so it travels with the
+      # baseline and `push` decides from the diff whether it changed. A PR that
+      # deleted audit.log changes the layout, and `push` refuses that as a
+      # missing entry rather than guess. `ts/test/workflow-hygiene.test.ts`
+      # pins the pairing.
+      - name: Upload the refreshed baseline
+        uses: actions/upload-artifact@v7
+        with:
+          name: refreshed-arch-baseline
+          path: |
+            .harness/arch/baselines.json
+            .harness/audit.log
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # #1463: the only job that holds `contents: write`, and it runs no registry
+  # code and no PR-head code: checkout, download, copy, git. Nothing else in the
+  # checkout is executed, because `git commit` and `git push` read hooks from
+  # `.git/hooks`, which a checkout does not populate.
+  #
+  # It checks out the commit `measure` read, so `git status` below tells
+  # "changed" from "unchanged" with no output passed between the jobs. The full
+  # history matches what this workflow has always pushed from.
+  #
+  # The artifact was written by a job that ran registry code, and the checkout is
+  # the PR's own tree, so neither is trusted. The artifact is extracted under
+  # runner.temp, and only the two named files are copied across.
+  push:
+    needs: measure
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: refreshed-arch-baseline
+          path: ${{ runner.temp }}/refreshed-arch-baseline
+
+      - name: Restore the refreshed files
+        env:
+          SRC: ${{ runner.temp }}/refreshed-arch-baseline
+        # `cp` follows a symlink on both ends. One planted in the artifact could
+        # copy the persisted token into a file this job pushes, and one planted
+        # in the PR's tree at a destination could overwrite `.git/config`.
+        run: |
+          if [ -n "$(find "$SRC" -mindepth 1 ! -type d \
+                ! -path "$SRC/arch/baselines.json" ! -path "$SRC/audit.log")" ]; then
+            echo "::error::the artifact holds an unexpected entry; expected only arch/baselines.json and audit.log" >&2
+            exit 1
+          fi
+          for parent in .harness .harness/arch; do
+            if [ -L "$parent" ]; then
+              echo "::error::$parent is a symlink in the PR's tree" >&2
+              exit 1
+            fi
+          done
+          for entry in arch/baselines.json audit.log; do
+            dest=".harness/$entry"
+            if [ ! -f "$SRC/$entry" ] || [ -L "$SRC/$entry" ]; then
+              echo "::error::artifact entry $entry is missing or not a regular file" >&2
+              exit 1
+            fi
+            if [ -L "$dest" ]; then
+              echo "::error::$dest is a symlink in the PR's tree" >&2
+              exit 1
+            fi
+            if [ -e "$dest" ] && [ ! -f "$dest" ]; then
+              echo "::error::$dest is not a regular file in the PR's tree" >&2
+              exit 1
+            fi
+            cp -- "$SRC/$entry" "$dest"
+          done
+
       - name: Commit & push the refreshed baseline
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # No change is a FAILURE, not a success (#634). The label was applied
           # because a refresh was wanted, so a run that changed nothing has not
@@ -110,16 +208,34 @@ jobs:
           # new rather than modified still counts.
           if [ -z "$(git status --porcelain -- .harness/arch/baselines.json)" ]; then
             echo "::error::baselines.json is unchanged, so no refresh happened." \
-              "The refresh step exits 1 when no metric regressed and no floor is" \
-              "stale (the label was not needed) and 3 when it could not read the report or refused to" \
-              "write — read the step above for which. The refresh-baseline label" \
-              "is left in place."
+              "The refresh step in the measure job exits 0 only after writing the" \
+              "file, so it wrote back what this commit already holds. Read that" \
+              "step's output. The refresh-baseline label is left in place."
             exit 1
           fi
-          # Race guard: the PR branch can be deleted or merged mid-run.
-          if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+          # Race guard: the PR branch can be deleted, merged or pushed to
+          # mid-run. Deleted is the one benign case. Exit 2 is ls-remote's "no
+          # such ref"; any other failure means the remote could not be read,
+          # which is not evidence the branch is gone.
+          rc=0
+          remote="$(git ls-remote --exit-code origin "refs/heads/$BRANCH")" || rc=$?
+          if [ "$rc" -eq 2 ]; then
             echo "::warning::PR branch '$BRANCH' no longer exists on origin; skipping push."
             exit 0
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::could not read '$BRANCH' from origin (git ls-remote exited $rc)."
+            exit "$rc"
+          fi
+          # A baseline measured on an older commit is stale, however cleanly it
+          # would apply. Equality, not a fast-forward check: a rewound branch
+          # would accept this commit and get its dropped commits back. The plain
+          # push below is still rejected if the branch moves after this line.
+          if [ "${remote%%[[:space:]]*}" != "$HEAD_SHA" ]; then
+            echo "::error::'$BRANCH' moved after $HEAD_SHA was measured, so this" \
+              "baseline is stale and was not pushed. Remove and re-apply the" \
+              "refresh-baseline label to measure the new head."
+            exit 1
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -127,29 +243,42 @@ jobs:
           # touched it. Staging a narrower set than detection covers is the same
           # lie one step later: a green run and an empty commit.
           git add .harness/arch/baselines.json
-          git add .harness/audit.log 2>/dev/null || true
+          git add .harness/audit.log
           git commit -m "chore(ci): refresh arch baseline via refresh-baseline label"
-          git push origin "HEAD:$BRANCH"
+          git push origin "HEAD:refs/heads/$BRANCH"
           {
             echo "### Arch baseline refreshed"
             echo
             echo "Pushed a baseline commit to \`$BRANCH\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Consume the label so a later regression needs a fresh, deliberate
-      # opt-in rather than silently re-refreshing on the next labeled event.
-      #
-      # `success()`, not `always()` (#634): an opt-in is spent only by a run
-      # that actually refreshed and pushed. On a failed or cancelled run the
-      # label stays on the PR as visible evidence that the request is still
-      # outstanding, and the operator sees a red job plus an unconsumed label
-      # rather than a green job and a silently-spent opt-in. Re-running the
-      # failed job retries it; the label need not be re-applied.
+  # Consume the label so a later regression needs a fresh, deliberate
+  # opt-in rather than silently re-refreshing on the next labeled event.
+  #
+  # `success()`, not `always()` (#634): an opt-in is spent only by a run
+  # that actually refreshed and pushed. On a failed or cancelled run the
+  # label stays on the PR as visible evidence that the request is still
+  # outstanding, and the operator sees a red job plus an unconsumed label
+  # rather than a green job and a silently-spent opt-in. Re-running the
+  # failed job retries it, unless the branch has moved: a re-run replays the
+  # original event and its SHA, so that case needs the label re-applied.
+  #
+  # #1463: its own job because it needs a scope `push` does not, and it needs
+  # no checkout at all. A failed removal is a warning: the baseline is already
+  # pushed, so red would misreport the run, but the label is still on the PR.
+  consume-label:
+    needs: push
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
       - name: Remove the refresh-baseline label
-        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr edit "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --remove-label refresh-baseline || true
+          gh pr edit "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --remove-label refresh-baseline \
+            || echo "::warning::could not remove the refresh-baseline label from #$PR_NUMBER; remove it by hand."

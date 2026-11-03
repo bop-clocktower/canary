@@ -32,6 +32,13 @@ under the project's former name) are documented in the
 
 ### Security
 
+- **`refresh-arch-baseline.yml` no longer runs registry or PR-head code under a
+  write token (#1463, CWE-250).** The one `refresh` job is now three. `measure`
+  runs the CLI and the refresh script read-only, with no token left in the
+  checkout. `push` holds only `contents: write`, copies the two expected regular
+  files from an artifact, and refuses a stale commit. `consume-label` holds only
+  `pull-requests: write`. A read failure on the branch check now fails the run
+  instead of reading as "branch deleted".
 - **`ip-address` bumped to 10.7.4 (GHSA-rxp7-6hxx-x8q5).** The transitive
   dependency (via `@modelcontextprotocol/sdk` → `express-rate-limit`) matched an
   `Address6` zone identifier in quadratic time before its length limit, so a
