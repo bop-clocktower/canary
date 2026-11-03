@@ -23,7 +23,7 @@ export function loadTrial(run, pr, repo) {
       'view',
       String(pr),
       '--json',
-      'body,headRefName,headRefOid,url,state',
+      'body,headRefName,headRefOid,url,state,isCrossRepository',
     ],
     { cwd: repo },
   );
@@ -32,6 +32,13 @@ export function loadTrial(run, pr, repo) {
       `gh pr view ${pr} failed (exit ${r.status}): ${(r.stderr || '').trim()}`,
     );
   const doc = JSON.parse(r.stdout);
+  // `trial` always opens its branch in this repository, and `settle` fetches
+  // and pushes that branch name on origin. Anything but a definite "same
+  // repository" (an unreported field included) is not a trial to act on.
+  if (doc.isCrossRepository !== false)
+    throw new Error(
+      `PR ${pr} head "${doc.headRefName}" is not a branch of this repository; refusing to read its verdict`,
+    );
   const manifest = readManifest(doc.body);
   if (!manifest)
     throw new Error(

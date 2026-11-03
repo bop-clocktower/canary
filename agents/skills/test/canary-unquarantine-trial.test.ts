@@ -114,7 +114,12 @@ function makeSuite() {
  */
 function harness(opts: { results?: object; runStatus?: string } = {}) {
   const calls: { cmd: string; args: string[]; input?: string }[] = [];
-  const state: { body?: string; branch?: string; origin?: string } = {};
+  const state: {
+    body?: string;
+    branch?: string;
+    origin?: string;
+    isCrossRepository?: boolean | null;
+  } = {};
   const ok = (stdout: string): Result => ({
     status: 0,
     stdout,
@@ -173,14 +178,22 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
         'rev-parse',
         `refs/heads/${state.branch}`,
       );
+      const pr: Record<string, unknown> = {
+        body: state.body,
+        headRefName: state.branch,
+        headRefOid: head,
+        url: 'https://github.com/acme/orders-suite/pull/77',
+        state: 'OPEN',
+        isCrossRepository:
+          state.isCrossRepository === undefined
+            ? false
+            : state.isCrossRepository,
+      };
+      // Like the real gh, only the fields asked for: a field the code forgot
+      // to request reads as absent here too.
+      const asked = args[args.indexOf('--json') + 1].split(',');
       return ok(
-        JSON.stringify({
-          body: state.body,
-          headRefName: state.branch,
-          headRefOid: head,
-          url: 'https://github.com/acme/orders-suite/pull/77',
-          state: 'OPEN',
-        }),
+        JSON.stringify(Object.fromEntries(asked.map((f) => [f, pr[f]]))),
       );
     }
     if (args[0] === 'run' && args[1] === 'list') {
@@ -641,6 +654,7 @@ describe('verdict', () => {
         body: 'hello',
         headRefName: 'x',
         headRefOid: 'y',
+        isCrossRepository: false,
       }),
       stderr: '',
       error: '',
@@ -708,6 +722,44 @@ describe('commentFailures', () => {
       },
     });
     expect(seen[0]).toMatchObject({ key: 'OTHER-9', project: 'OTHER' });
+  });
+
+  describe('the note holds the title and file as plain, bounded text', () => {
+    const noteFor = (test: string, file = 'f') =>
+      commentFailures({
+        run: () => ({ status: 1, stderr: 'no' }),
+        repo: '.',
+        judged: [
+          {
+            ...fail([{ id: 'CORE-1', tracker: 'jira', key: 'CORE-1' }]),
+            test,
+            file,
+          },
+        ],
+        prUrl: 'u',
+      })[0].body as string;
+
+    it('caps a long title and a long file path', () => {
+      const body = noteFor('T'.repeat(70000), `${'d/'.repeat(30000)}x.spec.js`);
+      expect(body.length).toBeLessThan(1000);
+      expect(body).toContain(`\`${'T'.repeat(200)}…\``);
+    });
+
+    it('keeps a title that fits exactly as it is', () => {
+      expect(noteFor('adds an item (#12)')).toContain('`adds an item (#12)`');
+      expect(noteFor('T'.repeat(200))).toContain(`\`${'T'.repeat(200)}\``);
+    });
+
+    it('cannot leave the code span or start a new line', () => {
+      // Line separator, right-to-left override, zero-width space.
+      const [ls, rlo, zwsp] = [0x2028, 0x202e, 0x200b].map((c) =>
+        String.fromCodePoint(c),
+      );
+      const body = noteFor(`a\` b\r\nc${ls}d${rlo}e${zwsp}f`, 'g`h\ni');
+      expect(body).toContain("`a' b c def` (`g'h i`)");
+      for (const banned of ['\r', '\n', ls, rlo, zwsp])
+        expect(body).not.toContain(banned);
+    });
   });
 
   it('a failing row with no blocker says so', () => {
@@ -906,6 +958,69 @@ describe('results', () => {
 });
 
 // --- the PR body is untrusted: settle stays inside the trial worktree ---------
+
+describe('verdict refuses a trial whose head is not in this repository', () => {
+  const opened = () => {
+    const suite = makeSuite();
+    const h = harness({
+      results: report({
+        card: 'unexpected',
+        event: 'expected',
+        v2: 'expected',
+      }),
+    });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    return { ...suite, h };
+  };
+  const apply = (repo: string, h: ReturnType<typeof harness>) =>
+    callMain(
+      [
+        'verdict',
+        '--repo',
+        repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+
+  // `null` is a gh that did not report the field: not known to be this repo.
+  it.each([
+    ['a cross-repository head', true],
+    ['a head gh did not report on', null],
+  ])(
+    '%s: exits non-zero, fetches, pushes and comments nothing',
+    (_n, cross) => {
+      const { repo, origin, h } = opened();
+      h.state.isCrossRepository = cross;
+      const head = git(origin, 'rev-parse', 'canary/trial');
+      h.calls.length = 0;
+
+      const r = apply(repo, h);
+
+      expect(r.code).not.toBe(0);
+      expect(r.stderr).toMatch(/not a branch of this repository/);
+      expect(git(origin, 'rev-parse', 'canary/trial')).toBe(head);
+      expect(h.calls.filter((c) => c.cmd !== 'gh')).toEqual([]);
+      expect(h.calls.some((c) => c.args[0] === 'issue')).toBe(false);
+    },
+  );
+
+  it('a head in this repository still settles', () => {
+    const { repo, origin, h } = opened();
+    const head = git(origin, 'rev-parse', 'canary/trial');
+    expect(apply(repo, h).code).toBe(0);
+    expect(git(origin, 'rev-parse', 'canary/trial')).not.toBe(head);
+  });
+});
 
 describe('verdict --apply refuses a manifest that reaches outside the worktree', () => {
   /** Open a trial, then rewrite its PR-body manifest the way an editor of the PR could. */

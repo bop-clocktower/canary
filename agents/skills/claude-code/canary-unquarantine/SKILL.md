@@ -283,6 +283,11 @@ the ledger) must resolve, symlinks included, strictly inside the trial worktree,
 and its `base` must be a commit id. Any escape refuses the whole `--apply`: it
 exits non-zero and writes, pushes and comments nothing.
 
+`verdict` reads only a trial whose head branch is in this repository. A
+cross-repository head, or one `gh` does not report on, is refused before
+anything is fetched. A ticket note quotes the test title and file as one line of
+plain inline code, capped at 200 characters each.
+
 `verdict` abstains (`--strict` exit `3`) when there is no per-test result. That
 covers four cases: no `--results` or `--artifact`, CI not finished, no such
 artifact, or a document with no test cases. It never falls back to the run's

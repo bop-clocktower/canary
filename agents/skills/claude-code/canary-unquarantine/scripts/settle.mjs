@@ -140,8 +140,27 @@ export function applyVerdict({
   return commentFailures({ run, repo, judged, prUrl: url, jiraComment });
 }
 
+/** Longest title or path a ticket note quotes, in characters. */
+const MAX_NOTE_FIELD = 200;
+
+/**
+ * A manifest string as one bounded line of inline code. It comes from the PR
+ * body and lands in a comment on someone's ticket, so it cannot leave its code
+ * span, start a new line, carry invisible or reordering characters, or run on.
+ */
+function noteField(text) {
+  const plain = String(text ?? '')
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ')
+    .replace(/\p{Cf}/gu, '')
+    .replace(/`/g, "'");
+  const chars = Array.from(plain);
+  return chars.length > MAX_NOTE_FIELD
+    ? `${chars.slice(0, MAX_NOTE_FIELD).join('')}…`
+    : plain;
+}
+
 const failureNote = (j, prUrl) =>
-  `canary-unquarantine trial: \`${j.test}\` (\`${j.file}\`) was switched back on and **still fails** ` +
+  `canary-unquarantine trial: \`${noteField(j.test)}\` (\`${noteField(j.file)}\`) was switched back on and **still fails** ` +
   `(${j.cases} case(s) in the run, ${prUrl}). It has been re-quarantined against this ticket. ` +
   `Its blocker was read as resolved, so either the fix has not reached the environment the suite runs ` +
   `against, or this ticket did not fix it.`;
