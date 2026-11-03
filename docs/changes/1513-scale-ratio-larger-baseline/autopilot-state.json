@@ -1,0 +1,14 @@
+{
+  "item": "#1513",
+  "phase": "done",
+  "steps": [
+    "investigate: read both failed job logs (15.6x, 15.5x; test file 5526 ms, 6497 ms); harness cleanup reports the known 106 findings, none shown near report-anchor.ts",
+    "analyze: ran the test's estimator in fresh vitest processes at both size pairs, under coverage at ambient, 1 and 3 busy loops per core, and during real npm test, plus no coverage at ambient; 155 samples",
+    "hypothesize: no superlinear cost unloaded (10.43x old, 10.32x new); under contention the minimum deflates the small side more than the large side",
+    "reproduce: old sizes crossed 15x in 4 of 10 runs at 3 busy loops per core (max 23.1x); new sizes 0 of 9 (max 12.6x)",
+    "plant: quadratic spread in anchoredGroups goes red on the ratio assertion at 114.7x in 874.7 s at the new sizes and 158.9x in 83.4 s at the old; reverted, not committed",
+    "fix: SMALL = 30_000, LARGE = 300_000, MAX_RATIO unchanged, doc comment records why; no product code changed",
+    "cost: test file about +4.5 s locally under coverage (2.6 s to 7.0 s); CI estimated, not measured"
+  ],
+  "commits": []
+}
