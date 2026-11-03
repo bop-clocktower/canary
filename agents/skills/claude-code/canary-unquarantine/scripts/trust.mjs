@@ -102,12 +102,7 @@ function trustedRows(j, view) {
 /** A chain from a ticket the row names to this very blocker. See the header. */
 function claimsHandoff(leaf, isNamed) {
   const { via } = leaf;
-  return (
-    Array.isArray(via) &&
-    via.length >= 2 &&
-    via.at(-1) === leaf.id &&
-    isNamed(via[0])
-  );
+  return Array.isArray(via) && via.at(-1) === leaf.id && isNamed(via[0]);
 }
 
 /** The ticket a failing lift may tell: a trusted one, or null for a hand-off claim. Throws otherwise. */
