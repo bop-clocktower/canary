@@ -22,6 +22,7 @@
         "adoption",
         "briefing",
         "composition",
+        "critical-areas",
         "guardian",
         "analysis",
         "history",
@@ -75,6 +76,11 @@
       "name": "adoption",
       "pattern": "ts/src/adoption/**",
       "allowedDependencies": ["cli", "composition", "core", "ui", "util"]
+    },
+    {
+      "name": "critical-areas",
+      "pattern": "ts/src/critical-areas/**",
+      "allowedDependencies": []
     },
     {
       "name": "guardian",
@@ -322,6 +328,10 @@
       "ts/src/history/keys/order-ttff.ts",
       "ts/src/analysis/order/vitest-sequencer.ts",
       "ts/src/order/order-cli.ts",
+      "ts/src/critical-areas/critical-areas-cli.ts",
+      "ts/src/critical-areas/git-signals.ts",
+      "ts/src/critical-areas/importers.ts",
+      "ts/src/critical-areas/scoring.ts",
       "ts/src/analysis/rewind/plan.ts",
       "ts/src/analysis/rewind/render.ts",
       "ts/src/analysis/rewind/runner.ts",
@@ -482,6 +492,10 @@
       "ts/src/history/keys/order-ttff.ts",
       "ts/src/analysis/order/vitest-sequencer.ts",
       "ts/src/order/order-cli.ts",
+      "ts/src/critical-areas/critical-areas-cli.ts",
+      "ts/src/critical-areas/git-signals.ts",
+      "ts/src/critical-areas/importers.ts",
+      "ts/src/critical-areas/scoring.ts",
       "ts/src/analysis/rewind/plan.ts",
       "ts/src/analysis/rewind/render.ts",
       "ts/src/analysis/rewind/runner.ts",

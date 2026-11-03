@@ -164,22 +164,26 @@ function signalsFor(
   }));
 }
 
-function readDeclaredSymbols(out: string): Map<string, string[]> {
-  let data: { areas?: unknown };
+/** The existing file's rows, or none when it is absent or malformed (D17). */
+function existingRows(out: string): { path?: unknown; symbols?: unknown }[] {
   try {
-    data = JSON.parse(readFileSync(out, 'utf-8')) as { areas?: unknown };
+    const data = JSON.parse(readFileSync(out, 'utf-8')) as { areas?: unknown };
+    return Array.isArray(data?.areas) ? data.areas : [];
   } catch {
-    return new Map();
+    return [];
   }
-  const rows = Array.isArray(data?.areas) ? data.areas : [];
+}
+
+const isSymbolList = (value: unknown): value is string[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every((s) => typeof s === 'string' && s !== '');
+
+function readDeclaredSymbols(out: string): Map<string, string[]> {
   const declared = new Map<string, string[]>();
-  for (const row of rows as { path?: unknown; symbols?: unknown }[]) {
-    const valid =
-      Array.isArray(row?.symbols) &&
-      row.symbols.length > 0 &&
-      row.symbols.every((s) => typeof s === 'string' && s !== '');
-    if (valid && typeof row.path === 'string') {
-      declared.set(row.path, row.symbols as string[]);
+  for (const row of existingRows(out)) {
+    if (isSymbolList(row?.symbols) && typeof row.path === 'string') {
+      declared.set(row.path, row.symbols);
     }
   }
   return declared;
