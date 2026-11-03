@@ -121,6 +121,13 @@ function quoteValue(value: string): string {
 // Result types
 // ---------------------------------------------------------------------------
 
+/**
+ * The `reason` of a transition a dry run confirmed it could make. `attempted`
+ * cannot say this on its own: an unreachable target is also attempted-but-not-
+ * succeeded, and only this one is a dry run going to plan (#1413).
+ */
+export const DRY_RUN_REASON = 'dry-run';
+
 /** Python: `TransitionResult` dataclass. */
 export class TransitionResult {
   attempted: boolean;
@@ -128,6 +135,8 @@ export class TransitionResult {
   from_status: string | null;
   to_status: string | null;
   reason: string; // human-readable explanation
+  /** Stopped because no Jira credentials resolve, before contacting Jira. */
+  credentials_missing: boolean;
 
   constructor(
     attempted: boolean,
@@ -135,12 +144,14 @@ export class TransitionResult {
     fromStatus: string | null,
     toStatus: string | null,
     reason: string,
+    credentialsMissing = false,
   ) {
     this.attempted = attempted;
     this.succeeded = succeeded;
     this.from_status = fromStatus;
     this.to_status = toStatus;
     this.reason = reason;
+    this.credentials_missing = credentialsMissing;
   }
 }
 
@@ -153,6 +164,12 @@ export class UpdateResult {
   transition: TransitionResult;
   dry_run: boolean;
   messages: string[];
+  /**
+   * Either action resolved no Jira credentials, so it could not run (or, under
+   * a dry run, could not run for real). Separate from `comment_posted`, which
+   * cannot tell "never tried" from "Jira said no" (#1413).
+   */
+  credentials_missing: boolean;
 
   constructor(init: {
     ticket_key: string | null;
@@ -162,6 +179,7 @@ export class UpdateResult {
     transition: TransitionResult;
     dry_run: boolean;
     messages?: string[];
+    credentials_missing?: boolean;
   }) {
     this.ticket_key = init.ticket_key;
     this.project_key = init.project_key;
@@ -170,6 +188,7 @@ export class UpdateResult {
     this.transition = init.transition;
     this.dry_run = init.dry_run;
     this.messages = init.messages ?? [];
+    this.credentials_missing = init.credentials_missing ?? false;
   }
 }
 
@@ -239,6 +258,10 @@ const FRONTMATTER_PROJECT = /(?:^|(?<=\n))#\s*canary:project:\s*(\S+)/;
 const TAG_TICKET = /@(?:ticket|jira):([A-Z][A-Z0-9]*-\d+)/;
 const BRANCH_TICKET = /(?:feature|fix|chore)\/([A-Z][A-Z0-9]*-\d+)/;
 const TICKET_PROJECT = /^([A-Z][A-Z0-9]*)-\d+$/;
+
+const COMMENT_NO_CREDENTIALS =
+  'Jira credentials not configured (ATLASSIAN_URL, ATLASSIAN_USER, ' +
+  'ATLASSIAN_TOKEN). Comment cannot be posted.';
 
 // ---------------------------------------------------------------------------
 // Seams
@@ -341,9 +364,15 @@ export class TicketUpdater {
 
     // 4. Post comment.
     let commentPosted = false;
+    let credentialsMissing = false;
     if (!transitionOnly) {
       // Determine surface: Jira for PROJ-NNN keys, GitHub for owner/repo#NNN.
       if (/^[A-Z][A-Z0-9]*-\d+$/.test(ticketKey!)) {
+        // Asked up front, not read off a false return, so a dry run (which
+        // posts nothing and always "succeeds") still learns the real run could
+        // not post. Same project inference as postJiraComment.
+        credentialsMissing = this.jiraCredentialsMissing(ticketKey!);
+        if (credentialsMissing) messages.push(COMMENT_NO_CREDENTIALS);
         commentPosted = await this.postJiraComment(
           ticketKey!,
           commentBody,
@@ -388,7 +417,8 @@ export class TicketUpdater {
         summary.result,
         dryRun,
       );
-      if (dryRun && transitionResult.attempted) {
+      credentialsMissing ||= transitionResult.credentials_missing;
+      if (transitionResult.reason === DRY_RUN_REASON) {
         messages.push(
           `Would transition ${ticketKey}:\n` +
             `  "${transitionResult.from_status}" \u2192 "${transitionResult.to_status}"\n` +
@@ -396,7 +426,10 @@ export class TicketUpdater {
             `.canary/workflow-${projectKey}.json)\n\n` +
             'Re-run without --dry-run to apply.',
         );
-      } else if (!transitionResult.attempted) {
+      } else if (dryRun || !transitionResult.attempted) {
+        // A live attempted failure is rendered by the CLI as "Transition
+        // failed"; a dry run has no such line, so an unreachable target has to
+        // be stated here or the dry run says nothing about it.
         messages.push(transitionResult.reason);
       }
     }
@@ -409,7 +442,14 @@ export class TicketUpdater {
       transition: transitionResult,
       dry_run: dryRun,
       messages,
+      credentials_missing: credentialsMissing,
     });
+  }
+
+  /** Whether posting to this Jira ticket would stop for lack of credentials. */
+  private jiraCredentialsMissing(ticketKey: string): boolean {
+    const pm = TICKET_PROJECT.exec(ticketKey);
+    return this.jiraAuth(pm ? pm[1]! : null, this.canaryDir)[0] === null;
   }
 
   /** Python: `TicketUpdater.detect_linkage`. */
@@ -609,7 +649,8 @@ export class TicketUpdater {
         null,
         `\u26A0  No workflow mapping found for project ${projectKey}.\n` +
           `   Run \`canary workflow-discover --project ${projectKey}\` first.\n` +
-          '   Comment was posted. Transition was NOT attempted.',
+          // Not "Comment was posted": this path runs whether or not it was.
+          '   Transition was NOT attempted.',
       );
     }
 
@@ -624,6 +665,7 @@ export class TicketUpdater {
         'Jira credentials not configured (ATLASSIAN_URL, ' +
           'ATLASSIAN_USER, ATLASSIAN_TOKEN). ' +
           'Transition was NOT attempted.',
+        true,
       );
     }
 
@@ -639,7 +681,9 @@ export class TicketUpdater {
         false,
         null,
         targetStatus,
-        `Could not fetch current status for ${ticketKey}.`,
+        // The glyph is what marks a not-attempted transition as a failure for
+        // the CLI: a network or auth failure is not a reason to skip quietly.
+        `\u26A0  Could not fetch current status for ${ticketKey}.`,
       );
     }
 
@@ -669,7 +713,7 @@ export class TicketUpdater {
         false, // not actually done
         currentStatus,
         targetStatus,
-        'dry-run',
+        DRY_RUN_REASON,
       );
     }
 
