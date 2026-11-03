@@ -19,15 +19,16 @@
 //   neither  refuses the whole settle.
 //
 // The manifest chooses what it claims, so the claim never earns a write: a
-// forged target comes out listed or refused, and only a ticket the default
-// branch names is ever written to.
+// forged target comes out listed or refused, and only a ticket the row names
+// on the fetched default branch is written to. What this cannot vouch for: the
+// run's results (it ran the editor's branch), and whether a named ticket's lift
+// belongs to the trial. Jira projects and tags come from the operator's
+// checkout, and `gh`'s repository may not be `origin`; see SKILL.md.
 
-import * as ledgerIo from '../../canary-katana/scripts/ledger.mjs';
-import { blockerRefs } from './audit.mjs';
-import { at, must, withWorktree } from './git.mjs';
+import { fetchBranchTip, withWorktree } from './git.mjs';
 import { jiraReach } from './refs.mjs';
-import { locate, readSource } from './markers.mjs';
 import { resolveGithubRepo } from './trackers.mjs';
+import { viewOf } from './trust-view.mjs';
 
 /** The identity two ledger rows share. */
 export const sameRow = (a, b) =>
@@ -57,31 +58,44 @@ function ticketOf(ref, githubRepo) {
   };
 }
 
-/** Read the manifest's lift against the default branch: its rows, and the tickets they name. */
+/** A manifest row's copy on the default branch's ledger. */
+function trustedRow(d, view) {
+  const row = view.entries.find((e) => sameRow(e, d));
+  if (!row)
+    throw new Error(
+      `trial manifest row for "${d.test}" is not on the default branch's ledger; refusing to settle`,
+    );
+  return row;
+}
+
+/**
+ * `selectRows` groups rows by the marker they locate to, so a row with another
+ * title is this lift's only if it locates to the same marker in the same file.
+ */
+function sharesMarker(r, own, view) {
+  const marker = view.locate(own).markerLine;
+  return (
+    r.file === own.file &&
+    Boolean(marker) &&
+    view.locate(r).markerLine === marker
+  );
+}
+
+/** The lift's rows on the default branch, each proven to be its own. */
 function trustedRows(j, view) {
-  const rows = (Array.isArray(j.ledgerRows) ? j.ledgerRows : []).map((d) => {
-    const row = view.entries.find((e) => sameRow(e, d));
-    if (!row)
-      throw new Error(
-        `trial manifest row for "${d.test}" is not on the default branch's ledger; refusing to settle`,
-      );
-    return row;
-  });
-  const own = rows.find((r) => r.test === j.test && r.file === j.file);
+  const asked = Array.isArray(j.ledgerRows) ? j.ledgerRows : [];
+  const rows = asked.map((d) => trustedRow(d, view));
+  const isOwn = (r) => r.test === j.test && r.file === j.file;
+  const own = rows.find(isOwn);
   if (!own)
     throw new Error(
       `trial manifest lift "${j.test}" has no ledger row of its own; refusing to settle`,
     );
-  // `selectRows` groups rows by the marker they locate to, so a row with
-  // another title is this lift's only if it locates to the same marker.
-  const marker = view.locate(own).markerLine;
-  for (const r of rows) {
-    if (r.test === own.test && r.file === own.file) continue;
-    if (r.file !== own.file || !marker || view.locate(r).markerLine !== marker)
-      throw new Error(
-        `trial manifest row for "${r.test}" belongs to another marker than "${j.test}"; refusing to settle`,
-      );
-  }
+  const stray = rows.find((r) => !isOwn(r) && !sharesMarker(r, own, view));
+  if (stray)
+    throw new Error(
+      `trial manifest row for "${stray.test}" belongs to another marker than "${j.test}"; refusing to settle`,
+    );
   return rows;
 }
 
@@ -98,8 +112,13 @@ function claimsHandoff(leaf, isNamed) {
 
 /** The ticket a failing lift may tell: a trusted one, or null for a hand-off claim. Throws otherwise. */
 function targetFor(j, rows, view) {
-  const leaf = (j.blockers ?? []).at(-1);
-  if (!leaf) return null;
+  // `trial` selects only rows with a blocker, so this is not a real trial's
+  // lift: it would settle with nobody told, or fail after the push.
+  if (!Array.isArray(j.blockers) || !j.blockers.length)
+    throw new Error(
+      `trial manifest lift "${j.test}" failed but has no blocker to tell; refusing to settle`,
+    );
+  const leaf = j.blockers.at(-1);
   const named = rows.flatMap((r) => view.named(r));
   const keyOf = (id) => ticketKey(id, view.githubRepo);
   const isNamed = (id) => named.some((n) => keyOf(n.id) === keyOf(id));
@@ -111,8 +130,8 @@ function targetFor(j, rows, view) {
   );
 }
 
-/** Run `fn(work)` in a throwaway worktree of the default branch's tip. */
-function atDefaultBranch(run, repo, fn) {
+/** The repository's default branch, as `gh` reports it. */
+function defaultBranchOf(run, repo) {
   const r = run(
     'gh',
     [
@@ -130,24 +149,7 @@ function atDefaultBranch(run, repo, fn) {
     throw new Error(
       'cannot read the default branch to check the trial manifest against; refusing to settle',
     );
-  must(run('git', ['-C', repo, 'fetch', 'origin', branch]), 'git fetch');
-  const tip = must(
-    run('git', ['-C', repo, 'rev-parse', 'FETCH_HEAD']),
-    'git rev-parse FETCH_HEAD',
-  );
-  return withWorktree(run, repo, { options: ['--detach'], commit: tip }, fn);
-}
-
-/** The default branch as `targetFor` reads it. */
-function viewOf(work, trust, githubRepo) {
-  const { ledger, jiraProjects, tags } = trust;
-  const located = (row) => locate(readSource(work, row.file), row, tags);
-  return {
-    githubRepo,
-    entries: ledgerIo.load(at(work, ledger)).entries,
-    locate: located,
-    named: (row) => blockerRefs(row, located(row), jiraProjects).refs,
-  };
+  return branch;
 }
 
 /**
@@ -161,7 +163,14 @@ function viewOf(work, trust, githubRepo) {
  *          trust: {ledger: string, githubRepo?: string|null,
  *                  jiraProjects?: string[], tags?: string[]}}} input
  */
-export function withTrustedTargets({ run, repo, manifest, judged, trust }) {
+export function withTrustedTargets({
+  run,
+  repo,
+  headRefName,
+  manifest,
+  judged,
+  trust,
+}) {
   if (manifest.ledger !== trust.ledger)
     throw new Error(
       `trial manifest ledger "${manifest.ledger}" is not the ledger this verdict was told to trust (${trust.ledger}); refusing to settle`,
@@ -171,7 +180,15 @@ export function withTrustedTargets({ run, repo, manifest, judged, trust }) {
     throw new Error(
       `cannot tell which repository this trial is in (${github.why}); refusing to settle`,
     );
-  return atDefaultBranch(run, repo, (work) => {
+  const branch = defaultBranchOf(run, repo);
+  // A settle pushes to the head, so this keeps it off the trust source itself.
+  if (headRefName === branch)
+    throw new Error(
+      `PR head "${headRefName}" is the default branch, which a settle must not push to; refusing to settle`,
+    );
+  const tip = fetchBranchTip(run, repo, branch);
+  const read = { options: ['--detach'], commit: tip };
+  return withWorktree(run, repo, read, (work) => {
     const view = viewOf(work, trust, github.repo);
     return judged.map((j) => {
       const acts = j.outcome === 'pass' || j.outcome === 'fail';

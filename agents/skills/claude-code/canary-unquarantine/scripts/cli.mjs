@@ -21,8 +21,6 @@
 //
 // Invoked via `canary skills run canary-unquarantine -- [command] [options]`.
 
-import path from 'node:path';
-
 import {
   createParser,
   formatUsageError,
@@ -38,6 +36,7 @@ import {
   renderTrialPlan,
   renderVerdict,
   verdictDoc,
+  verdictExit,
 } from './report.mjs';
 import { downloadResults } from './results.mjs';
 import { applyVerdict } from './settle.mjs';
@@ -46,7 +45,15 @@ import { jiraCommenter, jiraTracker } from './jira.mjs';
 import { githubTracker, resolveGithubRepo } from './trackers.mjs';
 import { migrateCommand, quarantineCommand } from './produce.mjs';
 import { openTrial, planTrial, selectRows } from './trial.mjs';
-import { CLI_SPEC, USAGE, loadCompany, tagsFor } from './options.mjs';
+import {
+  CLI_SPEC,
+  USAGE,
+  companyPath,
+  ledgerInRepo,
+  ledgerPathOf,
+  loadCompany,
+  tagsFor,
+} from './options.mjs';
 import { loadTrial, planVerdict } from './verdict.mjs';
 
 export { CLI_SPEC };
@@ -55,13 +62,9 @@ const PREFIX = 'canary-unquarantine:';
 
 const parseArgs = createParser(CLI_SPEC);
 
-const companyPath = (args) =>
-  args.company ?? path.join(args.repo, '.canary', 'company.json');
-
 /** Load the ledger and config, run the audit. Throws on a corrupt input. */
 function runAudit(args, run, env, { offline = false } = {}) {
-  const ledgerPath =
-    args.ledger ?? path.join(args.repo, '.canary', 'quarantine.json');
+  const ledgerPath = ledgerPathOf(args);
   const doc = ledger.load(ledgerPath);
   const company = loadCompany(companyPath(args));
   const tags = tagsFor(args.tags, company);
@@ -104,15 +107,6 @@ function auditCommand(args, run, env) {
   if (!args.strict) return 0;
   if (result.verdict.actionable > 0) return 1;
   return result.verdict.status === 'abstained' ? 3 : 0;
-}
-
-/** The ledger as a path inside the repository, which `settle` rewrites on the trial branch. */
-function ledgerInRepo(repo, ledgerPath) {
-  const rel = path.relative(repo, ledgerPath);
-  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return rel;
-  throw new Error(
-    `trial needs the ledger inside the repository (got ${ledgerPath}): the verdict rewrites it on the trial branch`,
-  );
 }
 
 /** Why a trial has nothing to lift -- an abstention, never "nothing to do". */
@@ -213,44 +207,38 @@ function verdictCommand(args, run, env) {
     ? { abstain: where.why }
     : planVerdict(trial, where.source);
   if (plan.abstain) return verdictAbstained(args, plan.abstain);
-  const company = loadCompany(companyPath(args));
-  const jiraComment = jiraCommenter({
-    run,
-    projects: company.jiraProjects,
-    env,
-  });
   const comments = args.apply
-    ? applyVerdict({
-        run,
-        repo: args.repo,
-        trial,
-        judged: plan.judged,
-        jiraComment,
-        trust: {
-          // The operator's ledger path, never the one the PR body names.
-          ledger: ledgerInRepo(
-            args.repo,
-            args.ledger ?? path.join(args.repo, '.canary', 'quarantine.json'),
-          ),
-          githubRepo: args.githubRepo,
-          jiraProjects: company.jiraProjects,
-          tags: tagsFor(args.tags, company),
-        },
-      })
+    ? applyVerdict(applyInput(args, run, env, trial, plan))
     : [];
   const doc = verdictDoc(args, plan, comments);
   print(args, doc, () => renderVerdict(doc));
-  if (!args.strict) return 0;
-  if (doc.tests.some((t) => t.outcome === 'fail' || t.outcome === 'flaky'))
-    return 1;
-  return doc.abstained ? 3 : 0;
+  return verdictExit(args, doc);
+}
+
+/** What `--apply` acts on; the ledger path is the operator's, never the PR body's. */
+function applyInput(args, run, env, trial, plan) {
+  const company = loadCompany(companyPath(args));
+  const { jiraProjects } = company;
+  return {
+    run,
+    repo: args.repo,
+    trial,
+    judged: plan.judged,
+    jiraComment: jiraCommenter({ run, projects: jiraProjects, env }),
+    trust: {
+      ledger: ledgerInRepo(args.repo, ledgerPathOf(args)),
+      githubRepo: args.githubRepo,
+      jiraProjects,
+      tags: tagsFor(args.tags, company),
+    },
+  };
 }
 
 /** The producer commands get their I/O from here, so produce.mjs stays small. */
 const produceIo = (args, run, env) => ({
   print: (doc, text) => print(args, doc, text),
   runAudit: (a) => runAudit(a, run, env, { offline: true }),
-  ledgerPath: args.ledger ?? path.join(args.repo, '.canary', 'quarantine.json'),
+  ledgerPath: ledgerPathOf(args),
   tags: tagsFor(args.tags, loadCompany(companyPath(args))),
 });
 

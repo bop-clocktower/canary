@@ -4,14 +4,18 @@
   "stages": ["debugging"],
   "reproducingTest": "agents/skills/test/canary-unquarantine-trial.test.ts",
   "baseSha": "16a8ad2e",
-  "reproFailure": "Before the fix, 27 new or changed tests failed: a manifest blocker naming an unrelated ticket was commented on and exited 0 on both trackers (expected a refusal or a listed note), a manifest URL was written into the ledger row, a cross-repository head settled (exit 0), a manifest ledger other than the operator's was accepted, a passing lift could drop another test's row, and a 70,000-character title produced a 70,290-character note.",
+  "reproFailure": "Before the fix, 27 new or changed tests failed: a manifest blocker naming an unrelated ticket was commented on and exited 0 on both trackers (expected a refusal or a listed note), a manifest URL was written into the ledger row, a cross-repository head settled (exit 0), a manifest ledger other than the operator's was accepted, a passing lift could drop another test's row, and a 70,000-character title produced a 70,290-character note. After independent review, 12 more failed at 34f79813: a tag named after the default branch replaced the trust source on both trackers, a tag named after the head replaced it, a head name acted as a git option, a head equal to the default branch was pushed to, a trial-branch hook ran under a relative core.hooksPath, a repeated lift was told repeatedly, failing lifts with empty, missing or malformed blockers were not refused, and the verdict report printed manifest strings raw.",
   "closingKeyword": "Closes",
   "assumptions": [
-    "The trusted source is the repository's default branch on origin, read in a throwaway worktree; the trial branch, manifest.base and the PR base are all editor-controlled.",
+    "The trusted source is the tip of refs/heads/<default branch> fetched from origin into a ref of the process's own, read in a throwaway worktree; the trial branch, manifest.base, the PR base, local state and tags are not trusted.",
+    "The default branch's name comes from gh's resolved repository while the fetch is from origin, so in an upstream-and-fork clone the trust source can be the operator's fork. Declared, not fixed.",
     "The trusted ledger path is the operator's --ledger or the default .canary/quarantine.json; manifest.ledger must equal it.",
-    "jira_projects and quarantine tags come from the operator's checkout and flags, the same source the Jira commenter already uses, and not from the default branch.",
+    "jira_projects and quarantine tags come from whatever is checked out, or the operator's flags. An operator running from the trial branch lets its editor set the Jira allow-list and which bare keys count as tickets. Declared, not fixed.",
     "A blocker is direct only when its id is a ticket the trusted row names under the audit's own first-source rule; the manifest's claim plays no part. A claimed chain only moves a target from refused to listed.",
     "Only pass and fail outcomes act on the ledger, so rows are checked for those; flaky and missing lifts are not checked against the ledger.",
+    "The run's results are editor-influenced because the run executes the editor's branch. Whether a failing lift must be proven part of the trial was not decided, so a failing lift for a real row can tell the ticket that row names, including an open one, with a note saying its blocker was read as resolved.",
+    "A real trial cannot produce a failing lift with no blocker: selectRows takes candidates and abstained rows that carry a marker line, and those always have at least one blocker. So that shape is refused.",
+    "A relative core.hooksPath is refused rather than overridden, read from the operator's repository before any worktree exists. This affects suites using a relative hooks path such as husky's default.",
     "A trial opened before via was recorded is refused if a failing blocker was handed off; trials are short-lived, and opening a new one recovers.",
     "A trial against another branch is refused if its row exists only there; the row must reach the default branch first."
   ]

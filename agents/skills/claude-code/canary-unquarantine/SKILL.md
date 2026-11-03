@@ -283,11 +283,11 @@ the ledger) must resolve, symlinks included, strictly inside the trial worktree,
 and its `base` must be a commit id. Any escape refuses the whole `--apply`: it
 exits non-zero and writes, pushes and comments nothing.
 
-`--apply` then checks the manifest against the repository's default branch on
-origin, which a PR editor cannot change. The ledger path is `--ledger` or the
-default, and the manifest must name the same one. Each passing or failing lift's
-rows must be on that ledger and be its own: the same test, or rows that locate
-to the same marker.
+`--apply` then checks the manifest against the tip of the default branch's
+`refs/heads` ref on origin, not any local state or a tag of that name. The
+ledger path is `--ledger` or the default, and the manifest must name the same
+one. Each passing or failing lift's rows must be on that ledger and be its own:
+the same test, or rows that locate to the same marker.
 
 For a failing test's last blocker:
 
@@ -308,8 +308,31 @@ the chain again from the row's own ticket. Two things follow:
 
 `verdict` reads only a trial whose head branch is in this repository. A
 cross-repository head, or one `gh` does not report on, is refused before
-anything is fetched. A ticket note quotes the test title and file as one line of
-plain inline code, capped at 200 characters each.
+anything is fetched. A ticket note and the verdict report (text and `--json`)
+quote the test title and file as one line of plain text, capped at 200
+characters each, so a longer title reads truncated in `flake_hunter` too.
+
+`--apply` also refuses, before anything is written:
+
+- **A relative `core.hooksPath`**, such as husky's default `.husky/_`. It would
+  resolve inside the worktree of the trial branch, so a hook committed there
+  would run on this machine with your credentials in its environment. Suites
+  that use one need an absolute path, or the setting unset, for the `--apply`.
+- **A lift that appears twice**, or a failing lift with no blocker.
+- **A head that is the default branch.**
+
+What this check does not establish:
+
+- **The run's results are editor-influenced**: that run executes the editor's
+  branch. A failing lift for a row the trial never lifted can still tell the
+  ticket that row names, and the note says "Its blocker was read as resolved"
+  even if that ticket is open. Each such row can produce one comment.
+- **Jira projects and tags come from what is checked out.** Running from the
+  trial branch lets its editor set the Jira allow-list and which bare keys count
+  as tickets. Run `--apply` from a checkout you trust, or pass `--company`.
+- **The default branch's name comes from `gh`'s resolved repository, and the
+  fetch is from `origin`.** In an upstream-and-fork clone, the trust source can
+  be your fork.
 
 `verdict` abstains (`--strict` exit `3`) when there is no per-test result. That
 covers four cases: no `--results` or `--artifact`, CI not finished, no such

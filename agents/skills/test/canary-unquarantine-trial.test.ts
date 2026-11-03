@@ -27,7 +27,7 @@ import {
   playwrightCases,
   readCases,
 } from '../claude-code/canary-unquarantine/scripts/results.mjs';
-import { commentFailures } from '../claude-code/canary-unquarantine/scripts/settle.mjs';
+import { commentFailures } from '../claude-code/canary-unquarantine/scripts/notify.mjs';
 import { spawnRunner } from '../claude-code/canary-unquarantine/scripts/exec.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -120,7 +120,9 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
     origin?: string;
     isCrossRepository?: boolean | null;
     defaultBranch?: string;
-  } = { defaultBranch: 'main' };
+    repoName?: string;
+    headRefName?: string;
+  } = { defaultBranch: 'main', repoName: TRACKER.github_repo };
   const ok = (stdout: string): Result => ({
     status: 0,
     stdout,
@@ -151,12 +153,14 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
     }
     if (cmd !== 'gh')
       return { status: 127, stdout: '', stderr: 'not found', error: '' };
-    if (args[0] === 'repo')
-      return args.includes('defaultBranchRef')
+    if (args[0] === 'repo') {
+      const name = args.includes('defaultBranchRef')
         ? state.defaultBranch
-          ? ok(state.defaultBranch)
-          : { status: 1, stdout: '', stderr: 'HTTP 404', error: '' }
-        : ok(TRACKER.github_repo);
+        : state.repoName;
+      return name
+        ? ok(name)
+        : { status: 1, stdout: '', stderr: 'HTTP 404', error: '' };
+    }
     if (args[0] === 'api') {
       const target = args.find((a) => a.startsWith('repos/'))!;
       const m = /^repos\/(.+)\/issues\/(\d+)(\/comments)?$/.exec(target);
@@ -186,7 +190,7 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
       );
       const pr: Record<string, unknown> = {
         body: state.body,
-        headRefName: state.branch,
+        headRefName: state.headRefName ?? state.branch,
         headRefOid: head,
         url: 'https://github.com/acme/orders-suite/pull/77',
         state: 'OPEN',
@@ -999,6 +1003,20 @@ describe('results', () => {
 
 // --- the PR body is untrusted: settle stays inside the trial worktree ---------
 
+/**
+ * Commit `edit` on the trial branch only: from a detached checkout of the
+ * pushed branch, with the operator's own main put back afterwards.
+ */
+function onTrialBranch(repo: string, edit: () => void) {
+  git(repo, 'fetch', '-q', 'origin', 'refs/heads/canary/trial');
+  git(repo, 'checkout', '-q', 'FETCH_HEAD');
+  edit();
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '-m', 'on the trial branch');
+  git(repo, 'push', '-q', 'origin', 'HEAD:refs/heads/canary/trial');
+  git(repo, 'checkout', '-q', 'main');
+}
+
 describe('verdict --apply acts only on what the default branch vouches for', () => {
   type Outcomes = Parameters<typeof report>[0];
   type Suite = ReturnType<typeof makeSuite>;
@@ -1300,8 +1318,317 @@ describe('verdict --apply acts only on what the default branch vouches for', () 
     });
   });
 
+  describe('the default branch is read from the remote branch, and nowhere else', () => {
+    const FORGED = 'someone/else#9';
+    const forgedCard = (m: any) =>
+      Object.assign(leafOf(m, CARD), { id: FORGED, via: [] });
+    const forgedEvent = (m: any) =>
+      Object.assign(leafOf(m, EVENT), {
+        id: 'CORE-999',
+        key: 'CORE-999',
+        via: [],
+      });
+
+    /** A commit naming `issue` on `test`'s row, on no branch; returns its id. */
+    function looseCommit(repo: string, test: string, issue: string) {
+      git(repo, 'checkout', '-q', '--detach');
+      const file = path.join(repo, LEDGER);
+      const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+      doc.entries = rowNamed(test, issue)(doc.entries);
+      fs.writeFileSync(file, JSON.stringify(doc));
+      git(repo, 'commit', '-qam', 'loose');
+      const sha = git(repo, 'rev-parse', 'HEAD');
+      git(repo, 'checkout', '-q', 'main');
+      return sha;
+    }
+
+    it('a tag named after the default branch does not replace it (GitHub)', () => {
+      const t = settle(CARD_FAILS, {
+        change: forgedCard,
+        after: (s) => {
+          const sha = looseCommit(s.repo, CARD, FORGED);
+          git(s.repo, 'push', '-q', 'origin', `${sha}:refs/tags/main`);
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it('a tag named after the default branch does not replace it (Jira)', () => {
+      const t = settle(EVENT_FAILS, {
+        change: forgedEvent,
+        after: (s) => {
+          const sha = looseCommit(s.repo, EVENT, 'CORE-999');
+          git(s.repo, 'push', '-q', 'origin', `${sha}:refs/tags/main`);
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it("the operator's local HEAD is not the trust source", () => {
+      const t = settle(CARD_FAILS, {
+        change: forgedCard,
+        after: (s) => onLocalMainOnly(s.repo, rowNamed(CARD, FORGED)),
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    /** Commit a ledger change on the operator's main, and do not push it. */
+    function onLocalMainOnly(repo: string, edit: (e: any[]) => any[]) {
+      const file = path.join(repo, LEDGER);
+      const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+      doc.entries = edit(doc.entries);
+      fs.writeFileSync(file, JSON.stringify(doc));
+      git(repo, 'commit', '-qam', 'local only');
+    }
+
+    it('a fetch of the default branch that fails refuses the settle', () => {
+      const t = settle(ALL_PASS, {
+        after: (_s, h) => {
+          const real = h.run;
+          h.run = (cmd, args, o) =>
+            cmd === 'git' &&
+            args.includes('fetch') &&
+            args.some((a) => a === 'main' || a.includes('refs/heads/main'))
+              ? { status: 1, stdout: '', stderr: 'unreachable', error: '' }
+              : real(cmd, args, o);
+        },
+      });
+      expectRefused(t, /git fetch failed/);
+    });
+
+    it('a default branch with another name is the one read', () => {
+      const t = settle(CARD_FAILS, {
+        after: (s, h) => {
+          git(s.origin, 'branch', '-m', 'main', 'trunk');
+          h.state.defaultBranch = 'trunk';
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.r.code).toBe(0);
+      expect(t.told.github).toHaveLength(1);
+    });
+
+    it('a repository gh cannot name is refused', () => {
+      const t = settle(CARD_FAILS, {
+        after: (_s, h) => {
+          h.state.repoName = '';
+        },
+      });
+      expectRefused(t, /which repository/);
+    });
+
+    it('a ticket only a lower-priority source names is refused', () => {
+      // V2's `issue` names #505, so its marker comment's #502 is not its ticket.
+      const t = settle(
+        { ...ALL_PASS, v2: 'unexpected' },
+        {
+          change: (m) => {
+            Object.assign(leafOf(m, V2), { id: `${THIS_REPO}#502`, via: [] });
+          },
+        },
+      );
+      expectRefused(t, /not named by its ledger row/);
+    });
+  });
+
+  describe('the head', () => {
+    it('a head that is the default branch is refused, and the branch does not move', () => {
+      const t = settle(ALL_PASS, {
+        after: (_s, h) => {
+          h.state.headRefName = 'main';
+        },
+      });
+      expectRefused(t, /is the default branch/);
+      expect(git(t.origin, 'log', '--format=%s', 'refs/heads/main')).toBe(
+        'suite',
+      );
+    });
+
+    it('a tag named after the head does not replace it', () => {
+      const t = settle(ALL_PASS, {
+        after: (s) => {
+          git(s.origin, 'tag', 'canary/trial', 'refs/heads/main');
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.r.code).toBe(0);
+      expect(
+        git(t.origin, 'log', '-1', '--format=%s', 'refs/heads/canary/trial'),
+      ).toMatch(/release 3 trial-passed/);
+    });
+
+    it('a head name cannot act as a git option', () => {
+      const dir = mkTmp();
+      const marker = path.join(dir, 'ran');
+      const t = settle(ALL_PASS, {
+        after: (_s, h) => {
+          h.state.headRefName = `--upload-pack=touch ${marker}`;
+        },
+      });
+      expect(t.r.code).not.toBe(0);
+      expect(fs.existsSync(marker)).toBe(false);
+    });
+  });
+
+  describe.skipIf(process.platform === 'win32')('git hooks', () => {
+    /** Hooks committed on the trial branch that would record that they ran. */
+    function plantHooks(repo: string, marker: string) {
+      const dir = path.join(repo, '.hooks');
+      fs.mkdirSync(dir);
+      for (const hook of ['pre-commit', 'post-checkout']) {
+        const file = path.join(dir, hook);
+        fs.writeFileSync(file, `#!/bin/sh\necho ran > "${marker}"\n`);
+        fs.chmodSync(file, 0o755);
+      }
+    }
+
+    it('a relative core.hooksPath refuses the settle, and no trial-branch hook runs', () => {
+      const marker = path.join(mkTmp(), 'ran');
+      const t = settle(ALL_PASS, {
+        after: (s) => {
+          onTrialBranch(s.repo, () => plantHooks(s.repo, marker));
+          git(s.repo, 'config', 'core.hooksPath', '.hooks');
+        },
+      });
+      expectRefused(t, /core\.hooksPath "\.hooks" is relative/);
+      expect(fs.existsSync(marker)).toBe(false);
+    });
+
+    it('a settle with an absolute core.hooksPath goes ahead', () => {
+      const t = settle(ALL_PASS, {
+        after: (s) => {
+          git(s.repo, 'config', 'core.hooksPath', mkTmp());
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.r.code).toBe(0);
+    });
+  });
+
+  describe('the shape of a lift', () => {
+    it('a repeated lift is refused, and its ticket hears nothing', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          const lift = liftOf(m, CARD);
+          m.lifts.push(structuredClone(lift), structuredClone(lift));
+        },
+      });
+      expectRefused(t, /more than once/);
+    });
+
+    it.each([
+      ['empty blockers', (l: any) => (l.blockers = [])],
+      ['no blockers', (l: any) => delete l.blockers],
+      ['blockers that are not a list', (l: any) => (l.blockers = 'x')],
+    ])('a failing lift with %s is refused', (_n, mangle) => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          mangle(liftOf(m, CARD));
+        },
+      });
+      expectRefused(t, /no blocker/);
+    });
+  });
+
+  describe('the report shows manifest strings as plain, bounded text', () => {
+    const LONG = 'x'.repeat(500);
+    const report_ = (t: Settled, ...extra: string[]) =>
+      callMain(
+        [
+          'verdict',
+          '--repo',
+          t.repo,
+          '--pr',
+          '77',
+          '--artifact',
+          'playwright-json',
+          ...extra,
+        ],
+        { run: t.h.run, env: JIRA_ENV },
+      );
+    const forgedLift = () =>
+      settle(ALL_PASS, {
+        change: (m) => {
+          m.lifts.push({
+            ...structuredClone(m.lifts[0]),
+            test: `line one\nline two${LONG}`,
+            file: `dir\nfile${LONG}`,
+          });
+        },
+      });
+
+    it('plain verdict', () => {
+      const r = report_(forgedLift());
+      expect(r.code).toBe(0);
+      expect(r.stdout).not.toContain('line one\nline two');
+      expect(r.stdout).not.toContain('dir\nfile');
+      expect(r.stdout).not.toContain(LONG);
+    });
+
+    it('--json', () => {
+      const doc = JSON.parse(report_(forgedLift(), '--json').stdout);
+      const added = doc.tests.at(-1);
+      expect(added.test).toBe(`line one line two${'x'.repeat(183)}…`);
+      expect(added.file).not.toContain('\n');
+      expect(added.file.length).toBeLessThanOrEqual(201);
+    });
+  });
+
   describe('ledgerRows are checked against the trusted ledger', () => {
     const OTHER = 'a row whose ticket cannot be read';
+
+    it('a row in another file is refused, even at the same marker line', () => {
+      const OTHER_FILE = 'tests/api/other.spec.js';
+      const row = {
+        test: 'a row in another file',
+        file: OTHER_FILE,
+        kind: 'skipped',
+        marker: 'test.skip',
+      };
+      const t = settle(ALL_PASS, {
+        before: (s) => {
+          const lines = fs
+            .readFileSync(path.join(s.repo, REF_FILE), 'utf8')
+            .split('\n');
+          const at = lines.findIndex((l) => l.includes(EVENT));
+          fs.writeFileSync(
+            path.join(s.repo, OTHER_FILE),
+            `${'\n'.repeat(at)}test.skip('${row.test}', async () => {});\n`,
+          );
+          onMain(s.repo, (entries) => [
+            ...entries,
+            { ...entries.find((e) => e.test === EVENT), ...row },
+          ]);
+        },
+        change: (m) => {
+          liftOf(m, EVENT).ledgerRows.push(row);
+        },
+      });
+      expectRefused(t, /belongs to another marker/);
+    });
+
+    it('with no marker on the default branch, another title cannot join the lift', () => {
+      const GONE = 'a row for a test that is gone';
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          const lift = liftOf(m, EVENT);
+          lift.ledgerRows.push({ ...lift.ledgerRows[0], test: GONE });
+        },
+        after: (s) => {
+          const file = path.join(s.repo, REF_FILE);
+          const src = fs.readFileSync(file, 'utf8');
+          fs.writeFileSync(
+            file,
+            src.replace(`test.skip('${EVENT}'`, `test('${EVENT}'`),
+          );
+          onMain(s.repo, (entries) => [
+            ...entries,
+            { ...entries.find((e) => e.test === EVENT), test: GONE },
+          ]);
+        },
+      });
+      expectRefused(t, /belongs to another marker/);
+    });
 
     it("a passing lift cannot drop another test's row", () => {
       const t = settle(ALL_PASS, {
@@ -1513,12 +1840,14 @@ describe('verdict --apply refuses a manifest that reaches outside the worktree',
       );
       const t = tampered(() => {});
       // tampered() ran with the link absent; commit it on the trial branch
-      // only (the default branch's ledger stays real) and run again.
-      fs.rmSync(path.join(t.repo, '.canary'), { recursive: true });
-      fs.symlinkSync(v.dir, path.join(t.repo, '.canary'));
-      git(t.repo, 'add', '-A');
-      git(t.repo, 'commit', '-q', '-m', 'link');
-      git(t.repo, 'push', '-q', 'origin', 'HEAD:refs/heads/canary/trial', '-f');
+      // only, so only the check against the checked-out tree can see it.
+      onTrialBranch(t.repo, () => {
+        fs.rmSync(path.join(t.repo, '.canary'), { recursive: true });
+        fs.symlinkSync(v.dir, path.join(t.repo, '.canary'));
+      });
+      expect(fs.lstatSync(path.join(t.repo, '.canary')).isSymbolicLink()).toBe(
+        false,
+      );
       const head = git(t.origin, 'rev-parse', 'canary/trial');
       const r = callMain(
         [

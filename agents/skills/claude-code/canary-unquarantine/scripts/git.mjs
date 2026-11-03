@@ -92,6 +92,52 @@ export function withWorktree(run, repo, { options = [], commit }, fn) {
 }
 
 /**
+ * The commit at the tip of `branch` on origin. The refspec is fully spelled, so
+ * a tag of the same name cannot stand in and the name cannot read as an option,
+ * and the tip lands in a ref of this process's own, so a concurrent fetch
+ * cannot swap it the way it could FETCH_HEAD.
+ */
+export function fetchBranchTip(run, repo, branch) {
+  const ref = `refs/canary-unquarantine/fetch-${process.pid}`;
+  const refspec = `+refs/heads/${branch}:${ref}`;
+  must(
+    run('git', ['-C', repo, 'fetch', '--no-tags', 'origin', refspec]),
+    'git fetch',
+  );
+  try {
+    return must(
+      run('git', ['-C', repo, 'rev-parse', '--verify', `${ref}^{commit}`]),
+      'git rev-parse',
+    );
+  } finally {
+    run('git', ['-C', repo, 'update-ref', '-d', ref]);
+  }
+}
+
+/**
+ * Refuse a relative core.hooksPath. It resolves inside whichever worktree git
+ * runs in, so in a worktree of the trial branch a hook the branch carries would
+ * run on this machine, with this operator's credentials in its environment,
+ * from the first `worktree add` on. Checked before any worktree exists.
+ */
+export function checkHooksPath(run, repo) {
+  const r = run('git', [
+    '-C',
+    repo,
+    'config',
+    '--path',
+    '--get',
+    'core.hooksPath',
+  ]);
+  if (r.status === 1) return; // not set
+  const value = must(r, 'git config core.hooksPath');
+  if (!path.isAbsolute(value))
+    throw new Error(
+      `core.hooksPath "${value}" is relative, so a hook committed on the trial branch would run on this machine during the settle. Use an absolute path, or unset it, for this run; refusing to settle`,
+    );
+}
+
+/**
  * Apply each lift's edits to the files under `root` (all of one file's edits
  * together, so their line numbers agree). Returns the files written.
  */
