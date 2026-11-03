@@ -47,6 +47,14 @@ under the project's former name) are documented in the
   before sending anything when the fit would drop the catalog or stay over
   budget, naming the measured size and the budget. `--no-strict-budget` restores
   the warn-and-push behaviour under CI; outside CI it remains the default.
+- **The `### Mutation` section discloses survivors with no test attribution**
+  (#1404, ADR 0037). A survivor without `coveredBy` now reads "attribution not
+  recorded" instead of "no covering test", which claimed a coverage gap nobody
+  measured, and a line under the headline counts such survivors and points at
+  `coverageAnalysis: perTest`. This completes the counting rule that shipped in
+  v9.4.0 (#1302). Consumers upgrading across it should expect those survivors to
+  stay `survived`, so `noCoverage` drops, `survived` can rise, and a run that
+  used to exit 0 can now exit 1.
 
 ### Fixed
 

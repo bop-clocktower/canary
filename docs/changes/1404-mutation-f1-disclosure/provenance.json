@@ -1,0 +1,17 @@
+{
+  "issues": [1404],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-mutation.test.ts",
+  "baseSha": "16a8ad2e2fa7a8fbf7ffd42bef97395a4fc135b2",
+  "reproFailure": "AssertionError: expected '### Mutation\\n1/2 mutants killed.\\n0 ...' to contain 'ran but did not fail: attribution not recorded' (5 of the 7 new tests failed at base; the other 2 guard against over-disclosure and pass by design until planted)",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "This PR ships both parts of ADR 0037 F1 disclosure the issue names (survivor wording and the headline count), plus the release note the issue's comment asks for, so it fully resolves #1404.",
+  "governingAdr": "0037",
+  "assumptions": [
+    "Render time CAN tell omitted from explicit-empty: toStatus demotes an explicit coveredBy: [] to no-coverage, so a survived finding with an empty list can only come from an absent field. ADR 0037 F1 states this, and no new field was added.",
+    "The headline line prints only when the count is above zero. The timeout and untested lines print at zero because they sit outside the numbers above them; this count is a subset of survived, and a zero would imply attribution was measured on a run with no survivors.",
+    "The line builder lives in mutation.ts, not mutation-report.ts, because mutation-report.ts was at 299 of the 300-line perf budget. A new module would have needed both entryPoints arrays and a docs link for a 13-line helper.",
+    "The CHANGELOG line says F1's counting rule shipped in v9.4.0, because it did: tag v9.4.0 contains ab9abf39 and its Fixed section names #1302. The issue comment's 'no CHANGELOG entry' predates that release. The new line adds what the 9.4.0 note left out: noCoverage drops, survived can rise, a run can move from exit 0 to exit 1."
+  ]
+}
