@@ -236,6 +236,142 @@ describe('canary critical-areas', () => {
     });
   });
 
+  describe('coverage', () => {
+    const LCOV_A = 'SF:src/a.ts\nDA:1,1\nDA:2,0\nend_of_record\n';
+    const put = (name: string, body: string): void => {
+      mkdirSync(dirname(join(root, name)), { recursive: true });
+      writeFileSync(join(root, name), body, 'utf-8');
+    };
+    const run = async (...extra: string[]): Promise<Doc> => {
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        root,
+        ...extra,
+      ]);
+      expect(res.code).toBe(0);
+      return readDoc(join(root, OUT));
+    };
+
+    it('writes null and names the looked-for reports with none present (criterion 3)', async () => {
+      ranked(root);
+      const doc = await run();
+      expect(doc.areas.length).toBeGreaterThan(0);
+      for (const a of doc.areas) expect(a.coverage_pct).toBeNull();
+      expect(doc.signal_sources.coverage!.status).toBe('absent');
+      expect(doc.signal_sources.coverage!.reason).toContain(
+        'coverage/lcov.info',
+      );
+    });
+
+    it('reads a discovered report, leaving an unlisted file null (criterion 4)', async () => {
+      ranked(root);
+      put('coverage/lcov.info', LCOV_A);
+      const doc = await run();
+      expect(areaOf(doc, 'src/a.ts').coverage_pct).toBe(50);
+      expect(areaOf(doc, 'src/b.ts').coverage_pct).toBeNull();
+      expect(doc.signal_sources.coverage).toEqual({
+        status: 'measured',
+        report: 'coverage/lcov.info',
+        files_matched: 1,
+      });
+    });
+
+    it('keeps a measured 0 as 0', async () => {
+      ranked(root);
+      put('coverage/lcov.info', 'SF:src/a.ts\nDA:1,0\nend_of_record\n');
+      const a = areaOf(await run(), 'src/a.ts');
+      expect(a.coverage_pct).toBe(0);
+      expect(a.signals).toContain('low_coverage');
+    });
+
+    it('prefers coverage/lcov.info over lcov.info (D11)', async () => {
+      ranked(root);
+      put('coverage/lcov.info', LCOV_A);
+      put('lcov.info', 'SF:src/a.ts\nDA:1,1\nend_of_record\n');
+      const doc = await run();
+      expect(doc.signal_sources.coverage!.report).toBe('coverage/lcov.info');
+      expect(areaOf(doc, 'src/a.ts').coverage_pct).toBe(50);
+    });
+
+    it('reads an explicit --coverage report', async () => {
+      ranked(root);
+      put('reports/my.lcov.info', LCOV_A);
+      const doc = await run(
+        '--coverage',
+        join(root, 'reports', 'my.lcov.info'),
+      );
+      expect(areaOf(doc, 'src/a.ts').coverage_pct).toBe(50);
+      expect(doc.signal_sources.coverage!.report).toBe('reports/my.lcov.info');
+    });
+
+    it('exits 2 on a missing explicit report and writes nothing (D12)', async () => {
+      ranked(root);
+      const missing = join(root, 'missing.info');
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        root,
+        '--coverage',
+        missing,
+      ]);
+      expect(res.code).toBe(2);
+      expect(res.stderr).toContain(missing);
+      expect(existsSync(join(root, OUT))).toBe(false);
+    });
+
+    it('exits 2 on an unparseable explicit report and writes nothing (D12)', async () => {
+      ranked(root);
+      put('bad.json', 'not json');
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        root,
+        '--coverage',
+        join(root, 'bad.json'),
+      ]);
+      expect(res.code).toBe(2);
+      expect(existsSync(join(root, OUT))).toBe(false);
+    });
+
+    it('checks the explicit report before the repository', async () => {
+      put('bad.json', 'not json');
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        root,
+        '--coverage',
+        join(root, 'bad.json'),
+      ]);
+      expect(res.code).toBe(2);
+    });
+
+    it('degrades on a discovered unparseable report (D12)', async () => {
+      ranked(root);
+      put('coverage/coverage.json', 'not json');
+      const source = (await run()).signal_sources.coverage!;
+      expect(source.status).toBe('absent');
+      expect(source.reason).toMatch(/could not/);
+    });
+
+    it('degrades on a discovered report matching 0 files (D12)', async () => {
+      ranked(root);
+      put('coverage/lcov.info', 'SF:other/z.ts\nDA:1,1\nend_of_record\n');
+      const source = (await run()).signal_sources.coverage!;
+      expect(source.status).toBe('absent');
+      expect(source.reason).toMatch(/0 of 2/);
+    });
+
+    it('degrades on an explicit report matching 0 files (D12)', async () => {
+      ranked(root);
+      put('r/z.info', 'SF:other/z.ts\nDA:1,1\nend_of_record\n');
+      const source = (await run('--coverage', join(root, 'r', 'z.info')))
+        .signal_sources.coverage!;
+      expect(source.status).toBe('absent');
+      expect(source.reason).toMatch(/0 of 2/);
+    });
+  });
+
   it('ranks a shallow clone on importers alone (criterion 8)', async () => {
     const source = join(root, 'source');
     mkdirSync(source);
