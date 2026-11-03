@@ -152,7 +152,7 @@ export function renderTrialAbstained(why, refused) {
 
 const ACTION = {
   pass: 'release: marker stays lifted, ledger row dropped',
-  fail: 're-quarantine: marker restored, row re-pointed, ticket told',
+  fail: 're-quarantine: marker restored; a ticket its row names is told, a hand-off is listed',
   flaky: 're-quarantine: marker restored; hand to canary-flake-hunter',
   missing: 'not in the run: marker restored, nothing else changed',
   skipped: 'still skipped in the run: marker restored, nothing else changed',

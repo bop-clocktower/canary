@@ -119,7 +119,8 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
     branch?: string;
     origin?: string;
     isCrossRepository?: boolean | null;
-  } = {};
+    defaultBranch?: string;
+  } = { defaultBranch: 'main' };
   const ok = (stdout: string): Result => ({
     status: 0,
     stdout,
@@ -150,7 +151,12 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
     }
     if (cmd !== 'gh')
       return { status: 127, stdout: '', stderr: 'not found', error: '' };
-    if (args[0] === 'repo') return ok(TRACKER.github_repo);
+    if (args[0] === 'repo')
+      return args.includes('defaultBranchRef')
+        ? state.defaultBranch
+          ? ok(state.defaultBranch)
+          : { status: 1, stdout: '', stderr: 'HTTP 404', error: '' }
+        : ok(TRACKER.github_repo);
     if (args[0] === 'api') {
       const target = args.find((a) => a.startsWith('repos/'))!;
       const m = /^repos\/(.+)\/issues\/(\d+)(\/comments)?$/.exec(target);
@@ -504,11 +510,11 @@ describe('verdict', () => {
     expect(git(repo, 'status', '--porcelain')).toBe('');
   });
 
-  it('--apply tells a Jira blocker through the manifest it wrote at trial time', () => {
+  it('--apply lists a handed-off Jira blocker for a person, and leaves its row alone', () => {
     // EVENT's blocker is #506, whose comment files it as CORE-101 (Jira). The
-    // verdict only has the PR-body manifest, so the manifest must carry what
-    // the commenter needs: the key, its project and the site it linked to.
-    const { repo, h } = opened(
+    // ledger and the test source name only #506, so at verdict time nothing
+    // trusted vouches for CORE-101: no comment, no re-point, a note to post.
+    const { repo, origin, h } = opened(
       report({ card: 'expected', event: 'unexpected', v2: 'expected' }),
     );
     const manifest = readManifest(h.state.body!);
@@ -517,8 +523,7 @@ describe('verdict', () => {
       id: 'CORE-101',
       tracker: 'jira',
       key: 'CORE-101',
-      project: 'CORE',
-      base: 'https://acme.atlassian.net',
+      via: ['acme/orders-suite#506', 'CORE-101'],
     });
 
     const r = callMain(
@@ -531,15 +536,24 @@ describe('verdict', () => {
         '--artifact',
         'playwright-json',
         '--apply',
+        '--json',
       ],
       { run: h.run, env: JIRA_ENV },
     );
     expect(r.stderr).toBe('');
-    const post = h.calls.find(
-      (c) => c.cmd === 'curl' && c.args.includes('POST'),
+    expect(
+      h.calls.some((c) => c.cmd === 'curl' && c.args.includes('POST')),
+    ).toBe(false);
+    const note = JSON.parse(r.stdout).comments[0];
+    expect(note).toMatchObject({ commented: false, target: 'CORE-101' });
+    expect(note.why).toMatch(/hand-off/);
+    expect(note.body).toMatch(/still fails/);
+    expect(note.body).not.toMatch(/against this ticket/);
+    const ledger = JSON.parse(
+      git(origin, 'show', 'canary/trial:.canary/quarantine.json'),
     );
-    expect(post?.args.at(-1)).toBe(
-      'https://acme.atlassian.net/rest/api/2/issue/CORE-101/comment',
+    expect(ledger.entries.find((e: any) => e.test === EVENT).issue ?? '').toBe(
+      '',
     );
   });
 
@@ -672,6 +686,32 @@ describe('commentFailures', () => {
     outcome: 'fail',
     cases: 1,
     blockers,
+    trustedTarget: blockers.at(-1),
+  });
+
+  it('comments on nothing the trusted check did not resolve, whatever the blocker says', () => {
+    const calls: unknown[] = [];
+    const [note] = commentFailures({
+      run: (...a: unknown[]) => {
+        calls.push(a);
+        return { status: 0 };
+      },
+      repo: '.',
+      judged: [
+        {
+          ...fail([{ id: 'a/b#3', tracker: 'github' }]),
+          trustedTarget: undefined,
+        },
+      ],
+      prUrl: 'u',
+      jiraComment: (ref: unknown) => {
+        calls.push(ref);
+        return { ok: true, why: '' };
+      },
+    });
+    expect(calls).toEqual([]);
+    expect(note).toMatchObject({ commented: false, target: 'a/b#3' });
+    expect(note.body).toMatch(/still fails/);
   });
 
   it('comments on Jira through the commenter, and lists it for a person when it cannot', () => {
@@ -959,6 +999,355 @@ describe('results', () => {
 
 // --- the PR body is untrusted: settle stays inside the trial worktree ---------
 
+describe('verdict --apply acts only on what the default branch vouches for', () => {
+  type Outcomes = Parameters<typeof report>[0];
+  type Suite = ReturnType<typeof makeSuite>;
+  const ALL_PASS = { card: 'expected', event: 'expected', v2: 'expected' };
+  const CARD_FAILS = { ...ALL_PASS, card: 'unexpected' };
+  const EVENT_FAILS = { ...ALL_PASS, event: 'unexpected' };
+  const LEDGER = '.canary/quarantine.json';
+  const THIS_REPO = 'acme/orders-suite';
+
+  /** Commit a ledger change on main and push it: what the default branch says. */
+  function onMain(repo: string, edit: (entries: any[]) => any[]) {
+    const file = path.join(repo, LEDGER);
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+    doc.entries = edit(doc.entries);
+    fs.writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'ledger');
+    git(repo, 'push', '-q', 'origin', 'main');
+  }
+  const rowNamed =
+    (test: string, issue: string) =>
+    (entries: any[]): any[] =>
+      entries.map((e) => (e.test === test ? { ...e, issue } : e));
+
+  /** Open a trial, let `change` edit its manifest as an editor could, apply. */
+  function settle(
+    outcomes: Outcomes,
+    {
+      change = () => {},
+      before = () => {},
+      after = () => {},
+    }: {
+      change?: (m: any) => void;
+      before?: (s: Suite) => void;
+      after?: (s: Suite, h: ReturnType<typeof harness>) => void;
+    } = {},
+  ) {
+    const suite = makeSuite();
+    before(suite);
+    const h = harness({ results: report(outcomes) });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    const manifest = readManifest(h.state.body!);
+    change(manifest);
+    h.state.body = `edited\n\n${embedManifest(manifest)}\n`;
+    after(suite, h);
+    const head = git(suite.origin, 'rev-parse', 'canary/trial');
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        suite.repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+        '--json',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    const told = {
+      github: h.calls.filter((c) => c.args[0] === 'issue'),
+      jira: h.calls.filter((c) => c.cmd === 'curl' && c.args.includes('POST')),
+    };
+    return { ...suite, h, r, head, told };
+  }
+  type Settled = ReturnType<typeof settle>;
+
+  const leafOf = (m: any, test: string) =>
+    m.lifts.find((l: any) => l.test === test).blockers.at(-1);
+  const liftOf = (m: any, test: string) =>
+    m.lifts.find((l: any) => l.test === test);
+  const trialLedger = (t: Settled) =>
+    JSON.parse(git(t.origin, 'show', `canary/trial:${LEDGER}`)).entries;
+  const rowOf = (t: Settled, test: string) =>
+    trialLedger(t).find((e: any) => e.test === test);
+
+  function expectRefused(t: Settled, why: RegExp) {
+    expect(t.r.code).not.toBe(0);
+    expect(t.r.stderr).toMatch(why);
+    expect(git(t.origin, 'rev-parse', 'canary/trial')).toBe(t.head);
+    expect(t.told.github).toEqual([]);
+    expect(t.told.jira).toEqual([]);
+  }
+
+  /** Settled, but the note went to a person and the ticket heard nothing. */
+  function expectListed(t: Settled, target: string) {
+    expect(t.r.stderr).toBe('');
+    expect(t.r.code).toBe(0);
+    expect(t.told.github).toEqual([]);
+    expect(t.told.jira).toEqual([]);
+    const [note] = JSON.parse(t.r.stdout).comments;
+    expect(note).toMatchObject({ commented: false, target });
+    expect(note.why).toMatch(/hand-off/);
+    expect(git(t.origin, 'rev-parse', 'canary/trial')).not.toBe(t.head);
+  }
+
+  describe('a blocker the trusted row names is told', () => {
+    it('on GitHub, from the trusted ref, whatever URL the manifest carries', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          leafOf(m, CARD).url = 'https://example.com/elsewhere';
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.told.github).toHaveLength(1);
+      expect(t.told.github[0].args.slice(0, 3)).toEqual([
+        'issue',
+        'comment',
+        '505',
+      ]);
+      expect(t.told.github[0].args).toContain(THIS_REPO);
+      expect(rowOf(t, CARD).issue).toBe(
+        `https://github.com/${THIS_REPO}/issues/505`,
+      );
+    });
+
+    it('on GitHub when the manifest spells the id bare or in another case', () => {
+      for (const id of ['#505', 'ACME/orders-suite#505']) {
+        const t = settle(CARD_FAILS, {
+          change: (m) => {
+            leafOf(m, CARD).id = id;
+          },
+        });
+        expect(t.r.stderr).toBe('');
+        expect(t.told.github[0].args).toContain(THIS_REPO);
+      }
+    });
+
+    it('on Jira, when the row itself names the key', () => {
+      const url = 'https://acme.atlassian.net/browse/CORE-101';
+      const t = settle(EVENT_FAILS, {
+        before: (s) => onMain(s.repo, rowNamed(EVENT, url)),
+        change: (m) => {
+          leafOf(m, EVENT).url = 'https://example.com/elsewhere';
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.told.jira).toHaveLength(1);
+      expect(t.told.jira[0].args.at(-1)).toBe(
+        'https://acme.atlassian.net/rest/api/2/issue/CORE-101/comment',
+      );
+      expect(rowOf(t, EVENT).issue).toBe(url);
+    });
+  });
+
+  describe('a blocker it does not name, claiming no hand-off, refuses the whole settle', () => {
+    it.each([
+      ['no chain', undefined],
+      ['a one-entry chain', ['someone/else#9']],
+      ['a chain not ending at the blocker', [`${THIS_REPO}#505`, '#1']],
+      ['a chain not starting at a named ticket', ['#1', 'someone/else#9']],
+      ['a chain that is not a list', 'someone/else#9'],
+    ])('GitHub, %s', (_n, via) => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), { id: 'someone/else#9', via });
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it('Jira, naming another ticket in an allowed project', () => {
+      const t = settle(EVENT_FAILS, {
+        before: (s) => onMain(s.repo, rowNamed(EVENT, 'CORE-101')),
+        change: (m) => {
+          Object.assign(leafOf(m, EVENT), {
+            id: 'CORE-999',
+            key: 'CORE-999',
+            via: ['CORE-999'],
+          });
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it('even when only the passing lifts would otherwise settle', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), { id: 'someone/else#9', via: [] });
+        },
+      });
+      expect(rowOf(t, EVENT)).toBeDefined();
+      expectRefused(t, /not named by its ledger row/);
+    });
+  });
+
+  describe('a claimed hand-off is listed for a person, forged or not', () => {
+    it('GitHub: the chain starts at a named ticket, and the target hears nothing', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), {
+            id: 'someone/else#9',
+            url: 'https://example.com/elsewhere',
+            via: [`${THIS_REPO}#505`, 'someone/else#9'],
+          });
+        },
+      });
+      expectListed(t, 'someone/else#9');
+      expect(rowOf(t, CARD).issue ?? '').toBe('');
+    });
+
+    it('Jira: the same, with another ticket in an allowed project', () => {
+      const t = settle(EVENT_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, EVENT), {
+            id: 'CORE-999',
+            key: 'CORE-999',
+            via: [`${THIS_REPO}#506`, 'CORE-999'],
+          });
+        },
+      });
+      expectListed(t, 'CORE-999');
+      expect(rowOf(t, EVENT).issue ?? '').toBe('');
+    });
+
+    it('a manifest cannot declare its own verified target', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          const forged = { id: 'someone/else#9', tracker: 'github' };
+          Object.assign(leafOf(m, CARD), {
+            ...forged,
+            via: [`${THIS_REPO}#505`, forged.id],
+          });
+          liftOf(m, CARD).trustedTarget = forged;
+        },
+      });
+      expectListed(t, 'someone/else#9');
+    });
+
+    it('the listed target is shown as plain, bounded text', () => {
+      const id = `someone/else#9\n${'x'.repeat(500)}`;
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), {
+            id,
+            via: [`${THIS_REPO}#505`, id],
+          });
+        },
+      });
+      const [note] = JSON.parse(t.r.stdout).comments;
+      expect(note.target).not.toContain('\n');
+      expect(note.target.length).toBeLessThanOrEqual(201);
+      expect(t.told.github).toEqual([]);
+    });
+  });
+
+  describe('the trust source', () => {
+    it('a manifest ledger other than the operator ledger is refused, even inside the tree', () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          m.ledger = REF_FILE;
+        },
+      });
+      expectRefused(t, /not the ledger this verdict was told to trust/);
+    });
+
+    it('a ticket only the trial branch ledger names is not trusted', () => {
+      // A row the default branch does not name it on, pushed to the head only.
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), { id: 'someone/else#9', via: [] });
+        },
+        after: (s) => {
+          git(s.repo, 'fetch', '-q', 'origin', 'canary/trial');
+          git(s.repo, 'checkout', '-q', 'FETCH_HEAD');
+          const file = path.join(s.repo, LEDGER);
+          const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+          doc.entries = rowNamed(CARD, 'someone/else#9')(doc.entries);
+          fs.writeFileSync(file, JSON.stringify(doc));
+          git(s.repo, 'commit', '-qam', 'head only');
+          git(s.repo, 'push', '-q', 'origin', 'HEAD:refs/heads/canary/trial');
+          git(s.repo, 'checkout', '-q', 'main');
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it('a row the default branch does not have is refused (a trial on another branch)', () => {
+      const t = settle(CARD_FAILS, {
+        after: (s) =>
+          onMain(s.repo, (entries) => entries.filter((e) => e.test !== CARD)),
+      });
+      expectRefused(t, /not on the default branch/);
+    });
+
+    it('a default branch gh cannot name is refused', () => {
+      const t = settle(ALL_PASS, {
+        after: (_s, h) => {
+          h.state.defaultBranch = '';
+        },
+      });
+      expectRefused(t, /default branch/);
+    });
+  });
+
+  describe('ledgerRows are checked against the trusted ledger', () => {
+    const OTHER = 'a row whose ticket cannot be read';
+
+    it("a passing lift cannot drop another test's row", () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          const lift = liftOf(m, EVENT);
+          lift.ledgerRows.push({ ...lift.ledgerRows[0], test: OTHER });
+        },
+      });
+      expectRefused(t, /belongs to another marker/);
+    });
+
+    it('a row the trusted ledger does not hold is refused', () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          liftOf(m, EVENT).ledgerRows[0].marker = 'test.fixme';
+        },
+      });
+      expectRefused(t, /not on the default branch/);
+    });
+
+    it('a lift that names none of its own rows is refused', () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          liftOf(m, EVENT).ledgerRows = [];
+        },
+      });
+      expectRefused(t, /no ledger row of its own/);
+    });
+
+    it('rows the audit grouped on one marker still settle together', () => {
+      const SHORT = 'the warehouse list is unreachable';
+      const t = settle(ALL_PASS, {
+        before: (s) =>
+          onMain(s.repo, (entries) => [
+            ...entries,
+            { ...entries.find((e) => e.test === CARD), test: SHORT },
+          ]),
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.r.code).toBe(0);
+      expect(rowOf(t, CARD)).toBeUndefined();
+      expect(rowOf(t, SHORT)).toBeUndefined();
+    });
+  });
+});
+
 describe('verdict refuses a trial whose head is not in this repository', () => {
   const opened = () => {
     const suite = makeSuite();
@@ -1122,12 +1511,12 @@ describe('verdict --apply refuses a manifest that reaches outside the worktree',
         'quarantine.json',
         '{"schema_version":1,"entries":[]}\n',
       );
-      const t = tampered((m) => {
-        m.ledger = 'escape/quarantine.json';
-      });
-      // tampered() ran with the link absent; commit it and run again.
-      fs.symlinkSync(v.dir, path.join(t.repo, 'escape'));
-      git(t.repo, 'add', 'escape');
+      const t = tampered(() => {});
+      // tampered() ran with the link absent; commit it on the trial branch
+      // only (the default branch's ledger stays real) and run again.
+      fs.rmSync(path.join(t.repo, '.canary'), { recursive: true });
+      fs.symlinkSync(v.dir, path.join(t.repo, '.canary'));
+      git(t.repo, 'add', '-A');
       git(t.repo, 'commit', '-q', '-m', 'link');
       git(t.repo, 'push', '-q', 'origin', 'HEAD:refs/heads/canary/trial', '-f');
       const head = git(t.origin, 'rev-parse', 'canary/trial');

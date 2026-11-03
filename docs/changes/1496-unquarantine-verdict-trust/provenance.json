@@ -1,0 +1,18 @@
+{
+  "issues": [1496],
+  "route": "security",
+  "stages": ["debugging"],
+  "reproducingTest": "agents/skills/test/canary-unquarantine-trial.test.ts",
+  "baseSha": "16a8ad2e",
+  "reproFailure": "Before the fix, 27 new or changed tests failed: a manifest blocker naming an unrelated ticket was commented on and exited 0 on both trackers (expected a refusal or a listed note), a manifest URL was written into the ledger row, a cross-repository head settled (exit 0), a manifest ledger other than the operator's was accepted, a passing lift could drop another test's row, and a 70,000-character title produced a 70,290-character note.",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "The trusted source is the repository's default branch on origin, read in a throwaway worktree; the trial branch, manifest.base and the PR base are all editor-controlled.",
+    "The trusted ledger path is the operator's --ledger or the default .canary/quarantine.json; manifest.ledger must equal it.",
+    "jira_projects and quarantine tags come from the operator's checkout and flags, the same source the Jira commenter already uses, and not from the default branch.",
+    "A blocker is direct only when its id is a ticket the trusted row names under the audit's own first-source rule; the manifest's claim plays no part. A claimed chain only moves a target from refused to listed.",
+    "Only pass and fail outcomes act on the ledger, so rows are checked for those; flaky and missing lifts are not checked against the ledger.",
+    "A trial opened before via was recorded is refused if a failing blocker was handed off; trials are short-lived, and opening a new one recovers.",
+    "A trial against another branch is refused if its row exists only there; the row must reach the default branch first."
+  ]
+}

@@ -57,8 +57,10 @@ options:
                          file or a directory) from the trial run
   --artifact NAME        verdict: download results from the trial run's
                          CI artifact NAME instead
-  --apply                verdict: rewrite the trial PR and comment on
-                         failing tickets; without it nothing is written
+  --apply                verdict: rewrite the trial PR and comment on failing
+                         tickets the default branch's ledger row names (a
+                         hand-off leaf is listed for a person); without it
+                         nothing is written
   --json                 emit machine-readable output
   --strict               exit 1 when something needs action, 3 when the
                          command abstained

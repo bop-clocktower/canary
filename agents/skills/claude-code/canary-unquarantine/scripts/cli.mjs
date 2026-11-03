@@ -11,7 +11,8 @@
 //            runs them live
 //   verdict  read that PR's CI result per test; with --apply, rewrite the PR:
 //            passes are released (ledger row dropped), failures re-quarantined
-//            and their ticket told, flakes handed to canary-flake-hunter
+//            and a ticket their row names told (a hand-off is listed for a
+//            person), flakes handed to canary-flake-hunter
 //
 // Advisory by default (exit 0). `--strict` exits 1 when something needs action
 // and 3 when the command abstained (zero rows read, an unreadable tracker, a
@@ -212,9 +213,10 @@ function verdictCommand(args, run, env) {
     ? { abstain: where.why }
     : planVerdict(trial, where.source);
   if (plan.abstain) return verdictAbstained(args, plan.abstain);
+  const company = loadCompany(companyPath(args));
   const jiraComment = jiraCommenter({
     run,
-    projects: loadCompany(companyPath(args)).jiraProjects,
+    projects: company.jiraProjects,
     env,
   });
   const comments = args.apply
@@ -224,6 +226,16 @@ function verdictCommand(args, run, env) {
         trial,
         judged: plan.judged,
         jiraComment,
+        trust: {
+          // The operator's ledger path, never the one the PR body names.
+          ledger: ledgerInRepo(
+            args.repo,
+            args.ledger ?? path.join(args.repo, '.canary', 'quarantine.json'),
+          ),
+          githubRepo: args.githubRepo,
+          jiraProjects: company.jiraProjects,
+          tags: tagsFor(args.tags, company),
+        },
       })
     : [];
   const doc = verdictDoc(args, plan, comments);

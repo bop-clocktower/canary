@@ -1,8 +1,9 @@
 // settle -- turn the trial PR into its final shape, from the verdict.
 //
 //   pass     keep the marker lifted, drop every ledger row for it
-//   fail     restore the marker, re-point the rows' `issue` at the blocker the
-//            audit read as resolved, and comment on that ticket
+//   fail     restore the marker; when the blocker is a ticket the trusted row
+//            names, re-point the rows' `issue` at it and comment on it; when it
+//            is a claimed hand-off, list the note for a person (see trust.mjs)
 //   flaky    restore the marker; the test goes to canary-flake-hunter
 //   missing  / skipped: restore the marker and change nothing else
 //
@@ -21,17 +22,12 @@ import {
   writeLifts,
 } from './git.mjs';
 import { jiraProject } from './refs.mjs';
+import { sameRow, withTrustedTargets } from './trust.mjs';
 
-const sameRow = (a, b) =>
-  a.test === b.test &&
-  a.file === b.file &&
-  a.kind === b.kind &&
-  a.marker === b.marker;
-
-/** The blocker a failing test is re-pointed at and its ticket told: the last leaf the audit reached. */
+/** The blocker the manifest says a failing test waits on: the last leaf the audit reached. */
 const lastBlocker = (j) => j.blockers[j.blockers.length - 1];
 
-/** Drop the passing tests' rows; re-point the failing tests' rows at their blocker. */
+/** Drop the passing tests' rows; re-point the failing tests' rows at their trusted ticket. */
 function rewriteLedger(work, file, judged) {
   const doc = ledgerIo.load(at(work, file));
   const drop = judged
@@ -39,9 +35,9 @@ function rewriteLedger(work, file, judged) {
     .flatMap((j) => j.ledgerRows);
   doc.entries = doc.entries.filter((e) => !drop.some((d) => sameRow(e, d)));
   for (const j of judged.filter(
-    (x) => x.outcome === 'fail' && lastBlocker(x),
+    (x) => x.outcome === 'fail' && x.trustedTarget,
   )) {
-    const target = lastBlocker(j);
+    const target = j.trustedTarget;
     for (const e of doc.entries)
       if (j.ledgerRows.some((d) => sameRow(e, d)))
         e.issue = target.url || target.id;
@@ -66,9 +62,10 @@ function rebuildFiles(run, work, base, judged) {
 }
 
 /**
- * A Jira blocker's key picks the ticket a comment is written to, so it must be
- * a well-formed key and the blocker's own id. Pairing it with another ticket
- * still needs a PR editor; re-deriving blockers at verdict time would close that.
+ * A Jira blocker's key must be well formed and the blocker's own id. Which
+ * ticket a comment is written to is decided in trust.mjs, from the default
+ * branch: a key this check passes still reaches a commenter only if the
+ * trusted row names it.
  */
 function checkJiraBlocker(b) {
   if (b.tracker !== 'jira') return;
@@ -107,12 +104,22 @@ export function applyVerdict({
   run,
   repo,
   trial,
-  judged,
+  judged: asJudged,
   jiraComment,
+  trust,
   now = new Date(),
 }) {
   const { manifest, headRefName, url } = trial;
-  checkManifest(repo, manifest, judged); // before any git call
+  checkManifest(repo, manifest, asJudged); // before any git call
+  // Then against the default branch, before the head is fetched or anything
+  // is written. Everything below acts on what this returns.
+  const judged = withTrustedTargets({
+    run,
+    repo,
+    manifest,
+    judged: asJudged,
+    trust,
+  });
   must(run('git', ['-C', repo, 'fetch', 'origin', headRefName]), 'git fetch');
   withWorktree(
     run,
@@ -161,9 +168,21 @@ function noteField(text) {
 
 const failureNote = (j, prUrl) =>
   `canary-unquarantine trial: \`${noteField(j.test)}\` (\`${noteField(j.file)}\`) was switched back on and **still fails** ` +
-  `(${j.cases} case(s) in the run, ${prUrl}). It has been re-quarantined against this ticket. ` +
+  `(${j.cases} case(s) in the run, ${prUrl}). ` +
+  (j.trustedTarget
+    ? `It has been re-quarantined against this ticket. `
+    : `It has been re-quarantined, and its ledger row still reaches this ticket through a hand-off. `) +
   `Its blocker was read as resolved, so either the fix has not reached the environment the suite runs ` +
   `against, or this ticket did not fix it.`;
+
+/** A hand-off leaf: not verified at verdict time, so it is left to a person. */
+const listedForPerson = (j, leaf, body) => ({
+  test: j.test,
+  target: noteField(leaf.id),
+  commented: false,
+  why: 'a claimed hand-off the ledger cannot vouch for; check it and comment by hand',
+  body,
+});
 
 /** One GitHub comment, through `gh issue comment`. */
 function commentOnGithub(run, repo, target, body) {
@@ -191,7 +210,6 @@ function commentOnGithub(run, repo, target, body) {
 
 /**
  * One Jira comment, through the configured commenter when there is one. The
- * target comes from the PR-body manifest, which a PR editor can change, so the
  * project is re-derived from the key: the per-project gate checks the ticket
  * actually being written to.
  */
@@ -206,8 +224,9 @@ function commentOnJira(jiraComment, target, body) {
 }
 
 /**
- * Tell each failing test's blocker ticket. A ticket that cannot be told is
- * listed with the note, for a person to post.
+ * Tell each failing test's trusted ticket. A ticket that cannot be told, or a
+ * blocker with no `trustedTarget` (a claimed hand-off), is listed with the
+ * note for a person to post. Only `trustedTarget` is ever written to.
  *
  * @param {{run: Function, repo: string, judged: object[], prUrl: string,
  *          jiraComment?: (ref: object, body: string) => {ok: boolean, why: string}}} input
@@ -217,14 +236,16 @@ export function commentFailures({ run, repo, judged, prUrl, jiraComment }) {
   return judged
     .filter((j) => j.outcome === 'fail')
     .map((j) => {
-      const target = lastBlocker(j);
-      if (!target)
+      const leaf = lastBlocker(j);
+      if (!leaf)
         return {
           test: j.test,
           commented: false,
           why: 'no blocker to comment on',
         };
       const body = failureNote(j, prUrl);
+      const target = j.trustedTarget;
+      if (!target) return listedForPerson(j, leaf, body);
       const told =
         target.tracker === 'jira'
           ? commentOnJira(jiraComment, target, body)

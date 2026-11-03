@@ -30,7 +30,7 @@ export const MAX_HANDOFF_DEPTH = 4;
  * the ledger's `issue` field, the comment above the marker, the ledger
  * `reason`, then the title.
  */
-function blockerRefs(row, loc, jiraProjects) {
+export function blockerRefs(row, loc, jiraProjects) {
   const exclude = idTokens(row.test);
   const sources = [
     ['issue', row.issue, { anyBareJira: true }],

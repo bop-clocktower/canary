@@ -6,8 +6,9 @@
 // reads that run, test by test, and `settle` rewrites the same PR:
 //
 //   pass   the marker stays lifted and the ledger row is dropped
-//   fail   the marker is restored, the row re-pointed at the blocker that was
-//          supposed to fix it, and that ticket told the test still fails
+//   fail   the marker is restored; if the row names the blocker that was supposed
+//          to fix it, the row is re-pointed and that ticket told; a hand-off leaf
+//          is listed for a person
 //   flaky  the marker is restored and the test handed to canary-flake-hunter
 //          -- a test that passes on retry has not shown it is fixed
 //
@@ -66,6 +67,9 @@ const manifestLift = (l) => ({
     tracker: b.tracker,
     state: b.state,
     url: b.url ?? '',
+    // The chain the audit followed: a blocker the row does not name is settled
+    // as a claimed hand-off only if this runs from a ticket the row does name.
+    via: b.via ?? [],
     ...jiraReach(b),
   })),
   ledgerRows: l.ledgerRows,
@@ -171,6 +175,6 @@ function trialBody(manifest, refused) {
     `**Trial release — do not merge as is.** This draft lifts ${manifest.lifts.length} quarantined test(s) so this ` +
     `repository's own CI runs them live. When CI finishes, run \`canary-unquarantine verdict --pr <this PR>\`: ` +
     `tests that pass stay released and their ledger rows are dropped; tests that fail are re-quarantined and ` +
-    `their ticket is told; flaky ones go to canary-flake-hunter.\n\nLifted:\n\n${list}${notLifted}\n\n${embedManifest(manifest)}\n`
+    `their ticket is told or the note listed for a person; flaky ones go to canary-flake-hunter.\n\nLifted:\n\n${list}${notLifted}\n\n${embedManifest(manifest)}\n`
   );
 }
