@@ -584,7 +584,7 @@ describe('harness-security.yml runs the audit as its own step (#1436)', () => {
     const refresh = index(/node scripts\/security_ledger\.mjs/);
     expect(audit).toBeGreaterThanOrEqual(0);
     expect(audit).toBeLessThan(refresh);
-    // Not main-only: a step that first runs after merge is first broken there.
+    // Not main-only: a broken step has to show on the PR that broke it.
     expect(steps()[audit]!.if).toBeUndefined();
     // Its exit code stays meaningful: only a crash of the script can fail it.
     expect(steps()[audit]!['continue-on-error']).toBeUndefined();

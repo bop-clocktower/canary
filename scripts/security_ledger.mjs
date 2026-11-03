@@ -90,6 +90,10 @@ function fmtSupplyChain(audit) {
     return notMeasured([], audit.reason ?? 'no tracked lockfiles');
   }
   if (!lockfiles.every(hasCounts)) return notMeasured(lockfiles);
+  return fmtMeasured(audit, lockfiles);
+}
+
+function fmtMeasured(audit, lockfiles) {
   const sum = (k) =>
     lockfiles.reduce((acc, e) => acc + e.vulnerabilities[k], 0);
   const noun = lockfiles.length === 1 ? 'lockfile' : 'lockfiles';
