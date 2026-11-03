@@ -16,7 +16,7 @@ import {
   startsRegex,
   stepQuote,
   stripComments,
-} from '../type-only.js';
+} from './comments.js';
 import {
   expandRanges,
   matchFile,

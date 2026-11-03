@@ -9,7 +9,7 @@
   "closingKeywordWhy": "stripComments is regex-aware for both callers and the report-anchor.ts trigger no longer loses the lexer. That is the whole issue.",
   "assumptions": [
     "DECIDED (human): make the shared stripComments regex-aware and do not fork a copy. ts/src/core/static-linter.ts keeps its own unrelated stripComments.",
-    "REGEX_BEFORE and skipRegex moved unchanged from lexical/continuation.ts to type-only.ts, next to QUOTES and stepQuote, because continuation.ts already imports from type-only.ts. No new module, so no entryPoints change.",
+    "REGEX_BEFORE and skipRegex moved unchanged from lexical/continuation.ts into a new lexical/comments.ts, with stripComments, QUOTES and stepQuote from type-only.ts. Keeping them in type-only.ts put ts/src/guardian/diff-coverage at 1839 lines against the 1800 module-size ceiling (CI harness job). The new module is in both entryPoints lists.",
     "The rule itself is not improved here. A string does not update the context, `++` reads as a regex opener and most keywords are missing. Keeping both passes on one rule was preferred to a more accurate rule in one of them.",
     "Added beyond the brief: the type-only detector rejects any `/` left after stripping, because a differential fuzz showed a kept regex could otherwise flip a verdict from keep to suppress.",
     "The #1408 fixture in ts/test/guardian-multiline-continuation.test.ts used this bug to lose the lexer. It was moved to a trigger that still loses it, so those tests keep reaching the fallback.",

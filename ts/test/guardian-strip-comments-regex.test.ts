@@ -20,10 +20,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { attributeLines } from '../src/guardian/diff-coverage/lexical/continuation.js';
-import {
-  isTypeOnlyModule,
-  stripComments,
-} from '../src/guardian/diff-coverage/type-only.js';
+import { stripComments } from '../src/guardian/diff-coverage/lexical/comments.js';
+import { isTypeOnlyModule } from '../src/guardian/diff-coverage/type-only.js';
 
 /** The line from `report-anchor.ts` that #1515 was found on. */
 const TRIGGER = "const clean = p.replace(/^\\.\\//, '');";
