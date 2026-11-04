@@ -25,6 +25,10 @@ import {
 import type { FlakinessRetirement } from './flake-retirement.js';
 import { scoreFlakyRuns } from './flakiness-check.js';
 
+// Re-exported so both report renderers read one module: a direct import took
+// `manhunter/readiness.ts` over the perf coupling threshold.
+export { retirementNotes } from './flakiness-check.js';
+
 interface ScoredRun {
   /** The flakiness window is per suite, newest first by timestamp (#1506). */
   suite?: string | null;

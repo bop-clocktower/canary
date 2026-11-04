@@ -17,11 +17,11 @@
  */
 
 import {
+  retirementNotes,
   scoreCiReady,
   type CiReadyReport,
   type RunsInput,
 } from '../../core/ci-ready.js';
-import { retirementNotes } from '../../core/flakiness-check.js';
 import {
   parseCriticalAreas,
   parseInventory,

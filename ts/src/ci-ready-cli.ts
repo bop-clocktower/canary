@@ -15,11 +15,11 @@ import { Command } from 'commander';
 import { CliExitError } from './cli-common.js';
 import { EXIT_ABSTAINED, errnoCode } from './core/gate-result.js';
 import {
+  retirementNotes,
   scoreCiReady,
   type CiReadyReport,
   type RunsInput,
 } from './core/ci-ready.js';
-import { retirementNotes } from './core/flakiness-check.js';
 import { parseCriticalAreas, parseInventory } from './core/inventory-checks.js';
 import {
   HistoryContentError,
