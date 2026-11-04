@@ -37,6 +37,12 @@ under the project's former name) are documented in the
   `Address6` zone identifier in quadratic time before its length limit, so a
   single long string could stall the process. Both the `ts/` and `npm/`
   lockfiles now resolve the patched version.
+- **JUnit root detection no longer backtracks exponentially (CWE-1333).**
+  `canary history record` and `canary testtracker` could stall on a crafted
+  report whose prolog never reaches a root element. Each prolog item now ends at
+  its first terminator, so the scan is linear. A document that was recognised
+  only because a comment or processing instruction stretched past its own end,
+  such as one whose real root is not JUnit, is now refused.
 
 ### Changed
 

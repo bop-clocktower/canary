@@ -36,8 +36,8 @@ const OUTCOME_TAGS = new Set(['failure', 'error', 'skipped', ...RETRY_TAGS]);
 const TOKEN_RE =
   /<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)([A-Za-z_][\w.:-]*)((?:"[^"]*"|'[^']*'|[^'">])*?)(\/?)>|([^<]+)/g;
 const ATTR_RE = /([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-const ROOT_RE =
-  /^﻿?\s*(?:<\?[\s\S]*?\?>\s*|<!--[\s\S]*?-->\s*|<!DOCTYPE[^>]*>\s*)*<(testsuites|testsuite)[\s/>]/;
+const ROOT_RE = // (?=(x))\1 is atomic: an item ends at its first terminator
+  /^﻿?\s*(?:(?=(<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>))\1\s*)*<(testsuites|testsuite)[\s/>]/;
 const ENTITIES: Record<string, string> = {
   lt: '<',
   gt: '>',
