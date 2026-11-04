@@ -163,6 +163,40 @@ describe('pre-commit security-ledger step is scoped to its inputs (#1446)', () =
     expect(ledgerStatus(dir)).toBe(`M  ${TIMELINE}\nM  ${LEDGER}`);
   });
 
+  it('refreshes the ledger when the supply-chain sidecar is staged (#1436)', () => {
+    const dir = makeRepo();
+    const sidecar = '.harness/security/supply-chain.json';
+    writeFileSync(
+      join(dir, sidecar),
+      JSON.stringify({
+        commit: 'abc',
+        capturedAt: '2026-11-03T00:00:00.000Z',
+        lockfiles: [
+          {
+            path: 'ts/package-lock.json',
+            status: 'measured',
+            vulnerabilities: {
+              critical: 0,
+              high: 0,
+              moderate: 3,
+              low: 0,
+              info: 0,
+              total: 3,
+            },
+          },
+        ],
+      }),
+    );
+    git(dir, 'add', sidecar);
+
+    runHook(dir);
+
+    expect(staged(dir).sort()).toEqual([sidecar, LEDGER].sort());
+    expect(readFileSync(join(dir, LEDGER), 'utf-8')).toContain(
+      '**Supply chain:** 3 (',
+    );
+  });
+
   it('refreshes the ledger when the ledger script itself is staged', () => {
     const dir = makeRepo();
     // Simulate a stale ledger in the tree, then a change to its generator.
