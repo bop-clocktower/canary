@@ -104,9 +104,14 @@ function checkManifest(root, manifest, judged) {
       `trial manifest base "${manifest.base}" is not a commit id; refusing to settle`,
     );
   judged.flatMap((j) => j.blockers ?? []).forEach(checkJiraBlocker);
-  // `selectRows` lifts a marker once; a repeat would tell its ticket repeatedly.
+  checkPaths(root, manifest, judged);
+}
+
+/** Each lift once, and every path it names inside the tree and outside .git. */
+function checkPaths(root, manifest, judged) {
   for (const p of [manifest.ledger, ...judged.map((j) => j.file)])
     checkNoDotGit(p);
+  // `selectRows` lifts a marker once; a repeat would tell its ticket repeatedly.
   const seen = new Set();
   for (const j of judged) {
     const key = JSON.stringify([j.file, j.test]);
