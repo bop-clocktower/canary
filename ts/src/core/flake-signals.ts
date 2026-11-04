@@ -15,8 +15,8 @@ import {
 } from '../util/alternation.js';
 
 /** The run fields this module reads. */
-interface SignalRun {
-  tests?: { test_name: string; status: string }[];
+export interface SignalRun {
+  tests?: { test_name: string; status: string; test_file?: string | null }[];
 }
 
 /** One test's worst flake signal, and which axis produced it. */
@@ -100,7 +100,7 @@ function alternationRate(alt: AlternationResult): number {
 }
 
 /** The run fields {@link suiteWindows} reads to group and order runs. */
-interface WindowedRun {
+export interface WindowedRun {
   suite?: string | null;
   timestamp?: string | null;
 }
@@ -129,8 +129,9 @@ const NO_SUITE = '(no suite)';
  * Within a suite, tests are still keyed by `test_name` alone -- the identity
  * `queryFlaky` uses (see #1350); this does not change it.
  *
- * The one place a window is chosen: a filter on which runs or tests count
- * (e.g. retired tests, #1500) belongs here.
+ * The one place a window is chosen. Which rows in it still count is
+ * `retireDeletedFiles`' question (#1500), asked of each window this
+ * returns: a deleted file's rows must not change which runs are in the window.
  */
 export function suiteWindows<R extends WindowedRun>(
   runs: readonly R[],

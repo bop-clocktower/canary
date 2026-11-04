@@ -6,6 +6,11 @@
  * suite renders exactly as the check always has, several name each suite's
  * denominator. The skip cases (no store, unreadable store, no runs) stay in
  * `ci-ready.ts`, which owns the store input. Pure: callers pass the runs in.
+ *
+ * Rows from deleted test files retire before scoring (#1500; the rule is on
+ * `flake-retirement.ts`). The score's prose changes only when something retired:
+ * the rest of what retirement has to say is on the report and in its notes, so a
+ * reason consumers pin stays the reason they pin.
  */
 import {
   flakeSignals,
@@ -13,6 +18,11 @@ import {
   type FlakeSignal,
   type SuiteWindow,
 } from './flake-signals.js';
+import {
+  applyRetirement,
+  type FlakinessRetirement,
+} from './flake-retirement.js';
+import type { InventoryInput } from './inventory-checks.js';
 import {
   MIN_WINDOW_RUNS,
   NOT_MEASURABLE_NOTE,
@@ -27,7 +37,12 @@ interface ScoredRun {
   suite?: string | null;
   timestamp?: string | null;
   reporter_format?: string | null;
-  tests?: { test_name: string; status: string }[];
+  tests?: { test_name: string; status: string; test_file?: string | null }[];
+}
+
+interface FlakinessScore {
+  check: CiCheck;
+  retirement: FlakinessRetirement;
 }
 
 /**
@@ -101,13 +116,34 @@ function scoreCleanWindow(window: ScoredRun[]): CiCheck {
   };
 }
 
+/** Names what left the denominator: a check must not go green by deletion. */
+function retiredSuffix(retirement: FlakinessRetirement): string {
+  const worst = retirement.retired[0];
+  if (!worst) return '';
+  const was =
+    worst.axis === null
+      ? ''
+      : `, was ${Math.round(worst.rate * 100)}% on ${worst.axis}`;
+  return (
+    `; ${retirement.retired_count} retired test(s) excluded ` +
+    `(${worst.file} \u{203A} ${worst.title}${was})`
+  );
+}
+
 /** Score flakiness over a NON-EMPTY run history. */
-export function scoreFlakyRuns(runs: ScoredRun[]): CiCheck {
-  const windows = suiteWindows(runs, FLAKY_WINDOW_RUNS);
+export function scoreFlakyRuns(
+  runs: ScoredRun[],
+  inventory: InventoryInput,
+): FlakinessScore {
+  const { windows, retirement } = applyRetirement(
+    suiteWindows(runs, FLAKY_WINDOW_RUNS),
+    inventory,
+  );
   // One suite reads exactly as it always has; several name each denominator.
-  return windows.length === 1
-    ? scoreWindow(windows[0]!.runs)
-    : scoreSuites(windows);
+  const check =
+    windows.length === 1 ? scoreWindow(windows[0]!.runs) : scoreSuites(windows);
+  check.reason += retiredSuffix(retirement);
+  return { check, retirement };
 }
 
 /** The worst of a set of signals; a tie keeps the first seen. */

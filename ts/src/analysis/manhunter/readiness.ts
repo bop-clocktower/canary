@@ -21,6 +21,7 @@ import {
   type CiReadyReport,
   type RunsInput,
 } from '../../core/ci-ready.js';
+import { retirementNotes } from '../../core/flake-retirement.js';
 import {
   parseCriticalAreas,
   parseInventory,
@@ -96,6 +97,7 @@ function fedReadiness(report: CiReadyReport, sources: SourceRef[]): Section {
     facts: [
       `ci-ready verdict: ${report.verdict}`,
       ...report.checks.map((c) => `${c.verdict} ${c.name}: ${c.reason}`),
+      ...retirementNotes(report.retirement),
     ],
     eyes,
   });

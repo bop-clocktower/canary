@@ -19,6 +19,7 @@ import {
   type CiReadyReport,
   type RunsInput,
 } from './core/ci-ready.js';
+import { retirementNotes } from './core/flake-retirement.js';
 import { parseCriticalAreas, parseInventory } from './core/inventory-checks.js';
 import {
   HistoryContentError,
@@ -83,6 +84,7 @@ function renderText(report: CiReadyReport): string[] {
   ];
   for (const c of report.checks)
     lines.push(`  ${c.verdict.padEnd(4)}  ${c.name}: ${c.reason}`);
+  lines.push(...retirementNotes(report.retirement));
   const skipped = report.checks.length - report.checked;
   if (report.verdict === 'incomplete') {
     lines.push(
