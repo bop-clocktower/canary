@@ -14,6 +14,15 @@
  */
 import { randomUUID } from 'node:crypto';
 import { envVar } from './reporters/ingest/config.js';
+import {
+  k6Denominator,
+  k6Headline,
+  k6Objectives,
+  readK6Summary,
+  K6SummaryError,
+} from './reporters/ingest/k6-summary.js';
+import type { PerfHeadline, PerfObjective } from './reporters/ingest/k6-summary.js';
+import { postWithRetry } from './reporters/ingest/transport.js';
 import type { TesttrackerDeps } from './testtracker.js';
 
 export const PERF_USAGE = `usage: canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> --env <env> [options]
@@ -140,6 +149,49 @@ export function configurePerf(args: readonly string[], env: NodeJS.ProcessEnv): 
   return { summary, client, suite, environment, runRef, generatedAt: a.generatedAt, dryRun: a.dryRun, url, token };
 }
 
+/** The perf-report body TestTracker accepts (camelCase; optional keys omitted, never null). */
+export interface PerfReportBody {
+  suite: string;
+  environment: string;
+  runRef: string;
+  generatedAt: string;
+  gitSha?: string;
+  gitBranch?: string;
+  runUrl?: string;
+  headline: PerfHeadline;
+  objectives: PerfObjective[];
+}
+
+function provenance(env: NodeJS.ProcessEnv): Pick<PerfReportBody, 'gitSha' | 'gitBranch' | 'runUrl'> {
+  const p: Pick<PerfReportBody, 'gitSha' | 'gitBranch' | 'runUrl'> = {};
+  if (env.GITHUB_SHA) p.gitSha = env.GITHUB_SHA.slice(0, 64);
+  if (env.GITHUB_REF_NAME) p.gitBranch = env.GITHUB_REF_NAME.slice(0, 255);
+  const { GITHUB_SERVER_URL: server, GITHUB_REPOSITORY: repo, GITHUB_RUN_ID: id } = env;
+  // TestTracker accepts https run links only.
+  if (server?.startsWith('https://') && repo && id) p.runUrl = `${server}/${repo}/actions/runs/${id}`;
+  return p;
+}
+
+export function buildPerfBody(
+  cfg: PerfConfig,
+  headline: PerfHeadline,
+  objectives: PerfObjective[],
+  mtime: Date,
+  env: NodeJS.ProcessEnv,
+): PerfReportBody {
+  return {
+    suite: cfg.suite,
+    environment: cfg.environment,
+    runRef: cfg.runRef,
+    generatedAt: new Date(cfg.generatedAt ?? mtime).toISOString(),
+    ...provenance(env),
+    headline,
+    objectives,
+  };
+}
+
+export const perfPath = (client: string) => `/api/v1/tenants/${encodeURIComponent(client)}/perf-reports`;
+
 export async function runPushPerf(args: readonly string[], deps: TesttrackerDeps): Promise<number> {
   const out = deps.out ?? process.stdout;
   const err = deps.err ?? process.stderr;
@@ -147,12 +199,41 @@ export async function runPushPerf(args: readonly string[], deps: TesttrackerDeps
     out.write(PERF_USAGE);
     return 0;
   }
+  const env = deps.env ?? process.env;
+  let cfg: PerfConfig;
   try {
-    configurePerf(args, deps.env ?? process.env);
+    cfg = configurePerf(args, env);
   } catch (e) {
     if (!(e instanceof PerfUsageError)) throw e;
     err.write(`canary testtracker push-perf: ${e.message}\n\n${PERF_USAGE}`);
     return 2;
   }
-  return 0; // Tasks 10–12 fill this in.
+  let read: ReturnType<typeof readK6Summary>;
+  try {
+    read = readK6Summary(cfg.summary);
+  } catch (e) {
+    if (!(e instanceof K6SummaryError)) throw e;
+    err.write(`canary testtracker push-perf: ${e.message} Nothing was pushed.\n`);
+    return 1;
+  }
+  const headline = k6Headline(read.summary);
+  const objectives = k6Objectives(read.summary);
+  const body = buildPerfBody(cfg, headline, objectives, read.mtime, env);
+  out.write(k6Denominator(cfg.summary, objectives));
+  if (cfg.dryRun) {
+    out.write(`POST ${perfPath(cfg.client)}\n${JSON.stringify(body, null, 2)}\n`);
+    return 0;
+  }
+  // A minimal send, so the wire tests can read the body; the outcome
+  // handling replaces it in the next commit.
+  await postWithRetry(
+    `${new URL(cfg.url).origin}${perfPath(cfg.client)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.token}` },
+      body: JSON.stringify(body),
+    },
+    deps.retryDelaysMs ?? [1000, 4000],
+  );
+  return 0;
 }

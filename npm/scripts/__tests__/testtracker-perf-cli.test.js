@@ -66,3 +66,64 @@ test('--help prints the push-perf usage and exits 0', async () => {
   assert.equal(code, 0);
   assert.match(out, /--k6-summary <file>/);
 });
+
+// --- the body -------------------------------------------------------------------------
+
+const CI_ENV = {
+  ...PUSH_ENV,
+  GITHUB_SHA: 'abc1234def',
+  GITHUB_REF_NAME: 'main',
+  GITHUB_SERVER_URL: 'https://github.com',
+  GITHUB_REPOSITORY: 'acme/shop',
+};
+
+test('--dry-run prints the target and the body, sends nothing, needs no URL or token', async () => {
+  const { code, out, requests } = await pushPerf(SUMMARY, ['--dry-run'], { env: {} });
+  assert.equal(code, 0);
+  assert.equal(requests.length, 0);
+  assert.match(out, /POST \/api\/v1\/tenants\/acme\/perf-reports/);
+  const body = JSON.parse(out.slice(out.indexOf('{')));
+  assert.equal(body.objectives.length, 105);
+  assert.match(body.runRef, /^local-[0-9a-f-]{36}$/);
+});
+
+test('the body carries exactly the fields TestTracker accepts, camelCase', async () => {
+  const { payload } = await pushPerf(SUMMARY, [], { env: CI_ENV });
+  assert.deepEqual(Object.keys(payload).sort(), [
+    'environment', 'generatedAt', 'gitBranch', 'gitSha', 'headline', 'objectives', 'runRef', 'runUrl', 'suite',
+  ]);
+  assert.equal(payload.suite, 'checkout-load');
+  assert.equal(payload.environment, 'staging');
+  assert.equal(payload.runRef, '42-1');
+  assert.equal(payload.gitSha, 'abc1234def');
+  assert.equal(payload.gitBranch, 'main');
+  assert.equal(payload.runUrl, 'https://github.com/acme/shop/actions/runs/42');
+  assert.equal(payload.headline.httpReqs, 2812);
+});
+
+test('unknown provenance is omitted, never null (the server would 400 on null)', async () => {
+  const { payload } = await pushPerf(SUMMARY, [], { env: PUSH_ENV });
+  for (const k of ['gitSha', 'gitBranch', 'runUrl']) assert.equal(k in payload, false, k);
+  const plainHttp = await pushPerf(SUMMARY, [], { env: { ...CI_ENV, GITHUB_SERVER_URL: 'http://ghe.local' } });
+  assert.equal('runUrl' in plainHttp.payload, false);
+});
+
+test('generatedAt is --generated-at when given, else the file mtime', async () => {
+  const given = await pushPerf(SUMMARY, ['--generated-at', '2026-11-04T04:13:20+00:00']);
+  assert.equal(given.payload.generatedAt, '2026-11-04T04:13:20.000Z');
+  const mtime = await pushPerf(SUMMARY);
+  assert.equal(mtime.payload.generatedAt, require('node:fs').statSync(SUMMARY).mtime.toISOString());
+});
+
+test('--run-ref overrides the CI default', async () => {
+  const { payload } = await pushPerf(SUMMARY, ['--run-ref', 'nightly-7']);
+  assert.equal(payload.runRef, 'nightly-7');
+});
+
+test('the token is never printed', async () => {
+  const env = { ...PUSH_ENV, CANARY_INGEST_TOKEN: 'tt_secret_canary_value' };
+  for (const extra of [[], ['--dry-run']]) {
+    const { out, err, logs } = await pushPerf(SUMMARY, extra, { env });
+    assert.doesNotMatch(out + err + logs.join('\n'), /tt_secret_canary_value/);
+  }
+});
