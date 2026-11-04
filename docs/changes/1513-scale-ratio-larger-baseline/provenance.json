@@ -1,0 +1,16 @@
+{
+  "issues": [1513],
+  "route": "cicd",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-instrumented-trees-scale.test.ts",
+  "baseSha": "16a8ad2e",
+  "reproFailure": "Flake reproduced at the old sizes under coverage with 3 busy loops per core: 4 of 10 over 15x (max 23.1x); new sizes 0 of 9 (max 12.6x). Mutation probe (quadratic spread in anchoredGroups, not committed): FAILS on the ratio assertion at 158.9x in 83.4 s at 10k/100k and at 114.7x in 874.7 s at 30k/300k, under vitest --coverage.",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "DECIDED (human): raise SMALL and LARGE about 3x, keep the factor of 10, keep MAX_RATIO = 15.",
+    "Estimator unchanged from the earlier fix: one warm-up per size, 7 interleaved repetitions, minimum per size.",
+    "A regression now takes about 14.6 minutes locally to go red (estimated 38-45 minutes on CI, not measured). The 120 s timeout does not fire because the loop is synchronous. Accepted and raised to the human on the PR.",
+    "Measured on a 10-core laptop with peer sessions running; CI runners were not measured at the new sizes.",
+    "Test-only change: no CHANGELOG entry."
+  ]
+}
