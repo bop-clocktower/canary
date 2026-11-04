@@ -12,7 +12,7 @@ const THRESHOLD =
   /^\s*(avg|min|max|med|count|rate|value|p\(\s*\d+(?:\.\d+)?\s*\))\s*(===|==|!=|<=|>=|<|>)\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*$/i;
 
 /** The `values` key a threshold judges (`p(99)`, `rate`…), or null if it is not k6 grammar. */
-export function thresholdStat(expression: string): string | null {
+function thresholdStat(expression: string): string | null {
   const m = THRESHOLD.exec(expression);
   return m ? m[1].toLowerCase().replace(/\s+/g, '') : null;
 }

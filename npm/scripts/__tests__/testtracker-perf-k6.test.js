@@ -16,8 +16,17 @@ const fixture = () => JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
 
 // Held equal to the threshold grammar TestTracker parses on its side: the
 // server derives the stat it trends on with that grammar, and push-perf
-// picks values[stat] with this one.
-test('thresholdStat reads every k6 aggregation the server parses', () => {
+// picks values[stat] with this one. Read through k6Objectives (the parser is
+// module-private): a parsed stat yields that values[stat]; an expression that
+// is not k6 grammar yields null, whatever values holds.
+test('the threshold grammar reads every k6 aggregation the server parses', () => {
+  const values = { 'p(99)': 1, 'p(99.9)': 2, 'p(95)': 3, avg: 4, min: 5, max: 6, med: 7, count: 8, rate: 9, value: 10 };
+  const statOf = (expr) => {
+    const data = { metrics: { m: { type: 'counter', values, thresholds: { [expr]: { ok: true } } } } };
+    const [objective] = k6.k6Objectives(data);
+    const stat = Object.keys(values).find((k) => values[k] === objective.observedValue);
+    return stat ?? null;
+  };
   const cases = {
     'p(99)<500': 'p(99)',
     'p( 99.9 ) <= 1e3': 'p(99.9)',
@@ -35,7 +44,7 @@ test('thresholdStat reads every k6 aggregation the server parses', () => {
     '': null,
   };
   for (const [expr, want] of Object.entries(cases)) {
-    assert.equal(k6.thresholdStat(expr), want, expr);
+    assert.equal(statOf(expr), want, expr);
   }
 });
 

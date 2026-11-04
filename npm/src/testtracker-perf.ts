@@ -26,7 +26,7 @@ import { configurePerf, PerfUsageError } from './reporters/perf/perf-args.js';
 import type { PerfConfig } from './reporters/perf/perf-args.js';
 import { errText, log, postWithRetry, warn } from './reporters/ingest/transport.js';
 
-export const PERF_USAGE = `usage: canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> --env <env> [options]
+const PERF_USAGE = `usage: canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> --env <env> [options]
 
 Push one k6 run to TestTracker's perf-reports route with the client's
 tt_ ingest token. Reads handleSummary data: in your script,
@@ -92,7 +92,7 @@ function provenance(env: NodeJS.ProcessEnv): Pick<PerfReportBody, 'gitSha' | 'gi
   return p;
 }
 
-export function buildPerfBody(
+function buildPerfBody(
   cfg: PerfConfig,
   headline: PerfHeadline,
   objectives: PerfObjective[],
@@ -110,7 +110,7 @@ export function buildPerfBody(
   };
 }
 
-export const perfPath = (client: string) => `/api/v1/tenants/${encodeURIComponent(client)}/perf-reports`;
+const perfPath = (client: string) => `/api/v1/tenants/${encodeURIComponent(client)}/perf-reports`;
 
 const HINTS: Record<number, string> = {
   400: "the body failed TestTracker's schema; is canary older than the server?",
