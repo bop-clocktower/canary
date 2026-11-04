@@ -32,6 +32,11 @@ under the project's former name) are documented in the
 
 ### Security
 
+- **`canary-unquarantine verdict --apply` checks the trial manifest against the
+  default branch (#1496).** It tells only a ticket the row names there, lists a
+  hand-off leaf for a person with no comment or re-point, and refuses a blocker
+  or ledger row that doesn't match, or a cross-repository head.
+
 - **`ip-address` bumped to 10.7.4 (GHSA-rxp7-6hxx-x8q5).** The transitive
   dependency (via `@modelcontextprotocol/sdk` → `express-rate-limit`) matched an
   `Address6` zone identifier in quadratic time before its length limit, so a
