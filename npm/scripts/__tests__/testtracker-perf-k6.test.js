@@ -160,3 +160,36 @@ test('objectives come out sorted by sub-metric, then expression', () => {
   const subs = k6.k6Objectives(fixture()).map((o) => `${o.submetric} ${o.expression}`);
   assert.deepEqual(subs, [...subs].sort());
 });
+
+// --- headline and abstention -----------------------------------------------------
+
+test('the headline comes from http_reqs, iterations, http_req_duration and state', () => {
+  assert.deepEqual(k6.k6Headline(fixture()), {
+    httpReqs: 2812,
+    httpReqRate: 16.260912115073914,
+    iterations: 76,
+    durationMs: 172930,
+    p95Ms: 136.03723559999997,
+    p99Ms: 359.18521202999807,
+  });
+});
+
+test('an absent measurement is null, never 0', () => {
+  assert.deepEqual(k6.k6Headline({ metrics: { iterations: { values: { count: 4 } } } }), {
+    httpReqs: null,
+    httpReqRate: null,
+    iterations: 4,
+    durationMs: null,
+    p95Ms: null,
+    p99Ms: null,
+  });
+});
+
+test('abstains on no metrics, and on zero requests and zero iterations (null counts as 0)', () => {
+  const reason = (data) => k6.k6Abstention(data, k6.k6Headline(data));
+  assert.match(reason({ metrics: {} }), /no metrics/);
+  assert.match(reason({ metrics: { checks: { values: { rate: 1 } } } }), /0 requests and 0 iterations/);
+  assert.match(reason({ metrics: { http_reqs: { values: { count: 0 } }, iterations: { values: { count: 0 } } } }), /0 requests/);
+  assert.equal(reason({ metrics: { iterations: { values: { count: 1 } } } }), null);
+  assert.equal(reason(fixture()), null);
+});

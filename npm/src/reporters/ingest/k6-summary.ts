@@ -124,3 +124,39 @@ export function k6Objectives(summary: K6Summary): PerfObjective[] {
   }
   return out;
 }
+
+/** The run's headline measurements. Each is null when k6 did not report it. */
+export interface PerfHeadline {
+  httpReqs: number | null;
+  httpReqRate: number | null;
+  iterations: number | null;
+  durationMs: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+}
+
+export function k6Headline(summary: K6Summary): PerfHeadline {
+  const v = (metric: string, key: string) => finiteOrNull(summary.metrics[metric]?.values[key]);
+  const int = (n: number | null) => (n === null ? null : Math.round(n));
+  return {
+    httpReqs: int(v('http_reqs', 'count')),
+    httpReqRate: v('http_reqs', 'rate'),
+    iterations: int(v('iterations', 'count')),
+    durationMs: int(finiteOrNull(summary.state?.testRunDurationMs)),
+    p95Ms: v('http_req_duration', 'p(95)'),
+    p99Ms: v('http_req_duration', 'p(99)'),
+  };
+}
+
+/**
+ * Why this run must not be pushed, or null. A run that measured nothing
+ * would read as a smaller, greener history. Null counts as 0, matching the
+ * server's own 422 for the same case, which stays only a backstop.
+ */
+export function k6Abstention(summary: K6Summary, headline: PerfHeadline): string | null {
+  if (Object.keys(summary.metrics).length === 0) return 'the summary holds no metrics';
+  if ((headline.httpReqs ?? 0) === 0 && (headline.iterations ?? 0) === 0) {
+    return 'the run made 0 requests and 0 iterations';
+  }
+  return null;
+}
