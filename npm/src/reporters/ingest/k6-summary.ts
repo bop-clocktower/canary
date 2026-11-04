@@ -73,3 +73,54 @@ export function readK6Summary(file: string): { summary: K6Summary; mtime: Date }
   }
   return { summary: data as unknown as K6Summary, mtime };
 }
+
+export interface PerfObjective {
+  submetric: string;
+  expression: string;
+  observedValue: number | null;
+  ok: boolean;
+}
+
+const finiteOrNull = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null;
+
+/**
+ * Whether k6 collected any sample for this metric. k6 reports an unsampled
+ * metric as zeros and judges its thresholds ok, so a route that never ran
+ * would otherwise read as met:
+ *
+ * - a Rate with no samples reports `rate: 0`, and `passes + fails === 0`
+ *   says so directly;
+ * - a Trend with no samples reports 0 for every `summaryTrendStats` key and
+ *   carries no sample count (measured on k6 v2.2.0). `min === 0 && max === 0`
+ *   is the signal: no real request completes in 0 ms over HTTP, so a Trend
+ *   whose every sample was exactly 0 is treated as unmeasured too.
+ */
+function sampled(m: K6Metric): boolean {
+  if (m.type === 'rate') {
+    return (finiteOrNull(m.values.passes) ?? 0) + (finiteOrNull(m.values.fails) ?? 0) > 0;
+  }
+  if (m.type === 'trend') return !(m.values.min === 0 && m.values.max === 0);
+  return true;
+}
+
+/**
+ * One objective per `metrics[m].thresholds[expr]`. `observedValue` is
+ * `values[stat]`, or null when k6 measured nothing for it: TestTracker stores
+ * that as unmeasured, never met. A percentile threshold is only reported when
+ * its percentile is in `options.summaryTrendStats`. Sorted by sub-metric, then
+ * expression, so `--dry-run` output is diffable across runs.
+ */
+export function k6Objectives(summary: K6Summary): PerfObjective[] {
+  const out: PerfObjective[] = [];
+  for (const submetric of Object.keys(summary.metrics).sort()) {
+    const m = summary.metrics[submetric];
+    const thresholds = m.thresholds ?? {};
+    for (const expression of Object.keys(thresholds).sort()) {
+      const stat = thresholdStat(expression);
+      const observedValue = stat !== null && sampled(m) ? finiteOrNull(m.values[stat]) : null;
+      out.push({ submetric, expression, observedValue, ok: thresholds[expression].ok });
+    }
+  }
+  return out;
+}
