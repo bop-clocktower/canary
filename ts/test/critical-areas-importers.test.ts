@@ -19,12 +19,12 @@ describe('countImporters', () => {
     rmTmp(root);
   });
 
-  function counts(tree: Record<string, string>): Map<string, number> {
+  function counts(tree: Record<string, string>): ReadonlyMap<string, number> {
     for (const [path, body] of Object.entries(tree)) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
       writeFileSync(join(root, path), body, 'utf-8');
     }
-    return countImporters(root, Object.keys(tree));
+    return countImporters(root, Object.keys(tree)).counts!;
   }
 
   describe('JS/TS', () => {
@@ -232,7 +232,11 @@ describe('countImporters', () => {
         'tests/helper.ts': '',
         'src/uses.ts': "import '../tests/helper.js';\n",
       });
-      const c = countImporters(root, ['src/uses.ts'], ['tests/helper.ts']);
+      const c = countImporters(
+        root,
+        ['src/uses.ts'],
+        ['tests/helper.ts'],
+      ).counts!;
       expect(c.get('tests/helper.ts')).toBe(1);
     });
 
@@ -241,7 +245,7 @@ describe('countImporters', () => {
         'src/a.ts': '',
         'tests/x.test.ts': "import '../src/a.js';\n",
       });
-      const c = countImporters(root, ['src/a.ts'], ['tests/x.test.ts']);
+      const c = countImporters(root, ['src/a.ts'], ['tests/x.test.ts']).counts!;
       expect(c.get('src/a.ts')).toBe(0);
       expect(c.get('tests/x.test.ts')).toBe(0);
     });
@@ -256,7 +260,7 @@ describe('countImporters', () => {
         root,
         ['src/util.py', 'src/m.py'],
         ['tests/util.py'],
-      );
+      ).counts!;
       expect(c.get('src/util.py')).toBe(1);
       expect(c.get('tests/util.py')).toBe(0);
     });
@@ -301,9 +305,50 @@ describe('countImporters', () => {
     expect(c.get('a.ts')).toBe(0);
   });
 
-  it('skips a listed file missing from disk without throwing', () => {
-    const c = countImporters(root, ['missing.ts']);
-    expect(c.get('missing.ts')).toBe(0);
+  describe('files that cannot be read', () => {
+    const tree = (files: Record<string, string>): string[] => {
+      for (const [path, body] of Object.entries(files)) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), body, 'utf-8');
+      }
+      return Object.keys(files);
+    };
+
+    it('is unmeasured, not 0, when none could be', () => {
+      const { counts, source } = countImporters(root, ['gone.ts', 'lost.py']);
+      expect(counts).toBeNull();
+      expect(source.status).toBe('absent');
+      expect(source.reason).toMatch(/0 of 2/);
+      expect(source.files_read).toBe(0);
+      expect(source.files_unread).toBe(2);
+    });
+
+    it('is partial when some could be, and counts what was read', () => {
+      const files = tree({ 'a.ts': '', 'b.ts': "import './a.js';\n" });
+      const { counts, source } = countImporters(root, [...files, 'gone.ts']);
+      expect(counts!.get('a.ts')).toBe(1);
+      expect(counts!.get('gone.ts')).toBe(0);
+      expect(source.status).toBe('partial');
+      expect(source.reason).toMatch(/1 of 3/);
+      expect(source.files_read).toBe(2);
+      expect(source.files_unread).toBe(1);
+    });
+
+    it('is measured when all could be', () => {
+      const files = tree({ 'a.ts': '', 'b.ts': "import './a.js';\n" });
+      expect(countImporters(root, files).source).toEqual({
+        status: 'measured',
+        files_read: 2,
+        files_unread: 0,
+      });
+    });
+
+    it('never counts an extra as a file that failed to read', () => {
+      const files = tree({ 'a.ts': '' });
+      const { source } = countImporters(root, files, ['tests/gone.ts']);
+      expect(source.status).toBe('measured');
+      expect(source.files_unread).toBe(0);
+    });
   });
 
   it('gives every listed file a key, 0 when nothing imports it', () => {

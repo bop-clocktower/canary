@@ -30,6 +30,7 @@
     "D16: --root resolves to the repository top level, including the default output.",
     "D17: an existing map, including a skill-written one, is overwritten, keeping symbols.",
     "A new critical-areas arch layer holds the modules; it may depend on core, for the Python stdlib list.",
-    "Scores here top out at 0.54 (under katana's CRITICAL_RISK 0.7), so such an area alarms as HIGH rather than CRITICAL."
+    "Scores here top out at 0.54 (under katana's CRITICAL_RISK 0.7), so such an area alarms as HIGH rather than CRITICAL.",
+    "Review fixes: an unreadable source makes importers partial or, with none read, absent with null counts and churn-only scores (D1, new status value `partial`, tolerated by the schema); log.showRoot and log.showSignature are pinned on the log and show calls, and an unparsable HEAD time is unmeasured churn."
   ]
 }

@@ -176,13 +176,13 @@ function churnSource(facts: GitFacts): SignalSource {
 function signalsFor(
   paths: string[],
   facts: GitFacts,
-  importers: ReadonlyMap<string, number>,
+  importers: ReadonlyMap<string, number> | null,
   pctOf: (path: string) => number | null,
 ): FileSignals[] {
   return paths.map((path) => ({
     path,
     churn: facts.churn === null ? null : (facts.churn.get(path) ?? 0),
-    importers: importers.get(path) ?? 0,
+    importers: importers === null ? null : (importers.get(path) ?? 0),
     coveragePct: pctOf(path),
   }));
 }
@@ -236,17 +236,21 @@ function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
   const { kept, dropped, rejected } = keepSymbols(out, facts.tracked);
   const candidates = new Set(facts.candidates);
   const extraPaths = [...kept.keys()].filter((p) => !candidates.has(p));
-  const importers = countImporters(facts.top, facts.candidates, extraPaths);
+  const { counts, source } = countImporters(
+    facts.top,
+    facts.candidates,
+    extraPaths,
+  );
   const coverage = loadCoverage(explicit, facts);
   const doc = buildDocument({
     generated: new Date().toISOString(),
     base: facts.head,
-    files: signalsFor(facts.candidates, facts, importers, coverage.pctOf),
-    extras: signalsFor(extraPaths, facts, importers, coverage.pctOf),
+    files: signalsFor(facts.candidates, facts, counts, coverage.pctOf),
+    extras: signalsFor(extraPaths, facts, counts, coverage.pctOf),
     symbols: kept,
     sources: {
       churn: churnSource(facts),
-      importers: { status: 'measured' },
+      importers: source,
       coverage: coverage.source,
     },
   });
@@ -257,6 +261,7 @@ function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
   deps.out(
     `Wrote ${out}: ${doc.areas.length} area(s) from ${doc.files_analyzed} file(s).`,
   );
+  if (source.reason !== undefined) deps.out(`Importers: ${source.reason}.`);
   reportDropped(deps, 'paths that are not a tracked file in HEAD', dropped);
   reportDropped(
     deps,

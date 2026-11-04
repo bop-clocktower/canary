@@ -10,17 +10,20 @@ export interface FileSignals {
   path: string;
   /** `null` is unmeasured (a shallow clone), never "no commits". */
   churn: number | null;
-  importers: number;
+  /** `null` is unmeasured (no source file could be read), never "no importers". */
+  importers: number | null;
   /** 0-100; `null` is unmeasured, never 0%. */
   coveragePct: number | null;
 }
 
 export interface SignalSource {
-  status: 'measured' | 'absent';
+  status: 'measured' | 'partial' | 'absent';
   reason?: string;
   window_days?: number;
   report?: string;
   files_matched?: number;
+  files_read?: number;
+  files_unread?: number;
 }
 
 export interface DocumentInput {
@@ -49,15 +52,17 @@ const atLeastHalf = (value: number | null, max: number): boolean =>
 function maximaOf(files: FileSignals[]): Maxima {
   return {
     churn: Math.max(0, ...files.map((f) => f.churn ?? 0)),
-    importers: Math.max(0, ...files.map((f) => f.importers)),
+    importers: Math.max(0, ...files.map((f) => f.importers ?? 0)),
   };
 }
 
-/** Shallow clones have no churn, so importers carry the whole weight (D9). */
+/** A signal with no measurement leaves the other the whole weight (D1, D9). */
 function baseScore(file: FileSignals, max: Maxima): number {
-  const importers = ratio(file.importers, max.importers);
-  if (file.churn === null) return importers;
-  return 0.5 * ratio(file.churn, max.churn) + 0.5 * importers;
+  const churn = file.churn === null ? null : ratio(file.churn, max.churn);
+  const importers =
+    file.importers === null ? null : ratio(file.importers, max.importers);
+  if (churn === null) return importers ?? 0;
+  return importers === null ? churn : 0.5 * churn + 0.5 * importers;
 }
 
 function riskScore(file: FileSignals, max: Maxima): number {
@@ -86,11 +91,15 @@ function summaryOf(file: FileSignals): string {
     file.churn === null
       ? 'churn not measured'
       : `${file.churn} commits in ${CHURN_WINDOW_DAYS} days`;
+  const importers =
+    file.importers === null
+      ? 'importers not measured'
+      : `${file.importers} importers`;
   const coverage =
     file.coveragePct === null
       ? 'coverage not measured'
       : `coverage ${file.coveragePct}%`;
-  return `${churn}, ${file.importers} importers, ${coverage}`;
+  return `${churn}, ${importers}, ${coverage}`;
 }
 
 function areaOf(file: FileSignals, max: Maxima, symbols: string[] | undefined) {

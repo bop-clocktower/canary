@@ -66,9 +66,11 @@ interface AreaRow {
   path: string;
   risk_score: number;
   churn_commits: number | null;
-  importers: number;
+  importers: number | null;
   coverage_pct: number | null;
   signals: string[];
+  recommended_test_types: string[];
+  summary: string;
   symbols?: string[];
 }
 
@@ -84,6 +86,8 @@ interface Doc {
       reason?: string;
       report?: string;
       files_matched?: number;
+      files_read?: number;
+      files_unread?: number;
     }
   >;
   areas: AreaRow[];
@@ -817,5 +821,99 @@ describe('canary critical-areas', () => {
     const b = areaOf(doc, 'src/b.ts');
     expect(b.churn_commits).toBeNull();
     expect(b.risk_score).toBe(1);
+  });
+
+  describe('source files that cannot be read (D1)', () => {
+    /** `a` has 2 importers and 2 commits; `b` 1 and 1; `c` 0 and 1. */
+    function threeFiles(repo: string): void {
+      git(repo, ['init', '-q']);
+      commit(repo, {
+        'src/a.ts': 'export const a = 1;\n',
+        'src/b.ts': "import { a } from './a.js';\nexport const b = a;\n",
+        'src/c.ts': "import { a } from './a.js';\nimport './b.js';\n",
+      });
+      commit(repo, { 'src/a.ts': 'export const a = 2;\n' });
+    }
+
+    /** Leaves every tracked file out of the working tree, as a real user can. */
+    const emptyTree = (repo: string): void => {
+      git(repo, ['sparse-checkout', 'set', '--no-cone', '/README']);
+      expect(existsSync(join(repo, 'src'))).toBe(false);
+    };
+
+    it('records every file read when all of them were', async () => {
+      threeFiles(root);
+      await invokeCanary(['critical-areas', '--root', root]);
+      const doc = readDoc(join(root, OUT));
+      expect(doc.signal_sources.importers).toEqual({
+        status: 'measured',
+        files_read: 3,
+        files_unread: 0,
+      });
+      expect(areaOf(doc, 'src/a.ts').importers).toBe(2);
+    });
+
+    it('writes null importers and scores on churn when nothing could be read', async () => {
+      threeFiles(root);
+      emptyTree(root);
+      const res = await invokeCanary(['critical-areas', '--root', root]);
+      expect(res.code).toBe(0);
+      const doc = readDoc(join(root, OUT));
+      const source = doc.signal_sources.importers!;
+      expect(source.status).toBe('absent');
+      expect(source.reason).toMatch(/0 of 3/);
+      expect(source.files_read).toBe(0);
+      expect(source.files_unread).toBe(3);
+      for (const area of doc.areas) expect(area.importers).toBeNull();
+      const a = areaOf(doc, 'src/a.ts');
+      // Churn alone carries the weight, as importers do for a null churn.
+      expect(a.risk_score).toBe(1);
+      expect(a.churn_commits).toBe(2);
+      expect(areaOf(doc, 'src/b.ts').risk_score).toBe(0.5);
+      expect(a.signals).not.toContain('many_dependents');
+      expect(a.recommended_test_types).toEqual(['unit']);
+      expect(a.summary).toContain('importers not measured');
+      expect(res.stdout).toMatch(/0 of 3/);
+    });
+
+    it('reports how many reads failed when only some did', async () => {
+      threeFiles(root);
+      rmSync(join(root, 'src', 'c.ts'));
+      const res = await invokeCanary(['critical-areas', '--root', root]);
+      expect(res.code).toBe(0);
+      const doc = readDoc(join(root, OUT));
+      const source = doc.signal_sources.importers!;
+      expect(source.status).toBe('partial');
+      expect(source.reason).toMatch(/1 of 3/);
+      expect(source.files_read).toBe(2);
+      expect(source.files_unread).toBe(1);
+      // A lower bound from what could be read: `c` was one of `a`'s importers.
+      expect(areaOf(doc, 'src/a.ts').importers).toBe(1);
+      expect(res.stdout).toMatch(/1 of 3/);
+    });
+
+    it('abstains when neither churn nor importers could be measured', async () => {
+      const source = join(root, 'source');
+      mkdirSync(source);
+      threeFiles(source);
+      const clone = shallowClone(root, source);
+      emptyTree(clone);
+      const res = await invokeCanary(['critical-areas', '--root', clone]);
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(existsSync(join(clone, OUT))).toBe(false);
+    });
+  });
+
+  it('writes the same document under log.showRoot=false', async () => {
+    ranked(root);
+    const out = join(root, 'areas.json');
+    const run = async (): Promise<Doc> => {
+      await invokeCanary(['critical-areas', '--root', root, '--out', out]);
+      return { ...readDoc(out), generated: '' };
+    };
+    const before = await run();
+    git(root, ['config', 'log.showRoot', 'false']);
+    expect(await run()).toEqual(before);
+    expect(areaOf(before, 'src/b.ts').churn_commits).toBe(1);
   });
 });

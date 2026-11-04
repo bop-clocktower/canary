@@ -31,7 +31,7 @@ function doc(
 const file = (
   path: string,
   churn: number | null,
-  importers: number,
+  importers: number | null,
   coveragePct: number | null = null,
 ): FileSignals => ({ path, churn, importers, coveragePct });
 
@@ -55,6 +55,21 @@ describe('buildDocument scoring', () => {
     expect(a.churn_commits).toBeNull();
     expect(a.signals).not.toContain('high_churn');
     expect(a.summary).toContain('churn not measured');
+  });
+
+  it('falls back to churn alone when importers are unmeasured (D1)', () => {
+    const d = doc([file('a.ts', 4, null), file('b.ts', 2, null)]);
+    const a = area(d, 'a.ts');
+    expect(a.risk_score).toBe(1);
+    expect(area(d, 'b.ts').risk_score).toBe(0.5);
+    expect(a.importers).toBeNull();
+    expect(a.signals).toEqual(['high_churn']);
+    expect(a.recommended_test_types).toEqual(['unit']);
+    expect(a.summary).toContain('importers not measured');
+  });
+
+  it('has nothing to rank when neither churn nor importers are measured', () => {
+    expect(doc([file('a.ts', null, null, 0)]).areas).toEqual([]);
   });
 
   it('adds a proportional coverage boost to a file with another signal (D4)', () => {

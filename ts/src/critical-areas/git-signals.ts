@@ -75,15 +75,28 @@ const isCandidate = (path: string): boolean =>
 const nulList = (text: string | null): string[] =>
   (text ?? '').split('\0').filter((p) => p !== '');
 
-function readLog(top: string): string | null {
-  const headTime = git(top, ['show', '-s', '--format=%ct', 'HEAD']);
-  if (headTime === null) return null;
+/**
+ * One commit must read the same on any machine, so the two settings that change
+ * this output are pinned: `log.showRoot=false` drops the root commit's files and
+ * `log.showSignature=true` prints signature text among the timestamp and paths.
+ */
+const LOG_CONFIG = ['-c', 'log.showRoot=true', '-c', 'log.showSignature=false'];
+
+/** The window's start as ISO, or `null` when `headTime` is not a time. */
+function windowStartFrom(headTime: string): string | null {
+  if (!/^\d+$/.test(headTime.trim())) return null;
   const since = Number(headTime) - CHURN_WINDOW_DAYS * 86_400;
+  const start = new Date(since * 1000);
+  return Number.isNaN(start.getTime()) ? null : start.toISOString();
+}
+
+function readLog(top: string, windowStart: string): string | null {
   // `--since` stops the walk at the first older commit, so one backdated commit
   // would hide everything behind it. The filter form walks the whole history.
   return git(top, [
+    ...LOG_CONFIG,
     'log',
-    `--since-as-filter=${new Date(since * 1000).toISOString()}`,
+    `--since-as-filter=${windowStart}`,
     '--format=',
     '--name-only',
     '--no-renames',
@@ -92,12 +105,30 @@ function readLog(top: string): string | null {
   ]);
 }
 
+const LOG_FAILED: ChurnRead = {
+  churn: null,
+  churnAbsentReason: 'git log failed',
+};
+
 /** Commits per path in the window ending at HEAD's commit time (D8). */
 function readChurn(top: string): ChurnRead {
-  const log = readLog(top);
-  if (log === null) {
-    return { churn: null, churnAbsentReason: 'git log failed' };
+  const headTime = git(top, [
+    ...LOG_CONFIG,
+    'show',
+    '-s',
+    '--format=%ct',
+    'HEAD',
+  ]);
+  if (headTime === null) return LOG_FAILED;
+  const windowStart = windowStartFrom(headTime);
+  if (windowStart === null) {
+    return {
+      churn: null,
+      churnAbsentReason: `HEAD's commit time could not be parsed`,
+    };
   }
+  const log = readLog(top, windowStart);
+  if (log === null) return LOG_FAILED;
   const churn = new Map<string, number>();
   for (const path of nulList(log)) {
     const name = path.trim();

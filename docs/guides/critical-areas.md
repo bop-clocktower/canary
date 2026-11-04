@@ -40,6 +40,9 @@ score = min(1, base + boost), rounded to 2 places
   carry the whole weight: `base = importers / max importers`. At half weight the
   top score would be 0.65 and katana's critical threshold of 0.7 could not be
   reached.
+- When importers are unknown (no source file could be read), churn carries the
+  whole weight in the same way: `base = churn / max churn`. When neither is
+  known there is nothing to rank, and the command exits 3.
 - The file lists the 25 candidate files with the highest scores above 0, plus
   any path that already declares `symbols`, whatever its score. A declared path
   that is not a candidate is listed for its symbols and takes none of the 25.
@@ -53,8 +56,10 @@ was measured, and why not.
 the wall clock, so one commit gives one ranking on any day. A backdated commit
 does not stop the count, and is itself filtered by its own date. A shallow clone
 writes `churn_commits: null`, because every file there reads as one commit. So
-does a `git log` that fails, including on a git too old for `--since-as-filter`.
-`signal_sources.churn` records which.
+does a `git log` that fails, including on a git too old for `--since-as-filter`,
+and a HEAD whose commit time cannot be read. `signal_sources.churn` records
+which. `log.showRoot` and `log.showSignature` in your git config do not change
+the result.
 
 `--root` decides the repository, even when a git hook has exported `GIT_DIR` and
 its relatives.
@@ -97,11 +102,31 @@ module named like the standard library (`import os` beside `py/os.py`) is read
 as the standard library. It can also count a mention: whole-line comments are
 skipped, but an import inside a string or a docstring still counts.
 
+Some common forms count nothing, so a file reached only through them reads as
+having few or no importers:
+
+- PHP: `require_once __DIR__ . "/x.php"` and `dirname(__FILE__) . "/x.php"`,
+  because only a plain string path is read, and a PSR-4 `use App\Billing\Charge`
+  whose namespace does not match the path's suffix (`src/Billing/Charge.php`).
+- Python: `from pkg import mod` and `import pkg`, which do not credit
+  `pkg/mod.py` or `pkg/__init__.py`. `from . import mod` credits
+  `pkg/__init__.py`, not `pkg/mod.py`.
+
 It reads the working tree, not blobs at HEAD: a clean checkout is the same
-content, but a dirty tree can shift counts. A tracked file missing from the
-working tree cannot be read, so its imports count nothing, while
-`signal_sources.importers` still says `measured`. Two runs differ only in
-`generated` for one commit and one tree.
+content, but a dirty tree can shift counts. Two runs differ only in `generated`
+for one commit and one tree.
+
+A tracked file missing from the working tree, or otherwise unreadable, cannot
+report what it imports, as in a sparse checkout. `signal_sources.importers`
+carries `files_read` and `files_unread`, and its `status` says what that means:
+
+| `status`   | Files read | `importers` per file                                  |
+| ---------- | ---------- | ----------------------------------------------------- |
+| `measured` | All        | A count                                               |
+| `partial`  | Some       | A lower bound: an unread file's imports are not in it |
+| `absent`   | None       | `null`, and the score uses churn alone                |
+
+The command also prints the reason for `partial` and `absent`.
 
 ## Exit codes
 

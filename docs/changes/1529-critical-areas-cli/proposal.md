@@ -90,7 +90,7 @@ Output:
   "files_analyzed": 412,
   "signal_sources": {
     "churn": { "status": "measured", "window_days": 90 },
-    "importers": { "status": "measured" },
+    "importers": { "status": "measured", "files_read": 412, "files_unread": 0 },
     "coverage": {
       "status": "absent",
       "reason": "no report at coverage/lcov.info, ..."
@@ -134,6 +134,11 @@ Whole-line comments are skipped. An ambiguous suffix counts nothing and a
 mention in a string or docstring can count, so the count is approximate: it can
 miss an aliased or ambiguous import and can count a mention in a string. The
 guide says that.
+
+A source file that cannot be read makes `signal_sources.importers` `partial`
+with a reason, because the counts are then a lower bound. If none can be read it
+is `absent`, each area's `importers` is `null`, and churn carries the score, in
+the same way as D9. Both report `files_read` and `files_unread`.
 
 Exit codes:
 

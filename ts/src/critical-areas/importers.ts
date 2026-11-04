@@ -7,8 +7,15 @@ import { readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 
 import { isPythonStdlibModule } from '../core/vacuity-scanner.js';
+import type { SignalSource } from './scoring.js';
 
 type Lang = 'js' | 'py' | 'php';
+
+export interface ImporterRead {
+  /** `null` is unmeasured: no file could be read, so 0 would be a false claim. */
+  counts: ReadonlyMap<string, number> | null;
+  source: SignalSource;
+}
 
 interface Scope {
   files: ReadonlySet<string>;
@@ -146,6 +153,23 @@ const withoutCommentLines = (text: string, lang: Lang): string =>
     .filter((line) => !COMMENT_LINE[lang].test(line))
     .join('\n');
 
+/** Unread importers make a count a lower bound, so `measured` must not say so. */
+function sourceOf(total: number, unread: number): SignalSource {
+  const counted = { files_read: total - unread, files_unread: unread };
+  if (unread === 0) return { status: 'measured', ...counted };
+  return unread === total
+    ? {
+        status: 'absent',
+        reason: `read 0 of ${total} source file(s) from the working tree`,
+        ...counted,
+      }
+    : {
+        status: 'partial',
+        reason: `could not read ${unread} of ${total} source file(s) from the working tree, so importer counts are a lower bound`,
+        ...counted,
+      };
+}
+
 /**
  * Unique non-self importers per file. Only `files` act as importers, so pass
  * only non-test sources (D7). `extraTargets` can be imported but import nothing,
@@ -156,14 +180,16 @@ export function countImporters(
   root: string,
   files: string[],
   extraTargets: string[] = [],
-): Map<string, number> {
+): ImporterRead {
   const scope = buildScope(files);
   const widerScope = buildScope([...files, ...extraTargets]);
   const extras = new Set(extraTargets);
   const counts = new Map([...files, ...extraTargets].map((f) => [f, 0]));
+  let unread = 0;
   for (const from of files) {
     const lang = langOf(from);
     const text = readSource(join(root, from));
+    if (text === null) unread += 1;
     if (lang === null || text === null) continue;
     const code = withoutCommentLines(text, lang);
     const targets = new Set([
@@ -178,5 +204,9 @@ export function countImporters(
       }
     }
   }
-  return counts;
+  const nothingRead = files.length > 0 && unread === files.length;
+  return {
+    counts: nothingRead ? null : counts,
+    source: sourceOf(files.length, unread),
+  };
 }

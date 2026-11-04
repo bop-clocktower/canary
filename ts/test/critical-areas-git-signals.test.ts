@@ -4,9 +4,15 @@
  * window would read 0 for all of them.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   readGitFacts,
@@ -198,5 +204,79 @@ describe('readGitFacts', () => {
     expect(f.churn).toBeNull();
     expect(f.churnAbsentReason).toMatch(/shallow/);
     expect(f.candidates).toEqual(['src/a.ts']);
+  });
+
+  describe("the user's git config must not change the read", () => {
+    it('counts root-commit files under log.showRoot=false', () => {
+      git(root, ['init', '-q']);
+      commit(root, { 'src/a.ts': '1\n', 'src/b.ts': '1\n' });
+      commit(root, { 'src/a.ts': '2\n' });
+      const before = facts(root).churn;
+      git(root, ['config', 'log.showRoot', 'false']);
+      const after = facts(root).churn!;
+      expect(after).toEqual(before);
+      expect(after.get('src/a.ts')).toBe(2);
+      expect(after.get('src/b.ts')).toBe(1);
+    });
+
+    /** A real signature: without one, showSignature prints nothing to break. */
+    function signedHead(): void {
+      git(root, ['init', '-q']);
+      const key = join(root, '.git', 'test-signing-key');
+      execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', key]);
+      git(root, ['config', 'gpg.format', 'ssh']);
+      git(root, ['config', 'user.signingkey', `${key}.pub`]);
+      mkdirSync(join(root, 'src'));
+      writeFileSync(join(root, 'src', 'a.ts'), '1\n', 'utf-8');
+      git(root, ['add', '-A']);
+      git(root, ['commit', '-S', '-m', 'signed']);
+      git(root, ['config', 'log.showSignature', 'true']);
+    }
+
+    it('reads a signed HEAD under log.showSignature=true', () => {
+      signedHead();
+      const f = facts(root);
+      expect(f.churnAbsentReason).toBeNull();
+      // Signature text in the log output would also read as paths.
+      expect([...f.churn!.entries()]).toEqual([['src/a.ts', 1]]);
+    });
+  });
+
+  describe('an unparsable HEAD commit time', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    /** A `git` on PATH that answers `show` with `answer`, and is real otherwise. */
+    function gitAnsweringShowWith(answer: string): void {
+      const bin = join(root, 'stub-bin');
+      mkdirSync(bin);
+      const stub = join(bin, 'git');
+      writeFileSync(
+        stub,
+        `#!/bin/sh
+case "$*" in
+  *"show -s"*) printf '%s\\n' '${answer}'; exit 0 ;;
+esac
+PATH='${process.env.PATH}' exec git "$@"
+`,
+        'utf-8',
+      );
+      chmodSync(stub, 0o755);
+      vi.stubEnv('PATH', `${bin}:${process.env.PATH}`);
+    }
+
+    it.each([
+      ['text', 'gpg: Good signature'],
+      ['nothing', ''],
+      ['a time past what Date can hold', '99999999999999999'],
+    ])('reads %s as unmeasured churn, not a throw', (_name, answer) => {
+      git(root, ['init', '-q']);
+      commit(root, { 'src/a.ts': '1\n' });
+      gitAnsweringShowWith(answer);
+      const f = facts(root);
+      expect(f.churn).toBeNull();
+      expect(f.churnAbsentReason).toMatch(/commit time/);
+    });
   });
 });
