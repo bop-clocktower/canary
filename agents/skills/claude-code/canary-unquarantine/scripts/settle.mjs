@@ -15,6 +15,7 @@
 import * as ledgerIo from '../../canary-katana/scripts/ledger.mjs';
 import {
   at,
+  checkNotPartialClone,
   guardedRun,
   fetchBranchTip,
   insideRepo,
@@ -75,6 +76,22 @@ function checkJiraBlocker(b) {
 }
 
 /**
+ * Refuse a path through a .git directory, in the spellings git itself treats as
+ * one on NTFS (trailing dots and spaces, an alternate stream, the short name).
+ */
+function checkNoDotGit(p) {
+  const isDotGit = (seg) => /^(\.git[. ]*(:.*)?|git~1)$/i.test(seg);
+  if (
+    String(p ?? '')
+      .split(/[\\/]/)
+      .some(isDotGit)
+  )
+    throw new Error(
+      `trial manifest path "${p}" names a .git directory; refusing to settle`,
+    );
+}
+
+/**
  * Refuse a manifest that reaches outside `root`. The manifest lives in the PR
  * body, which anyone who can edit the PR controls, so every path it names is
  * resolved (symlinks included) and must stay strictly inside the tree, and
@@ -88,6 +105,8 @@ function checkManifest(root, manifest, judged) {
     );
   judged.flatMap((j) => j.blockers ?? []).forEach(checkJiraBlocker);
   // `selectRows` lifts a marker once; a repeat would tell its ticket repeatedly.
+  for (const p of [manifest.ledger, ...judged.map((j) => j.file)])
+    checkNoDotGit(p);
   const seen = new Set();
   for (const j of judged) {
     const key = JSON.stringify([j.file, j.test]);
@@ -120,6 +139,7 @@ export function applyVerdict({
 }) {
   const { manifest, headRefName, url } = trial;
   checkManifest(repo, manifest, asJudged); // before any git call
+  checkNotPartialClone(operatorRun, repo);
   const run = guardedRun(operatorRun, repo); // before any worktree
   // Then against the default branch, before the head is fetched or anything
   // is written. Everything below acts on what this returns.

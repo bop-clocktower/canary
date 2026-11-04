@@ -116,7 +116,7 @@ export function fetchBranchTip(run, repo, branch) {
 
 /** Settings that would run a program, from the trial tree, during a settle. */
 const QUIET = [
-  'core.hooksPath=/dev/null', // every hook, including post-checkout and pre-push
+  'core.hooksPath=/dev/null', // file-based hooks; config-defined ones go by name
   'core.fsmonitor=false',
   'commit.gpgsign=false', // the settle commit is unsigned; a person reviews it
   'submodule.recurse=false',
@@ -126,42 +126,71 @@ const QUIET = [
   'maintenance.auto=false',
 ];
 
-/** The configured filter drivers' names, read so each can be switched off. */
-function filterNames(run, repo) {
+/** Lines of `git config --get-regexp` for `pattern`; none when nothing matches. */
+function configLines(run, repo, pattern, ...flags) {
   const r = run('git', [
     '-C',
     repo,
     'config',
-    '--name-only',
+    ...flags,
     '--get-regexp',
-    '^filter\\..*\\.(clean|smudge|process|required)$',
+    pattern,
   ]);
-  if (r.status === 1) return []; // none configured
-  const names = must(r, 'git config filter.*').split('\n').filter(Boolean);
-  return [...new Set(names.map((n) => n.slice(7, n.lastIndexOf('.'))))];
+  if (r.status === 1) return [];
+  return must(r, 'git config').split('\n').filter(Boolean);
+}
+
+/** The subsection names under `section`, each checked to be sayable with `-c`. */
+function subsectionNames(run, repo, section) {
+  const keys = configLines(run, repo, `^${section}\\.`, '--name-only');
+  const names = keys
+    .filter((k) => k.lastIndexOf('.') > section.length)
+    .map((k) => k.slice(section.length + 1, k.lastIndexOf('.')));
+  for (const name of names)
+    if (name.includes('='))
+      throw new Error(
+        `${section} "${name}" cannot be switched off for the settle; refusing to settle`,
+      );
+  return [...new Set(names)];
 }
 
 /** One driver off. Empty commands pass bytes through, so stored blobs stay as they are. */
-function filterOff(name) {
-  if (name.includes('='))
-    throw new Error(
-      `filter "${name}" cannot be switched off for the settle; refusing to settle`,
-    );
-  return ['clean=', 'smudge=', 'process=', 'required=false'].map(
+const filterOff = (name) =>
+  ['clean=', 'smudge=', 'process=', 'required=false'].map(
     (k) => `filter.${name}.${k}`,
   );
+
+/**
+ * Refuse a partial clone: reading the trial tree could lazily fetch missing
+ * objects, which runs the transport and its helpers from inside that tree.
+ */
+export function checkNotPartialClone(run, repo) {
+  const pattern = '^(remote\\..*\\.promisor|extensions\\.partialclone)$';
+  const partial = configLines(run, repo, pattern).filter(
+    (l) => !/ (false|no|off|0)$/i.test(l),
+  );
+  if (partial.length)
+    throw new Error(
+      'this is a partial clone, so reading the trial branch could fetch objects and run your transport helpers from inside its tree. Run --apply from a full clone; refusing to settle',
+    );
 }
 
 /**
  * A runner whose every git call has this operator's programs switched off. The
  * settle works in a tree the PR's editor wrote, and a program run there, or one
- * that reads from there, runs on this machine with these credentials. `-c` wins
- * over every config file, includeIf ones too. A .gitattributes on the branch
- * picks which filter driver runs, so all of them go off; files are rebuilt from
- * stored blobs, so a pointer or a clean-filtered file goes back unchanged.
+ * that reads from there, runs on this machine with these credentials. This is a
+ * list of the programs known to run on this path, not a guarantee: a later git
+ * can add another. Names are read from the repository, so a filter or hook named
+ * only by an includeIf matching the worktree stays on. A .gitattributes on the
+ * branch picks which filter driver runs, so all of them go off; files are rebuilt
+ * from stored blobs, so a pointer or a clean-filtered file goes back unchanged.
  */
 export function guardedRun(run, repo) {
-  const settings = [...QUIET, ...filterNames(run, repo).flatMap(filterOff)];
+  const settings = [
+    ...QUIET,
+    ...subsectionNames(run, repo, 'filter').flatMap(filterOff),
+    ...subsectionNames(run, repo, 'hook').map((n) => `hook.${n}.enabled=false`),
+  ];
   const guard = settings.flatMap((s) => ['-c', s]);
   return (cmd, args, options) =>
     run(cmd, cmd === 'git' ? [...guard, ...args] : args, options);

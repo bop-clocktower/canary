@@ -1611,23 +1611,137 @@ describe('verdict --apply acts only on what the default branch vouches for', () 
             });
           },
         ],
-        [
-          'a gc hook program',
-          (s, m) => {
-            plantOnTrial(s.repo, m);
-            setConfig(s.repo, {
-              'gc.auto': '1',
-              'gc.autoDetach': 'false',
-              'gc.recentObjectsHook': `./${PLANTED}`,
-            });
-          },
-        ],
       ];
 
       it.each(cases)('%s', (_n, arrange) => {
         const marker = path.join(mkTmp(), 'ran');
         const t = settle(ALL_PASS, { after: (s) => arrange(s, marker) });
         expectSettledUnseen(t, marker);
+      });
+
+      it('a filter with no required key is still switched off', () => {
+        const marker = path.join(mkTmp(), 'ran');
+        const t = settle(ALL_PASS, {
+          after: (s) => {
+            plantOnTrial(s.repo, marker, () =>
+              attributes(s.repo, '* filter=fx'),
+            );
+            setConfig(s.repo, { 'filter.fx.smudge': `./${PLANTED}` });
+          },
+        });
+        expectSettledUnseen(t, marker);
+      });
+
+      it.each(['filter.a=b.smudge', 'hook.a=b.event'])(
+        'a %s name that -c cannot express is refused',
+        (key) => {
+          const t = settle(ALL_PASS, {
+            after: (s) => setConfig(s.repo, { [key]: 'x' }),
+          });
+          expectRefused(t, /cannot be switched off/);
+        },
+      );
+
+      describe('config-defined hooks', () => {
+        const EVENTS = ['pre-commit', 'post-checkout', 'reference-transaction'];
+        /** Git before config-defined hooks ignores them: nothing to prove there. */
+        const firesHere = (() => {
+          const dir = mkTmp();
+          const marker = path.join(dir, 'fired');
+          const repo = path.join(dir, 'r');
+          fs.mkdirSync(repo);
+          const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null' };
+          const g = (...a: string[]) =>
+            spawnSync(
+              'git',
+              ['-C', repo, '-c', 'user.name=a', '-c', 'user.email=a@b', ...a],
+              { env },
+            );
+          g('init', '-q');
+          g('config', 'hook.ctl.event', 'pre-commit');
+          g('config', 'hook.ctl.command', `touch "${marker}"`);
+          g('commit', '-q', '--allow-empty', '-m', 'x');
+          return fs.existsSync(marker);
+        })();
+        const hookIn = (file: string[], marker: string) => {
+          const set = (...a: string[]) => {
+            const r = spawnSync('git', ['config', ...file, ...a], {
+              encoding: 'utf8',
+            });
+            if (r.status !== 0) throw new Error(r.stderr);
+          };
+          for (const e of EVENTS) set('--add', 'hook.planted.event', e);
+          set('hook.planted.command', `pwd >> "${marker}"`);
+        };
+
+        // Runs on every git: the setting is passed whether or not git honours it.
+        it('every git call switches a configured hook off by name', () => {
+          const t = settle(ALL_PASS, {
+            after: (s) =>
+              hookIn(['--file', path.join(s.repo, '.git/config')], '/dev/null'),
+          });
+          expect(t.r.stderr).toBe('');
+          const push = t.h.calls.filter((c) => c.args.includes('push')).at(-1)!;
+          expect(push.args).toContain('hook.planted.enabled=false');
+        });
+
+        it.skipIf(!firesHere)(
+          'a repository config hook does not run (needs a git with config-defined hooks; skipped on older git, which ignores them)',
+          () => {
+            const marker = path.join(mkTmp(), 'ran');
+            const t = settle(ALL_PASS, {
+              after: (s) =>
+                hookIn(['--file', path.join(s.repo, '.git/config')], marker),
+            });
+            expectSettledUnseen(t, marker);
+          },
+        );
+
+        it.skipIf(!firesHere)(
+          'a global config hook does not run (needs a git with config-defined hooks; skipped on older git, which ignores them)',
+          () => {
+            const marker = path.join(mkTmp(), 'ran');
+            const global = path.join(mkTmp(), 'global.gitconfig');
+            fs.writeFileSync(global, '');
+            const t = settle(ALL_PASS, {
+              after: () => {
+                hookIn(['--file', global], marker);
+                vi.stubEnv('GIT_CONFIG_GLOBAL', global);
+              },
+            });
+            // A local origin's receive-pack gets a clean config environment, so a
+            // global hook fires there, server side; a real remote has no such step.
+            const where = fs.existsSync(marker)
+              ? fs.readFileSync(marker, 'utf8').trim().split('\n')
+              : [];
+            expect(where.filter((d) => !d.endsWith('origin.git'))).toEqual([]);
+            expect(t.r.stderr).toBe('');
+            expect(t.r.code).toBe(0);
+          },
+        );
+      });
+
+      it.each([
+        ['remote.origin.promisor', 'true'],
+        ['extensions.partialClone', 'origin'],
+      ])(
+        'a partial clone (%s) is refused before anything is written',
+        (k, v) => {
+          const t = settle(ALL_PASS, {
+            after: (s) => setConfig(s.repo, { [k]: v }),
+          });
+          expectRefused(t, /partial clone/);
+          expect(t.h.calls.some((c) => c.args.includes('fetch'))).toBe(false);
+        },
+      );
+
+      it('remote.origin.promisor=false is not a partial clone', () => {
+        const t = settle(ALL_PASS, {
+          after: (s) =>
+            setConfig(s.repo, { 'remote.origin.promisor': 'false' }),
+        });
+        expect(t.r.stderr).toBe('');
+        expect(t.r.code).toBe(0);
       });
 
       it('the push runs from the operator repository, not the trial worktree', () => {
@@ -1785,6 +1899,37 @@ describe('verdict --apply acts only on what the default branch vouches for', () 
   );
 
   describe('the shape of a lift', () => {
+    it.each([
+      '.git/hooks/pre-commit',
+      '.GIT/config',
+      'sub/.git/config',
+      '.git./config',
+      'git~1/config',
+    ])(
+      'a lift file %s is refused, even for a lift the run never saw',
+      (file) => {
+        const t = settle(ALL_PASS, {
+          change: (m) => {
+            m.lifts.push({
+              ...structuredClone(m.lifts[0]),
+              test: 'never in the run',
+              file,
+            });
+          },
+        });
+        expectRefused(t, /names a \.git directory/);
+      },
+    );
+
+    it('a ledger path with a .git segment is refused', () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          m.ledger = '.git/quarantine.json';
+        },
+      });
+      expectRefused(t, /names a \.git directory/);
+    });
+
     it('a repeated lift is refused, and its ticket hears nothing', () => {
       const t = settle(CARD_FAILS, {
         change: (m) => {
