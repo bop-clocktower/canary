@@ -399,6 +399,91 @@ describe('survivor with coveredBy absent (bug-fleet A5)', () => {
   });
 });
 
+// ADR 0037 F1, disclosure half (#1404). `toStatus` demotes an EXPLICIT empty
+// `coveredBy` to no-coverage, so a `survived` finding with an empty list can only
+// mean the field was absent: attribution was not recorded, which is a different
+// claim from "no test covers this" and must never be worded as it.
+describe('unattributed survivor disclosure (ADR 0037 F1)', () => {
+  const POINTER = 'coverageAnalysis: perTest';
+  const render = (mutants: Parameters<typeof report>[0]): string =>
+    renderMutationReport(
+      mapStrykerReport(report(mutants), { excludedTests: NO_EXCLUSIONS }),
+    );
+
+  it('says attribution was not recorded, not that no test covers it', () => {
+    const text = render([
+      { line: 10, status: 'Killed' },
+      { line: 11, status: 'Survived' },
+    ]);
+    expect(text).toContain('ran but did not fail: attribution not recorded');
+    expect(text).not.toContain('no covering test');
+  });
+
+  it('counts only the unattributed survivors, in a line under the headline', () => {
+    const lines = render([
+      { line: 10, status: 'Survived', coveredBy: ['t1'] },
+      { line: 11, status: 'Survived' },
+      { line: 12, status: 'Survived' },
+    ]).split('\n');
+    const disclosure = lines.findIndex((l) => l.includes(POINTER));
+    expect(lines[disclosure]).toMatch(/^2 survivor\(s\) /);
+    expect(disclosure).toBeGreaterThan(
+      lines.findIndex((l) => l.includes('mutants killed')),
+    );
+    expect(disclosure).toBeLessThan(lines.indexOf('3 survived:'));
+    // The attributed survivor beside them still names its test.
+    expect(lines.join('\n')).toContain(
+      'ran but did not fail: suppression strips the reason',
+    );
+  });
+
+  it('keeps the measured no-coverage count separate from the unattributed one', () => {
+    const lines = render([
+      { line: 10, status: 'Killed', coveredBy: ['t1'] },
+      { line: 11, status: 'Survived' },
+      { line: 12, status: 'Survived', coveredBy: [] },
+      { line: 13, status: 'NoCoverage' },
+    ]).split('\n');
+    expect(lines.find((l) => l.includes(POINTER))).toMatch(/^1 survivor\(s\) /);
+    expect(lines).toContain('2 mutant(s) had no covering test.');
+  });
+
+  it('adds no pointer when every survivor is attributed', () => {
+    const text = render([{ line: 11, status: 'Survived', coveredBy: ['t1'] }]);
+    expect(text).not.toContain(POINTER);
+    expect(text).not.toContain('attribution not recorded');
+  });
+
+  it('adds no pointer for an explicit empty coveredBy, which was measured', () => {
+    const text = render([
+      { line: 10, status: 'Killed', coveredBy: ['t1'] },
+      { line: 11, status: 'Survived', coveredBy: [] },
+    ]);
+    expect(text).not.toContain(POINTER);
+    expect(text).toContain('1 mutant(s) had no covering test.');
+  });
+
+  it('stops counting a survivor once the author suppressed it', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 1, status: 'Killed', coveredBy: ['t1'] },
+        { line: 2, status: 'Survived' },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    const text = renderMutationReport(
+      applyMutantSuppressions(mapped, {
+        'ts/src/guardian/pr-check.ts': [
+          '',
+          'x(); // canary:allow-mutant equivalent',
+        ],
+      }),
+    );
+    expect(text).toContain('pr-check.ts:2`: equivalent');
+    expect(text).not.toContain(POINTER);
+  });
+});
+
 // bug-fleet A5 repro: Ignored / CompileError / RuntimeError mutants were never
 // tested at all; counting them as "no covering test" misstates the run.
 describe('bug-fleet A5: non-tested stryker statuses', () => {

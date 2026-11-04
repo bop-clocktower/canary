@@ -39,7 +39,11 @@ mutation run had to exclude.
   mutants only timed out verified nothing and abstains (exit 3) rather than
   reporting `all-killed` off a `0/N` headline.
 - The names of the tests that covered a survivor and did not fail -- the
-  actionable half of the finding.
+  actionable half of the finding. Stryker records them only under
+  `coverageAnalysis: perTest`. Without it the survivor still counts, its line
+  says attribution was not recorded, and one line under the headline counts such
+  survivors (ADR 0037). That is not a coverage gap, which is measured and
+  counted apart.
 - An `abstained` verdict, with its reason, whenever it verified nothing. Zero
   mutants is an abstention, never a pass (ADR 0009).
 - The list of test files excluded from the run (`excludedTests`), because a
