@@ -6,7 +6,7 @@
  * push. Split from testtracker-perf.ts so the command module stays wiring only.
  */
 import { randomUUID } from 'node:crypto';
-import { envVar } from './config.js';
+import { envVar } from '../ingest/config.js';
 
 /** The arguments cannot run a push; the command prints its usage and exits 2. */
 export class PerfUsageError extends Error {}

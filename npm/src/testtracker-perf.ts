@@ -20,10 +20,10 @@ import {
   k6Objectives,
   readK6Summary,
   K6SummaryError,
-} from './reporters/ingest/k6-summary.js';
-import type { PerfHeadline, PerfObjective } from './reporters/ingest/k6-summary.js';
-import { configurePerf, PerfUsageError } from './reporters/ingest/perf-args.js';
-import type { PerfConfig } from './reporters/ingest/perf-args.js';
+} from './reporters/perf/k6-summary.js';
+import type { PerfHeadline, PerfObjective } from './reporters/perf/k6-summary.js';
+import { configurePerf, PerfUsageError } from './reporters/perf/perf-args.js';
+import type { PerfConfig } from './reporters/perf/perf-args.js';
 import { errText, log, postWithRetry, warn } from './reporters/ingest/transport.js';
 
 export const PERF_USAGE = `usage: canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> --env <env> [options]

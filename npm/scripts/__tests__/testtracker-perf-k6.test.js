@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const k6 = require('../../dist/reporters/ingest/k6-summary.js');
+const k6 = require('../../dist/reporters/perf/k6-summary.js');
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'k6', 'read-slo.json');
 const fixture = () => JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
