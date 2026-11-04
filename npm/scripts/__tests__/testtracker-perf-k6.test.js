@@ -193,3 +193,17 @@ test('abstains on no metrics, and on zero requests and zero iterations (null cou
   assert.equal(reason({ metrics: { iterations: { values: { count: 1 } } } }), null);
   assert.equal(reason(fixture()), null);
 });
+
+// --- the denominator ---------------------------------------------------------------
+
+test('the denominator states thresholds, sub-metrics, ok, not ok and unmeasured', () => {
+  const line = k6.k6Denominator('perf-summary.json', k6.k6Objectives(fixture()));
+  assert.match(line, /read 105 thresholds on 70 sub-metrics from perf-summary\.json: 70 ok, 35 not ok, 0 unmeasured/);
+  assert.doesNotMatch(line, /summaryTrendStats|unjudged/);
+});
+
+test('unmeasured objectives name summaryTrendStats; zero thresholds say unjudged', () => {
+  const unmeasured = [{ submetric: 'x', expression: 'p(99)<1', observedValue: null, ok: true }];
+  assert.match(k6.k6Denominator('f', unmeasured), /1 unmeasured[\s\S]*summaryTrendStats/);
+  assert.match(k6.k6Denominator('f', []), /no thresholds[\s\S]*unjudged, never a pass/);
+});

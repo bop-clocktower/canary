@@ -160,3 +160,24 @@ export function k6Abstention(summary: K6Summary, headline: PerfHeadline): string
   }
   return null;
 }
+
+/** What was read, stated every run: a push is only as good as its denominator. */
+export function k6Denominator(file: string, objectives: readonly PerfObjective[]): string {
+  const measured = objectives.filter((o) => o.observedValue !== null);
+  const ok = measured.filter((o) => o.ok).length;
+  const unmeasured = objectives.length - measured.length;
+  const subs = new Set(objectives.map((o) => o.submetric)).size;
+  let s =
+    `canary testtracker: read ${objectives.length} thresholds on ${subs} sub-metrics from ${file}: ` +
+    `${ok} ok, ${measured.length - ok} not ok, ${unmeasured} unmeasured.\n`;
+  if (objectives.length === 0) {
+    s += 'canary testtracker: no thresholds, so TestTracker stores this run as measured, unjudged, never a pass.\n';
+  }
+  if (unmeasured > 0) {
+    s +=
+      `canary testtracker: ${unmeasured} unmeasured: k6 reported no value for their statistic, ` +
+      'or collected no samples for the metric (a tag that matched no request). ' +
+      "A percentile threshold needs that percentile in options.summaryTrendStats (e.g. 'p(99)').\n";
+  }
+  return s;
+}
