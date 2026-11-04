@@ -76,8 +76,10 @@ function checkJiraBlocker(b) {
 }
 
 /**
- * Refuse a path through a .git directory, in the spellings git itself treats as
- * one on NTFS (trailing dots and spaces, an alternate stream, the short name).
+ * Refuse a path with a segment spelled .git, including the spellings git itself
+ * treats as one on NTFS (trailing dots and spaces, an alternate stream, the short
+ * name). This checks the name only: a symlink that reaches .git is not refused
+ * (#1560).
  */
 function checkNoDotGit(p) {
   const isDotGit = (seg) => /^(\.git[. ]*(:.*)?|git~1)$/i.test(seg);
