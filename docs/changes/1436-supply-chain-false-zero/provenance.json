@@ -1,0 +1,23 @@
+{
+  "issues": [1436],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/supply-chain-ledger.test.ts",
+  "baseSha": "16a8ad2e",
+  "reproFailure": "Before the renderer fix the new test failed with: expected '- **Supply chain:** 0 (critical: 0, h...' to contain 'not measured'. Nine plants (failed audit read as 0, zero-dependency report accepted, audit exits non-zero on vulnerabilities, 0 for zero lockfiles, partial sum, snapshot fallback, hook ignoring the sidecar, push step blind to an untracked sidecar, audit step removed) each turned the suite red.",
+  "rootCause": "The issue's root-lockfile theory is not the cause. Harness CLI 13.0.0 calls timelineManager.capture(result, commitHash) with no supply-chain argument, so capture() falls back to EMPTY_SUPPLY_CHAIN: no audit runs at all, with or without a root lockfile. The renderer then printed that field as a measurement.",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "The ledger line becomes truthful: it reads the audit of every tracked lockfile, and 'not measured' when none was audited or any failed. The harness collector stays as it is; that belongs upstream (harness-engineering#2082).",
+  "assumptions": [
+    "DECIDED (human): a separate workflow step audits every tracked lockfile; 'not measured' when nothing was audited; timeline.json is not written to.",
+    "The result travels as a committed sidecar, .harness/security/supply-chain.json, because the freshness guard reruns the renderer with no audit. Without a committed input the guard would fail or the ledger would lose the count.",
+    "One failed lockfile makes the whole line 'not measured'. A partial sum would read as the repo's count. The sidecar keeps the per-lockfile numbers.",
+    "A report over zero dependencies counts as failed, because it is an abstention rather than a clean audit.",
+    "A tracked non-npm lockfile reads 'not measured' and is named, rather than silently shrinking the denominator. None is tracked today.",
+    "Totals are summed per lockfile, as the issue asks, so one advisory in two lockfiles counts twice.",
+    "The per-snapshot Supply column is removed: it only ever printed harness's unpopulated field, and no audit history exists to fill it.",
+    "The audit step runs on PRs as well as main, so a broken step shows up before merge. Only main's result is uploaded.",
+    ".harness/.gitignore gains an exception for the sidecar: it ignores security/* except named files, so the ledger job's git add would otherwise refuse it. Only reading the diff against the real repo found this; a test now pins it, in case a harness rescaffold drops the line.",
+    "docs/SECURITY_LEDGER.md is regenerated in this PR because the freshness guard requires it. No sidecar is committed here, so the line reads 'not measured' until the first scan on main lands through chore/security-ledger."
+  ]
+}

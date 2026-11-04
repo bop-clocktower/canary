@@ -1725,8 +1725,11 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
   before they reach CI.
 - Re-runs `node scripts/security_ledger.mjs` and restages its outputs only when
   the commit stages a ledger input (`.harness/security/timeline.json`,
-  `docs/SECURITY_LEDGER.md`, or the script itself). Unrelated commits leave the
-  ledger alone; CI (`harness-security.yml`) is its canonical writer (#1446).
+  `.harness/security/supply-chain.json`, `docs/SECURITY_LEDGER.md`, or the script
+  itself). Unrelated commits leave the ledger alone; CI (`harness-security.yml`)
+  is its canonical writer (#1446). The ledger's supply-chain line comes from the
+  sidecar `scripts/supply_chain_audit.mjs` writes, and reads "not measured" when
+  nothing was audited (#1436). It informs and gates nothing.
 
 Then install the Python test dependency (pytest) into the `python3` on your
 `PATH` — the same interpreter the tests spawn:

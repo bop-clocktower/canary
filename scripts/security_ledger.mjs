@@ -12,6 +12,13 @@
 // Both outputs are deterministic given the same input. Run with no arguments;
 // CI invokes the script and fails the PR if `git diff --exit-code` is dirty
 // afterwards (the freshness guard).
+//
+// The supply-chain line comes from .harness/security/supply-chain.json, never
+// from a snapshot's `supplyChain` field: harness does not populate that field,
+// so it reads 0 with or without a vulnerable package pinned (#1436). The sidecar
+// is written by scripts/supply_chain_audit.mjs and committed with the ledger. No
+// audit runs here, or the guard would depend on the network and the day's
+// advisories. A missing or unusable sidecar reads "not measured", never 0.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +26,13 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TIMELINE = resolve(REPO_ROOT, '.harness', 'security', 'timeline.json');
 const LEDGER = resolve(REPO_ROOT, 'docs', 'SECURITY_LEDGER.md');
+const SUPPLY_CHAIN = resolve(
+  REPO_ROOT,
+  '.harness',
+  'security',
+  'supply-chain.json',
+);
+const SEVERITIES = ['critical', 'high', 'moderate', 'low', 'info'];
 const SNAPSHOT_WINDOW = 10;
 const TIMELINE_MAX_SNAPSHOTS = 30;
 
@@ -39,20 +53,71 @@ function loadTimeline() {
   return JSON.parse(readFileSync(TIMELINE, 'utf-8'));
 }
 
+function loadSupplyChain() {
+  if (!existsSync(SUPPLY_CHAIN)) return null;
+  try {
+    return JSON.parse(readFileSync(SUPPLY_CHAIN, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function hasCounts(entry) {
+  const v = entry?.vulnerabilities;
+  return (
+    entry?.status === 'measured' &&
+    [...SEVERITIES, 'total'].every((k) => Number.isInteger(v?.[k]))
+  );
+}
+
+function notMeasured(lockfiles, why) {
+  const failedPaths = lockfiles
+    .filter((e) => !hasCounts(e))
+    .map((e) => `\`${e?.path ?? '?'}\``);
+  if (!failedPaths.length) return `not measured (${why})`;
+  return (
+    `not measured (${failedPaths.length} of ${lockfiles.length} lockfile ` +
+    `audits failed: ${failedPaths.join(', ')})`
+  );
+}
+
+// One failed lockfile makes the whole line "not measured": a partial sum would
+// read as the repo's count. The sidecar keeps the per-lockfile numbers.
+function fmtSupplyChain(audit) {
+  const lockfiles = audit?.lockfiles;
+  if (!Array.isArray(lockfiles)) return notMeasured([], 'no audit recorded');
+  if (!lockfiles.length) {
+    return notMeasured([], audit.reason ?? 'no tracked lockfiles');
+  }
+  if (!lockfiles.every(hasCounts)) return notMeasured(lockfiles);
+  return fmtMeasured(audit, lockfiles);
+}
+
+function fmtMeasured(audit, lockfiles) {
+  const sum = (k) =>
+    lockfiles.reduce((acc, e) => acc + e.vulnerabilities[k], 0);
+  const noun = lockfiles.length === 1 ? 'lockfile' : 'lockfiles';
+  return (
+    `${sum('total')} (` +
+    SEVERITIES.map((k) => `${k}: ${sum(k)}`).join(', ') +
+    `) across ${lockfiles.length} ${noun}, ` +
+    `audited ${String(audit.capturedAt ?? '?').slice(0, 10)} ` +
+    `at \`${String(audit.commit ?? '').slice(0, 12)}\``
+  );
+}
+
 function fmtSnapshotRow(s) {
   const sev = s.bySeverity ?? {};
-  const sc = s.supplyChain ?? {};
   return (
     `| ${(s.capturedAt ?? '?').slice(0, 19)} ` +
     `| \`${(s.commitHash || '').slice(0, 7)}\` ` +
     `| ${s.securityScore ?? '?'} ` +
     `| ${s.totalFindings ?? 0} ` +
-    `| ${sev.error ?? 0}/${sev.warning ?? 0}/${sev.info ?? 0} ` +
-    `| ${sc.total ?? 0} |`
+    `| ${sev.error ?? 0}/${sev.warning ?? 0}/${sev.info ?? 0} |`
   );
 }
 
-function render(data) {
+function render(data, audit) {
   const snapshots = data.snapshots ?? [];
   const lifecycles = data.findingLifecycles ?? [];
 
@@ -69,18 +134,21 @@ function render(data) {
   // without an (protect-config-guarded) .markdownlintignore entry.
   lines.push('<!-- markdownlint-disable-file MD013 -->');
   lines.push('');
-  lines.push('Auto-generated summary of `.harness/security/timeline.json`.');
+  lines.push('Auto-generated summary of `.harness/security/timeline.json`');
+  lines.push('and `.harness/security/supply-chain.json`.');
   lines.push('Do not edit by hand — run `node scripts/security_ledger.mjs`');
   lines.push('to refresh.');
   lines.push('');
 
   lines.push('## Latest Snapshot');
   lines.push('');
+  const supplyLine = `- **Supply chain:** ${fmtSupplyChain(audit)}`;
   if (latest === null) {
     lines.push('_No scans recorded yet._');
+    lines.push('');
+    lines.push(supplyLine);
   } else {
     const sev = latest.bySeverity ?? {};
-    const sc = latest.supplyChain ?? {};
     lines.push(`- **Captured:** ${latest.capturedAt ?? '?'}`);
     lines.push(`- **Commit:** \`${(latest.commitHash || '').slice(0, 12)}\``);
     lines.push(`- **Score:** ${latest.securityScore ?? '?'}`);
@@ -90,13 +158,7 @@ function render(data) {
         `warning: ${sev.warning ?? 0}, ` +
         `info: ${sev.info ?? 0})`,
     );
-    lines.push(
-      `- **Supply chain:** ${sc.total ?? 0} ` +
-        `(critical: ${sc.critical ?? 0}, ` +
-        `high: ${sc.high ?? 0}, ` +
-        `moderate: ${sc.moderate ?? 0}, ` +
-        `low: ${sc.low ?? 0})`,
-    );
+    lines.push(supplyLine);
     lines.push(`- **Suppressions:** ${latest.suppressionCount ?? 0}`);
   }
   lines.push('');
@@ -106,10 +168,8 @@ function render(data) {
   if (!window.length) {
     lines.push('_No snapshots._');
   } else {
-    lines.push(
-      '| Captured | Commit | Score | Findings | Err/Warn/Info | Supply |',
-    );
-    lines.push('| --- | --- | ---: | ---: | --- | ---: |');
+    lines.push('| Captured | Commit | Score | Findings | Err/Warn/Info |');
+    lines.push('| --- | --- | ---: | ---: | --- |');
     for (const s of window) lines.push(fmtSnapshotRow(s));
   }
   lines.push('');
@@ -155,7 +215,7 @@ function main() {
     writeFileSync(TIMELINE, pyJsonDumpsIndent2(data) + '\n');
   }
   mkdirSync(dirname(LEDGER), { recursive: true });
-  writeFileSync(LEDGER, render(data));
+  writeFileSync(LEDGER, render(data, loadSupplyChain()));
   return 0;
 }
 

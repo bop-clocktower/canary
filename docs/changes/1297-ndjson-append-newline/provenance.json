@@ -1,0 +1,16 @@
+{
+  "issues": [1297],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/src/history/ndjson-store.test.ts",
+  "baseSha": "16a8ad2e",
+  "reproFailure": "Before the fix, 'keeps the new run on its own line, so the store stays readable' fails with HistoryContentError: history store line 1: invalid JSON. The issue's repro branch is gone from origin (empty git ls-remote), so the test was written from the issue body. It asserts through readAll, the failure the issue reports, rather than counting lines.",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "The fix fully resolves the issue: pushRun is the only appender to the store, so no other writer keeps the assumption.",
+  "assumptions": [
+    "The fix re-reads the store in pushRun rather than refactoring readAll to share its text: the file is at 295 of the 300-line perf ceiling and the refactor would cross it. pushRun already reads the whole store once per append, so this is a second O(n) read on a path that runs about once per CI run.",
+    "The separator and the record go in one appendFileSync call, so a crash between two writes cannot leave a separator with no record.",
+    "A store already corrupted by a glued line is out of scope: readAll still refuses it, and pushRun still throws before appending.",
+    "The canary-misfit route ledger makes the same newline assumption, but it is a different file with a different reader, so it is reported rather than changed."
+  ]
+}
