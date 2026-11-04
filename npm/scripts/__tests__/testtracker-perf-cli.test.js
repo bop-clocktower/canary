@@ -127,3 +127,57 @@ test('the token is never printed', async () => {
     assert.doesNotMatch(out + err + logs.join('\n'), /tt_secret_canary_value/);
   }
 });
+
+// --- refusals: nothing is sent ------------------------------------------------------
+
+const summaryFile = (data) => tempReport(JSON.stringify(data));
+const metric = (values, thresholds) => ({ type: 'trend', values, ...(thresholds ? { thresholds } : {}) });
+
+test('SC14a: no metrics, or 0 requests and 0 iterations, abstains with exit 3', async () => {
+  for (const data of [
+    { metrics: {} },
+    { metrics: { http_reqs: { type: 'counter', values: { count: 0, rate: 0 } }, iterations: { type: 'counter', values: { count: 0 } } } },
+  ]) {
+    const { code, requests, err, out } = await pushPerf(summaryFile(data));
+    assert.equal(code, 3);
+    assert.equal(requests.length, 0);
+    assert.match(err, /abstained[\s\S]*nothing was pushed/i);
+    assert.doesNotMatch(out, /ingested/);
+  }
+});
+
+test('SC14c: a missing, non-JSON or --summary-export file exits 1 and sends nothing', async () => {
+  for (const file of [path.join(K6_FIXTURES, 'nope.json'), tempReport('<xml/>'), summaryFile({ metrics: { http_reqs: { count: 1 } } })]) {
+    const { code, requests, err } = await pushPerf(file);
+    assert.equal(code, 1, file);
+    assert.equal(requests.length, 0);
+    assert.match(err, /Nothing was pushed/);
+  }
+});
+
+test('more than 2,000 thresholds exits 1 rather than truncating; exactly 2,000 is sent', async () => {
+  const many = (n) => {
+    const metrics = { iterations: { type: 'counter', values: { count: 1 } } };
+    for (let i = 0; i < n; i++) metrics[`http_req_duration{name:r${i}}`] = metric({ 'p(99)': 1 }, { 'p(99)<5': { ok: true } });
+    return summaryFile({ metrics });
+  };
+  const over = await pushPerf(many(2001));
+  assert.equal(over.code, 1);
+  assert.equal(over.requests.length, 0);
+  assert.match(over.err, /2001 thresholds[\s\S]*2,000/);
+  const atLimit = await pushPerf(many(2000));
+  assert.equal(atLimit.code, 0);
+  assert.equal(atLimit.payload.objectives.length, 2000);
+});
+
+// Within the server's own field limits (submetric ≤ 500, expression ≤ 200),
+// 2,000 objectives stay near 1.5 MB, so only over-long strings can pass 2 MiB.
+// The check exists so that case is refused here, not misread from a 413.
+test('a body over 2 MiB exits 1 and sends nothing', async () => {
+  const metrics = { iterations: { type: 'counter', values: { count: 1 } } };
+  for (let i = 0; i < 2000; i++) metrics[`m{name:${'x'.repeat(1100)}${i}}`] = metric({ avg: 1 }, { [`avg<${i}`]: { ok: true } });
+  const { code, requests, err } = await pushPerf(summaryFile({ metrics }));
+  assert.equal(code, 1);
+  assert.equal(requests.length, 0);
+  assert.match(err, /over TestTracker's 2 MiB limit/);
+});

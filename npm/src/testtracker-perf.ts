@@ -13,8 +13,10 @@
  * (nothing sent).
  */
 import { randomUUID } from 'node:crypto';
+import { EXIT_ABSTAINED } from './gate-result.js';
 import { envVar } from './reporters/ingest/config.js';
 import {
+  k6Abstention,
   k6Denominator,
   k6Headline,
   k6Objectives,
@@ -92,6 +94,10 @@ function parsePerfArgs(args: readonly string[]): PerfArgs {
 const SUITE_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ENVIRONMENT = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/;
 const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/** TestTracker's per-report objective cap and the route's JSON body limit ("2mb"). */
+const MAX_OBJECTIVES = 2000;
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 export interface PerfConfig {
   summary: string;
@@ -218,7 +224,27 @@ export async function runPushPerf(args: readonly string[], deps: TesttrackerDeps
   }
   const headline = k6Headline(read.summary);
   const objectives = k6Objectives(read.summary);
+  const abstain = k6Abstention(read.summary, headline);
+  if (abstain) {
+    // A run that measured nothing would read as a smaller, greener history.
+    err.write(`canary testtracker push-perf: abstained: ${abstain} in ${cfg.summary}, so nothing was pushed.\n`);
+    return EXIT_ABSTAINED;
+  }
+  if (objectives.length > MAX_OBJECTIVES) {
+    err.write(
+      `canary testtracker push-perf: ${cfg.summary} holds ${objectives.length} thresholds; TestTracker takes at most ` +
+        '2,000 per report. Dropping some would push a run judged on fewer bars than it had. Nothing was pushed.\n',
+    );
+    return 1;
+  }
   const body = buildPerfBody(cfg, headline, objectives, read.mtime, env);
+  const bytes = Buffer.byteLength(JSON.stringify(body));
+  if (bytes > MAX_BODY_BYTES) {
+    err.write(
+      `canary testtracker push-perf: the report is ${bytes} bytes, over TestTracker's 2 MiB limit for this route. Nothing was pushed.\n`,
+    );
+    return 1;
+  }
   out.write(k6Denominator(cfg.summary, objectives));
   if (cfg.dryRun) {
     out.write(`POST ${perfPath(cfg.client)}\n${JSON.stringify(body, null, 2)}\n`);
