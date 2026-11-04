@@ -21,6 +21,9 @@
  * - #1490: `arch-snapshot.yml` read its timeline from the repo-relative path
  *   inside the artifact, but upload-artifact had stored it at the artifact
  *   root, so the push job failed on every run.
+ * - #1463: `refresh-arch-baseline.yml` ran the CLI and a PR-head script in the
+ *   job that held the write token. `refresh-baseline-push-job.test.ts` runs its
+ *   write jobs' scripts against a real remote.
  *
  * Offline: the assertions read the YAML or JSON as data. The #1490 block also
  * runs one restore script under bash in a temp dir.
@@ -233,6 +236,218 @@ describe.each(['harness-security.yml', 'arch-snapshot.yml'])(
     });
   },
 );
+
+/**
+ * The scopes a job holds write on. A job with no block inherits the workflow's;
+ * a workflow with none gets the repository default, which may be write.
+ */
+function writeScopes(wf: Workflow, job: Job): string[] {
+  const perms = job.permissions ?? wf.permissions;
+  if (perms === undefined) return ['(repository default)'];
+  if (perms === 'write-all') return ['(all)'];
+  if (perms === null || typeof perms !== 'object') return [];
+  return Object.entries(perms as Record<string, string>)
+    .filter(([, level]) => level === 'write')
+    .map(([scope]) => scope);
+}
+
+/**
+ * Code a checkout supplies, which `REGISTRY_CODE` does not see: the globally
+ * installed `harness` bin, a repo script run directly or through a shell, and a
+ * local action. Comment lines are dropped first, because a push script's
+ * comments are free to name the job it replaced.
+ */
+const CHECKOUT_CODE =
+  /^\s*(?:(?:[\w.-]+=\S*\s+)*harness\s|(?:bash|sh|zsh|python3?)\s+\S|\.{0,2}\/\S|scripts\/)/m;
+
+function runsCheckoutCode(job: Job): boolean {
+  return (job.steps ?? []).some(
+    (s) =>
+      s.uses?.startsWith('./') ||
+      CHECKOUT_CODE.test((s.run ?? '').replace(/^\s*#.*$/gm, '')),
+  );
+}
+
+describe('#1463 the checkout-code detector', () => {
+  it.each([
+    'harness check-arch --json > arch-report.json || true',
+    'FOO=1 harness check-arch',
+    'bash scripts/x.sh',
+    'sh ./x.sh',
+    './scripts/x.sh',
+    'scripts/x.sh',
+    'python3 tool.py',
+    'git status\n./x.sh',
+  ])('flags %s', (run) => {
+    expect(runsCheckoutCode({ steps: [{ run }] })).toBe(true);
+  });
+
+  it('flags a local action', () => {
+    expect(runsCheckoutCode({ steps: [{ uses: './.github/actions/x' }] })).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    'git push origin "HEAD:refs/heads/$BRANCH"',
+    'cp -- "$SRC/$entry" "$dest"',
+    '# harness check-arch ran in the measure job',
+    'echo "harness did not run here"',
+    'gh pr edit "$PR_NUMBER" --remove-label refresh-baseline',
+  ])('does not flag %s', (run) => {
+    expect(runsCheckoutCode({ steps: [{ run }] })).toBe(false);
+  });
+});
+
+/**
+ * #1463 (CWE-250). `refresh-arch-baseline.yml` granted `contents: write` and
+ * `pull-requests: write` to one job, which then ran a floating CLI and a PR-head
+ * script with that token in `.git/config`. Only the commit and the label removal
+ * need a write scope. This is the #1426 shape with one more write job, because
+ * label removal needs a scope the push does not.
+ */
+describe('#1463 refresh-arch-baseline.yml runs no registry or PR-head code under a write token', () => {
+  const wf = workflow('refresh-arch-baseline.yml');
+  const jobs = Object.entries(wf.jobs ?? {});
+  const writers = jobs.filter(([, j]) => writeScopes(wf, j).length > 0);
+  const measure = wf.jobs?.measure;
+  const push = wf.jobs?.push;
+  const consume = wf.jobs?.['consume-label'];
+  const steps = (j?: Job) => j?.steps ?? [];
+  const actions = (j?: Job) =>
+    steps(j)
+      .flatMap((s) => (s.uses ? [s.uses.split('@')[0]] : []))
+      .sort();
+  const HEAD_SHA = '${{ github.event.pull_request.head.sha }}';
+
+  it('declares top-level permissions of exactly contents: read', () => {
+    expect(wf.permissions).toEqual({ contents: 'read' });
+  });
+
+  // Denominators for the assertion below: the code still runs somewhere, and
+  // the two writes still happen somewhere.
+  it('still measures, still pushes, and still consumes the label', () => {
+    const runs = (j: Job | undefined, re: RegExp) =>
+      steps(j).some((s) => re.test(s.run ?? ''));
+    expect(measure && runsRegistryCode(measure)).toBe(true);
+    expect(measure && runsCheckoutCode(measure)).toBe(true);
+    expect(runs(measure, /refresh-arch-baseline\.mjs/)).toBe(true);
+    expect(runs(push, /\bgit push\b/)).toBe(true);
+    expect(runs(consume, /--remove-label refresh-baseline/)).toBe(true);
+  });
+
+  it('runs neither in any job that holds a write scope', () => {
+    expect(writers.map(([id]) => id).sort()).toEqual(['consume-label', 'push']);
+    expect(
+      writers
+        .filter(([, j]) => runsRegistryCode(j) || runsCheckoutCode(j))
+        .map(([id]) => id),
+    ).toEqual([]);
+  });
+
+  it('runs only for its opt-in label, and only for same-repo PRs', () => {
+    const gate = String((measure as { if?: unknown } | undefined)?.if);
+    expect(gate).toContain("github.event.label.name == 'refresh-baseline'");
+    expect(gate).toContain(
+      'github.event.pull_request.head.repo.full_name == github.repository',
+    );
+  });
+
+  // A swallowed `git add` is the green run with an empty commit #634 forbids.
+  it('stages by name, and lets a failed add fail the step', () => {
+    const script = steps(push)
+      .map((s) => s.run ?? '')
+      .join('\n');
+    const adds = script.split('\n').filter((l) => /^\s*git add\b/.test(l));
+    expect(adds.map((l) => l.trim())).toEqual([
+      'git add .harness/arch/baselines.json',
+      'git add .harness/audit.log',
+    ]);
+  });
+
+  it('gives each write job the one scope it uses', () => {
+    expect(push?.permissions).toEqual({ contents: 'write' });
+    // Not `contents: write`: this job only edits a label. #1426's "contents:
+    // write and nothing else" is the same rule, one scope per write.
+    expect(consume?.permissions).toEqual({ 'pull-requests': 'write' });
+    expect(measure?.permissions).toBeUndefined();
+  });
+
+  it('limits the write jobs to the actions that fetch their input', () => {
+    expect(actions(push)).toEqual([
+      'actions/checkout',
+      'actions/download-artifact',
+    ]);
+    expect(actions(consume)).toEqual([]);
+  });
+
+  it('leaves no token in the measuring checkout', () => {
+    const checkout = steps(measure).find((s) =>
+      s.uses?.startsWith('actions/checkout@'),
+    );
+    expect(checkout?.with?.['persist-credentials']).toBe(false);
+  });
+
+  // The head ref is a moving target, and the two jobs start minutes apart. Both
+  // must see one commit, or the push job would compare and commit a baseline
+  // measured on a tree it is not holding.
+  it('measures and pushes the same commit', () => {
+    for (const j of [measure, push]) {
+      const checkout = steps(j).find((s) =>
+        s.uses?.startsWith('actions/checkout@'),
+      );
+      expect(checkout?.with?.ref).toBe(HEAD_SHA);
+    }
+    const guarded = steps(push).find((s) => /\bgit push\b/.test(s.run ?? ''));
+    expect(guarded?.env?.HEAD_SHA).toBe(HEAD_SHA);
+  });
+
+  it('orders the jobs so a failed step leaves the label in place (#634)', () => {
+    expect((push as { needs?: unknown } | undefined)?.needs).toBe('measure');
+    expect((consume as { needs?: unknown } | undefined)?.needs).toBe('push');
+    expect((consume as { if?: unknown } | undefined)?.if).toBe('success()');
+  });
+
+  it('still uploads the report when the refresh step fails (#588)', () => {
+    const report = steps(measure).find(
+      (s) => s.with?.name === 'refresh-arch-report',
+    );
+    expect((report as { if?: unknown } | undefined)?.if).toBe(
+      '${{ !cancelled() }}',
+    );
+  });
+
+  // `.harness/` is a dot-path, which upload-artifact skips unless told. Without
+  // these two the artifact is empty and the push job has nothing to push.
+  it('uploads the refreshed dot-paths, and treats none found as an error', () => {
+    const upload = steps(measure).find(
+      (s) => s.with?.name === 'refreshed-arch-baseline',
+    );
+    expect(upload?.with?.['include-hidden-files']).toBe(true);
+    expect(upload?.with?.['if-no-files-found']).toBe('error');
+    // No `if:`, so the refresh script's exit 1 or 3 stops the hand-off, and
+    // with it the push and the label removal.
+    expect((upload as { if?: unknown } | undefined)?.if).toBeUndefined();
+  });
+
+  it('extracts the artifact outside the checkout', () => {
+    const download = steps(push).find((s) =>
+      s.uses?.startsWith('actions/download-artifact@'),
+    );
+    expect(String(download?.with?.path)).toMatch(/^\$\{\{\s*runner\.temp/);
+  });
+
+  // A branch name is attacker-influenced text. In a `run:` an expression is
+  // spliced into the script before bash sees it.
+  it('passes every input through env, never inline in a script', () => {
+    const inline = jobs.flatMap(([id, j]) =>
+      steps(j)
+        .filter((s) => (s.run ?? '').includes('${{'))
+        .map(() => id),
+    );
+    expect(inline).toEqual([]);
+  });
+});
 
 describe('#1237 workflow YAML is under the prettier gate', () => {
   const pkg = JSON.parse(
@@ -469,6 +684,8 @@ interface Handoff {
   upload: string[];
   /** Artifact entry -> checkout path the restore step must write. */
   entries: Record<string, string>;
+  /** Entry -> real content, for a restore step that checks what it copies. */
+  seed?: Record<string, { tree: string; artifact: string }>;
 }
 
 const HANDOFFS: Handoff[] = [
@@ -485,6 +702,23 @@ const HANDOFFS: Handoff[] = [
     entries: {
       '.harness/security/timeline.json': '.harness/security/timeline.json',
       'docs/SECURITY_LEDGER.md': 'docs/SECURITY_LEDGER.md',
+    },
+  },
+  {
+    file: 'refresh-arch-baseline.yml',
+    artifact: 'refreshed-arch-baseline',
+    upload: ['.harness/arch/baselines.json', '.harness/audit.log'],
+    entries: {
+      'arch/baselines.json': '.harness/arch/baselines.json',
+      'audit.log': '.harness/audit.log',
+    },
+    // #1463: this restore checks content, so it needs real files on both sides.
+    seed: {
+      'arch/baselines.json': {
+        tree: '{"metrics":{"m":{"value":1,"violationIds":[]}}}\n',
+        artifact: '{"metrics":{"m":{"value":2,"violationIds":[]}}}\n',
+      },
+      'audit.log': { tree: 'log\n', artifact: 'log\nmore\n' },
     },
   },
 ];
@@ -534,14 +768,18 @@ describe.each(HANDOFFS)(
     });
 
     it('copies every artifact entry to its checkout path', () => {
+      const contentOf = (entry: string): string =>
+        h.seed?.[entry]?.artifact ?? `from ${entry}\n`;
       const dir = mkdtempSync(join(tmpdir(), 'artifact-layout-'));
       try {
         const src = join(dir, 'artifact');
         const work = join(dir, 'work');
         for (const [entry, dest] of Object.entries(h.entries)) {
           mkdirSync(dirname(join(src, entry)), { recursive: true });
-          writeFileSync(join(src, entry), `from ${entry}\n`);
+          writeFileSync(join(src, entry), contentOf(entry));
           mkdirSync(dirname(join(work, dest)), { recursive: true });
+          const tree = h.seed?.[entry]?.tree;
+          if (tree !== undefined) writeFileSync(join(work, dest), tree);
         }
         const r = spawnSync('bash', ['-e', '-c', restore!.run!], {
           cwd: work,
@@ -550,9 +788,7 @@ describe.each(HANDOFFS)(
         });
         expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
         for (const [entry, dest] of Object.entries(h.entries))
-          expect(readFileSync(join(work, dest), 'utf8')).toBe(
-            `from ${entry}\n`,
-          );
+          expect(readFileSync(join(work, dest), 'utf8')).toBe(contentOf(entry));
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

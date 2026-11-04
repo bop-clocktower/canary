@@ -1419,6 +1419,16 @@ outside its allowlist (`release.yml`, `wiki-sync.yml`), and on `npx` in a write
 job of either workflow. `ts/test/ledger-push-jobs.test.ts` runs the push jobs'
 own scripts against a local bare remote.
 
+`refresh-arch-baseline.yml` has the same split, with no standing branch (#1463).
+`measure` runs the CLI and the PR-head `scripts/refresh-arch-baseline.mjs` at
+`contents: read` with no token left in the checkout. `push` holds only
+`contents: write`, checks out the commit `measure` read, and pushes to the PR's
+branch only if that branch is still at that commit. `consume-label` holds only
+`pull-requests: write`. All three are advisory in
+`.github/required-checks.json`. The label is what runs this path, so
+`ts/test/refresh-baseline-push-job.test.ts` runs the write jobs' scripts against
+a local bare remote.
+
 A force push is last-writer-wins, so every job that force-pushes runs under a
 `concurrency:` group with `cancel-in-progress: false` (#1427). Overlapping runs
 queue, and a running push is never killed. A group serialises runs but does not

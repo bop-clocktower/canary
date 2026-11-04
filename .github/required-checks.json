@@ -205,9 +205,19 @@
       "reason": "Advisory by design — canary-katana records deleted and skipped tests and alarms only when the deletion removes the last coverage of a high-risk symbol. Same dogfood baseline (#544)."
     },
     {
-      "check": "refresh",
+      "check": "measure",
       "workflow": "refresh-arch-baseline.yml",
       "reason": "Not a gate. Triggers only on `pull_request: types: [labeled]` — an on-demand action a maintainer invokes to refresh the architecture baseline. It does not report on an ordinary PR, so requiring it would deadlock every PR that is never labeled."
+    },
+    {
+      "check": "push",
+      "workflow": "refresh-arch-baseline.yml",
+      "reason": "Not a gate. #1463 split the baseline push out of `measure` so the push could hold `contents: write` without the CLI or a PR-head script. It runs only after `measure`, on the same label, so requiring it would deadlock every PR that is never labeled."
+    },
+    {
+      "check": "consume-label",
+      "workflow": "refresh-arch-baseline.yml",
+      "reason": "Not a gate. #1463 gave the label removal its own job so that `pull-requests: write` sits apart from the push. It runs only after `push`, on the same label, so requiring it would deadlock every PR that is never labeled."
     },
     {
       "check": "actionlint",
