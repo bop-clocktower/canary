@@ -12,9 +12,7 @@
  * 2 usage; 3 abstained: no metrics, or 0 requests and 0 iterations
  * (nothing sent).
  */
-import { randomUUID } from 'node:crypto';
 import { EXIT_ABSTAINED } from './gate-result.js';
-import { envVar } from './reporters/ingest/config.js';
 import {
   k6Abstention,
   k6Denominator,
@@ -24,8 +22,9 @@ import {
   K6SummaryError,
 } from './reporters/ingest/k6-summary.js';
 import type { PerfHeadline, PerfObjective } from './reporters/ingest/k6-summary.js';
+import { configurePerf, PerfUsageError } from './reporters/ingest/perf-args.js';
+import type { PerfConfig } from './reporters/ingest/perf-args.js';
 import { errText, log, postWithRetry, warn } from './reporters/ingest/transport.js';
-import type { TesttrackerDeps } from './testtracker.js';
 
 export const PERF_USAGE = `usage: canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> --env <env> [options]
 
@@ -51,108 +50,23 @@ Exit: 0 pushed, 1 unreadable summary or not ingested (nothing stored),
 2 usage, 3 abstained (no metrics, or 0 requests and 0 iterations; nothing pushed).
 `;
 
-class PerfUsageError extends Error {}
-
-interface PerfArgs {
-  summary?: string;
-  client?: string;
-  suite?: string;
-  env?: string;
-  runRef?: string;
-  generatedAt?: string;
-  dryRun: boolean;
-}
-
-const VALUE_FLAGS: Record<string, Exclude<keyof PerfArgs, 'dryRun'>> = {
-  '--k6-summary': 'summary',
-  '--client': 'client',
-  '--suite': 'suite',
-  '--env': 'env',
-  '--run-ref': 'runRef',
-  '--generated-at': 'generatedAt',
-};
-
-function parsePerfArgs(args: readonly string[]): PerfArgs {
-  const parsed: PerfArgs = { dryRun: false };
-  for (let i = 0; i < args.length; i++) {
-    const [flag, inline] = args[i].split(/=(.*)/s, 2);
-    if (flag === '--dry-run') {
-      parsed.dryRun = true;
-      continue;
-    }
-    const key = VALUE_FLAGS[flag];
-    if (!key) throw new PerfUsageError(`unknown option "${args[i]}".`);
-    const value = inline ?? args[++i];
-    if (!value || value.startsWith('--')) throw new PerfUsageError(`${flag} needs a value.`);
-    parsed[key] = value;
-  }
-  return parsed;
-}
-
-// TestTracker's own rules for these fields, checked here so a typo is a usage
-// error, not a 400 that reads as a failed push.
-const SUITE_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const ENVIRONMENT = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/;
-const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+const PREFIX = 'canary testtracker push-perf:';
 
 /** TestTracker's per-report objective cap and the route's JSON body limit ("2mb"). */
 const MAX_OBJECTIVES = 2000;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
-export interface PerfConfig {
-  summary: string;
-  client: string;
-  suite: string;
-  environment: string;
-  runRef: string;
-  generatedAt?: string;
-  dryRun: boolean;
-  url: string;
-  token: string;
+interface Writer {
+  write(s: string): unknown;
 }
 
-function need(value: string | undefined, what: string): string {
-  if (!value) throw new PerfUsageError(`${what} is required.`);
-  return value;
-}
-
-export function configurePerf(args: readonly string[], env: NodeJS.ProcessEnv): PerfConfig {
-  const a = parsePerfArgs(args);
-  const summary = need(a.summary, '--k6-summary <file>');
-  const client = need(a.client ?? env.CANARY_INGEST_CLIENT, '--client <slug> (or CANARY_INGEST_CLIENT)');
-  // No CANARY_INGEST_SUITE fallback: a job that also runs a JUnit push sets it
-  // to a functional suite, and a perf run filed there would be accepted.
-  const suite = need(a.suite, '--suite <slug>');
-  const environment = need(a.env ?? envVar(env, 'environment'), '--env <env> (or CANARY_INGEST_ENVIRONMENT)');
-  if (client.length > 100) throw new PerfUsageError('--client is longer than 100 characters.');
-  if (suite.length > 100 || !SUITE_SLUG.test(suite)) {
-    throw new PerfUsageError(`--suite "${suite}" is not a suite slug (lower-case words joined by single hyphens).`);
-  }
-  if (environment.length > 40 || !ENVIRONMENT.test(environment)) {
-    throw new PerfUsageError(`--env "${environment}" is not an environment name (lower-case, e.g. dev, uat, prod).`);
-  }
-  if (a.generatedAt !== undefined && (!ISO_WITH_OFFSET.test(a.generatedAt) || Number.isNaN(Date.parse(a.generatedAt)))) {
-    throw new PerfUsageError('--generated-at must be an ISO-8601 time with Z or an offset.');
-  }
-  if (a.runRef !== undefined && (a.runRef.trim() === '' || a.runRef.length > 200)) {
-    throw new PerfUsageError('--run-ref must be 1 to 200 characters.');
-  }
-  const url = envVar(env, 'url') ?? '';
-  const token = envVar(env, 'token') ?? '';
-  if (!a.dryRun && (!url || !token)) {
-    throw new PerfUsageError('pushing needs CANARY_INGEST_URL and CANARY_INGEST_TOKEN (or use --dry-run).');
-  }
-  if (url) {
-    try {
-      new URL(url);
-    } catch {
-      throw new PerfUsageError(`CANARY_INGEST_URL "${url}" is not a URL.`);
-    }
-  }
-  const runId = env.GITHUB_RUN_ID;
-  const runRef =
-    a.runRef ?? (runId ? (env.GITHUB_RUN_ATTEMPT ? `${runId}-${env.GITHUB_RUN_ATTEMPT}` : runId) : `local-${randomUUID()}`);
-  return { summary, client, suite, environment, runRef, generatedAt: a.generatedAt, dryRun: a.dryRun, url, token };
+/** Structurally the same as `TesttrackerDeps`; declared here so the two modules do not import each other. */
+export interface PerfDeps {
+  out?: Writer;
+  err?: Writer;
+  env?: NodeJS.ProcessEnv;
+  /** Waits between push retries; [1000, 4000] when absent. */
+  retryDelaysMs?: number[];
 }
 
 /** The perf-report body TestTracker accepts (camelCase; optional keys omitted, never null). */
@@ -207,6 +121,37 @@ const HINTS: Record<number, string> = {
   422: 'TestTracker refused the content',
 };
 
+/** A 2xx: true only when TestTracker names the report it stored (or already had). */
+async function confirmStored(resp: Response, body: PerfReportBody, env: NodeJS.ProcessEnv): Promise<boolean> {
+  const data = (await resp.json().catch(() => ({}))) as { reportId?: unknown; duplicate?: unknown };
+  if (typeof data.reportId !== 'number') {
+    // "Cannot verify" is a finding, not a pass.
+    warn(`TestTracker answered ${resp.status} without a reportId, so this push cannot confirm the perf report was stored.`, env);
+    return false;
+  }
+  log(
+    data.duplicate === true
+      ? `perf report ${data.reportId} already ingested (duplicate re-push of run ${body.runRef}); this push stored nothing.`
+      : `perf report ${data.reportId} ingested.`,
+  );
+  return true;
+}
+
+/** Anything but a 2xx, after the retry loop has given up or declined to retry. */
+async function explainFailure(resp: Response | undefined, error: unknown, attempts: number, env: NodeJS.ProcessEnv): Promise<void> {
+  if (!resp) {
+    warn(`perf report not ingested after ${attempts} attempts (${errText(error)}).`, env);
+    return;
+  }
+  const text = (await resp.text().catch(() => '')).slice(0, 300);
+  if (resp.status >= 500 || resp.status === 429) {
+    warn(`perf report not ingested after ${attempts} attempts (${resp.status} ${text}).`, env);
+    return;
+  }
+  const hint = HINTS[resp.status] ?? 'a client error';
+  warn(`perf report rejected (${resp.status}: ${hint}): ${text}. Not retried; nothing was stored.`, env);
+}
+
 /** POSTs the report; true only when TestTracker confirms a stored (or already stored) report. */
 async function sendPerf(cfg: PerfConfig, body: PerfReportBody, delaysMs: number[], env: NodeJS.ProcessEnv): Promise<boolean> {
   const { resp, error, attempts } = await postWithRetry(
@@ -218,84 +163,87 @@ async function sendPerf(cfg: PerfConfig, body: PerfReportBody, delaysMs: number[
     },
     delaysMs,
   );
-  if (resp?.ok) {
-    const data = (await resp.json().catch(() => ({}))) as { reportId?: unknown; duplicate?: unknown };
-    if (typeof data.reportId !== 'number') {
-      // "Cannot verify" is a finding, not a pass.
-      warn(`TestTracker answered ${resp.status} without a reportId, so this push cannot confirm the perf report was stored.`, env);
-      return false;
-    }
-    log(
-      data.duplicate === true
-        ? `perf report ${data.reportId} already ingested (duplicate re-push of run ${body.runRef}); this push stored nothing.`
-        : `perf report ${data.reportId} ingested.`,
-    );
-    return true;
-  }
-  if (!resp) {
-    warn(`perf report not ingested after ${attempts} attempts (${errText(error)}).`, env);
-    return false;
-  }
-  const text = (await resp.text().catch(() => '')).slice(0, 300);
-  if (resp.status >= 500 || resp.status === 429) {
-    warn(`perf report not ingested after ${attempts} attempts (${resp.status} ${text}).`, env);
-    return false;
-  }
-  warn(`perf report rejected (${resp.status}: ${HINTS[resp.status] ?? 'a client error'}): ${text}. Not retried; nothing was stored.`, env);
+  if (resp?.ok) return confirmStored(resp, body, env);
+  await explainFailure(resp, error, attempts, env);
   return false;
 }
 
-export async function runPushPerf(args: readonly string[], deps: TesttrackerDeps): Promise<number> {
-  const out = deps.out ?? process.stdout;
-  const err = deps.err ?? process.stderr;
-  if (args.some((x) => x === '--help' || x === '-h')) {
-    out.write(PERF_USAGE);
-    return 0;
-  }
-  const env = deps.env ?? process.env;
-  let cfg: PerfConfig;
+/** The config, or exit 2 after printing why and the usage. */
+function configureOrExplain(args: readonly string[], env: NodeJS.ProcessEnv, err: Writer): PerfConfig | number {
   try {
-    cfg = configurePerf(args, env);
+    return configurePerf(args, env);
   } catch (e) {
     if (!(e instanceof PerfUsageError)) throw e;
-    err.write(`canary testtracker push-perf: ${e.message}\n\n${PERF_USAGE}`);
+    err.write(`${PREFIX} ${e.message}\n\n${PERF_USAGE}`);
     return 2;
   }
-  let read: ReturnType<typeof readK6Summary>;
+}
+
+/** The summary, or null after saying why it cannot be read (the command exits 1). */
+function readOrExplain(file: string, err: Writer): ReturnType<typeof readK6Summary> | null {
   try {
-    read = readK6Summary(cfg.summary);
+    return readK6Summary(file);
   } catch (e) {
     if (!(e instanceof K6SummaryError)) throw e;
-    err.write(`canary testtracker push-perf: ${e.message} Nothing was pushed.\n`);
-    return 1;
+    err.write(`${PREFIX} ${e.message} Nothing was pushed.\n`);
+    return null;
   }
-  const headline = k6Headline(read.summary);
-  const objectives = k6Objectives(read.summary);
-  const abstain = k6Abstention(read.summary, headline);
+}
+
+/**
+ * The exit code when this report must not be sent, else null. Each refusal
+ * sends nothing: a run that measured nothing would read as a smaller, greener
+ * history, and dropping objectives to fit would push a run judged on fewer
+ * bars than it had.
+ */
+function refusal(summaryFile: string, abstain: string | null, body: PerfReportBody, err: Writer): number | null {
   if (abstain) {
-    // A run that measured nothing would read as a smaller, greener history.
-    err.write(`canary testtracker push-perf: abstained: ${abstain} in ${cfg.summary}, so nothing was pushed.\n`);
+    err.write(`${PREFIX} abstained: ${abstain} in ${summaryFile}, so nothing was pushed.\n`);
     return EXIT_ABSTAINED;
   }
-  if (objectives.length > MAX_OBJECTIVES) {
+  if (body.objectives.length > MAX_OBJECTIVES) {
     err.write(
-      `canary testtracker push-perf: ${cfg.summary} holds ${objectives.length} thresholds; TestTracker takes at most ` +
+      `${PREFIX} ${summaryFile} holds ${body.objectives.length} thresholds; TestTracker takes at most ` +
         '2,000 per report. Dropping some would push a run judged on fewer bars than it had. Nothing was pushed.\n',
     );
     return 1;
   }
-  const body = buildPerfBody(cfg, headline, objectives, read.mtime, env);
   const bytes = Buffer.byteLength(JSON.stringify(body));
   if (bytes > MAX_BODY_BYTES) {
-    err.write(
-      `canary testtracker push-perf: the report is ${bytes} bytes, over TestTracker's 2 MiB limit for this route. Nothing was pushed.\n`,
-    );
+    err.write(`${PREFIX} the report is ${bytes} bytes, over TestTracker's 2 MiB limit for this route. Nothing was pushed.\n`);
     return 1;
   }
+  return null;
+}
+
+function io(deps: PerfDeps) {
+  return {
+    out: deps.out ?? process.stdout,
+    err: deps.err ?? process.stderr,
+    env: deps.env ?? process.env,
+    delaysMs: deps.retryDelaysMs ?? [1000, 4000],
+  };
+}
+
+export async function runPushPerf(args: readonly string[], deps: PerfDeps): Promise<number> {
+  const { out, err, env, delaysMs } = io(deps);
+  if (args.some((x) => x === '--help' || x === '-h')) {
+    out.write(PERF_USAGE);
+    return 0;
+  }
+  const cfg = configureOrExplain(args, env, err);
+  if (typeof cfg === 'number') return cfg;
+  const read = readOrExplain(cfg.summary, err);
+  if (!read) return 1;
+  const headline = k6Headline(read.summary);
+  const objectives = k6Objectives(read.summary);
+  const body = buildPerfBody(cfg, headline, objectives, read.mtime, env);
+  const refused = refusal(cfg.summary, k6Abstention(read.summary, headline), body, err);
+  if (refused !== null) return refused;
   out.write(k6Denominator(cfg.summary, objectives));
   if (cfg.dryRun) {
     out.write(`POST ${perfPath(cfg.client)}\n${JSON.stringify(body, null, 2)}\n`);
     return 0;
   }
-  return (await sendPerf(cfg, body, deps.retryDelaysMs ?? [1000, 4000], env)) ? 0 : 1;
+  return (await sendPerf(cfg, body, delaysMs, env)) ? 0 : 1;
 }
