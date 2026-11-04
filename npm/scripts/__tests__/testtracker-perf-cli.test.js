@@ -243,3 +243,20 @@ test('still failing after the retries exits 1', async () => {
   assert.equal(pushes.length, 3);
   assert.match(logs.join('\n'), /not ingested after 3 attempts/);
 });
+
+// --- SC13 on the wire ------------------------------------------------------------------
+
+test('SC13: the real nightly fixture reaches the wire as per-route p(50)/p(99) latency and rate objectives', async () => {
+  const { code, payload, out } = await pushPerf(SUMMARY);
+  assert.equal(code, 0);
+  assert.match(out, /read 105 thresholds on 70 sub-metrics/);
+  const routes = new Set(payload.objectives.map((o) => /\{name:([^}]+)\}$/.exec(o.submetric)?.[1]));
+  assert.equal(routes.size, 35);
+  for (const route of routes) {
+    const exprs = payload.objectives
+      .filter((o) => o.submetric.endsWith(`{name:${route}}`))
+      .map((o) => `${o.submetric.split('{')[0]} ${o.expression.replace(/[\d.]+$/, 'N')}`)
+      .sort();
+    assert.deepEqual(exprs, ['dag_errors rate<N', 'http_req_duration p(50)<N', 'http_req_duration p(99)<N'], route);
+  }
+});
