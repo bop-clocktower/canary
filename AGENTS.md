@@ -547,6 +547,12 @@ narrowed to the diff, so it is not described as diff-scoped.
   on every `mutation-report.json`, zero included. `sampled + untested` is the
   report's mutant total. Every non-abstained report renders the count, zero
   included, and an abstention renders it whenever it is not zero.
+- **A survivor with no `coveredBy` stays a survivor (ADR 0037).** Stryker writes
+  the field only under `coverageAnalysis: perTest`, so its absence means
+  attribution was not recorded. The survivor counts in `survived` and drives
+  exit 1, its line says so, and one line under the headline counts such
+  survivors and points at `perTest`. Only an explicit `coveredBy: []` is
+  `no-coverage`.
 - **Author obligation.** For each survivor, either strengthen a test until it
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,
@@ -1719,8 +1725,11 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
   before they reach CI.
 - Re-runs `node scripts/security_ledger.mjs` and restages its outputs only when
   the commit stages a ledger input (`.harness/security/timeline.json`,
-  `docs/SECURITY_LEDGER.md`, or the script itself). Unrelated commits leave the
-  ledger alone; CI (`harness-security.yml`) is its canonical writer (#1446).
+  `.harness/security/supply-chain.json`, `docs/SECURITY_LEDGER.md`, or the script
+  itself). Unrelated commits leave the ledger alone; CI (`harness-security.yml`)
+  is its canonical writer (#1446). The ledger's supply-chain line comes from the
+  sidecar `scripts/supply_chain_audit.mjs` writes, and reads "not measured" when
+  nothing was audited (#1436). It informs and gates nothing.
 
 Then install the Python test dependency (pytest) into the `python3` on your
 `PATH` — the same interpreter the tests spawn:

@@ -71,8 +71,16 @@ const CASES: Case[] = [
     scanJob: 'security',
     writeJob: 'ledger',
     artifact: 'security-ledger',
-    paths: ['.harness/security/timeline.json', 'docs/SECURITY_LEDGER.md'],
-    entries: ['.harness/security/timeline.json', 'docs/SECURITY_LEDGER.md'],
+    paths: [
+      '.harness/security/timeline.json',
+      '.harness/security/supply-chain.json',
+      'docs/SECURITY_LEDGER.md',
+    ],
+    entries: [
+      '.harness/security/timeline.json',
+      '.harness/security/supply-chain.json',
+      'docs/SECURITY_LEDGER.md',
+    ],
     branch: 'chore/security-ledger',
   },
   {
@@ -273,6 +281,31 @@ describe.each(CASES)('$file push job, run against a real remote', (c) => {
     expect(r.status, r.log).toBe(0);
     expect(git(origin, 'branch', '--list', c.branch)).toBe('');
   });
+
+  it.runIf(c.file === 'harness-security.yml')(
+    'pushes a sidecar that main does not track yet (#1436)',
+    () => {
+      const { work, origin } = setup();
+      const sidecar = '.harness/security/supply-chain.json';
+      git(work, 'rm', '-q', sidecar);
+      git(
+        work,
+        '-c',
+        'user.name=t',
+        '-c',
+        'user.email=t@example.invalid',
+        'commit',
+        '-q',
+        '-m',
+        'main before the sidecar existed',
+      );
+      git(work, 'push', '-q', 'origin', 'main');
+      // Timeline and ledger are unchanged, so only the new file can trigger it.
+      const r = runJob(work);
+      expect(r.status, r.log).toBe(0);
+      expect(git(origin, 'show', `${c.branch}:${sidecar}`)).toBe('old');
+    },
+  );
 
   it('fails when the push is rejected (#548: no swallowed push)', () => {
     const { work, src } = setup();

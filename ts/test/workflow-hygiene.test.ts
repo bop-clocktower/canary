@@ -481,9 +481,15 @@ const HANDOFFS: Handoff[] = [
   {
     file: 'harness-security.yml',
     artifact: 'security-ledger',
-    upload: ['.harness/security/timeline.json', 'docs/SECURITY_LEDGER.md'],
+    upload: [
+      '.harness/security/timeline.json',
+      '.harness/security/supply-chain.json',
+      'docs/SECURITY_LEDGER.md',
+    ],
     entries: {
       '.harness/security/timeline.json': '.harness/security/timeline.json',
+      '.harness/security/supply-chain.json':
+        '.harness/security/supply-chain.json',
       'docs/SECURITY_LEDGER.md': 'docs/SECURITY_LEDGER.md',
     },
   },

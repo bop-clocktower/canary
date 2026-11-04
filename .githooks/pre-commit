@@ -106,8 +106,10 @@ fi
 
 # 4. Security ledger — refresh ONLY when this commit stages the ledger's own
 #    inputs (#1446). `scripts/security_ledger.mjs` derives both outputs from
-#    one data input, the timeline, plus its own source; the ledger is listed
-#    so a hand edit is re-rendered rather than committed. Any other commit
+#    two data inputs, the timeline and the supply-chain sidecar (#1436), plus
+#    its own source; the ledger is listed so a hand edit is re-rendered rather
+#    than committed. The sidecar is an input only, so it is never restaged here,
+#    and `git add` on a missing path would stage nothing at all. Any other commit
 #    leaves both files alone: refreshing on every commit used to drag the
 #    ledger, and any snapshot a local `harness check-security` run had
 #    appended to the timeline, into unrelated diffs. It also skipped the one
@@ -116,7 +118,7 @@ fi
 #    CI is the canonical writer: harness-security.yml refreshes the ledger
 #    after each scan on main, and harness-quality.yml's freshness guard fails
 #    a PR whose committed timeline and ledger disagree.
-LEDGER_INPUTS=$(git diff --cached --name-only | grep -E '^(\.harness/security/timeline\.json|docs/SECURITY_LEDGER\.md|scripts/security_ledger\.mjs)$' || true)
+LEDGER_INPUTS=$(git diff --cached --name-only | grep -E '^(\.harness/security/timeline\.json|\.harness/security/supply-chain\.json|docs/SECURITY_LEDGER\.md|scripts/security_ledger\.mjs)$' || true)
 if [ -n "$LEDGER_INPUTS" ] && [ -f "scripts/security_ledger.mjs" ]; then
   echo "[pre-commit] refreshing security ledger (ledger inputs staged)..."
   if node scripts/security_ledger.mjs; then
