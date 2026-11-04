@@ -19,14 +19,16 @@ const fixture = () => JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
 // picks values[stat] with this one. Read through k6Objectives (the parser is
 // module-private): a parsed stat yields that values[stat]; an expression that
 // is not k6 grammar yields null, whatever values holds.
+const STAT_VALUES = { 'p(99)': 1, 'p(99.9)': 2, 'p(95)': 3, avg: 4, min: 5, max: 6, med: 7, count: 8, rate: 9, value: 10 };
+const statWithValue = (v) => Object.keys(STAT_VALUES).find((k) => STAT_VALUES[k] === v) ?? null;
+/** The values key one threshold expression was read as, or null. */
+function statOf(expr) {
+  const thresholds = { [expr]: { ok: true } };
+  const m = { type: 'counter', values: STAT_VALUES, thresholds };
+  return statWithValue(k6.k6Objectives({ metrics: { m } })[0].observedValue);
+}
+
 test('the threshold grammar reads every k6 aggregation the server parses', () => {
-  const values = { 'p(99)': 1, 'p(99.9)': 2, 'p(95)': 3, avg: 4, min: 5, max: 6, med: 7, count: 8, rate: 9, value: 10 };
-  const statOf = (expr) => {
-    const data = { metrics: { m: { type: 'counter', values, thresholds: { [expr]: { ok: true } } } } };
-    const [objective] = k6.k6Objectives(data);
-    const stat = Object.keys(values).find((k) => values[k] === objective.observedValue);
-    return stat ?? null;
-  };
   const cases = {
     'p(99)<500': 'p(99)',
     'p( 99.9 ) <= 1e3': 'p(99.9)',
