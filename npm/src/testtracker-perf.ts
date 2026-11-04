@@ -24,7 +24,7 @@ import {
   K6SummaryError,
 } from './reporters/ingest/k6-summary.js';
 import type { PerfHeadline, PerfObjective } from './reporters/ingest/k6-summary.js';
-import { postWithRetry } from './reporters/ingest/transport.js';
+import { errText, log, postWithRetry, warn } from './reporters/ingest/transport.js';
 import type { TesttrackerDeps } from './testtracker.js';
 
 export const PERF_USAGE = `usage: canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> --env <env> [options]
@@ -198,6 +198,53 @@ export function buildPerfBody(
 
 export const perfPath = (client: string) => `/api/v1/tenants/${encodeURIComponent(client)}/perf-reports`;
 
+const HINTS: Record<number, string> = {
+  400: "the body failed TestTracker's schema; is canary older than the server?",
+  401: 'the token is unknown, revoked or expired, or not a tt_ ingest token',
+  403: 'the token lacks the ingest:runs scope',
+  404: "--client is not this token's client (or the server has no perf-reports route yet)",
+  413: "the body is over the route's 2 MB limit",
+  422: 'TestTracker refused the content',
+};
+
+/** POSTs the report; true only when TestTracker confirms a stored (or already stored) report. */
+async function sendPerf(cfg: PerfConfig, body: PerfReportBody, delaysMs: number[], env: NodeJS.ProcessEnv): Promise<boolean> {
+  const { resp, error, attempts } = await postWithRetry(
+    `${new URL(cfg.url).origin}${perfPath(cfg.client)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.token}` },
+      body: JSON.stringify(body),
+    },
+    delaysMs,
+  );
+  if (resp?.ok) {
+    const data = (await resp.json().catch(() => ({}))) as { reportId?: unknown; duplicate?: unknown };
+    if (typeof data.reportId !== 'number') {
+      // "Cannot verify" is a finding, not a pass.
+      warn(`TestTracker answered ${resp.status} without a reportId, so this push cannot confirm the perf report was stored.`, env);
+      return false;
+    }
+    log(
+      data.duplicate === true
+        ? `perf report ${data.reportId} already ingested (duplicate re-push of run ${body.runRef}); this push stored nothing.`
+        : `perf report ${data.reportId} ingested.`,
+    );
+    return true;
+  }
+  if (!resp) {
+    warn(`perf report not ingested after ${attempts} attempts (${errText(error)}).`, env);
+    return false;
+  }
+  const text = (await resp.text().catch(() => '')).slice(0, 300);
+  if (resp.status >= 500 || resp.status === 429) {
+    warn(`perf report not ingested after ${attempts} attempts (${resp.status} ${text}).`, env);
+    return false;
+  }
+  warn(`perf report rejected (${resp.status}: ${HINTS[resp.status] ?? 'a client error'}): ${text}. Not retried; nothing was stored.`, env);
+  return false;
+}
+
 export async function runPushPerf(args: readonly string[], deps: TesttrackerDeps): Promise<number> {
   const out = deps.out ?? process.stdout;
   const err = deps.err ?? process.stderr;
@@ -250,16 +297,5 @@ export async function runPushPerf(args: readonly string[], deps: TesttrackerDeps
     out.write(`POST ${perfPath(cfg.client)}\n${JSON.stringify(body, null, 2)}\n`);
     return 0;
   }
-  // A minimal send, so the wire tests can read the body; the outcome
-  // handling replaces it in the next commit.
-  await postWithRetry(
-    `${new URL(cfg.url).origin}${perfPath(cfg.client)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.token}` },
-      body: JSON.stringify(body),
-    },
-    deps.retryDelaysMs ?? [1000, 4000],
-  );
-  return 0;
+  return (await sendPerf(cfg, body, deps.retryDelaysMs ?? [1000, 4000], env)) ? 0 : 1;
 }

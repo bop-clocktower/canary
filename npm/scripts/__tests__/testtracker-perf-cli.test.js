@@ -181,3 +181,65 @@ test('a body over 2 MiB exits 1 and sends nothing', async () => {
   assert.equal(requests.length, 0);
   assert.match(err, /over TestTracker's 2 MiB limit/);
 });
+
+// --- the push and its outcome ---------------------------------------------------------
+
+test('posts to <origin>/api/v1/tenants/<client>/perf-reports with the bearer token', async () => {
+  const env = { ...PUSH_ENV, CANARY_INGEST_URL: 'https://dash.example/some/path/' };
+  const { code, pushes, logs } = await pushPerf(SUMMARY, [], { env });
+  assert.equal(code, 0);
+  assert.equal(pushes.length, 1);
+  assert.equal(pushes[0].url, 'https://dash.example/api/v1/tenants/acme/perf-reports');
+  assert.match(logs.join('\n'), /canary ingest: perf report 11 ingested\./);
+});
+
+test('a duplicate exits 0 and says this push stored nothing', async () => {
+  const { code, logs } = await pushPerf(SUMMARY, [], { responses: [{ status: 200, json: { reportId: 9, duplicate: true } }] });
+  assert.equal(code, 0);
+  assert.match(logs.join('\n'), /canary ingest: perf report 9 already ingested \(duplicate re-push of run 42-1\); this push stored nothing\./);
+});
+
+test('a 200 without a reportId cannot be confirmed: exit 1', async () => {
+  const { code, logs } = await pushPerf(SUMMARY, [], { responses: [{ status: 200, json: { ok: true } }] });
+  assert.equal(code, 1);
+  assert.match(logs.join('\n'), /cannot confirm/);
+});
+
+test('4xx is not retried, exits 1, and names the likely cause', async () => {
+  const cases = {
+    400: /schema/,
+    401: /unknown, revoked or expired, or not a tt_ ingest token/,
+    403: /ingest:runs/,
+    404: /not this token's client/,
+    413: /2 MB/,
+    422: /refused the content/,
+  };
+  for (const [status, hint] of Object.entries(cases)) {
+    const { code, pushes, logs } = await pushPerf(SUMMARY, [], {
+      responses: [{ status: Number(status), json: { code: 'X', message: 'server says why' } }],
+    });
+    assert.equal(code, 1, status);
+    assert.equal(pushes.length, 1, `${status} must not be retried`);
+    const text = logs.join('\n');
+    assert.match(text, hint, status);
+    assert.match(text, /server says why/);
+    assert.doesNotMatch(text, /ingested\./);
+  }
+});
+
+test('429 and 5xx are retried; success on a retry exits 0', async () => {
+  const { code, pushes } = await pushPerf(SUMMARY, [], {
+    responses: [{ status: 429, json: {} }, { status: 502, json: {} }, { status: 200, json: { reportId: 4, duplicate: false } }],
+  });
+  assert.equal(code, 0);
+  assert.equal(pushes.length, 3);
+});
+
+test('still failing after the retries exits 1', async () => {
+  const { code, pushes, logs } = await pushPerf(SUMMARY, [], {
+    responses: [{ status: 503 }, { status: 503 }, { status: 503 }],
+  });
+  assert.equal(code, 1);
+  assert.equal(pushes.length, 3);
+  assert.match(logs.join('\n'), /not ingested after 3 attempts/);
+});
