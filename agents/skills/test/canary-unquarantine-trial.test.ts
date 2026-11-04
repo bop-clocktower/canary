@@ -1722,6 +1722,19 @@ describe('verdict --apply acts only on what the default branch vouches for', () 
         );
         const INPUTS = ['docs/roadmap.md', '.harness/security/timeline.json'];
 
+        /** Planted scripts and changed inputs, for the trial branch. */
+        function plantOwn(repo: string, marker: string) {
+          const planted = `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(marker)}, 'ran');\n`;
+          fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
+          for (const name of [
+            'roadmap_comment_guard.mjs',
+            'security_ledger.mjs',
+          ])
+            fs.writeFileSync(path.join(repo, 'scripts', name), planted);
+          for (const file of INPUTS)
+            fs.writeFileSync(path.join(repo, file), 'on the trial\n');
+        }
+
         /** The real hook on main; on the trial branch, changed inputs and planted scripts. */
         function ownHook(hooksPath: (repo: string) => string, marker: string) {
           const forge = (m: any) =>
@@ -1747,20 +1760,7 @@ describe('verdict --apply acts only on what the default branch vouches for', () 
               git(s.repo, 'push', '-q', 'origin', 'main');
             },
             after: (s) => {
-              onTrialBranch(s.repo, () => {
-                const planted = `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(marker)}, 'ran');\n`;
-                for (const name of [
-                  'roadmap_comment_guard.mjs',
-                  'security_ledger.mjs',
-                ]) {
-                  fs.mkdirSync(path.join(s.repo, 'scripts'), {
-                    recursive: true,
-                  });
-                  fs.writeFileSync(path.join(s.repo, 'scripts', name), planted);
-                }
-                for (const f of INPUTS)
-                  fs.writeFileSync(path.join(s.repo, f), 'on the trial\n');
-              });
+              onTrialBranch(s.repo, () => plantOwn(s.repo, marker));
               setConfig(s.repo, { 'core.hooksPath': hooksPath(s.repo) });
             },
           });
