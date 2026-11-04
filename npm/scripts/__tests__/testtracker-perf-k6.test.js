@@ -38,3 +38,38 @@ test('thresholdStat reads every k6 aggregation the server parses', () => {
     assert.equal(k6.thresholdStat(expr), want, expr);
   }
 });
+
+// --- reading the file ---------------------------------------------------------
+
+const os = require('node:os');
+const tempJson = (value) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-k6-'));
+  const file = path.join(dir, 'summary.json');
+  fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value));
+  return file;
+};
+
+test('readK6Summary returns the data and the file mtime', () => {
+  const { summary, mtime } = k6.readK6Summary(FIXTURE);
+  assert.equal(Object.keys(summary.metrics).length, 88);
+  assert.ok(mtime instanceof Date);
+});
+
+test('readK6Summary refuses what is not handleSummary data', () => {
+  const refused = [
+    [path.join(os.tmpdir(), 'nope-k6.json'), /cannot read/],
+    [tempJson('{not json'), /not JSON/],
+    [tempJson({ root_group: {} }), /no "metrics"/],
+    [tempJson({ metrics: [] }), /no "metrics"/],
+    // --summary-export: values flattened onto the metric, thresholds as booleans
+    [tempJson({ metrics: { http_reqs: { count: 3, rate: 1, thresholds: { 'count>1': false } } } }), /--summary-export/],
+    [tempJson({ metrics: { m: { values: {}, thresholds: { 'avg<1': { ok: 'yes' } } } } }), /boolean "ok"/],
+  ];
+  for (const [file, why] of refused) {
+    assert.throws(() => k6.readK6Summary(file), (e) => e instanceof k6.K6SummaryError && why.test(e.message), file);
+  }
+});
+
+test('an empty metrics object is readable: abstaining on it is the command\'s call', () => {
+  assert.deepEqual(k6.readK6Summary(tempJson({ metrics: {} })).summary.metrics, {});
+});
