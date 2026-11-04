@@ -1,13 +1,10 @@
 /**
  * Which rows of a flakiness window still count, given the inventory (#1500).
  *
- * `canary ci-ready` scored every test in the run history, so a deleted test kept
- * failing the check until it aged out of the window, on PRs that never touched
- * it. This retires rows from deleted FILES; the rule and its guards are on
- * {@link retireDeletedFiles}. Split out of `flake-signals.ts` and
- * `flakiness-check.ts` to keep each under the perf file-length threshold.
- *
- * Pure: callers pass the windows and the parsed inventory in.
+ * A deleted test kept failing `canary ci-ready` until it aged out of the window,
+ * on PRs that never touched it. This retires rows from deleted FILES; the rule
+ * and its guards are on {@link retireDeletedFiles}. Pure: callers pass the
+ * windows and the parsed inventory in.
  */
 import {
   flakeSignals,
@@ -28,18 +25,19 @@ interface RetiredTest {
 
 /** Why a file missing from the inventory still scored. */
 type KeptReason =
-  'uncollected-name' | 'no-live-sibling' | 'ran-after-inventory';
+  | 'uncollected-name'
+  | 'no-live-sibling'
+  | 'mostly-missing-directory'
+  | 'ran-after-inventory';
 
 interface KeptFile {
   file: string;
   why: KeptReason;
 }
 
-/** What the inventory says exists, reduced to what retirement needs. */
+/** The inventory's root-relative paths (listed + skipped) and its write time. */
 interface LiveFiles {
-  /** Root-relative POSIX paths: listed files plus unreadable (skipped) ones. */
   paths: readonly string[];
-  /** When the inventory was written, if it says. */
   generated: string | null;
 }
 
@@ -94,12 +92,15 @@ function storedFiles(runs: readonly (SignalRun & WindowedRun)[]): {
 } {
   const newest = new Map<string, string>();
   let unmatchedRows = 0;
-  for (const run of runs) {
-    const ts = run.timestamp ?? '';
-    for (const { test_file: file } of run.tests ?? []) {
-      if (!file) unmatchedRows += 1;
-      else if (ts >= (newest.get(file) ?? '')) newest.set(file, ts);
-    }
+  const rows = runs.flatMap((run) =>
+    (run.tests ?? []).map((t) => ({
+      file: t.test_file,
+      ts: run.timestamp ?? '',
+    })),
+  );
+  for (const { file, ts } of rows) {
+    if (!file) unmatchedRows += 1;
+    else if (ts >= (newest.get(file) ?? '')) newest.set(file, ts);
   }
   return { newest, unmatchedRows };
 }
@@ -109,15 +110,31 @@ function ranAfter(ts: string, generated: string | null): boolean {
   return generated !== null && Date.parse(ts) > Date.parse(generated);
 }
 
+/** How many of `files` sit in each directory. */
+function perDirectory(files: Iterable<string>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const file of files) {
+    const dir = dirOf(normalizePath(file));
+    counts.set(dir, (counts.get(dir) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function isCollected(file: string): boolean {
+  return isCollectedTestFile(baseOf(normalizePath(file)));
+}
+
 function keptReason(
   file: string,
   newest: string,
-  liveDirs: ReadonlySet<string>,
+  dirs: { live: Map<string, number>; missing: Map<string, number> },
   generated: string | null,
 ): KeptReason | null {
-  const path = normalizePath(file);
-  if (!isCollectedTestFile(baseOf(path))) return 'uncollected-name';
-  if (!liveDirs.has(dirOf(path))) return 'no-live-sibling';
+  if (!isCollected(file)) return 'uncollected-name';
+  const dir = dirOf(normalizePath(file));
+  const live = dirs.live.get(dir) ?? 0;
+  if (live === 0) return 'no-live-sibling';
+  if (live < (dirs.missing.get(dir) ?? 0)) return 'mostly-missing-directory';
   return ranAfter(newest, generated) ? 'ran-after-inventory' : null;
 }
 
@@ -164,6 +181,11 @@ function withoutFiles<R extends SignalRun>(
  * that ran after the inventory was written stays too: the inventory is stale
  * about it, and a stale inventory must not turn a new test green.
  *
+ * Live siblings must also at least match the missing ones. A suffix join can
+ * collide: an inventory of another package with its own `test/shared.test.ts`
+ * joined 3 of 61 stored files on real data, and with the sibling guard alone
+ * that wrongly retired the other 58. Deletion leaves most of a directory behind.
+ *
  * The join is deliberately file-level (a title-level one wrongly retired 23% of
  * live rows), and tallying stays keyed by `test_name` (#1350 owns identity).
  * Every miss therefore keeps scoring: a false fail, never a false green.
@@ -179,11 +201,15 @@ function retireDeletedFiles<R extends SignalRun & WindowedRun>(
   const joins = joinerFor(live.paths);
   const stored = [...newest.keys()];
   const listed = new Set(stored.filter((f) => joins(normalizePath(f))));
-  const liveDirs = new Set([...listed].map((f) => dirOf(normalizePath(f))));
+  const absent = stored.filter((f) => !listed.has(f));
+  const dirs = {
+    live: perDirectory(listed),
+    missing: perDirectory(absent.filter(isCollected)),
+  };
   const kept: KeptFile[] = [];
   const gone = new Set<string>();
-  for (const file of stored.filter((f) => !listed.has(f))) {
-    const why = keptReason(file, newest.get(file)!, liveDirs, live.generated);
+  for (const file of absent) {
+    const why = keptReason(file, newest.get(file)!, dirs, live.generated);
     if (why) kept.push({ file, why });
     else gone.add(file);
   }
@@ -268,31 +294,4 @@ export function applyRetirement<R extends SignalRun & WindowedRun>(
   retirement.retired.sort((a, b) => b.rate - a.rate);
   retirement.retired_count = retirement.retired.length;
   return { windows: left, retirement };
-}
-
-/**
- * The renderers' lines for what stayed scored or could not be judged. A deleted
- * test that keeps scoring is a false fail, and it should be explainable from
- * the output rather than from this module's docs.
- */
-export function retirementNotes(r: FlakinessRetirement | null): string[] {
-  if (r === null) return [];
-  if (!r.applied) {
-    return [
-      `Flakiness retirement not applied: ${r.reason}; tests from deleted files keep scoring until they age out.`,
-    ];
-  }
-  const notes: string[] = [];
-  if (r.unmatched_rows > 0) {
-    notes.push(
-      `Flakiness retirement: ${r.unmatched_rows} row(s) with no test_file stayed scored; they cannot be matched to a file.`,
-    );
-  }
-  if (r.kept.length > 0) {
-    const named = r.kept.map((k) => `${k.file}: ${k.why}`).join(', ');
-    notes.push(
-      `Flakiness retirement: ${r.kept.length} file(s) missing from the inventory stayed scored (${named}).`,
-    );
-  }
-  return notes;
 }

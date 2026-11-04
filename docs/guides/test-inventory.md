@@ -103,6 +103,9 @@ A row retires only when all of these hold:
 - another stored file in the same directory, in the same suite's window, is in
   the inventory, which is what stops an inventory of `tests/` from retiring a
   live `src/` test
+- live files in that directory at least match the missing ones, because deleting
+  a file leaves most of its directory behind, and one colliding path from
+  another package's inventory is not evidence about a whole directory
 - the file did not run after the inventory's `generated` time, because a stale
   inventory cannot list a file newer than itself
 
@@ -119,8 +122,8 @@ loop-generated titles). These keep scoring until they age out of the window:
 - a test deleted from a file that still exists
 - rows with no `test_file` (default-family pytest JUnit output has none);
   counted in `retirement.unmatched_rows`
-- the last test file in a directory, which has no live sibling; listed in
-  `retirement.kept` with the reason it stayed
+- the last test file in a directory, or most of a directory deleted at once;
+  listed in `retirement.kept` with the reason it stayed
 
 Each of those is a false fail, not a false green. Keeping `canary inventory`
 current matters: a retirement is only as good as the inventory it reads.

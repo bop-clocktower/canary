@@ -66,6 +66,7 @@ interface CheckMeasure {
 /** Matches `canary analyze flaky`'s defaults: a 30-run window, 10% flake rate. */
 const FLAKY_WINDOW_RUNS = 30;
 const FLAKY_FAIL_RATE = 0.1;
+const MAX_NOTE_FILES = 5;
 
 /**
  * The measurability suffix for a clean window (#604 G3/SC4).
@@ -144,6 +145,41 @@ export function scoreFlakyRuns(
     windows.length === 1 ? scoreWindow(windows[0]!.runs) : scoreSuites(windows);
   check.reason += retiredSuffix(retirement);
   return { check, retirement };
+}
+
+/**
+ * The renderers' lines for what stayed scored or could not be judged. A deleted
+ * test that keeps scoring is a false fail, and it should be explainable from
+ * the output rather than from this module's docs.
+ */
+export function retirementNotes(r: FlakinessRetirement | null): string[] {
+  if (r === null) return [];
+  if (!r.applied) {
+    return [
+      `Flakiness retirement not applied: ${r.reason}; tests from deleted files keep scoring until they age out.`,
+    ];
+  }
+  const notes: string[] = [];
+  if (r.unmatched_rows > 0) {
+    notes.push(
+      `Flakiness retirement: ${r.unmatched_rows} row(s) with no test_file stayed scored; they cannot be matched to a file.`,
+    );
+  }
+  if (r.kept.length > 0) {
+    // A scoped inventory can leave hundreds here on every run; --json has them all.
+    const named = r.kept
+      .slice(0, MAX_NOTE_FILES)
+      .map((k) => `${k.file}: ${k.why}`)
+      .join(', ');
+    const more =
+      r.kept.length > MAX_NOTE_FILES
+        ? `, and ${r.kept.length - MAX_NOTE_FILES} more`
+        : '';
+    notes.push(
+      `Flakiness retirement: ${r.kept.length} file(s) missing from the inventory stayed scored (${named}${more}).`,
+    );
+  }
+  return notes;
 }
 
 /** The worst of a set of signals; a tie keeps the first seen. */

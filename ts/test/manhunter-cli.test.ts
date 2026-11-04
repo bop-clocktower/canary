@@ -11,10 +11,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createCanaryCommand } from '../src/cli.js';
-import {
-  retirementNotes,
-  type FlakinessRetirement,
-} from '../src/core/flake-retirement.js';
+import type { FlakinessRetirement } from '../src/core/flake-retirement.js';
+import { retirementNotes } from '../src/core/flakiness-check.js';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 

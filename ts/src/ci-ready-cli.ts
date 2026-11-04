@@ -19,7 +19,7 @@ import {
   type CiReadyReport,
   type RunsInput,
 } from './core/ci-ready.js';
-import { retirementNotes } from './core/flake-retirement.js';
+import { retirementNotes } from './core/flakiness-check.js';
 import { parseCriticalAreas, parseInventory } from './core/inventory-checks.js';
 import {
   HistoryContentError,

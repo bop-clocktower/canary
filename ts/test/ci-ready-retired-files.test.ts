@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { scoreCiReady, type CiCheck } from '../src/core/ci-ready.js';
+import { retirementNotes } from '../src/core/flakiness-check.js';
 import { isCollectedTestFile } from '../src/core/test-files.js';
 import {
   parseCriticalAreas,
@@ -255,6 +256,43 @@ describe('#1500 flakiness retires deleted test files', () => {
       expect(retirement.kept).toEqual([]);
     });
 
+    it('keeps a directory scored when most of it is missing', () => {
+      // One colliding path is not evidence about a whole directory. An inventory
+      // of another package, with its own test/shared.test.ts, joined 3 of 61
+      // stored files and wrongly retired the other 58 on real data before this.
+      const dir = '/repo/other/test';
+      const { flakiness, retirement } = score(
+        runs((i) => [
+          clean(`${dir}/shared.test.ts`),
+          flaked(`${dir}/a.test.ts`, 'a', i),
+          clean(`${dir}/b.test.ts`, 'b'),
+        ]),
+        inventoryOf(['test/shared.test.ts']),
+      );
+      expect(flakiness.verdict).toBe('fail');
+      expect(retirement.retired).toEqual([]);
+      expect(retirement.kept.map((k) => k.why)).toEqual([
+        'mostly-missing-directory',
+        'mostly-missing-directory',
+      ]);
+    });
+
+    it('retires when as many siblings are live as are missing', () => {
+      const { retirement } = score(
+        runs((i) => [
+          flaked('t/a.test.ts', 'a', i),
+          flaked('t/b.test.ts', 'b', i),
+          clean('t/c.test.ts'),
+          clean('t/d.test.ts'),
+        ]),
+        inventoryOf(['t/c.test.ts', 't/d.test.ts']),
+      );
+      expect(retirement.retired.map((r) => r.file).sort()).toEqual([
+        't/a.test.ts',
+        't/b.test.ts',
+      ]);
+    });
+
     it('keeps a file that ran after the inventory was written scored', () => {
       // A stale inventory has no way to list a file newer than itself, and a
       // file that ran after it cannot have been deleted before it.
@@ -326,6 +364,19 @@ describe('#1500 flakiness retires deleted test files', () => {
       );
       expect(retirement.retired).toEqual([]);
     });
+
+    it('joins on whole path segments, not on a string suffix', () => {
+      // "xtests/cart.spec.ts" must not join "tests/cart.spec.ts": that bogus
+      // join is the only live sibling "xtests/old.spec.ts" would have.
+      const { retirement } = score(
+        runs((i) => [
+          flaked('/ci/xtests/old.spec.ts', 'x', i),
+          clean('/ci/xtests/cart.spec.ts'),
+        ]),
+        inventoryOf(['tests/cart.spec.ts']),
+      );
+      expect(retirement.retired).toEqual([]);
+    });
   });
 
   describe('abstaining', () => {
@@ -382,6 +433,30 @@ describe('#1500 flakiness retires deleted test files', () => {
         reason: '0 flaky or alternating tests across 27 run(s) (window 30)',
         measure: { value: 0, unit: 'ratio', denominator: 27 },
       });
+    });
+  });
+
+  describe('retirementNotes', () => {
+    it('caps the files it names, because a scoped inventory can keep hundreds', () => {
+      const files = Array.from({ length: 7 }, (_, i) => `d${i}/t${i}.test.ts`);
+      const { retirement } = score(
+        runs(() => [...files.map((f) => clean(f)), clean(LIVE)]),
+        inventoryOf([LIVE]),
+      );
+      expect(retirement.kept).toHaveLength(7);
+      const [note] = retirementNotes(retirement);
+      expect(note).toContain('7 file(s) missing from the inventory');
+      expect(note).toContain('d4/t4.test.ts: no-live-sibling, and 2 more).');
+      expect(note).not.toContain('d5/t5.test.ts');
+    });
+
+    it('has nothing to say when retirement applied and nothing stayed', () => {
+      const { retirement } = score(
+        runs(() => [clean(LIVE)]),
+        inventoryOf([LIVE]),
+      );
+      expect(retirementNotes(retirement)).toEqual([]);
+      expect(retirementNotes(null)).toEqual([]);
     });
   });
 
