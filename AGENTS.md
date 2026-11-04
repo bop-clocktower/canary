@@ -547,6 +547,12 @@ narrowed to the diff, so it is not described as diff-scoped.
   on every `mutation-report.json`, zero included. `sampled + untested` is the
   report's mutant total. Every non-abstained report renders the count, zero
   included, and an abstention renders it whenever it is not zero.
+- **A survivor with no `coveredBy` stays a survivor (ADR 0037).** Stryker writes
+  the field only under `coverageAnalysis: perTest`, so its absence means
+  attribution was not recorded. The survivor counts in `survived` and drives
+  exit 1, its line says so, and one line under the headline counts such
+  survivors and points at `perTest`. Only an explicit `coveredBy: []` is
+  `no-coverage`.
 - **Author obligation.** For each survivor, either strengthen a test until it
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,
