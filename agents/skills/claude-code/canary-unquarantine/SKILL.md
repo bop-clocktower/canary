@@ -314,12 +314,19 @@ characters each, so a longer title reads truncated in `flake_hunter` too.
 
 `--apply` also refuses, before anything is written:
 
-- **A relative `core.hooksPath`**, such as husky's default `.husky/_`. It would
-  resolve inside the worktree of the trial branch, so a hook committed there
-  would run on this machine with your credentials in its environment. Suites
-  that use one need an absolute path, or the setting unset, for the `--apply`.
 - **A lift that appears twice**, or a failing lift with no blocker.
 - **A head that is the default branch.**
+
+**Your git programs are off for this one automated commit.** The settle works in
+a tree the PR's editor wrote, and a program run there, or one that reads from
+there, would run on this machine with your credentials. So every git call has
+all hooks (whatever `core.hooksPath` says), filter drivers, `core.fsmonitor`,
+commit signing and submodule recursion switched off. The settle commit is
+therefore unsigned and unchecked by your hooks; a person reviews it. With
+filters off, files are rebuilt from their stored blobs, so a pointer file goes
+back unchanged, but a ledger or test file stored encrypted can't be read and the
+settle stops. The push runs from your own repository, so `credential.helper` and
+`core.sshCommand` work as usual and a relative one resolves there.
 
 What this check does not establish:
 

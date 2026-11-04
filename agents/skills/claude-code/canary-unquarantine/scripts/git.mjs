@@ -3,7 +3,7 @@
 // Every write happens in a throwaway `git worktree` under the OS temp
 // directory, created and removed here, so the user's own checkout is never
 // switched, stashed or dirtied. Commands go through the injected runner, so
-// tests can pair real git with a fake `gh`.
+// tests can pair real git with a fake `gh`. A settle uses `guardedRun`.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -114,27 +114,57 @@ export function fetchBranchTip(run, repo, branch) {
   }
 }
 
-/**
- * Refuse a relative core.hooksPath. It resolves inside whichever worktree git
- * runs in, so in a worktree of the trial branch a hook the branch carries would
- * run on this machine, with this operator's credentials in its environment,
- * from the first `worktree add` on. Checked before any worktree exists.
- */
-export function checkHooksPath(run, repo) {
+/** Settings that would run a program, from the trial tree, during a settle. */
+const QUIET = [
+  'core.hooksPath=/dev/null', // every hook, including post-checkout and pre-push
+  'core.fsmonitor=false',
+  'commit.gpgsign=false', // the settle commit is unsigned; a person reviews it
+  'submodule.recurse=false',
+  'fetch.recurseSubmodules=false',
+  'push.recurseSubmodules=no',
+  'gc.auto=0', // gc.recentObjectsHook
+  'maintenance.auto=false',
+];
+
+/** The configured filter drivers' names, read so each can be switched off. */
+function filterNames(run, repo) {
   const r = run('git', [
     '-C',
     repo,
     'config',
-    '--path',
-    '--get',
-    'core.hooksPath',
+    '--name-only',
+    '--get-regexp',
+    '^filter\\..*\\.(clean|smudge|process|required)$',
   ]);
-  if (r.status === 1) return; // not set
-  const value = must(r, 'git config core.hooksPath');
-  if (!path.isAbsolute(value))
+  if (r.status === 1) return []; // none configured
+  const names = must(r, 'git config filter.*').split('\n').filter(Boolean);
+  return [...new Set(names.map((n) => n.slice(7, n.lastIndexOf('.'))))];
+}
+
+/** One driver off. Empty commands pass bytes through, so stored blobs stay as they are. */
+function filterOff(name) {
+  if (name.includes('='))
     throw new Error(
-      `core.hooksPath "${value}" is relative, so a hook committed on the trial branch would run on this machine during the settle. Use an absolute path, or unset it, for this run; refusing to settle`,
+      `filter "${name}" cannot be switched off for the settle; refusing to settle`,
     );
+  return ['clean=', 'smudge=', 'process=', 'required=false'].map(
+    (k) => `filter.${name}.${k}`,
+  );
+}
+
+/**
+ * A runner whose every git call has this operator's programs switched off. The
+ * settle works in a tree the PR's editor wrote, and a program run there, or one
+ * that reads from there, runs on this machine with these credentials. `-c` wins
+ * over every config file, includeIf ones too. A .gitattributes on the branch
+ * picks which filter driver runs, so all of them go off; files are rebuilt from
+ * stored blobs, so a pointer or a clean-filtered file goes back unchanged.
+ */
+export function guardedRun(run, repo) {
+  const settings = [...QUIET, ...filterNames(run, repo).flatMap(filterOff)];
+  const guard = settings.flatMap((s) => ['-c', s]);
+  return (cmd, args, options) =>
+    run(cmd, cmd === 'git' ? [...guard, ...args] : args, options);
 }
 
 /**

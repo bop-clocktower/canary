@@ -15,7 +15,7 @@
 import * as ledgerIo from '../../canary-katana/scripts/ledger.mjs';
 import {
   at,
-  checkHooksPath,
+  guardedRun,
   fetchBranchTip,
   insideRepo,
   must,
@@ -110,7 +110,7 @@ function checkManifest(root, manifest, judged) {
  * Returns the comment notes.
  */
 export function applyVerdict({
-  run,
+  run: operatorRun,
   repo,
   trial,
   judged: asJudged,
@@ -120,7 +120,7 @@ export function applyVerdict({
 }) {
   const { manifest, headRefName, url } = trial;
   checkManifest(repo, manifest, asJudged); // before any git call
-  checkHooksPath(run, repo); // before any worktree
+  const run = guardedRun(operatorRun, repo); // before any worktree
   // Then against the default branch, before the head is fetched or anything
   // is written. Everything below acts on what this returns.
   const judged = withTrustedTargets({
@@ -154,7 +154,19 @@ export function applyVerdict({
         '-m',
         `Verdict read on ${now.toISOString()}.`,
       );
-      git('push', 'origin', `HEAD:refs/heads/${headRefName}`);
+      // From the operator's repository, so a relative credential helper or ssh
+      // command resolves there and never in the trial tree. Auth is untouched.
+      const tip = git('rev-parse', 'HEAD');
+      must(
+        run('git', [
+          '-C',
+          repo,
+          'push',
+          'origin',
+          `${tip}:refs/heads/${headRefName}`,
+        ]),
+        'git push',
+      );
     },
   );
   return commentFailures({ run, repo, judged, prUrl: url, jiraComment });

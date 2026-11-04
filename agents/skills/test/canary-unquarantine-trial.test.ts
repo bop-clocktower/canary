@@ -1470,40 +1470,319 @@ describe('verdict --apply acts only on what the default branch vouches for', () 
     });
   });
 
-  describe.skipIf(process.platform === 'win32')('git hooks', () => {
-    /** Hooks committed on the trial branch that would record that they ran. */
-    function plantHooks(repo: string, marker: string) {
-      const dir = path.join(repo, '.hooks');
-      fs.mkdirSync(dir);
-      for (const hook of ['pre-commit', 'post-checkout']) {
-        const file = path.join(dir, hook);
-        fs.writeFileSync(file, `#!/bin/sh\necho ran > "${marker}"\n`);
+  describe.skipIf(process.platform === 'win32')(
+    'nothing from the trial branch runs on the operator machine',
+    () => {
+      const HOOKS = [
+        'pre-commit',
+        'prepare-commit-msg',
+        'commit-msg',
+        'post-commit',
+        'post-checkout',
+        'pre-push',
+        'reference-transaction',
+        'post-index-change',
+      ];
+      const PLANTED = 'planted.sh';
+      const script = (marker: string) => `#!/bin/sh\necho ran >> "${marker}"\n`;
+      const writeExec = (file: string, text: string) => {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, text);
         fs.chmodSync(file, 0o755);
+      };
+      const plantHooks = (dir: string, text: string) =>
+        HOOKS.forEach((h) => writeExec(path.join(dir, h), text));
+      /** A program at the trial branch's root, and optional other tracked files. */
+      const plantOnTrial = (
+        repo: string,
+        marker: string,
+        more: () => void = () => {},
+      ) =>
+        onTrialBranch(repo, () => {
+          writeExec(path.join(repo, PLANTED), script(marker));
+          more();
+        });
+      const setConfig = (repo: string, cfg: Record<string, string>) =>
+        Object.entries(cfg).forEach(([k, v]) => git(repo, 'config', k, v));
+      const attributes = (repo: string, line: string) =>
+        fs.writeFileSync(path.join(repo, '.gitattributes'), `${line}\n`);
+
+      /** Settled for real, and nothing recorded that it ran. */
+      function expectSettledUnseen(t: Settled, marker: string) {
+        expect(fs.existsSync(marker)).toBe(false);
+        expect(t.r.stderr).toBe('');
+        expect(t.r.code).toBe(0);
+        expect(git(t.origin, 'rev-parse', 'refs/heads/canary/trial')).not.toBe(
+          t.head,
+        );
       }
-    }
 
-    it('a relative core.hooksPath refuses the settle, and no trial-branch hook runs', () => {
-      const marker = path.join(mkTmp(), 'ran');
-      const t = settle(ALL_PASS, {
-        after: (s) => {
-          onTrialBranch(s.repo, () => plantHooks(s.repo, marker));
-          git(s.repo, 'config', 'core.hooksPath', '.hooks');
-        },
-      });
-      expectRefused(t, /core\.hooksPath "\.hooks" is relative/);
-      expect(fs.existsSync(marker)).toBe(false);
-    });
+      /** Each case gets the temp marker, then arranges its plant and config. */
+      const cases: [string, (s: Suite, marker: string) => void][] = [
+        [
+          'a relative core.hooksPath with hooks on the trial branch',
+          (s, m) => {
+            plantOnTrial(s.repo, m, () =>
+              plantHooks(path.join(s.repo, '.hooks'), script(m)),
+            );
+            setConfig(s.repo, { 'core.hooksPath': '.hooks' });
+          },
+        ],
+        [
+          'an absolute core.hooksPath',
+          (s, m) => {
+            const dir = mkTmp();
+            plantHooks(dir, script(m));
+            setConfig(s.repo, { 'core.hooksPath': dir });
+          },
+        ],
+        [
+          'no core.hooksPath, with hooks in .git/hooks',
+          (s, m) => plantHooks(path.join(s.repo, '.git/hooks'), script(m)),
+        ],
+        [
+          'an installed hook that runs a script from the worktree',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            plantHooks(
+              path.join(s.repo, '.git/hooks'),
+              `#!/bin/sh\n[ -x ./${PLANTED} ] && ./${PLANTED} < /dev/null\nexit 0\n`,
+            );
+          },
+        ],
+        [
+          'hooks set through includeIf, only for the worktree',
+          (s, m) => {
+            const dir = mkTmp();
+            plantHooks(dir, script(m));
+            const inc = path.join(mkTmp(), 'inc.gitconfig');
+            fs.writeFileSync(inc, `[core]\n\thooksPath = ${dir}\n`);
+            setConfig(s.repo, { 'includeIf.gitdir:**/worktrees/**.path': inc });
+          },
+        ],
+        ...(['smudge', 'clean', 'process'] as const).map(
+          (key): [string, (s: Suite, marker: string) => void] => [
+            `a relative filter.*.${key}`,
+            (s, m) => {
+              plantOnTrial(s.repo, m, () => attributes(s.repo, '* filter=fx'));
+              setConfig(s.repo, {
+                [`filter.fx.${key}`]: `./${PLANTED}`,
+                'filter.fx.required': 'true',
+              });
+            },
+          ],
+        ),
+        [
+          'a relative git-lfs style filter',
+          (s, m) => {
+            plantOnTrial(s.repo, m, () => attributes(s.repo, '* filter=lfs'));
+            setConfig(s.repo, {
+              'filter.lfs.process': `./${PLANTED} filter-process`,
+              'filter.lfs.required': 'true',
+            });
+          },
+        ],
+        [
+          'a relative core.fsmonitor',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            setConfig(s.repo, { 'core.fsmonitor': `./${PLANTED}` });
+          },
+        ],
+        [
+          'a relative gpg.program with commit.gpgsign',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            setConfig(s.repo, {
+              'commit.gpgsign': 'true',
+              'gpg.program': `./${PLANTED}`,
+            });
+          },
+        ],
+        [
+          'a relative gpg.ssh.program with commit.gpgsign',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            setConfig(s.repo, {
+              'commit.gpgsign': 'true',
+              'gpg.format': 'ssh',
+              'user.signingkey': 'key::ssh-ed25519 AAAA',
+              'gpg.ssh.program': `./${PLANTED}`,
+            });
+          },
+        ],
+        [
+          'a gc hook program',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            setConfig(s.repo, {
+              'gc.auto': '1',
+              'gc.autoDetach': 'false',
+              'gc.recentObjectsHook': `./${PLANTED}`,
+            });
+          },
+        ],
+      ];
 
-    it('a settle with an absolute core.hooksPath goes ahead', () => {
-      const t = settle(ALL_PASS, {
-        after: (s) => {
-          git(s.repo, 'config', 'core.hooksPath', mkTmp());
-        },
+      it.each(cases)('%s', (_n, arrange) => {
+        const marker = path.join(mkTmp(), 'ran');
+        const t = settle(ALL_PASS, { after: (s) => arrange(s, marker) });
+        expectSettledUnseen(t, marker);
       });
-      expect(t.r.stderr).toBe('');
-      expect(t.r.code).toBe(0);
-    });
-  });
+
+      it('the push runs from the operator repository, not the trial worktree', () => {
+        // Stands in for core.sshCommand and credential.helper, which a local
+        // origin never calls: a relative program resolves from where git runs.
+        const marker = path.join(mkTmp(), 'ran');
+        const t = settle(ALL_PASS, {
+          after: (s) => {
+            plantOnTrial(s.repo, marker);
+            setConfig(s.repo, { 'remote.origin.receivepack': `./${PLANTED}` });
+          },
+        });
+        expect(fs.existsSync(marker)).toBe(false);
+        expect(t.r.code).not.toBe(0); // no such program in the operator's tree
+        expect(t.r.stderr).toMatch(/git push failed/);
+      });
+
+      it('auth settings are left alone on the push', () => {
+        const t = settle(ALL_PASS);
+        const push = t.h.calls.filter((c) => c.args.includes('push')).at(-1)!;
+        expect(push.args.join(' ')).not.toMatch(
+          /core\.sshCommand|credential\.helper|core\.askPass/,
+        );
+        expect(push.args[push.args.indexOf('-C') + 1]).toBe(t.repo);
+      });
+
+      it('submodule.recurse does not populate a submodule the branch names', () => {
+        const sub = mkTmp();
+        git(sub, 'init', '-q', '-b', 'main');
+        git(sub, 'commit', '-q', '--allow-empty', '-m', 'sub');
+        const sha = git(sub, 'rev-parse', 'HEAD');
+        const t = settle(ALL_PASS, {
+          after: (s) => {
+            onTrialBranch(s.repo, () => {
+              fs.writeFileSync(
+                path.join(s.repo, '.gitmodules'),
+                `[submodule "sub"]\n\tpath = sub\n\turl = ${sub}\n`,
+              );
+              git(
+                s.repo,
+                'update-index',
+                '--add',
+                '--cacheinfo',
+                `160000,${sha},sub`,
+              );
+            });
+            setConfig(s.repo, { 'submodule.recurse': 'true' });
+          },
+        });
+        expect(t.r.stderr).toBe('');
+        expect(t.r.code).toBe(0);
+      });
+
+      it('with filters off, a filtered file goes back byte for byte', () => {
+        // A required filter that would change the bytes if it ran: the rebuilt
+        // file must still be the stored blob, as a pointer file would need.
+        const upper = path.join(mkTmp(), 'upper.sh');
+        writeExec(upper, '#!/bin/sh\ntr a-z A-Z\n');
+        let blob = '';
+        const t = settle(
+          { card: 'flaky', event: 'flaky', v2: 'flaky' },
+          {
+            before: (s) => {
+              attributes(s.repo, `${REF_FILE} filter=lfs`);
+              git(s.repo, 'add', '-A');
+              git(s.repo, 'commit', '-q', '-m', 'attributes');
+              git(s.repo, 'push', '-q', 'origin', 'main');
+            },
+            after: (s) => {
+              blob = git(s.origin, 'show', `refs/heads/main:${REF_FILE}`);
+              setConfig(s.repo, {
+                'filter.lfs.clean': upper,
+                'filter.lfs.smudge': upper,
+                'filter.lfs.required': 'true',
+              });
+            },
+          },
+        );
+        expect(t.r.stderr).toBe('');
+        const after = git(
+          t.origin,
+          'show',
+          `refs/heads/canary/trial:${REF_FILE}`,
+        );
+        expect(after).toBe(blob);
+      });
+
+      describe("this repository's own hook setup", () => {
+        const HOOK = fs.readFileSync(
+          path.join(HERE, '..', '..', '..', '.githooks', 'pre-commit'),
+          'utf8',
+        );
+        const INPUTS = ['docs/roadmap.md', '.harness/security/timeline.json'];
+
+        /** The real hook on main; on the trial branch, changed inputs and planted scripts. */
+        function ownHook(hooksPath: (repo: string) => string, marker: string) {
+          const forge = (m: any) =>
+            m.lifts.push(
+              ...INPUTS.map((file) => ({
+                ...structuredClone(m.lifts[0]),
+                test: `never in the run ${file}`,
+                file,
+              })),
+            );
+          return settle(ALL_PASS, {
+            change: forge,
+            before: (s) => {
+              writeExec(path.join(s.repo, '.githooks/pre-commit'), HOOK);
+              for (const f of INPUTS) {
+                fs.mkdirSync(path.dirname(path.join(s.repo, f)), {
+                  recursive: true,
+                });
+                fs.writeFileSync(path.join(s.repo, f), 'on main\n');
+              }
+              git(s.repo, 'add', '-A');
+              git(s.repo, 'commit', '-q', '-m', 'own hook');
+              git(s.repo, 'push', '-q', 'origin', 'main');
+            },
+            after: (s) => {
+              onTrialBranch(s.repo, () => {
+                const planted = `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(marker)}, 'ran');\n`;
+                for (const name of [
+                  'roadmap_comment_guard.mjs',
+                  'security_ledger.mjs',
+                ]) {
+                  fs.mkdirSync(path.join(s.repo, 'scripts'), {
+                    recursive: true,
+                  });
+                  fs.writeFileSync(path.join(s.repo, 'scripts', name), planted);
+                }
+                for (const f of INPUTS)
+                  fs.writeFileSync(path.join(s.repo, f), 'on the trial\n');
+              });
+              setConfig(s.repo, { 'core.hooksPath': hooksPath(s.repo) });
+            },
+          });
+        }
+
+        it.each([
+          ['relative, as AGENTS.md documents', () => '.githooks'],
+          ['absolute', (repo: string) => path.join(repo, '.githooks')],
+        ])(
+          'core.hooksPath %s: settles, and no planted script runs',
+          (_n, p) => {
+            const marker = path.join(mkTmp(), 'ran');
+            const t = ownHook(p, marker);
+            expectSettledUnseen(t, marker);
+            expect(
+              git(t.origin, 'show', 'refs/heads/canary/trial:docs/roadmap.md'),
+            ).toBe('on main');
+          },
+        );
+      });
+    },
+  );
 
   describe('the shape of a lift', () => {
     it('a repeated lift is refused, and its ticket hears nothing', () => {
