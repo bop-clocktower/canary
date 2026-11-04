@@ -128,6 +128,30 @@ test('the token is never printed', async () => {
   }
 });
 
+// The failure paths print the most (the server's text, the hint, the retry
+// count), and in CI they also raise a GitHub annotation, so each is checked
+// with annotations on.
+test('the token is never printed on a refusal, a server error or a network failure', async () => {
+  const env = { ...PUSH_ENV, CANARY_INGEST_TOKEN: 'tt_secret_canary_value', GITHUB_ACTIONS: 'true' };
+  const refused = (status) => [{ status, json: { code: 'X', message: 'server says why' } }];
+  const thrice = (r) => [r, r, r];
+  const cases = {
+    401: refused(401),
+    404: refused(404),
+    413: refused(413),
+    422: refused(422),
+    '503 retried to exhaustion': thrice({ status: 503, json: { code: 'INTERNAL_SERVER_ERROR' } }),
+    'network error': thrice({ networkError: 'fetch failed: connect ECONNREFUSED' }),
+  };
+  for (const [name, responses] of Object.entries(cases)) {
+    const { code, out, err, logs } = await pushPerf(SUMMARY, [], { env, responses });
+    assert.equal(code, 1, name);
+    const printed = out + err + logs.join('\n');
+    assert.match(printed, /perf report (rejected|not ingested)/, `${name}: the failure was reported`);
+    assert.doesNotMatch(printed, /tt_secret_canary_value/, name);
+  }
+});
+
 // --- refusals: nothing is sent ------------------------------------------------------
 
 const summaryFile = (data) => tempReport(JSON.stringify(data));

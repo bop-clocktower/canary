@@ -49,6 +49,8 @@ async function runCli(args, { env = PUSH_ENV, responses = [] } = {}) {
         collected_count: body?.collected?.length ?? null,
       },
     };
+    // `{ networkError: '<message>' }` makes this attempt fail the way fetch does offline.
+    if (r.networkError) throw new TypeError(r.networkError);
     return {
       ok: r.status >= 200 && r.status < 300,
       status: r.status,
