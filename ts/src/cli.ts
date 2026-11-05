@@ -356,11 +356,11 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     )
     .option(
       '--test-file <path>',
-      'Test file to extract linkage from (default: last run).',
+      "Test file to extract linkage from (default: the report's test_file, if any).",
     )
     .option(
       '--result <path>',
-      'Path to canary report JSON (default: auto-detect).',
+      'Path to canary report JSON (default: none, and the run counts as FAIL).',
     )
     .option('--dry-run', "Show what would be posted/transitioned; don't write.")
     .option('--comment-only', 'Post comment but skip transition.')

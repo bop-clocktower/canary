@@ -123,6 +123,13 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **`canary ticket-update` no longer exits 0 for an action that failed or could
+  not run (#1413).** It exits 1 when a comment was not posted, the current
+  status could not be fetched, `--dry-run` finds an unreachable target, or only
+  one of the two actions has Jira credentials, and 3 (abstained) when no action
+  could run for lack of them, which means Jira was contacted zero times; scripts
+  relying on exit 0 will see this. `--help` no longer promises `--result` and
+  `--test-file` defaults that never existed.
 - **`canary testtracker push` refuses a payload that would lose its catalog
   under CI (#1355).** Fitting a run over the 4 MB ingest budget drops
   `collected`, so the suite lands unmeasured; the push used to warn and exit 0.
