@@ -1,9 +1,7 @@
 /**
- * Mapping, suppression and rendering for the diff-scoped mutation report
- * (#486).
+ * Mapping, suppression and rendering for the mutation report (#486).
  *
- * Split from `mutation.ts` (model, diff scope, runner guard) only to keep both
- * files inside the perf ratchet's 300-line budget.
+ * Split from `mutation.ts` only to keep both inside the 300-line perf budget.
  *
  * Every function in this file obeys one rule: a report that verified nothing
  * says so. No code path renders "0 survived", and a run whose mutants only
@@ -19,6 +17,7 @@ import {
   MapOptions,
   StrykerReport,
   SuppressedMutant,
+  unattributedSurvivorLines,
 } from './mutation.js';
 
 /** The `// canary:allow-mutant <reason>` marker, mirroring allow-untested. */
@@ -250,6 +249,7 @@ function headlineLines(report: MutationReport): string[] {
     `${report.killed}/${report.sampled} mutants killed${scope}.`,
     `${report.timeout} mutant(s) timed out (not counted as killed).`,
     untestedLine(report),
+    ...unattributedSurvivorLines(report),
   ];
 }
 
@@ -283,7 +283,7 @@ export function renderMutationReport(report: MutationReport): string {
       const covering =
         finding.coveredBy.length > 0
           ? finding.coveredBy.join('; ')
-          : 'no covering test';
+          : 'attribution not recorded';
       lines.push(
         `- \`${finding.path}:${finding.line}\` ${finding.mutator} ` +
           `${'\u{2192}'} \`${finding.replacement}\` ${'\u{2014}'} ran but did ` +

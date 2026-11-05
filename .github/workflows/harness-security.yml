@@ -100,17 +100,27 @@ jobs:
           npx --yes -p "$HARNESS_CLI_EXACT" harness check-security \
             --severity error
 
+      # #1436: harness never fills a snapshot's `supplyChain`, so this is the
+      # only real measurement. It audits every tracked lockfile into a sidecar
+      # that the renderer reads, because the freshness guard reruns the renderer
+      # with no audit. It exits 0 on any count and on a registry failure ("not
+      # measured"), so nothing here gates on vulnerabilities. It runs on PRs too
+      # so a broken step shows up before merge; only main's result is uploaded.
+      - name: Audit tracked lockfiles
+        run: node scripts/supply_chain_audit.mjs
+
       - name: Refresh security ledger
         run: node scripts/security_ledger.mjs
 
-      # #1426: hand the two refreshed files to the `ledger` job instead of
+      # #1426: hand the refreshed files to the `ledger` job instead of
       # pushing from here. `.harness/` is a dot-path, which upload-artifact
       # skips unless told otherwise, and a missing file is an error: an
       # artifact without the timeline would read as "ledger unchanged".
       # #1490: the artifact is rooted at the paths' least common ancestor.
-      # These two share only the repo root, so each keeps its repo path, which
-      # the `ledger` job's restore loop relies on. Drop one and the other
-      # loses its directories. `ts/test/workflow-hygiene.test.ts` pins both.
+      # The docs and .harness paths share only the repo root, so each keeps its
+      # repo path, which the `ledger` job's restore loop relies on. Drop the
+      # docs path and the others lose their directories.
+      # `ts/test/workflow-hygiene.test.ts` pins the list.
       - name: Upload security ledger outputs (push to main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7
@@ -118,6 +128,7 @@ jobs:
           name: security-ledger
           path: |
             .harness/security/timeline.json
+            .harness/security/supply-chain.json
             docs/SECURITY_LEDGER.md
           include-hidden-files: true
           if-no-files-found: error
@@ -127,7 +138,7 @@ jobs:
   # code: checkout, download, copy, git. The artifact was written by a job
   # that ran `npx`, so it is extracted under runner.temp rather than over the
   # checkout (where it could plant any file, `.git/config` included), and only
-  # the two ledger files are copied across.
+  # the named ledger files are copied across.
   #
   # Not a required check: it is skipped on every PR. `.github/required-checks.json`
   # lists it as advisory with that reason.
@@ -156,7 +167,9 @@ jobs:
         # Regular files only: `cp` follows a symlink, and a link planted in the
         # artifact could copy the persisted token into a file this job pushes.
         run: |
-          for f in .harness/security/timeline.json docs/SECURITY_LEDGER.md; do
+          for f in .harness/security/timeline.json \
+                   .harness/security/supply-chain.json \
+                   docs/SECURITY_LEDGER.md; do
             if [ ! -f "$SRC/$f" ] || [ -L "$SRC/$f" ]; then
               echo "::error::artifact entry $f is missing or not a regular file" >&2
               exit 1
@@ -178,9 +191,13 @@ jobs:
       - name: Push the security-ledger branch
         env:
           BRANCH: chore/security-ledger
+        # Staged before the check: `git diff` alone cannot see the sidecar the
+        # first time, when it is still untracked (#1436).
         run: |
-          if git diff --quiet -- .harness/security/timeline.json \
-                                 docs/SECURITY_LEDGER.md; then
+          git add -- .harness/security/timeline.json \
+                     .harness/security/supply-chain.json \
+                     docs/SECURITY_LEDGER.md
+          if git diff --cached --quiet; then
             echo "Security ledger unchanged."
             exit 0
           fi
@@ -188,7 +205,6 @@ jobs:
           git config user.email \
             "github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
-          git add .harness/security/timeline.json docs/SECURITY_LEDGER.md
           git commit -m "chore: refresh security ledger after scan"
           git push --force origin "HEAD:$BRANCH"
           {

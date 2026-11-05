@@ -265,12 +265,12 @@ title as a whole segment; a case whose title only contains it can keep the row
 quarantined (fail, flaky, skipped) but never release it, so a passing look-alike
 such as `adds item twice` for `adds item` reads as missing.
 
-| Outcome in the run      | `--apply` does                                                                                                                                                                                                                           |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| pass (every case)       | the marker stays lifted; every ledger row for it is dropped                                                                                                                                                                              |
-| fail                    | the marker is restored; the rows' `issue` is re-pointed at the blocker the audit read as resolved, and that ticket gets a comment saying the test still fails (GitHub through `gh`, Jira when configured, otherwise listed for a person) |
-| flaky (passed on retry) | the marker is restored and the test is listed for `canary-flake-hunter`. Dispatch that agent for each one; a retry pass is not a fix                                                                                                     |
-| missing / still skipped | the marker is restored and nothing else changes. A test the run never reached proved nothing                                                                                                                                             |
+| Outcome in the run      | `--apply` does                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pass (every case)       | the marker stays lifted; every ledger row for it is dropped                                                                                                                                                                                                                                                                                               |
+| fail                    | the marker is restored. When the blocker is a ticket the row names on the default branch, the rows' `issue` is re-pointed at it and it gets a comment saying the test still fails (GitHub through `gh`, Jira when configured, otherwise listed for a person). A hand-off leaf gets neither: its note is listed for a person, and the row keeps its ticket |
+| flaky (passed on retry) | the marker is restored and the test is listed for `canary-flake-hunter`. Dispatch that agent for each one; a retry pass is not a fix                                                                                                                                                                                                                      |
+| missing / still skipped | the marker is restored and nothing else changes. A test the run never reached proved nothing                                                                                                                                                                                                                                                              |
 
 Every touched file is rebuilt from the trial's base commit plus only the lifts
 that passed. A restored marker comes back byte for byte, however many lifts
@@ -282,6 +282,75 @@ change it. Before anything is written, every path it names (the lifted files and
 the ledger) must resolve, symlinks included, strictly inside the trial worktree,
 and its `base` must be a commit id. Any escape refuses the whole `--apply`: it
 exits non-zero and writes, pushes and comments nothing.
+
+`--apply` then checks the manifest against the tip of the default branch's
+`refs/heads` ref on origin, not any local state or a tag of that name. The
+ledger path is `--ledger` or the default, and the manifest must name the same
+one. Each passing or failing lift's rows must be on that ledger and be its own:
+the same test, or rows that locate to the same marker.
+
+For a failing test's last blocker:
+
+| The blocker                                                       | `--apply` does                                                |
+| ----------------------------------------------------------------- | ------------------------------------------------------------- |
+| is a ticket the row names (same sources as "Finding the blocker") | tells that ticket and re-points the row, from the trusted ref |
+| is not named, but its recorded chain starts at a ticket that is   | lists the note for a person: no comment, no re-point          |
+| is not named, and no such chain is recorded                       | refuses the whole `--apply`, like an escaping path            |
+
+A hand-off leaf can only be confirmed by reading the tracker, which the verdict
+does not do, so a chain is a claim and never earns a write. The next audit walks
+the chain again from the row's own ticket. Two things follow:
+
+- A trial opened against another branch (`--pr-base`) is refused if its row is
+  only on that branch. Merge the row to the default branch first.
+- A trial opened before chains were recorded is refused if a failing test's
+  blocker was handed off. Open a new trial.
+
+`verdict` reads only a trial whose head branch is in this repository. A
+cross-repository head, or one `gh` does not report on, is refused before
+anything is fetched. A ticket note and the verdict report (text and `--json`)
+quote the test title and file as one line of plain text, capped at 200
+characters each, so a longer title reads truncated in `flake_hunter` too.
+
+`--apply` also refuses, before anything is written:
+
+- **A lift that appears twice**, or a failing lift with no blocker.
+- **A head that is the default branch.**
+
+**Your git programs are off for this one automated commit.** The settle works in
+a tree the PR's editor wrote, and a program run there, or one that reads from
+there, would run on this machine with your credentials. So every git call has
+file-based hooks (whatever `core.hooksPath` says), config-defined hooks, filter
+drivers, `core.fsmonitor`, commit signing and submodule recursion switched off.
+That is a list of the programs known to run on this path, not a guarantee: a
+later git can add another. A filter or hook named only by an `includeIf` that
+matches the worktree stays on. A partial clone is refused, because it could
+fetch from inside the tree; use a full clone. A path with a segment spelled
+`.git` is refused too, but a symlink on the trial branch that reaches `.git` is
+not, so a trial branch can still run code during the settle that way. Only run
+`--apply` on a trial you trust until #1560 closes this. The settle commit is
+therefore unsigned and unchecked by your hooks; a person reviews it. With
+filters off, files are rebuilt from their stored blobs, so a pointer file goes
+back unchanged. A ledger stored encrypted, or an encrypted test file on a
+passing lift, can't be read and the settle stops. On a flaky, missing or failing
+lift the test file is restored from `base` without being read, so a binary one
+is corrupted and pushed (#1573); only a failing lift whose ticket is named
+solely in its comment is refused first. The push runs from your own repository,
+so `credential.helper` and `core.sshCommand` work as usual and a relative one
+resolves there.
+
+What this check does not establish:
+
+- **The run's results are editor-influenced**: that run executes the editor's
+  branch. A failing lift for a row the trial never lifted can still tell the
+  ticket that row names, and the note says "Its blocker was read as resolved"
+  even if that ticket is open. Each such row can produce one comment.
+- **Jira projects and tags come from what is checked out.** Running from the
+  trial branch lets its editor set the Jira allow-list and which bare keys count
+  as tickets. Run `--apply` from a checkout you trust, or pass `--company`.
+- **The default branch's name comes from `gh`'s resolved repository, and the
+  fetch is from `origin`.** In an upstream-and-fork clone, the trust source can
+  be your fork.
 
 `verdict` abstains (`--strict` exit `3`) when there is no per-test result. That
 covers four cases: no `--results` or `--artifact`, CI not finished, no such
