@@ -26,12 +26,14 @@ const RUN_FAILURE_NAME = '(run failed outside any test)';
  * Messages Playwright reports in `errors` that are not failures of their own.
  * `No tests found` is the empty denominator, an abstention, or the echo of a
  * load error. `Testing stopped early` restates test failures already counted.
- * The match is on text, so a reworded notice shows up as a failed row: a false
- * failure can be seen, where a dropped real one cannot.
+ * The match is on the whole text, so a reworded notice, or a real error that only
+ * starts like one, shows up as a failed row: a false failure can be seen, where a
+ * dropped real one cannot.
  */
 const RUNNER_NOTICES = [
-  /^(Error: )?No tests found/,
-  /^Testing stopped early after \d+ maximum allowed failures/,
+  // Bare, or with the hint Playwright adds when a file argument matched nothing.
+  /^(Error: )?No tests found(\.?\s*$|\.\nMake sure that arguments)/,
+  /^Testing stopped early after \d+ maximum allowed failures\.?\s*$/,
 ];
 
 const ANSI_COLOR = /\u001b\[[0-9;]*m/g;
@@ -43,8 +45,18 @@ function isRunnerNotice(error: PwTopLevelError): boolean {
   return RUNNER_NOTICES.some((notice) => notice.test(text));
 }
 
+/** A malformed entry says nothing, and must not throw outside `record`'s catch. */
 function isErrorObject(error: unknown): error is PwTopLevelError {
-  return typeof error === 'object' && error !== null;
+  if (typeof error !== 'object' || error === null) return false;
+  const { message, location } = error as {
+    message?: unknown;
+    location?: { file?: unknown } | null;
+  };
+  const file = location?.file;
+  return (
+    (message === undefined || typeof message === 'string') &&
+    (file === undefined || typeof file === 'string')
+  );
 }
 
 function topLevelErrors(parsed: unknown): PwTopLevelError[] {

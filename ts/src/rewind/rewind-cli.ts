@@ -15,7 +15,13 @@
  * finding, not a failure of the command.
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 
@@ -204,6 +210,12 @@ async function runAttempts(
 ): Promise<string[]> {
   const reportPath = join(ctx.scratch, 'report.json');
   const runner = ctx.run.reporter_format as ReplayRunner;
+  const target = {
+    testName: ctx.test.test_name,
+    file: ctx.test.test_file!,
+    // A runner reports real paths, and the scratch dir can sit behind a link.
+    root: realpathSync(ctx.tree),
+  };
   const statuses: string[] = [];
   for (let i = 0; i < attempts; i++) {
     rmSync(reportPath, { force: true });
@@ -214,7 +226,7 @@ async function runAttempts(
     const text = existsSync(reportPath)
       ? readFileSync(reportPath, 'utf-8')
       : '';
-    const status = readReplayStatus(runner, text, ctx.test.test_name);
+    const status = readReplayStatus(runner, text, target);
     if (status !== null) statuses.push(status);
   }
   return statuses;

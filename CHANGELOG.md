@@ -14,6 +14,28 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`canary history record` now records Playwright failures outside any test
+  (#1411).** A spec that fails to load, global setup or teardown, a webServer
+  that never starts and a global timeout all become failed rows. A load failure
+  used to abstain with exit 3 and store nothing; it now exits 0 and stores a
+  failed run. `No tests found` still abstains, but an error that only starts
+  with those words is now recorded, and a malformed `errors` entry is ignored
+  instead of crashing the command.
+- **The synthetic `<file> (file failed outside any test)` row is now named with
+  the repo-relative path (#1411),** so one file has one history across machines.
+  Rows stored under the old absolute name stop joining and age out of the
+  window.
+- **`canary rewind` no longer reports a false `reproduced` for a failure outside
+  any test (#1411).** It matches the exact file in the replay checkout, so a
+  same-named file in another directory can't answer for it. An attempt where the
+  file ran cleanly now counts as passed, so these rows can come back
+  `intermittent` or `not-reproduced`; an attempt that doesn't show the file ran
+  isn't counted. Playwright replays of these rows run the whole file instead of
+  a `--grep` that matched nothing. A failure that names no file now abstains
+  with a reason saying so.
+
 ## [9.6.0] - 2026-11-04
 
 ### Added

@@ -218,6 +218,52 @@ describe('Playwright top-level errors', () => {
     expect(countReportResults(report)).toBe(1);
   });
 
+  it('records an unlocated error that only starts like the notice', () => {
+    const report = {
+      suites: [],
+      errors: [{ message: 'Error: No tests found in manifest, DB is down' }],
+    };
+    expect(countReportResults(report)).toBe(1);
+    expect(build(report).results[0]).toMatchObject({
+      test_name: RUN_ROW,
+      status: 'failed',
+    });
+  });
+
+  it('records an unlocated error that only starts like the stop notice', () => {
+    const message =
+      'Testing stopped early after 3 maximum allowed failures of the DB pool';
+    const report = { suites: [], errors: [{ message }] };
+    expect(countReportResults(report)).toBe(1);
+  });
+
+  it.each([
+    ['the bare form', 'Error: No tests found'],
+    [
+      'the form printed when a file argument was passed',
+      'Error: No tests found.\nMake sure that arguments are regular expressions matching test files.\nYou may need to escape symbols like "$" or "*" and quote the arguments.',
+    ],
+  ])('still drops the real No tests found notice: %s', (_label, message) => {
+    expect(countReportResults({ suites: [], errors: [{ message }] })).toBe(0);
+  });
+
+  it.each([
+    ['a numeric message', { message: 42 }],
+    ['a null message', { message: null }],
+    [
+      'a numeric message with a location',
+      { message: 42, location: { file: 'a' } },
+    ],
+    ['a numeric location file', { message: 'boom', location: { file: 7 } }],
+  ])('abstains on a malformed entry with %s, without throwing', (_l, entry) => {
+    const report = { suites: [], errors: [entry] };
+    expect(countReportResults(report)).toBe(0);
+    expect(build({ ...report, suites: [passingSuite] }).run).toMatchObject({
+      total: 1,
+      failed: 0,
+    });
+  });
+
   it('ignores an errors field that is not a list of objects', () => {
     expect(countReportResults({ suites: [], errors: 'nope' })).toBe(0);
     expect(countReportResults({ suites: [], errors: [null, 'x'] })).toBe(0);
@@ -339,6 +385,23 @@ describe('record: names of failures outside any test', () => {
     }
   });
 
+  it('abstains on a malformed errors entry instead of crashing', async () => {
+    const repo = makeRepo();
+    try {
+      const report = write(join(repo, 'p.json'), {
+        suites: [],
+        errors: [{ message: 42 }],
+      });
+      const { code } = await invokeCanary(
+        ['history', 'record', report, '--suite', 's'],
+        { cwd: repo, env: ENV },
+      );
+      expect(code).toBe(3);
+    } finally {
+      rmTmp(repo);
+    }
+  });
+
   it('gives one file the same test_name from two checkouts', async () => {
     const first = makeRepo();
     const second = makeRepo();
@@ -423,7 +486,11 @@ describe('rewind: replaying a failure outside any test', () => {
   // The stored name is repo-relative; the replay's reader writes the path as
   // the runner reported it. Without this join a reproduced load failure reads
   // as "the report does not hold that test".
-  const stored = `ts/e2e/bad.spec.ts ${SUFFIX}`;
+  const stored = {
+    testName: `ts/e2e/bad.spec.ts ${SUFFIX}`,
+    file: 'ts/e2e/bad.spec.ts',
+    root: '/ci/checkout',
+  };
   const vitest = JSON.stringify({
     testResults: [
       {
@@ -448,15 +515,21 @@ describe('rewind: replaying a failure outside any test', () => {
   });
 
   it('does not match a different file with the same suffix', () => {
-    expect(
-      readReplayStatus('vitest', vitest, `other/bad.spec.ts ${SUFFIX}`),
-    ).toBeNull();
+    const other = {
+      testName: `other/bad.spec.ts ${SUFFIX}`,
+      file: 'other/bad.spec.ts',
+      root: '/ci/checkout',
+    };
+    expect(readReplayStatus('vitest', vitest, other)).toBeNull();
   });
 
   it('does not match a path that merely ends with the stored name', () => {
-    expect(
-      readReplayStatus('vitest', vitest, `e/bad.spec.ts ${SUFFIX}`),
-    ).toBeNull();
+    const suffixOnly = {
+      testName: `e/bad.spec.ts ${SUFFIX}`,
+      file: 'e/bad.spec.ts',
+      root: '/ci/checkout',
+    };
+    expect(readReplayStatus('vitest', vitest, suffixOnly)).toBeNull();
   });
 
   it('does not loosen the match for a real test name', () => {
@@ -468,6 +541,11 @@ describe('rewind: replaying a failure outside any test', () => {
         },
       ],
     });
-    expect(readReplayStatus('vitest', report, 'a works')).toBeNull();
+    const real = {
+      testName: 'a works',
+      file: 'a.test.ts',
+      root: '/ci/checkout',
+    };
+    expect(readReplayStatus('vitest', report, real)).toBeNull();
   });
 });

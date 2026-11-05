@@ -18,5 +18,28 @@
     "readReplayStatus now joins a stored repo-relative synthetic name to the path the reader wrote. Without this, the rename would have made `canary rewind` report a reproduced load failure as `report does not hold that test`.",
     "New module ts/src/history/formats/playwright-errors.ts rather than growing playwright-report.ts past the 300-line per-file limit (it would have reached 314; it is 237 now).",
     "Remote store: no change; rows have the existing TestResultInput shape."
+  ],
+  "fixes": [
+    {
+      "run": "fc1105",
+      "route": "bug",
+      "stages": ["debugging"],
+      "finding": "canary rewind gave false `reproduced` for a failure outside any test: an unanchored suffix match let another file answer (M1), and a clean attempt had no row, so it was dropped and the repeat count could not say intermittent (M2).",
+      "reproducingTests": [
+        "ts/test/rewind-synthetic-target.test.ts",
+        "ts/test/rewind-replay.test.ts",
+        "ts/test/history-record-file-errors.test.ts"
+      ],
+      "assumptions": [
+        "F6=A as answered: the notice regex anchor, malformed errors entries, the false no-file reason and the CHANGELOG entry ship in this push.",
+        "A malformed `errors` entry (non-string message or location.file) is ignored, so a report holding only such entries abstains as the base did.",
+        "Playwright replays of a synthetic target drop `--grep`: real Playwright 1.64.1 answers a grep on the synthetic title with empty `suites`, so a clean load could never be told from an unselected file.",
+        "A numbered target (` #2`) whose file ran without that row counts as passed: that error did not recur.",
+        "A row stored under the old absolute name is matched through its repo-relative test_file, so a failing attempt is not misread as passed.",
+        "An attempt that cannot show the file ran is not counted, as for any other test. So 1 failure plus 4 uncounted attempts still reads `reproduced`, tracked separately."
+      ],
+      "closingKeyword": "Closes",
+      "baseSha": "bffba2d3504289e4b9f006bce8a446a8029abb85"
+    }
   ]
 }
