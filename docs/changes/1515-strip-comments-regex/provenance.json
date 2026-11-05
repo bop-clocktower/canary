@@ -1,0 +1,35 @@
+{
+  "issues": [1515],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-strip-comments-regex.test.ts",
+  "baseSha": "bffba2d3504289e4b9f006bce8a446a8029abb85",
+  "fixes": [
+    {
+      "run": "fc1105",
+      "route": "bug",
+      "stages": ["debugging"],
+      "finding": "A division misread as a regex could end inside a string in stripComments, so the next quote opened rather than closed, exposing a `/*` in a string and blanking the lines up to the next `*/`, which hid unrecorded changed lines from coverage.",
+      "reproducingTests": ["ts/test/guardian-strip-comments-regex.test.ts"],
+      "assumptions": [
+        "F5=A, as answered: a guessed regex may not cross a quote. No template state in stripLine.",
+        "Recommended default taken: after a crossing, the rest of the line stays code and no comment opens on it. Reading the slash as division instead would blank lines on a real regex with a quote, as the base branch did. The cost is that a real comment after such a regex stays as code, which can only add noise.",
+        "A quote in a character class counts as a crossing, and an escaped quote does not.",
+        "The rule applies in stripComments only. scanLine keeps its existing skipRegex, so `/['\"]/` does not start losing the lexer.",
+        "A misread division with no quote in the guess can still hide lines (`'x' / b; // a/b/*.ts`). Out of F5's scope, so it is pinned and filed as #1583."
+      ],
+      "closingKeyword": "Closes"
+    }
+  ],
+  "reproFailure": "Before the fix, stripComments turned line 64 of ts/src/guardian/diff-coverage/report-anchor.ts into `    const clean = p.replace(/^\\.\\`, and the new test file failed 27 cases, including a type-only module with `register('x')` hidden after a regex (fail open, wider than the issue said). Planted regressions each fail it: regex check before comment check (26 fail), no context across lines (6), no character classes (1), every slash a regex (9), no slash a regex (30), the #1408 line-0 fallback restored (3).",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "stripComments is regex-aware for both callers and the report-anchor.ts trigger no longer loses the lexer. That is the whole issue.",
+  "assumptions": [
+    "DECIDED (human): make the shared stripComments regex-aware and do not fork a copy. ts/src/core/static-linter.ts keeps its own unrelated stripComments.",
+    "REGEX_BEFORE and skipRegex moved unchanged from lexical/continuation.ts into a new lexical/comments.ts, with stripComments, QUOTES and stepQuote from type-only.ts. Keeping them in type-only.ts put ts/src/guardian/diff-coverage at 1839 lines against the 1800 module-size ceiling (CI harness job). The new module is in both entryPoints lists.",
+    "The rule itself is not improved here. A string does not update the context, `++` reads as a regex opener and most keywords are missing. Keeping both passes on one rule was preferred to a more accurate rule in one of them.",
+    "Added beyond the brief: the type-only detector rejects any `/` left after stripping, because a differential fuzz showed a kept regex could otherwise flip a verdict from keep to suppress.",
+    "The #1408 fixture in ts/test/guardian-multiline-continuation.test.ts used this bug to lose the lexer. It was moved to a trigger that still loses it, so those tests keep reaching the fallback.",
+    "Multi-line template literals are still not tracked by stripComments. Out of scope, reported on the PR."
+  ]
+}
