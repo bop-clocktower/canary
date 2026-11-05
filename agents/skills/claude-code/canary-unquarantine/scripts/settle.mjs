@@ -1,8 +1,9 @@
 // settle -- turn the trial PR into its final shape, from the verdict.
 //
 //   pass     keep the marker lifted, drop every ledger row for it
-//   fail     restore the marker, re-point the rows' `issue` at the blocker the
-//            audit read as resolved, and comment on that ticket
+//   fail     restore the marker; when the blocker is a ticket the trusted row
+//            names, re-point the rows' `issue` at it and comment on it; when it
+//            is a claimed hand-off, list the note for a person (see trust.mjs)
 //   flaky    restore the marker; the test goes to canary-flake-hunter
 //   missing  / skipped: restore the marker and change nothing else
 //
@@ -14,24 +15,19 @@
 import * as ledgerIo from '../../canary-katana/scripts/ledger.mjs';
 import {
   at,
+  checkNotPartialClone,
+  guardedRun,
+  fetchBranchTip,
   insideRepo,
   must,
   withWorktree,
   writeAt,
   writeLifts,
 } from './git.mjs';
-import { jiraProject } from './refs.mjs';
+import { commentFailures } from './notify.mjs';
+import { sameRow, withTrustedTargets } from './trust.mjs';
 
-const sameRow = (a, b) =>
-  a.test === b.test &&
-  a.file === b.file &&
-  a.kind === b.kind &&
-  a.marker === b.marker;
-
-/** The blocker a failing test is re-pointed at and its ticket told: the last leaf the audit reached. */
-const lastBlocker = (j) => j.blockers[j.blockers.length - 1];
-
-/** Drop the passing tests' rows; re-point the failing tests' rows at their blocker. */
+/** Drop the passing tests' rows; re-point the failing tests' rows at their trusted ticket. */
 function rewriteLedger(work, file, judged) {
   const doc = ledgerIo.load(at(work, file));
   const drop = judged
@@ -39,9 +35,9 @@ function rewriteLedger(work, file, judged) {
     .flatMap((j) => j.ledgerRows);
   doc.entries = doc.entries.filter((e) => !drop.some((d) => sameRow(e, d)));
   for (const j of judged.filter(
-    (x) => x.outcome === 'fail' && lastBlocker(x),
+    (x) => x.outcome === 'fail' && x.trustedTarget,
   )) {
-    const target = lastBlocker(j);
+    const target = j.trustedTarget;
     for (const e of doc.entries)
       if (j.ledgerRows.some((d) => sameRow(e, d)))
         e.issue = target.url || target.id;
@@ -66,15 +62,34 @@ function rebuildFiles(run, work, base, judged) {
 }
 
 /**
- * A Jira blocker's key picks the ticket a comment is written to, so it must be
- * a well-formed key and the blocker's own id. Pairing it with another ticket
- * still needs a PR editor; re-deriving blockers at verdict time would close that.
+ * A Jira blocker's key must be well formed and the blocker's own id. Which
+ * ticket a comment is written to is decided in trust.mjs, from the default
+ * branch: a key this check passes still reaches a commenter only if the
+ * trusted row names it.
  */
 function checkJiraBlocker(b) {
   if (b.tracker !== 'jira') return;
   if (!/^[A-Z][A-Z0-9_]{1,9}-\d+$/.test(String(b.key)) || b.key !== b.id)
     throw new Error(
       `trial manifest blocker "${b.key}" is not a Jira key matching its id "${b.id}"; refusing to settle`,
+    );
+}
+
+/**
+ * Refuse a path with a segment spelled .git, including the spellings git itself
+ * treats as one on NTFS (trailing dots and spaces, an alternate stream, the short
+ * name). This checks the name only: a symlink that reaches .git is not refused
+ * (#1560).
+ */
+function checkNoDotGit(p) {
+  const isDotGit = (seg) => /^(\.git[. ]*(:.*)?|git~1)$/i.test(seg);
+  if (
+    String(p ?? '')
+      .split(/[\\/]/)
+      .some(isDotGit)
+  )
+    throw new Error(
+      `trial manifest path "${p}" names a .git directory; refusing to settle`,
     );
 }
 
@@ -91,6 +106,23 @@ function checkManifest(root, manifest, judged) {
       `trial manifest base "${manifest.base}" is not a commit id; refusing to settle`,
     );
   judged.flatMap((j) => j.blockers ?? []).forEach(checkJiraBlocker);
+  checkPaths(root, manifest, judged);
+}
+
+/** Each lift once, and every path it names inside the tree and outside .git. */
+function checkPaths(root, manifest, judged) {
+  for (const p of [manifest.ledger, ...judged.map((j) => j.file)])
+    checkNoDotGit(p);
+  // `selectRows` lifts a marker once; a repeat would tell its ticket repeatedly.
+  const seen = new Set();
+  for (const j of judged) {
+    const key = JSON.stringify([j.file, j.test]);
+    if (seen.has(key))
+      throw new Error(
+        `trial manifest lifts "${j.test}" more than once; refusing to settle`,
+      );
+    seen.add(key);
+  }
   for (const p of [manifest.ledger, ...judged.map((j) => j.file)]) {
     if ('why' in insideRepo(root, p))
       throw new Error(
@@ -104,20 +136,35 @@ function checkManifest(root, manifest, judged) {
  * Returns the comment notes.
  */
 export function applyVerdict({
-  run,
+  run: operatorRun,
   repo,
   trial,
-  judged,
+  judged: asJudged,
   jiraComment,
+  trust,
   now = new Date(),
 }) {
   const { manifest, headRefName, url } = trial;
-  checkManifest(repo, manifest, judged); // before any git call
-  must(run('git', ['-C', repo, 'fetch', 'origin', headRefName]), 'git fetch');
+  checkManifest(repo, manifest, asJudged); // before any git call
+  checkNotPartialClone(operatorRun, repo);
+  const run = guardedRun(operatorRun, repo); // before any worktree
+  // Then against the default branch, before the head is fetched or anything
+  // is written. Everything below acts on what this returns.
+  const judged = withTrustedTargets({
+    run,
+    repo,
+    headRefName,
+    manifest,
+    judged: asJudged,
+    trust,
+  });
   withWorktree(
     run,
     repo,
-    { options: ['--detach'], commit: 'FETCH_HEAD' },
+    {
+      options: ['--detach'],
+      commit: fetchBranchTip(run, repo, headRefName),
+    },
     (work) => {
       checkManifest(work, manifest, judged); // again, against the checked-out tree's symlinks
       const files = rebuildFiles(run, work, manifest.base, judged);
@@ -134,82 +181,20 @@ export function applyVerdict({
         '-m',
         `Verdict read on ${now.toISOString()}.`,
       );
-      git('push', 'origin', `HEAD:refs/heads/${headRefName}`);
+      // From the operator's repository, so a relative credential helper or ssh
+      // command resolves there and never in the trial tree. Auth is untouched.
+      const tip = git('rev-parse', 'HEAD');
+      must(
+        run('git', [
+          '-C',
+          repo,
+          'push',
+          'origin',
+          `${tip}:refs/heads/${headRefName}`,
+        ]),
+        'git push',
+      );
     },
   );
   return commentFailures({ run, repo, judged, prUrl: url, jiraComment });
-}
-
-const failureNote = (j, prUrl) =>
-  `canary-unquarantine trial: \`${j.test}\` (\`${j.file}\`) was switched back on and **still fails** ` +
-  `(${j.cases} case(s) in the run, ${prUrl}). It has been re-quarantined against this ticket. ` +
-  `Its blocker was read as resolved, so either the fix has not reached the environment the suite runs ` +
-  `against, or this ticket did not fix it.`;
-
-/** One GitHub comment, through `gh issue comment`. */
-function commentOnGithub(run, repo, target, body) {
-  const gh = /^(?:([\w.-]+\/[\w.-]+))?#(\d+)$/.exec(target.id);
-  if (!gh)
-    return {
-      commented: false,
-      why: 'unrecognised ticket; comment by hand',
-      body,
-    };
-  const args = [
-    'issue',
-    'comment',
-    gh[2],
-    '--body',
-    body,
-    ...(gh[1] ? ['-R', gh[1]] : []),
-  ];
-  const r = run('gh', args, { cwd: repo });
-  return {
-    commented: r.status === 0,
-    why: r.status === 0 ? '' : (r.stderr || '').trim(),
-  };
-}
-
-/**
- * One Jira comment, through the configured commenter when there is one. The
- * target comes from the PR-body manifest, which a PR editor can change, so the
- * project is re-derived from the key: the per-project gate checks the ticket
- * actually being written to.
- */
-function commentOnJira(jiraComment, target, body) {
-  const ref = { ...target, project: jiraProject(target.key ?? '') };
-  const r = jiraComment
-    ? jiraComment(ref, body)
-    : { ok: false, why: 'Jira is not configured' };
-  return r.ok
-    ? { commented: true, why: '' }
-    : { commented: false, why: `${r.why}; comment by hand`, body };
-}
-
-/**
- * Tell each failing test's blocker ticket. A ticket that cannot be told is
- * listed with the note, for a person to post.
- *
- * @param {{run: Function, repo: string, judged: object[], prUrl: string,
- *          jiraComment?: (ref: object, body: string) => {ok: boolean, why: string}}} input
- * @returns {{test: string, target?: string, commented: boolean, why: string, body?: string}[]}
- */
-export function commentFailures({ run, repo, judged, prUrl, jiraComment }) {
-  return judged
-    .filter((j) => j.outcome === 'fail')
-    .map((j) => {
-      const target = lastBlocker(j);
-      if (!target)
-        return {
-          test: j.test,
-          commented: false,
-          why: 'no blocker to comment on',
-        };
-      const body = failureNote(j, prUrl);
-      const told =
-        target.tracker === 'jira'
-          ? commentOnJira(jiraComment, target, body)
-          : commentOnGithub(run, repo, target, body);
-      return { test: j.test, target: target.id, ...told };
-    });
 }

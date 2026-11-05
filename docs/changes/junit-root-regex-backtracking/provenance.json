@@ -1,0 +1,16 @@
+{
+  "issues": [],
+  "route": "security",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/history-junit-root-prolog.test.ts",
+  "baseSha": "16a8ad2e",
+  "reproFailure": "Unfixed regex, in both ts/test/history-junit-root-prolog.test.ts and npm/scripts/__tests__/ingest-junit-root.test.js: the timed cases miss their 1000 ms budget at 30 repeats, 9692 ms for processing instructions and about 2300 ms for comments, in a 12 s run. The first-terminator cases also fail (ts: expected 'junit' to be 'unknown'). Direct probe at base: time doubles per repeat, 571 ms at n=26. With the fix, both files pass in under 0.5 s.",
+  "closingKeyword": null,
+  "assumptions": [
+    "Used a lookahead-and-backreference atomic item rather than the prototype's character-by-character loop. The prototype threw a RangeError (engine backtrack stack) on a single 8 MiB processing instruction, where the old regex returned an answer. The chosen form returned correct answers up to 256 MiB, in linear time.",
+    "Known regression, accepted: the prolog item count at which the engine stack overflows falls from about 2.39M items to about 1.67M (bisected at 10,000-item resolution). Between those counts the old regex answered and the new one throws a RangeError. The cost is a non-zero exit with nothing recorded or pushed; no real report has that many prolog items.",
+    "An input the old regex accepted only by stretching an item past its first terminator is now refused, including a document with a valid prolog whose real root is not JUnit. This follows from the approved remedy. On 579,194 generated inputs, the new regex accepted nothing the old one refused; the old one accepted 180 that the new one refuses.",
+    "One valid prolog changes from accepted to refused: a declaration, then a doctype with an internal subset, then a processing instruction, then the root. The old regex accepted it only by stretching the declaration over the subset, and refused the same prolog without the trailing processing instruction. The prototype refuses it too. It is pinned by a test instead of being kept.",
+    "CodeQL alerts 11-14 clearing is unverified locally: codeql is not installed here, so the PR's CodeQL run is the check."
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "issues": [],
+  "route": "security",
+  "stages": ["debugging"],
+  "reproducingTest": null,
+  "baseSha": "16a8ad2e",
+  "reproFailure": "npm audit --package-lock-only before the bump: ts/ and npm/ each reported 1 moderate, @hono/node-server 2.0.12, GHSA-rmxm-3fg6-px4f. After: 0 vulnerabilities in both.",
+  "closingKeyword": null,
+  "assumptions": [
+    "No code-side sink: serveStatic appears nowhere in ts/src or npm/src and the MCP server is stdio only, so no regression test is required and the advisory clearing is the proof.",
+    "2.1.6 is the newest release the existing @modelcontextprotocol/sdk range resolves to, and it is above the first patched version 2.1.3.",
+    "The peer range widening in the 2.1.6 entry has no effect here: hono stays at 4.13.13, which satisfies it."
+  ]
+}

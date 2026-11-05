@@ -15,6 +15,26 @@
  * with or without coverage instrumentation. Each size is warmed up once and
  * then timed as the minimum of several repetitions, so one GC pause or runner
  * hiccup cannot inflate either side of the ratio.
+ *
+ * The sizes are 30k and 300k, not 10k and 100k (#1513). At the smaller sizes
+ * the ratio went red on two required checks at 15.6x and 15.5x with no code
+ * change, both times on a 35-43 ms small side. The minimum is not symmetric
+ * under contention: a run that short can land in a quiet scheduler slice while
+ * the large side cannot, so the small side deflates more than the large side
+ * and the ratio climbs. Tripling both sizes keeps the factor of 10 and gives
+ * the small side a longer window. Measured locally under v8 coverage with one
+ * busy loop per core (n=25 each), the ratio's p95 moved from 13.9x to 11.9x and
+ * its max from 14.1x to 12.3x; oversubscribed 3x (n=10 and 9), the old sizes
+ * crossed 15x in 4 of 10 runs (max 23.1x) and the new ones in none (max 12.6x).
+ * With no extra load the two sizes are alike, about 10.3-10.4x, so the larger
+ * size adds no superlinear cost of its own. This makes a wall-clock ratio more
+ * robust, not deterministic: heavy enough contention can still move it.
+ *
+ * The price, measured the same way: this test costs about 7 s, up from about
+ * 2.6 s. A regression pays far more. The quadratic spread goes red on the ratio
+ * at 114.7x, but only after about 15 minutes locally, up from about 83 s. The
+ * 120 s timeout below does not cut that short, because the synchronous loop
+ * blocks the worker thread that vitest's timer needs.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,8 +47,8 @@ import {
   type ReportIndex,
 } from '../src/guardian/diff-coverage/types.js';
 
-const SMALL = 10_000;
-const LARGE = 100_000;
+const SMALL = 30_000;
+const LARGE = 300_000;
 const REPETITIONS = 7;
 /** Linear is ~10x; quadratic is ~100x. 15x leaves room for noise on both. */
 const MAX_RATIO = 15;
