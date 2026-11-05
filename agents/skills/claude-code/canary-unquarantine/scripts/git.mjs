@@ -3,7 +3,7 @@
 // Every write happens in a throwaway `git worktree` under the OS temp
 // directory, created and removed here, so the user's own checkout is never
 // switched, stashed or dirtied. Commands go through the injected runner, so
-// tests can pair real git with a fake `gh`.
+// tests can pair real git with a fake `gh`. A settle uses `guardedRun`.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -89,6 +89,111 @@ export function withWorktree(run, repo, { options = [], commit }, fn) {
     run('git', ['-C', repo, 'worktree', 'remove', '--force', work]);
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+/**
+ * The commit at the tip of `branch` on origin. The refspec is fully spelled, so
+ * a tag of the same name cannot stand in and the name cannot read as an option,
+ * and the tip lands in a ref of this process's own, so a concurrent fetch
+ * cannot swap it the way it could FETCH_HEAD.
+ */
+export function fetchBranchTip(run, repo, branch) {
+  const ref = `refs/canary-unquarantine/fetch-${process.pid}`;
+  const refspec = `+refs/heads/${branch}:${ref}`;
+  must(
+    run('git', ['-C', repo, 'fetch', '--no-tags', 'origin', refspec]),
+    'git fetch',
+  );
+  try {
+    return must(
+      run('git', ['-C', repo, 'rev-parse', '--verify', `${ref}^{commit}`]),
+      'git rev-parse',
+    );
+  } finally {
+    run('git', ['-C', repo, 'update-ref', '-d', ref]);
+  }
+}
+
+/** Settings that would run a program, from the trial tree, during a settle. */
+const QUIET = [
+  'core.hooksPath=/dev/null', // file-based hooks; config-defined ones go by name
+  'core.fsmonitor=false',
+  'commit.gpgsign=false', // the settle commit is unsigned; a person reviews it
+  'submodule.recurse=false',
+  'fetch.recurseSubmodules=false',
+  'push.recurseSubmodules=no',
+  'gc.auto=0', // gc.recentObjectsHook
+  'maintenance.auto=false',
+];
+
+/** Lines of `git config --get-regexp` for `pattern`; none when nothing matches. */
+function configLines(run, repo, pattern, ...flags) {
+  const r = run('git', [
+    '-C',
+    repo,
+    'config',
+    ...flags,
+    '--get-regexp',
+    pattern,
+  ]);
+  if (r.status === 1) return [];
+  return must(r, 'git config').split('\n').filter(Boolean);
+}
+
+/** The subsection names under `section`, each checked to be sayable with `-c`. */
+function subsectionNames(run, repo, section) {
+  const keys = configLines(run, repo, `^${section}\\.`, '--name-only');
+  const names = keys
+    .filter((k) => k.lastIndexOf('.') > section.length)
+    .map((k) => k.slice(section.length + 1, k.lastIndexOf('.')));
+  for (const name of names)
+    if (name.includes('='))
+      throw new Error(
+        `${section} "${name}" cannot be switched off for the settle; refusing to settle`,
+      );
+  return [...new Set(names)];
+}
+
+/** One driver off. Empty commands pass bytes through, so stored blobs stay as they are. */
+const filterOff = (name) =>
+  ['clean=', 'smudge=', 'process=', 'required=false'].map(
+    (k) => `filter.${name}.${k}`,
+  );
+
+/**
+ * Refuse a partial clone: reading the trial tree could lazily fetch missing
+ * objects, which runs the transport and its helpers from inside that tree.
+ */
+export function checkNotPartialClone(run, repo) {
+  const pattern = '^(remote\\..*\\.promisor|extensions\\.partialclone)$';
+  const partial = configLines(run, repo, pattern).filter(
+    (l) => !/ (false|no|off|0)$/i.test(l),
+  );
+  if (partial.length)
+    throw new Error(
+      'this is a partial clone, so reading the trial branch could fetch objects and run your transport helpers from inside its tree. Run --apply from a full clone; refusing to settle',
+    );
+}
+
+/**
+ * A runner whose every git call has this operator's programs switched off. The
+ * settle works in a tree the PR's editor wrote, and a program run there, or one
+ * that reads from there, runs on this machine with these credentials. This is a
+ * list of the programs known to run on this path, not a guarantee: a later git
+ * can add another. Names are read from the repository, so a filter or hook named
+ * only by an includeIf matching the worktree stays on. A .gitattributes on the
+ * branch picks which filter driver runs, so all of them go off; files are rebuilt
+ * from stored blobs, so a pointer or a clean-filtered file goes back unchanged.
+ */
+export function guardedRun(run, repo) {
+  const settings = [
+    ...QUIET,
+    ...subsectionNames(run, repo, 'filter').flatMap(filterOff),
+    ...subsectionNames(run, repo, 'hook').map((n) => `hook.${n}.enabled=false`),
+  ];
+  const guard = settings.flatMap((s) => ['-c', s]);
+  return (cmd, args, options) =>
+    run(cmd, cmd === 'git' ? [...guard, ...args] : args, options);
 }
 
 /**

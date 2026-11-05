@@ -6,6 +6,7 @@
 // fixed) and `quarantine_tags` (overridden by --tags).
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 import { DEFAULT_TAGS } from './markers.mjs';
 
@@ -57,8 +58,10 @@ options:
                          file or a directory) from the trial run
   --artifact NAME        verdict: download results from the trial run's
                          CI artifact NAME instead
-  --apply                verdict: rewrite the trial PR and comment on
-                         failing tickets; without it nothing is written
+  --apply                verdict: rewrite the trial PR and comment on failing
+                         tickets the default branch's ledger row names (a
+                         hand-off leaf is listed for a person); without it
+                         nothing is written
   --json                 emit machine-readable output
   --strict               exit 1 when something needs action, 3 when the
                          command abstained
@@ -126,6 +129,22 @@ export function loadCompany(file) {
     tags: tags.length ? tags : null,
     fixedResolutions: fixed.length ? fixed : undefined,
   };
+}
+
+export const companyPath = (args) =>
+  args.company ?? path.join(args.repo, '.canary', 'company.json');
+
+/** The operator's ledger: --ledger, else the default under --repo. */
+export const ledgerPathOf = (args) =>
+  args.ledger ?? path.join(args.repo, '.canary', 'quarantine.json');
+
+/** The ledger as a path inside the repository, which `settle` rewrites on the trial branch. */
+export function ledgerInRepo(repo, ledgerPath) {
+  const rel = path.relative(repo, ledgerPath);
+  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return rel;
+  throw new Error(
+    `trial needs the ledger inside the repository (got ${ledgerPath}): the verdict rewrites it on the trial branch`,
+  );
 }
 
 /** The quarantine tags: --tags, else company.json `quarantine_tags`, else the defaults. */

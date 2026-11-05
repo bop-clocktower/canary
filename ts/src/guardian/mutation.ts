@@ -67,7 +67,10 @@ export interface MutantFinding {
   /** The mutated source snippet. */
   replacement: string;
   status: MutationStatus;
-  /** Test names that covered the mutant but did not fail. */
+  /**
+   * Test names that covered the mutant but did not fail. Empty on a `survived`
+   * finding means attribution was not recorded (ADR 0037 F1), not "uncovered".
+   */
   coveredBy: string[];
 }
 
@@ -135,6 +138,27 @@ export interface StrykerReport {
 export interface RunnerVerdict {
   compatible: boolean;
   reason?: string;
+}
+
+/**
+ * ADR 0037 F1: the headline line counting survivors with no attribution.
+ *
+ * Reading this off the finding is sound because the mapper demotes an explicit
+ * `coveredBy: []` to `no-coverage`, so only an absent field reaches here empty.
+ * It prints nothing at zero, unlike the timeout and untested counts: those sit
+ * outside the numbers above them, while this one is a subset of `survived`.
+ */
+export function unattributedSurvivorLines(report: MutationReport): string[] {
+  const count = report.findings.filter(
+    (finding) =>
+      finding.status === 'survived' && finding.coveredBy.length === 0,
+  ).length;
+  if (count === 0) return [];
+  return [
+    `${count} survivor(s) have no test attribution recorded, which is not a ` +
+      'measured coverage gap. Set Stryker `coverageAnalysis: perTest` to name ' +
+      'their tests.',
+  ];
 }
 
 /** Options for {@link mapStrykerReport}. */
