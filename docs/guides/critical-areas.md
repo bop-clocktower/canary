@@ -130,16 +130,26 @@ The command also prints the reason for `partial` and `absent`.
 
 ## Exit codes
 
-| Code | When                                                                                  |
-| ---- | ------------------------------------------------------------------------------------- |
-| 0    | The file was written                                                                  |
-| 1    | The file could not be written; one line names the path and the errno code             |
-| 2    | `--coverage` names a report that is missing or cannot be parsed                       |
-| 3    | Abstained: git not found, no git repo, no commit, no source file, or every score is 0 |
+| Code | When                                                                                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------ |
+| 0    | The file was written                                                                                         |
+| 1    | The file could not be written (one line names the path and the errno code), or the default output is refused |
+| 2    | `--coverage` names a report that is missing or cannot be parsed                                              |
+| 3    | Abstained: git not found, no git repo, no commit, no source file, or every score is 0                        |
 
 On 1, 2 and 3 an existing file is left as it was: the write goes to a temporary
-file beside the target and is renamed into place. The `--coverage` check runs
-first, so a mistyped flag exits 2 even outside a repository.
+file in a new private directory beside the target, then is renamed into place.
+The directory's name is random and creating it never follows a symlink, so a
+scanned tree cannot redirect the write by planting a link beside the target. The
+`--coverage` check runs first, so a mistyped flag exits 2 even outside a
+repository.
+
+The command reads a checkout that may not be yours, and a clone materializes
+tracked symlinks. So the default output is refused, with exit 1 and nothing
+written, when `.canary` is a symlink that resolves outside the repository top
+level or cannot be resolved. A `.canary` link that stays inside the top level is
+followed. An explicit `--out` is your choice and is not refused for where it
+points.
 
 ## Overwriting
 

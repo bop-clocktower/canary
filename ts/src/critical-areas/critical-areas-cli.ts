@@ -4,14 +4,17 @@
  *
  * Exit codes follow the CLI-wide gate contract:
  *   - 0: the file was written.
- *   - 1: the file could not be written. Any existing file is left intact.
+ *   - 1: the file could not be written, or a default output would leave the
+ *     repository through a symlinked .canary. Any existing file is left intact.
  *   - 2: an explicit --coverage report is missing or unparseable.
  *   - 3 (EXIT_ABSTAINED): nothing to rank, so NOTHING is written. An empty map
  *     would also overwrite a good one.
  */
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
+  mkdtempSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -195,34 +198,62 @@ const reportDropped = (deps: MainDeps, why: string, paths: string[]): void => {
 
 const removeQuietly = (path: string): void => {
   try {
-    rmSync(path, { force: true });
+    rmSync(path, { recursive: true, force: true });
   } catch {
-    // The temp file was never created: its parent is what failed.
+    // The outcome is already decided: a stray directory is not worth failing on.
   }
 };
 
-/** Beside the target, so a failed write can never leave it half-written. */
+/**
+ * Through a new private directory beside the target, so a failed write can
+ * never leave it half-written. A tree can plant a symlink at any name it can
+ * predict, and mkdtemp picks a random name and never follows a link.
+ */
 function writeAtomically(out: string, text: string, deps: MainDeps): void {
-  const temp = `${out}.${process.pid}.tmp`;
+  let tempDir: string | null = null;
   try {
     mkdirSync(dirname(out), { recursive: true });
+    tempDir = mkdtempSync(`${out}.tmp-`);
+    const temp = join(tempDir, 'map.json');
     writeFileSync(temp, text, 'utf-8');
     renameSync(temp, out);
   } catch (err) {
-    removeQuietly(temp);
     deps.err(`Could not write ${out}: ${(err as NodeJS.ErrnoException).code}.`);
     throw new CliExitError(1);
+  } finally {
+    if (tempDir !== null) removeQuietly(tempDir);
   }
 }
 
+/** Missing is fine (it gets created); a link that cannot be resolved is not. */
+function resolvesInside(top: string, dir: string): boolean {
+  try {
+    if (lstatSync(dir, { throwIfNoEntry: false }) === undefined) return true;
+    const rel = relative(realpathSync(top), realpathSync(dir));
+    return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Nobody chose the default path, so a tracked `.canary -> /elsewhere` must not
+ * turn a scan into a write elsewhere. An explicit --out was chosen, and stands.
+ * The link's target is the tree's text, so it stays out of the message.
+ */
 function resolveOut(
   opts: CriticalAreasOpts,
   top: string,
   deps: MainDeps,
 ): string {
-  return opts.out === undefined
-    ? join(top, '.canary', 'critical-areas.json')
-    : resolve(deps.cwd(), opts.out);
+  if (opts.out !== undefined) return resolve(deps.cwd(), opts.out);
+  if (!resolvesInside(top, join(top, '.canary'))) {
+    deps.err(
+      `Refused to write: .canary does not resolve inside ${top}. Use --out to choose a path.`,
+    );
+    throw new CliExitError(1);
+  }
+  return join(top, '.canary', 'critical-areas.json');
 }
 
 function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {

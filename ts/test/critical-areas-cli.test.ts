@@ -7,11 +7,14 @@ import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -561,6 +564,153 @@ describe('canary critical-areas', () => {
       const res = await run(join(dir, 'x.json'));
       expect(res.code).toBe(0);
       expect(readdirSync(dir)).toEqual(['x.json']);
+    });
+  });
+
+  // A scanned checkout is untrusted: `git clone` materialises tracked symlinks,
+  // so a command that reads a repository must not write through one of them.
+  describe.skipIf(process.platform === 'win32')('planted symlinks', () => {
+    const PRECIOUS = 'precious\n';
+    // The name the write used to use, which any tree could plant ahead of time.
+    const oldTempName = (name: string): string => `${name}.${process.pid}.tmp`;
+    let repo: string;
+    let victim: string;
+    let elsewhere: string;
+
+    /** The fixture repository, with its links committed as tracked files. */
+    function trackedLinks(links: Record<string, string>): void {
+      ranked(repo);
+      for (const [path, target] of Object.entries(links)) {
+        mkdirSync(dirname(join(repo, path)), { recursive: true });
+        symlinkSync(target, join(repo, path));
+      }
+      commit(repo, {});
+    }
+
+    beforeEach(() => {
+      repo = join(root, 'repo');
+      mkdirSync(repo);
+      victim = join(root, 'victim.txt');
+      writeFileSync(victim, PRECIOUS, 'utf-8');
+      elsewhere = join(root, 'elsewhere');
+      mkdirSync(elsewhere);
+    });
+
+    const expectRegularMap = (path: string): void => {
+      expect(lstatSync(path).isSymbolicLink()).toBe(false);
+      expect(readDoc(path).areas.length).toBeGreaterThan(0);
+    };
+
+    it('does not write through a tracked symlink at the old temp path', async () => {
+      const planted = `.canary/${oldTempName('critical-areas.json')}`;
+      trackedLinks({ [planted]: victim });
+
+      const res = await invokeCanary(['critical-areas', '--root', repo]);
+
+      expect(res.code).toBe(0);
+      expect(readFileSync(victim, 'utf-8')).toBe(PRECIOUS);
+      expectRegularMap(join(repo, '.canary', 'critical-areas.json'));
+      expect(readlinkSync(join(repo, planted))).toBe(victim);
+      expect(readdirSync(join(repo, '.canary')).sort()).toEqual(
+        ['critical-areas.json', oldTempName('critical-areas.json')].sort(),
+      );
+    });
+
+    it('does not write through a symlink beside --out', async () => {
+      ranked(repo);
+      const dir = join(root, 'out');
+      mkdirSync(dir);
+      const out = join(dir, 'areas.json');
+      symlinkSync(victim, join(dir, oldTempName('areas.json')));
+
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        repo,
+        '--out',
+        out,
+      ]);
+
+      expect(res.code).toBe(0);
+      expect(readFileSync(victim, 'utf-8')).toBe(PRECIOUS);
+      expectRegularMap(out);
+    });
+
+    describe('a default output whose .canary leaves the top level', () => {
+      const expectRefused = async (): Promise<void> => {
+        const res = await invokeCanary(['critical-areas', '--root', repo]);
+        expect(res.code).toBe(1);
+        const lines = res.stderr.trim().split('\n');
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain('.canary');
+        expect(lines[0]).toContain('--out');
+        expect(res.stdout).not.toContain('Wrote');
+      };
+
+      it('is refused through an absolute link, writing nothing', async () => {
+        trackedLinks({ '.canary': elsewhere });
+        await expectRefused();
+        expect(readdirSync(elsewhere)).toEqual([]);
+      });
+
+      it('is refused through a relative link, writing nothing', async () => {
+        trackedLinks({ '.canary': '../elsewhere' });
+        await expectRefused();
+        expect(readdirSync(elsewhere)).toEqual([]);
+      });
+
+      it('is refused through a chain of links, writing nothing', async () => {
+        trackedLinks({ hop: '../elsewhere', '.canary': 'hop' });
+        await expectRefused();
+        expect(readdirSync(elsewhere)).toEqual([]);
+      });
+
+      it('leaves a map already there byte-identical', async () => {
+        trackedLinks({ '.canary': elsewhere });
+        const there = join(elsewhere, 'critical-areas.json');
+        writeFileSync(there, PRECIOUS, 'utf-8');
+        await expectRefused();
+        expect(readFileSync(there, 'utf-8')).toBe(PRECIOUS);
+        expect(readdirSync(elsewhere)).toEqual(['critical-areas.json']);
+      });
+
+      it('fails closed on a link it cannot resolve, creating nothing', async () => {
+        trackedLinks({ '.canary': '../gone' });
+        await expectRefused();
+        expect(existsSync(join(root, 'gone'))).toBe(false);
+      });
+
+      it('fails closed on a link loop', async () => {
+        trackedLinks({ '.canary': '.canary' });
+        await expectRefused();
+      });
+    });
+
+    it('still writes through a .canary link that stays inside the top level', async () => {
+      trackedLinks({ '.canary': 'config/canary' });
+      commit(repo, { 'config/canary/keep.txt': 'x' });
+
+      const res = await invokeCanary(['critical-areas', '--root', repo]);
+
+      expect(res.code).toBe(0);
+      expectRegularMap(join(repo, 'config', 'canary', 'critical-areas.json'));
+    });
+
+    it('does not refuse an explicit --out for pointing elsewhere', async () => {
+      trackedLinks({ '.canary': elsewhere });
+      const out = join(elsewhere, 'areas.json');
+
+      const res = await invokeCanary([
+        'critical-areas',
+        '--root',
+        repo,
+        '--out',
+        out,
+      ]);
+
+      expect(res.code).toBe(0);
+      expectRegularMap(out);
+      expect(readdirSync(elsewhere)).toEqual(['areas.json']);
     });
   });
 

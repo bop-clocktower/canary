@@ -10,7 +10,7 @@
     "review"
   ],
   "planPath": "docs/changes/1529-critical-areas-cli/plans/2026-11-03-critical-areas-cli-plan.md",
-  "baseSha": "16a8ad2e",
+  "baseSha": "bffba2d3",
   "closingKeyword": "Closes",
   "closingKeywordWhy": "All three asks in #1529 land here: the deterministic CLI, the command pointing at the skill instead of a missing agent, and katana's degraded line naming the generator.",
   "assumptions": [
@@ -32,5 +32,25 @@
     "A new critical-areas arch layer holds the modules; it may depend on core, for the Python stdlib list.",
     "Scores here top out at 0.54 (under katana's CRITICAL_RISK 0.7), so such an area alarms as HIGH rather than CRITICAL.",
     "Review fixes: an unreadable source makes importers partial or, with none read, absent with null counts and churn-only scores (D1, new status value `partial`, tolerated by the schema); log.showRoot and log.showSignature are pinned on the log and show calls, and an unparsable HEAD time is unmeasured churn."
+  ],
+  "fixes": [
+    {
+      "run": "fc1105",
+      "route": "bug",
+      "stages": ["debugging"],
+      "finding": "writeAtomically wrote to a predictable temp path through any symlink planted there, and the default output followed a tracked .canary symlink out of the repository, both at exit 0.",
+      "reproducingTests": ["ts/test/critical-areas-cli.test.ts"],
+      "assumptions": [
+        "F3=A (human): a default output whose .canary resolves outside the top level is refused and writes nothing.",
+        "F4=A (human): all non-blocking findings stay in #1575.",
+        "The refusal exits 1, not 3: 1 is the documented 'could not be written' failure, while 3 means nothing to rank, and a refusal must not read as an abstention. 2 is specific to --coverage.",
+        "A .canary link that cannot be resolved (dangling or a loop) is refused too, because mkdir or the read could otherwise go through it.",
+        "A .canary link that stays inside the top level is followed, including one into .git; the file name is fixed, so nothing there is executed.",
+        "mkdtemp in the target's directory over flag wx: creation is both exclusive and randomly named in one call, so neither half can be dropped alone.",
+        "The refusal message omits the link's target, because that text comes from the scanned tree."
+      ],
+      "closingKeyword": "Closes",
+      "baseSha": "bffba2d3"
+    }
   ]
 }
