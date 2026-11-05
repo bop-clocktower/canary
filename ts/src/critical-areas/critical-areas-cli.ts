@@ -10,17 +10,8 @@
  *   - 3 (EXIT_ABSTAINED): nothing to rank, so NOTHING is written. An empty map
  *     would also overwrite a good one.
  */
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Command } from 'commander';
 
 import { CliExitError, jsonIndent2 } from '../cli-common.js';
@@ -37,6 +28,7 @@ import type { MainDeps } from '../main-deps.js';
 import { keepSymbols } from './declared-symbols.js';
 import { readGitFacts, type GitFacts } from './git-signals.js';
 import { countImporters } from './importers.js';
+import { defaultOut, writeAtomically } from './output-file.js';
 import {
   buildDocument,
   CHURN_WINDOW_DAYS,
@@ -196,64 +188,20 @@ const reportDropped = (deps: MainDeps, why: string, paths: string[]): void => {
   }
 };
 
-const removeQuietly = (path: string): void => {
-  try {
-    rmSync(path, { recursive: true, force: true });
-  } catch {
-    // The outcome is already decided: a stray directory is not worth failing on.
-  }
-};
-
-/**
- * Through a new private directory beside the target, so a failed write can
- * never leave it half-written. A tree can plant a symlink at any name it can
- * predict, and mkdtemp picks a random name and never follows a link.
- */
-function writeAtomically(out: string, text: string, deps: MainDeps): void {
-  let tempDir: string | null = null;
-  try {
-    mkdirSync(dirname(out), { recursive: true });
-    tempDir = mkdtempSync(`${out}.tmp-`);
-    const temp = join(tempDir, 'map.json');
-    writeFileSync(temp, text, 'utf-8');
-    renameSync(temp, out);
-  } catch (err) {
-    deps.err(`Could not write ${out}: ${(err as NodeJS.ErrnoException).code}.`);
-    throw new CliExitError(1);
-  } finally {
-    if (tempDir !== null) removeQuietly(tempDir);
-  }
-}
-
-/** Missing is fine (it gets created); a link that cannot be resolved is not. */
-function resolvesInside(top: string, dir: string): boolean {
-  try {
-    if (lstatSync(dir, { throwIfNoEntry: false }) === undefined) return true;
-    const rel = relative(realpathSync(top), realpathSync(dir));
-    return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Nobody chose the default path, so a tracked `.canary -> /elsewhere` must not
- * turn a scan into a write elsewhere. An explicit --out was chosen, and stands.
- * The link's target is the tree's text, so it stays out of the message.
- */
+/** An explicit --out was chosen, and stands; the default may be refused. */
 function resolveOut(
   opts: CriticalAreasOpts,
   top: string,
   deps: MainDeps,
 ): string {
   if (opts.out !== undefined) return resolve(deps.cwd(), opts.out);
-  if (!resolvesInside(top, join(top, '.canary'))) {
-    deps.err(
-      `Refused to write: .canary does not resolve inside ${top}. Use --out to choose a path.`,
-    );
-    throw new CliExitError(1);
-  }
-  return join(top, '.canary', 'critical-areas.json');
+  const out = defaultOut(top);
+  if (out !== null) return out;
+  // The link's target is the tree's text, so it stays out of the message.
+  deps.err(
+    `Refused to write: .canary does not resolve inside ${top}. Use --out to choose a path.`,
+  );
+  throw new CliExitError(1);
 }
 
 function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
@@ -288,7 +236,11 @@ function runCriticalAreas(opts: CriticalAreasOpts, deps: MainDeps): void {
   if (doc.areas.length === 0) {
     abstain(deps, `every score is 0 across ${facts.candidates.length} file(s)`);
   }
-  writeAtomically(out, jsonIndent2(doc) + '\n', deps);
+  const failed = writeAtomically(out, jsonIndent2(doc) + '\n');
+  if (failed !== null) {
+    deps.err(`Could not write ${out}: ${failed}.`);
+    throw new CliExitError(1);
+  }
   deps.out(
     `Wrote ${out}: ${doc.areas.length} area(s) from ${doc.files_analyzed} file(s).`,
   );

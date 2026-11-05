@@ -171,7 +171,9 @@ This command writes both, with the same value. Unifying them is a follow-up.
 ## Source
 
 - [critical-areas-cli.ts](../../ts/src/critical-areas/critical-areas-cli.ts):
-  the command, coverage read, atomic write and exit codes.
+  the command, coverage read and exit codes.
+- [output-file.ts](../../ts/src/critical-areas/output-file.ts): the output path,
+  the `.canary` refusal and the atomic write.
 - [declared-symbols.ts](../../ts/src/critical-areas/declared-symbols.ts): the
   symbols kept through a rewrite, and the rule mirrored from katana's contract.
 - [git-signals.ts](../../ts/src/critical-areas/git-signals.ts): top level, HEAD,
