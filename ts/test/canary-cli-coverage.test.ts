@@ -1201,11 +1201,13 @@ describe('upgrade: failure detail fallbacks', () => {
 });
 
 describe('ticket-update: result coercion and quiet outcomes', () => {
+  // No linkage: the one quiet outcome left. A ticket key with no comment posted
+  // used to be quiet too, and is the failure #1413 made exit 1.
   function quietResult(): UpdateResult {
     return new UpdateResult({
-      ticket_key: 'PROJ-1',
-      project_key: 'PROJ',
-      linkage_source: 'branch',
+      ticket_key: null,
+      project_key: null,
+      linkage_source: 'none',
       comment_posted: false,
       transition: new TransitionResult(false, false, null, null, 'skipped'),
       dry_run: false,

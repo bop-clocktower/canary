@@ -365,6 +365,17 @@ const ROWS: GateRow[] = [
     forbid: ['0.0%'],
     run: (base) => invokeCanary(['history', 'summary', 'api'], { cwd: base }),
   },
+  {
+    // No Jira credentials: nothing was posted, moved or even looked up (#1413).
+    // Runs the real updater; with no credentials it stops before any request.
+    command: 'ticket-update (no Jira credentials)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['Comment posted', 'Transitioned'],
+    run: (base) =>
+      invokeCanary(['ticket-update', '--ticket', 'PROJ-1'], { cwd: base }),
+  },
   // --- test-signal quality: the #605/#612/#477 chain ------------------------
   //
   // Three rows, not one, because these commands have three DIFFERENT zeros and
@@ -507,6 +518,15 @@ const ROWS: GateRow[] = [
         },
       });
     },
+  },
+  {
+    command: 'critical-areas',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['Wrote '],
+    // #1529: not a git repository -> zero files to rank, and nothing written.
+    run: (base) => invokeCanary(['critical-areas', '--root', base]),
   },
 ];
 

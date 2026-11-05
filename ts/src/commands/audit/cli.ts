@@ -1,5 +1,5 @@
 /**
- * `audit` sub-app registry for `canary` (#988). History-driven audits: closure, rewind, test order.
+ * `audit` sub-app registry for `canary` (#988). History-driven audits: closure, rewind, test order, critical areas.
  *
  * Rule: a new sub-app joins the domain registry it belongs to, appended where
  * it should appear in help. Each registry is capped at 12 imports by
@@ -12,10 +12,12 @@ import type { Command } from 'commander';
 import { buildBatwomanCommand } from '../../batwoman-cli.js';
 import { buildRewindCommand } from '../../rewind/rewind-cli.js';
 import { buildOrderCommand } from '../../order/order-cli.js';
+import { buildCriticalAreasCommand } from '../../critical-areas/critical-areas-cli.js';
 import type { MainDeps } from '../../main-deps.js';
 
 export const AUDIT_COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
   (deps) => buildBatwomanCommand(deps),
   (deps) => buildRewindCommand(deps),
   (deps) => buildOrderCommand(deps),
+  (deps) => buildCriticalAreasCommand(deps),
 ];

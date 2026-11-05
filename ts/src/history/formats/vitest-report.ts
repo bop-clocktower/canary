@@ -10,6 +10,7 @@
  * this module only imports the schema so the two files cannot form a cycle.
  */
 import {
+  FILE_FAILURE_SUFFIX,
   makeRunId,
   type RecordContext,
   type RunInput,
@@ -82,7 +83,7 @@ function toResultRow(
 function fileRows(file: VitestFile): VitestAssertion[] {
   const tests = file.assertionResults ?? [];
   if (file.status !== 'failed' || !file.message) return tests;
-  const fullName = `${file.name ?? ''} (file failed outside any test)`;
+  const fullName = `${file.name ?? ''}${FILE_FAILURE_SUFFIX}`;
   const failureMessages = [file.message];
   return [...tests, { fullName, status: 'failed', failureMessages }];
 }

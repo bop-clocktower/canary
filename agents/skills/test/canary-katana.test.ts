@@ -766,7 +766,7 @@ describe('alarm critical-area loading', () => {
 
   it('degraded notice text is explicit', () => {
     expect(alarm.DEGRADED_NOTICE).toBe(
-      'critical-area data unavailable, recording only, not alarming',
+      'critical-area data unavailable, recording only, not alarming; run `canary critical-areas`, then pass --critical-areas .canary/critical-areas.json',
     );
   });
 });

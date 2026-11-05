@@ -71,6 +71,14 @@ A differing environment names each key that differs, for example
 - `not-run`: no attempt ran the test, usually because dependencies failed to
   install. See the `environment` row.
 
+A failure outside any test, stored as `<file> (file failed outside any test)`,
+has no row when its file loads cleanly. An attempt counts as passed only if the
+report shows that exact file ran, and any other attempt isn't counted. In
+Playwright the file argument is a filter, so a same-named file in another
+directory that fails to load aborts the run, and that attempt isn't counted
+either. A failure located in a file that isn't a test, such as a global teardown
+or a helper, selects nothing to replay, so it comes back `not-run`.
+
 Nearest green is the run of the same suite, on first-parent history of the
 failing commit, with the fewest commits back, in which the test passed. The
 output names it, the commit range between the two, and the recorded duration and
@@ -82,7 +90,8 @@ error.
 - `3`: abstained, with an `Abstained:` line saying why. Reasons: the run or test
   is absent, the test did not fail, the commit is `local` or unreachable after
   one fetch, the runner is unsupported, the test file path is not repo-relative
-  (runs recorded before #1021), or an unexpected error.
+  (runs recorded before #1021), the failure names no test file (a failure of the
+  whole run, outside any test), or an unexpected error.
 - `2`: usage error.
 
 It never exits 1. A reproduced failure is the finding, not a failure of the
