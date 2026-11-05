@@ -9,9 +9,11 @@
  *   type-only with a runtime statement in it: a suppressed finding, fail open.
  *
  * Telling a regex from division is a guess, so each wrong guess is pinned too.
- * A division read as a regex keeps comment text as code (noise). A regex read as
+ * A division read as a regex usually keeps comment text as code (noise), and may
+ * not cross a quote, because that exposes a `/*` in a string. A regex read as
  * division still drops text, as every regex did before, so the detector below
- * has to refuse what that leaves behind.
+ * has to refuse what that leaves behind. Both known ways left to blank lines
+ * are pinned as limits.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -69,7 +71,6 @@ describe('stripComments: a real comment is still a comment', () => {
     ['after a regex', 'const r = /x\\//; // note', 'const r = /x\\//; '],
     ['directly after a regex', 'const r = /x\\///// note', 'const r = /x\\//'],
     ['block, after a regex', 'f(/x\\//, /* a */ 1);', 'f(/x\\//,  1);'],
-    ['after a quote in a regex', "f(/'/); // it's", "f(/'/); "],
     ['after a division', 'const c = a / b // note', 'const c = a / b '],
     ['after two divisions', 'a / b / c // note', 'a / b / c '],
     ['after a called division', 'f(a) / g(b) // note', 'f(a) / g(b) '],
@@ -151,6 +152,88 @@ describe('stripComments: the known limit of a regex read as division', () => {
     // sees blank lines, which the PR records as an unresolved finding.
     expect(stripComments('if (x) /a\\/*b/.test(y);\nrun();\n// */\nz();')).toBe(
       'if (x) /a\\\n\n\nz();',
+    );
+  });
+});
+
+describe('a guessed regex may not cross a quote (PR #1548 review)', () => {
+  /** `head`, then a statement whose second line has no record of its own. */
+  const followedByStatement = (head: string): string =>
+    [
+      'export function f() {',
+      head,
+      '  run(',
+      '    other());',
+      '  const n = 1;',
+      '  return n; // */',
+      '}',
+    ].join('\n');
+  const MEASURED = new Set([2, 3, 5, 6]);
+
+  /** What the changed, unrecorded line 4 maps to: its statement, or nothing. */
+  const line4Owner = (head: string): number | undefined =>
+    attributeLines([4], MEASURED, followedByStatement(head))?.get(4);
+
+  it.each([
+    ['a division after a string', "  const a = 'x' / b; const u = '/' + '/*';"],
+    ['a division after `++`', "  const r = i++ / 2; const u = s + '/' + '/*';"],
+    ['TSX attributes', '  const v = <A b="x" /><C d="/" e="/*" />;'],
+    ['double quotes', '  const a = "x" / b; const u = "/" + "/*";'],
+    ['a template', "  const a = 'x' / b; const u = `/` + `/*`;"],
+    ['a quote in a class', "  const a = 'x' / b['k']; const u = '/' + '/*';"],
+    ['no closing slash', "  const a = 'x' / b; const u = '/*';"],
+  ])('%s: a `/*` in a string hides nothing', (_name, head) => {
+    expect(line4Owner(head)).toBe(3);
+  });
+
+  // Which of the two readings is right can't be told from here, so neither may
+  // blank a line. On the base branch these did, by reading the regex as division.
+  it.each([
+    ['a real regex with a quote', "  const q = /'/; const u = '/*';"],
+    ['a real regex with both quotes', '  const q = /[\'"]/; const u = "/*";'],
+  ])('%s: a `/*` in a string hides nothing', (_name, head) => {
+    expect(line4Owner(head)).toBe(3);
+  });
+
+  it('keeps the rest of the line as code, comment text included', () => {
+    const line = "const q = /'/; // it's /* not opened";
+    expect(stripComments(`${line}\nrun();`)).toBe(`${line}\nrun();`);
+  });
+
+  it('an escaped quote is not a crossing: the regex still closes', () => {
+    expect(stripComments("const q = /\\'/; // it's")).toBe("const q = /\\'/; ");
+  });
+
+  it('a quote after the closing slash is not a crossing', () => {
+    expect(stripComments("f(/a/, '/*'); // note")).toBe("f(/a/, '/*'); ");
+  });
+
+  it('the type-only detector still refuses what the line keeps', () => {
+    const root = mkdtempSync(join(tmpdir(), 'canary-type-only-quote-'));
+    try {
+      mkdirSync(join(root, 'src'));
+      writeFileSync(
+        join(root, 'src/shape.types.ts'),
+        "export type A = 'x' / b; type U = '/' | '/*';\nregister('x');\n// */\n",
+        'utf-8',
+      );
+      expect(isTypeOnlyModule('src/shape.types.ts', root)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('stripComments: the known limit of a division read as a regex', () => {
+  it.each([
+    ['a glob in the comment', "const a = 'x' / b; // see a/b/*.ts"],
+    ['a comment starting `//*`', 'const r = i++ / 2; //* old'],
+  ])('%s: no quote in the guess, so a block opens', (_name, line) => {
+    // Pinned so it stays visible (#1583): the base branch read this `//`
+    // correctly and this head does not. It needs slashes in the comment that
+    // pair off to expose a `/*`.
+    expect(stripComments(`${line}\nrun();\n// */\nz();`).split('\n')[1]).toBe(
+      '',
     );
   });
 });

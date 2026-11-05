@@ -55,6 +55,12 @@ function stripLine(line: string, scan: CommentScan): string {
  *
  * The comment check comes first because no regex can start with `//` or `/*`.
  * That makes a stale regex context harmless at the common `'x' // note`.
+ *
+ * A guessed regex with a quote in it ends the scan the same way. If the guess
+ * was wrong, its end sits inside a string and the next quote opens rather than
+ * closes, which exposes a `/*` that really is string text. Reading it as
+ * division instead does the same to a real `/'/`. Neither reading can be trusted
+ * here, so nothing later on the line counts as a comment.
  */
 function commentStart(line: string, from: number, scan: CommentScan): number {
   let quote: string | null = null;
@@ -65,7 +71,9 @@ function commentStart(line: string, from: number, scan: CommentScan): number {
     } else if (opensComment(line, i)) {
       return i;
     } else if (startsRegex(ch, scan.before)) {
-      i = skipRegex(line, i);
+      const end = skipRegex(line, i);
+      if (hasQuote(line, i, end)) return line.length;
+      i = end;
     } else {
       scan.before = afterCode(scan.before, ch);
     }
@@ -89,11 +97,19 @@ const REGEX_BEFORE = /(?:^|[=([,:?!&|{};+\-*%<>~^]|\breturn|\btypeof)$/;
  *
  * The one rule for both passes over a file, here and in the continuation
  * lexer: passes that disagree would read the same `/` two ways. It is a guess.
- * A division read as a regex can only keep comment text as code. A regex read
- * as division (after `)`, or a keyword the rule lacks) is what this module did
- * for every regex before #1515: a `//` in it drops the rest of the line, and a
- * `/*` in it drops the lines up to the next `*\/`. The type-only detector still
- * fails closed on that, see `stepCode` in `type-only.ts`.
+ *
+ * A division read as a regex usually keeps comment text as code, and when the
+ * guess crosses a quote {@link commentStart} stops looking for comments. With no
+ * quote it can still pair off the first `/` of a real `//`, so a `/*` later in
+ * that comment opens a block and blanks the lines up to the next `*\/`:
+ * `'x' / b; // a/b/*.ts` (#1583).
+ *
+ * A regex read as division (after `)`, or a keyword the rule lacks) is what this
+ * module did for every regex before #1515: a `//` in it drops the rest of the
+ * line, and a `/*` in it drops the lines up to the next `*\/`.
+ *
+ * The continuation lexer reads a blanked line as non-coverable. The type-only
+ * detector fails closed on both, see `stepCode` in `type-only.ts`.
  */
 export function startsRegex(ch: string, before: string): boolean {
   return ch === '/' && REGEX_BEFORE.test(before);
@@ -109,6 +125,15 @@ export function skipRegex(code: string, start: number): number {
     else if (ch === '/' && !inClass) return i;
   }
   return code.length;
+}
+
+/** True if an unescaped quote sits between a regex's `start` and `end`. */
+function hasQuote(code: string, start: number, end: number): boolean {
+  for (let i = start + 1; i < end; i++) {
+    if (code[i] === '\\') i++;
+    else if (QUOTES.has(code[i]!)) return true;
+  }
+  return false;
 }
 
 /** The context for {@link startsRegex} once the code character `ch` is read. */
