@@ -6,7 +6,13 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import {
@@ -217,6 +223,153 @@ describe('runRewind: abstention (criterion 4)', () => {
     const h = harness([run], []);
     expect(await runRewind(opts(), h.deps)).toBe(3);
     expect(h.out.join('\n')).toMatch(/Abstained: .*not repo-relative/);
+  });
+});
+
+describe('runRewind: a failure outside any test (#1411)', () => {
+  const VITEST_NAME = 'test/a.test.ts (file failed outside any test)';
+  const PW_NAME = 'test/a.spec.ts (file failed outside any test)';
+
+  const syntheticRun = (runner: 'vitest' | 'playwright'): RunRecord =>
+    failingRun({
+      reporter_format: runner,
+      tests: [
+        {
+          test_name: runner === 'vitest' ? VITEST_NAME : PW_NAME,
+          status: 'failed',
+          test_file: runner === 'vitest' ? 'test/a.test.ts' : 'test/a.spec.ts',
+        },
+      ],
+    });
+
+  /** Reports as the real runners write them: real paths, a row only on failure. */
+  function report(
+    runner: 'vitest' | 'playwright',
+    cwd: string,
+    failing: boolean,
+  ): object {
+    const dir = realpathSync(cwd);
+    if (runner === 'vitest') {
+      const name = join(dir, 'test/a.test.ts');
+      return {
+        testResults: [
+          failing
+            ? { name, status: 'failed', message: 'boom', assertionResults: [] }
+            : { name, status: 'passed', message: '', assertionResults: [] },
+        ],
+      };
+    }
+    const file = join(dir, 'test/a.spec.ts');
+    const config = { rootDir: dir };
+    return failing
+      ? {
+          config,
+          suites: [],
+          errors: [{ message: 'Error: boom', location: { file } }],
+        }
+      : {
+          config,
+          errors: [],
+          suites: [{ title: 'test/a.spec.ts', file: 'test/a.spec.ts' }],
+        };
+  }
+
+  function synthetic(runner: 'vitest' | 'playwright', fails: boolean[]) {
+    const h = harness([syntheticRun(runner)], []);
+    let i = 0;
+    h.deps.exec = async (_cmd, args, execOpts) => {
+      const failing = fails[i++] === true;
+      const path =
+        execOpts.env['PLAYWRIGHT_JSON_OUTPUT_NAME'] ??
+        args.find((a) => a.startsWith('--outputFile='))!.slice(13);
+      writeFileSync(
+        path,
+        JSON.stringify(report(runner, execOpts.cwd, failing)),
+      );
+      return { code: failing ? 1 : 0, output: '' };
+    };
+    return h;
+  }
+
+  const outcome = async (
+    runner: 'vitest' | 'playwright',
+    fails: boolean[],
+  ): Promise<{ statuses: string[]; outcome: string }> => {
+    const h = synthetic(runner, fails);
+    const test = runner === 'vitest' ? VITEST_NAME : PW_NAME;
+    const code = await runRewind(
+      opts({ test, repeat: fails.length, json: true }),
+      h.deps,
+    );
+    expect(code).toBe(0);
+    return JSON.parse(h.out.join('\n')) as {
+      statuses: string[];
+      outcome: string;
+    };
+  };
+
+  it.each(['vitest', 'playwright'] as const)(
+    '%s: one load failure in five attempts is intermittent, not reproduced',
+    async (runner) => {
+      const got = await outcome(runner, [true, false, false, false, false]);
+      expect(got.statuses).toEqual([
+        'failed',
+        'passed',
+        'passed',
+        'passed',
+        'passed',
+      ]);
+      expect(got.outcome).toBe('intermittent');
+    },
+  );
+
+  it.each(['vitest', 'playwright'] as const)(
+    '%s: every attempt loading cleanly is not-reproduced',
+    async (runner) => {
+      const got = await outcome(runner, [false, false, false]);
+      expect(got.outcome).toBe('not-reproduced');
+    },
+  );
+
+  it.each(['vitest', 'playwright'] as const)(
+    '%s: failing on every attempt is reproduced',
+    async (runner) => {
+      const got = await outcome(runner, [true, true, true]);
+      expect(got.outcome).toBe('reproduced');
+    },
+  );
+
+  // macOS `/var` is a symlink, and a runner reports the real path. Pointing
+  // TMPDIR at a link gives every platform the same trap.
+  it.skipIf(process.platform === 'win32')(
+    'anchors at the real path when the scratch directory is behind a link',
+    async () => {
+      const link = join(repo, '..', `${repo.split(/[\\/]/).pop()}-tmp-link`);
+      symlinkSync(realpathSync(dirname(repo)), link);
+      const before = process.env['TMPDIR'];
+      process.env['TMPDIR'] = link;
+      try {
+        const got = await outcome('vitest', [true, false]);
+        expect(got.statuses).toEqual(['failed', 'passed']);
+      } finally {
+        if (before === undefined) delete process.env['TMPDIR'];
+        else process.env['TMPDIR'] = before;
+        removeGitFixture(link);
+      }
+    },
+  );
+
+  it('says a run-level failure has no file, not that it predates #1021', async () => {
+    const run = failingRun();
+    const name = '(run failed outside any test)';
+    run.tests![0] = { test_name: name, status: 'failed', test_file: '' };
+    const h = harness([run], []);
+    expect(await runRewind(opts({ test: name }), h.deps)).toBe(3);
+    const text = h.out.join('\n');
+    expect(text).toMatch(/Abstained: .*names no test file/);
+    expect(text).not.toContain('#1021');
+    expect(text).not.toContain('not repo-relative');
+    expect(h.execCalls).toHaveLength(0);
   });
 });
 
