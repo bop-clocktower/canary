@@ -21,5 +21,21 @@
     "Two existing fixtures in ts/test/canary-cli-coverage.test.ts pinned the bug (ticket key, comment_posted=false, exit 0). They now model no linkage, the quiet outcome they described.",
     "Added a row to the #508 gate-conformance registry for the new exit 3; its stdout says 'Abstained' through the shared abstain() helper.",
     "CHANGELOG edit explicitly allowed by the lane prompt; expect a rebase against PRs #1537, #1538 and the #1404 lane."
+  ],
+  "fixes": [
+    {
+      "run": "fc1105",
+      "route": "bug",
+      "stages": ["debugging"],
+      "finding": "One credentials_missing flag covered both actions, so ticket-update exited 3 after a real Jira transition, over a rejected comment, or over a failed gh comment; the last line also ignored tr.succeeded.",
+      "reproducingTests": ["ts/test/ticket-update-exit-codes.test.ts"],
+      "assumptions": [
+        "Fork F7=A as answered by the human: reproduce the dry/live disagreement and fix it in this push if it comes from the same flag split. It reproduced (3 dry, 1 live) and it does: the dry-run guard existed because the single flag could not say whether a would-post comment could really post.",
+        "A dry run exits as the matching live run would when everything it can see goes right: one action able to run and the other without credentials is 1 in both.",
+        "#1552's five items stay out of scope."
+      ],
+      "closingKeyword": "Closes",
+      "baseSha": "bffba2d3504289e4b9f006bce8a446a8029abb85"
+    }
   ]
 }

@@ -1428,8 +1428,11 @@ function renderTicketUpdate(
  * target is the same shape and the real run would reject it.
  *
  * Missing credentials abstain (3): nothing was reached, so this is not a
- * verdict on the ticket. Failures outrank it, and so does a comment that did
- * land, because "nothing happened" would then be false.
+ * verdict on the ticket. Each action's credentials excuse only that action,
+ * since `--project` can give the two different ones. Failures outrank the
+ * abstention, and so does the other action having run (or, in a dry run, being
+ * able to), because "nothing happened" would then be false. So exit 3 always
+ * means Jira was contacted zero times.
  */
 function ticketUpdateExitCode(
   res: UpdateResult,
@@ -1439,10 +1442,14 @@ function ticketUpdateExitCode(
   const transitionFailed =
     tr.reason.startsWith(WARN) ||
     (tr.attempted && !tr.succeeded && tr.reason !== DRY_RUN_REASON);
-  const commentFailed = commentMissing(res, opts) && !res.credentials_missing;
+  const commentBlocked = res.comment_credentials_missing;
+  const commentFailed = commentMissing(res, opts) && !commentBlocked;
   if (transitionFailed || commentFailed) return 1;
-  if (!res.credentials_missing) return 0;
-  return !opts.dryRun && res.comment_posted ? 1 : EXIT_ABSTAINED;
+  if (!commentBlocked && !tr.credentials_missing) return 0;
+  // A dry run marks a comment it would post as posted, whatever the credentials.
+  const commentRan = res.comment_posted && !commentBlocked;
+  const transitionRan = tr.succeeded || tr.reason === DRY_RUN_REASON;
+  return commentRan || transitionRan ? 1 : EXIT_ABSTAINED;
 }
 
 /**

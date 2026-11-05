@@ -165,11 +165,13 @@ export class UpdateResult {
   dry_run: boolean;
   messages: string[];
   /**
-   * Either action resolved no Jira credentials, so it could not run (or, under
-   * a dry run, could not run for real). Separate from `comment_posted`, which
-   * cannot tell "never tried" from "Jira said no" (#1413).
+   * The comment resolved no Jira credentials, so it could not run (or, under a
+   * dry run, could not run for real). Separate from `comment_posted`, which
+   * cannot tell "never tried" from "Jira said no", and from the transition's
+   * own flag: `--project` can give the two actions different credentials, so
+   * one action's lack says nothing about the other (#1413).
    */
-  credentials_missing: boolean;
+  comment_credentials_missing: boolean;
 
   constructor(init: {
     ticket_key: string | null;
@@ -179,7 +181,7 @@ export class UpdateResult {
     transition: TransitionResult;
     dry_run: boolean;
     messages?: string[];
-    credentials_missing?: boolean;
+    comment_credentials_missing?: boolean;
   }) {
     this.ticket_key = init.ticket_key;
     this.project_key = init.project_key;
@@ -188,7 +190,8 @@ export class UpdateResult {
     this.transition = init.transition;
     this.dry_run = init.dry_run;
     this.messages = init.messages ?? [];
-    this.credentials_missing = init.credentials_missing ?? false;
+    this.comment_credentials_missing =
+      init.comment_credentials_missing ?? false;
   }
 }
 
@@ -364,15 +367,15 @@ export class TicketUpdater {
 
     // 4. Post comment.
     let commentPosted = false;
-    let credentialsMissing = false;
+    let commentCredentialsMissing = false;
     if (!transitionOnly) {
       // Determine surface: Jira for PROJ-NNN keys, GitHub for owner/repo#NNN.
       if (/^[A-Z][A-Z0-9]*-\d+$/.test(ticketKey!)) {
         // Asked up front, not read off a false return, so a dry run (which
         // posts nothing and always "succeeds") still learns the real run could
         // not post. Same project inference as postJiraComment.
-        credentialsMissing = this.jiraCredentialsMissing(ticketKey!);
-        if (credentialsMissing) messages.push(COMMENT_NO_CREDENTIALS);
+        commentCredentialsMissing = this.jiraCredentialsMissing(ticketKey!);
+        if (commentCredentialsMissing) messages.push(COMMENT_NO_CREDENTIALS);
         commentPosted = await this.postJiraComment(
           ticketKey!,
           commentBody,
@@ -417,7 +420,6 @@ export class TicketUpdater {
         summary.result,
         dryRun,
       );
-      credentialsMissing ||= transitionResult.credentials_missing;
       if (transitionResult.reason === DRY_RUN_REASON) {
         messages.push(
           `Would transition ${ticketKey}:\n` +
@@ -442,7 +444,7 @@ export class TicketUpdater {
       transition: transitionResult,
       dry_run: dryRun,
       messages,
-      credentials_missing: credentialsMissing,
+      comment_credentials_missing: commentCredentialsMissing,
     });
   }
 

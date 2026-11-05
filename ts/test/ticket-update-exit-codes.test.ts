@@ -227,6 +227,209 @@ describe('#1413 path 2: missing credentials abstain', () => {
   });
 });
 
+describe('#1413: credentials on one side only excuse that side', () => {
+  // `--project` can name a different project from the ticket's prefix, and the
+  // stored URL is per project, so the comment and the transition can resolve
+  // different credentials. Exit 3 says "verified zero items", which is only
+  // true when neither action got anywhere.
+  const USER_AND_TOKEN = { ATLASSIAN_USER: 'user', ATLASSIAN_TOKEN: 'token' };
+  const FLAGS = () => ['--project', 'OTHER', '--result', passReport];
+  const posts = (calls: string[], suffix: string) =>
+    calls.filter((c) => c.startsWith('POST ') && c.endsWith(suffix));
+
+  it('cell A: exits 1, not 3, after the transition really moved the ticket', async () => {
+    writeMapping('OTHER', 'https://other.example.test');
+    const { http, calls } = fakeJira();
+    const res = await run(FLAGS(), { http, env: USER_AND_TOKEN });
+    expect(posts(calls, '/transitions')).toHaveLength(1);
+    expect(res.stdout).toContain('Transitioned PROJ-1');
+    expect(res.stderr).toContain('Comment not posted to PROJ-1');
+    expect(res.stdout).not.toContain('Abstained');
+    expect(res.code).toBe(1);
+  });
+
+  it('cell B: exits 1, not 3, when Jira rejected the comment and only the transition lacks credentials', async () => {
+    writeMapping('PROJ', 'https://jira.example.test');
+    writeMapping('OTHER');
+    const { http, calls } = fakeJira({ commentOk: false });
+    const res = await run(FLAGS(), { http, env: USER_AND_TOKEN });
+    expect(posts(calls, '/comment')).toHaveLength(1);
+    expect(res.stderr).toContain('Comment not posted to PROJ-1');
+    expect(res.stdout).not.toContain('Abstained');
+    expect(res.code).toBe(1);
+  });
+
+  it('cell C: exits 1, not 3, when gh failed and only the transition lacks credentials', async () => {
+    const subprocess = (() => ({
+      returncode: 1,
+      stdout: '',
+      stderr: 'boom',
+    })) as unknown as SubprocessRun;
+    const res = await run(
+      ['--ticket', '#12', '--project', 'PROJ', '--result', passReport],
+      { subprocess, env: {} },
+    );
+    expect(res.stderr).toContain('Comment not posted to #12');
+    expect(res.stdout).not.toContain('Abstained');
+    expect(res.code).toBe(1);
+  });
+
+  // A dry run predicts the real run, so it must exit as the real run would.
+  it('a dry run of the comment-lands, no-transition-credentials cell exits 1 like the live run', async () => {
+    writeMapping('PROJ', 'https://jira.example.test');
+    writeMapping('OTHER');
+    const { http, calls } = fakeJira();
+    const res = await run([...FLAGS(), '--dry-run'], {
+      http,
+      env: USER_AND_TOKEN,
+    });
+    expect(calls).toEqual([]);
+    expect(res.stdout).toContain('Would post comment');
+    expect(res.stdout).not.toContain('Abstained');
+    expect(res.code).toBe(1);
+  });
+
+  it('a dry run of cell A exits 1 like the live run', async () => {
+    writeMapping('OTHER', 'https://other.example.test');
+    const { http, calls } = fakeJira();
+    const res = await run([...FLAGS(), '--dry-run'], {
+      http,
+      env: USER_AND_TOKEN,
+    });
+    expect(calls.every((c) => c.startsWith('GET '))).toBe(true);
+    expect(res.stdout).toContain('Would transition');
+    expect(res.stdout).not.toContain('Abstained');
+    expect(res.code).toBe(1);
+  });
+
+  it('a dry run of a GitHub comment with no transition credentials exits 1 like a live run whose comment lands', async () => {
+    const subprocess = (() => ({
+      returncode: 0,
+      stdout: '',
+      stderr: '',
+    })) as unknown as SubprocessRun;
+    const args = ['--ticket', '#12', '--project', 'PROJ'];
+    const live = await run([...args, '--result', passReport], {
+      subprocess,
+      env: {},
+    });
+    const dry = await run([...args, '--result', passReport, '--dry-run'], {
+      subprocess,
+      env: {},
+    });
+    expect(live.code).toBe(1);
+    expect(dry.code).toBe(1);
+  });
+
+  // Every combination of what each side can resolve and how Jira answers,
+  // against a contract stated independently of the implementation. The cells
+  // above are the ones that escaped; this is what stops the next one.
+  describe('the exit contract across every combination', () => {
+    const SECRET = { ATLASSIAN_USER: 'sekrit-u', ATLASSIAN_TOKEN: 'sekrit-t' };
+    const bools = [true, false];
+    const modes = [
+      { name: 'both', flags: [] as string[], comment: true, transition: true },
+      {
+        name: '--comment-only',
+        flags: ['--comment-only'],
+        comment: true,
+        transition: false,
+      },
+      {
+        name: '--transition-only',
+        flags: ['--transition-only'],
+        comment: false,
+        transition: true,
+      },
+    ];
+    const cells = modes.flatMap((mode) =>
+      [false, true].flatMap((dryRun) =>
+        bools.flatMap((commentUrl) =>
+          bools.flatMap((transitionUrl) =>
+            bools.flatMap((commentOk) =>
+              bools.map((transitionOk) => ({
+                mode,
+                dryRun,
+                commentUrl,
+                transitionUrl,
+                commentOk,
+                transitionOk,
+              })),
+            ),
+          ),
+        ),
+      ),
+    );
+    type Cell = (typeof cells)[number];
+
+    /** 1 if anything failed or some but not all could run, 3 if none could. */
+    function expectedExit(c: Cell): number {
+      const commentRuns = c.mode.comment && c.commentUrl;
+      const transitionRuns = c.mode.transition && c.transitionUrl;
+      const rejected =
+        !c.dryRun &&
+        ((commentRuns && !c.commentOk) || (transitionRuns && !c.transitionOk));
+      if (rejected) return 1;
+      const blocked =
+        (c.mode.comment && !c.commentUrl) ||
+        (c.mode.transition && !c.transitionUrl);
+      if (!blocked) return 0;
+      return commentRuns || transitionRuns ? 1 : 3;
+    }
+
+    it('exercises every exit code, so the sweep below is not vacuous', () => {
+      expect(cells).toHaveLength(96);
+      const codes = new Set(cells.map(expectedExit));
+      expect([...codes].sort()).toEqual([0, 1, 3]);
+    });
+
+    it.each(cells.map((c) => [describeCell(c), c] as const))(
+      '%s',
+      async (_name, c) => {
+        writeMapping(
+          'PROJ',
+          c.commentUrl ? 'https://p.example.test' : undefined,
+        );
+        writeMapping(
+          'OTHER',
+          c.transitionUrl ? 'https://o.example.test' : undefined,
+        );
+        const { http, calls } = fakeJira({
+          commentOk: c.commentOk,
+          transitionOk: c.transitionOk,
+        });
+        const res = await run(
+          [...FLAGS(), ...c.mode.flags, ...(c.dryRun ? ['--dry-run'] : [])],
+          { http, env: SECRET },
+        );
+        expect(res.code).toBe(expectedExit(c));
+        // The docblock's and the PR's claim: exit 3 reached Jira zero times.
+        if (res.code === 3) {
+          expect(calls).toEqual([]);
+          expect(res.stdout).toContain('Abstained');
+        } else {
+          expect(res.stdout).not.toContain('Abstained');
+        }
+        if (c.dryRun) {
+          expect(calls.every((call) => call.startsWith('GET '))).toBe(true);
+        }
+        // Messages name the env vars, never their values.
+        const printed = res.stdout + res.stderr;
+        expect(printed).not.toContain('sekrit');
+      },
+    );
+
+    function describeCell(c: Cell): string {
+      return [
+        c.mode.name,
+        c.dryRun ? 'dry' : 'live',
+        `comment ${c.commentUrl ? 'url' : 'no-url'}/${c.commentOk ? 'ok' : '500'}`,
+        `transition ${c.transitionUrl ? 'url' : 'no-url'}/${c.transitionOk ? 'ok' : '500'}`,
+      ].join(', ');
+    }
+  });
+});
+
 describe('#1413 paths 3 and 6: a dry run must not bless an impossible transition', () => {
   it('exits 1 and does not print "Would transition" for an unreachable target', async () => {
     const res = await run(['--dry-run', '--result', passReport], {
