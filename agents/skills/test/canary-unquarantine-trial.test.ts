@@ -27,7 +27,7 @@ import {
   playwrightCases,
   readCases,
 } from '../claude-code/canary-unquarantine/scripts/results.mjs';
-import { commentFailures } from '../claude-code/canary-unquarantine/scripts/settle.mjs';
+import { commentFailures } from '../claude-code/canary-unquarantine/scripts/notify.mjs';
 import { spawnRunner } from '../claude-code/canary-unquarantine/scripts/exec.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -114,7 +114,15 @@ function makeSuite() {
  */
 function harness(opts: { results?: object; runStatus?: string } = {}) {
   const calls: { cmd: string; args: string[]; input?: string }[] = [];
-  const state: { body?: string; branch?: string; origin?: string } = {};
+  const state: {
+    body?: string;
+    branch?: string;
+    origin?: string;
+    isCrossRepository?: boolean | null;
+    defaultBranch?: string;
+    repoName?: string;
+    headRefName?: string;
+  } = { defaultBranch: 'main', repoName: TRACKER.github_repo };
   const ok = (stdout: string): Result => ({
     status: 0,
     stdout,
@@ -145,7 +153,14 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
     }
     if (cmd !== 'gh')
       return { status: 127, stdout: '', stderr: 'not found', error: '' };
-    if (args[0] === 'repo') return ok(TRACKER.github_repo);
+    if (args[0] === 'repo') {
+      const name = args.includes('defaultBranchRef')
+        ? state.defaultBranch
+        : state.repoName;
+      return name
+        ? ok(name)
+        : { status: 1, stdout: '', stderr: 'HTTP 404', error: '' };
+    }
     if (args[0] === 'api') {
       const target = args.find((a) => a.startsWith('repos/'))!;
       const m = /^repos\/(.+)\/issues\/(\d+)(\/comments)?$/.exec(target);
@@ -173,14 +188,22 @@ function harness(opts: { results?: object; runStatus?: string } = {}) {
         'rev-parse',
         `refs/heads/${state.branch}`,
       );
+      const pr: Record<string, unknown> = {
+        body: state.body,
+        headRefName: state.headRefName ?? state.branch,
+        headRefOid: head,
+        url: 'https://github.com/acme/orders-suite/pull/77',
+        state: 'OPEN',
+        isCrossRepository:
+          state.isCrossRepository === undefined
+            ? false
+            : state.isCrossRepository,
+      };
+      // Like the real gh, only the fields asked for: a field the code forgot
+      // to request reads as absent here too.
+      const asked = args[args.indexOf('--json') + 1].split(',');
       return ok(
-        JSON.stringify({
-          body: state.body,
-          headRefName: state.branch,
-          headRefOid: head,
-          url: 'https://github.com/acme/orders-suite/pull/77',
-          state: 'OPEN',
-        }),
+        JSON.stringify(Object.fromEntries(asked.map((f) => [f, pr[f]]))),
       );
     }
     if (args[0] === 'run' && args[1] === 'list') {
@@ -491,11 +514,11 @@ describe('verdict', () => {
     expect(git(repo, 'status', '--porcelain')).toBe('');
   });
 
-  it('--apply tells a Jira blocker through the manifest it wrote at trial time', () => {
+  it('--apply lists a handed-off Jira blocker for a person, and leaves its row alone', () => {
     // EVENT's blocker is #506, whose comment files it as CORE-101 (Jira). The
-    // verdict only has the PR-body manifest, so the manifest must carry what
-    // the commenter needs: the key, its project and the site it linked to.
-    const { repo, h } = opened(
+    // ledger and the test source name only #506, so at verdict time nothing
+    // trusted vouches for CORE-101: no comment, no re-point, a note to post.
+    const { repo, origin, h } = opened(
       report({ card: 'expected', event: 'unexpected', v2: 'expected' }),
     );
     const manifest = readManifest(h.state.body!);
@@ -504,8 +527,7 @@ describe('verdict', () => {
       id: 'CORE-101',
       tracker: 'jira',
       key: 'CORE-101',
-      project: 'CORE',
-      base: 'https://acme.atlassian.net',
+      via: ['acme/orders-suite#506', 'CORE-101'],
     });
 
     const r = callMain(
@@ -518,15 +540,24 @@ describe('verdict', () => {
         '--artifact',
         'playwright-json',
         '--apply',
+        '--json',
       ],
       { run: h.run, env: JIRA_ENV },
     );
     expect(r.stderr).toBe('');
-    const post = h.calls.find(
-      (c) => c.cmd === 'curl' && c.args.includes('POST'),
+    expect(
+      h.calls.some((c) => c.cmd === 'curl' && c.args.includes('POST')),
+    ).toBe(false);
+    const note = JSON.parse(r.stdout).comments[0];
+    expect(note).toMatchObject({ commented: false, target: 'CORE-101' });
+    expect(note.why).toMatch(/hand-off/);
+    expect(note.body).toMatch(/still fails/);
+    expect(note.body).not.toMatch(/against this ticket/);
+    const ledger = JSON.parse(
+      git(origin, 'show', 'canary/trial:.canary/quarantine.json'),
     );
-    expect(post?.args.at(-1)).toBe(
-      'https://acme.atlassian.net/rest/api/2/issue/CORE-101/comment',
+    expect(ledger.entries.find((e: any) => e.test === EVENT).issue ?? '').toBe(
+      '',
     );
   });
 
@@ -641,6 +672,7 @@ describe('verdict', () => {
         body: 'hello',
         headRefName: 'x',
         headRefOid: 'y',
+        isCrossRepository: false,
       }),
       stderr: '',
       error: '',
@@ -658,6 +690,32 @@ describe('commentFailures', () => {
     outcome: 'fail',
     cases: 1,
     blockers,
+    trustedTarget: blockers.at(-1),
+  });
+
+  it('comments on nothing the trusted check did not resolve, whatever the blocker says', () => {
+    const calls: unknown[] = [];
+    const [note] = commentFailures({
+      run: (...a: unknown[]) => {
+        calls.push(a);
+        return { status: 0 };
+      },
+      repo: '.',
+      judged: [
+        {
+          ...fail([{ id: 'a/b#3', tracker: 'github' }]),
+          trustedTarget: undefined,
+        },
+      ],
+      prUrl: 'u',
+      jiraComment: (ref: unknown) => {
+        calls.push(ref);
+        return { ok: true, why: '' };
+      },
+    });
+    expect(calls).toEqual([]);
+    expect(note).toMatchObject({ commented: false, target: 'a/b#3' });
+    expect(note.body).toMatch(/still fails/);
   });
 
   it('comments on Jira through the commenter, and lists it for a person when it cannot', () => {
@@ -708,6 +766,44 @@ describe('commentFailures', () => {
       },
     });
     expect(seen[0]).toMatchObject({ key: 'OTHER-9', project: 'OTHER' });
+  });
+
+  describe('the note holds the title and file as plain, bounded text', () => {
+    const noteFor = (test: string, file = 'f') =>
+      commentFailures({
+        run: () => ({ status: 1, stderr: 'no' }),
+        repo: '.',
+        judged: [
+          {
+            ...fail([{ id: 'CORE-1', tracker: 'jira', key: 'CORE-1' }]),
+            test,
+            file,
+          },
+        ],
+        prUrl: 'u',
+      })[0].body as string;
+
+    it('caps a long title and a long file path', () => {
+      const body = noteFor('T'.repeat(70000), `${'d/'.repeat(30000)}x.spec.js`);
+      expect(body.length).toBeLessThan(1000);
+      expect(body).toContain(`\`${'T'.repeat(200)}…\``);
+    });
+
+    it('keeps a title that fits exactly as it is', () => {
+      expect(noteFor('adds an item (#12)')).toContain('`adds an item (#12)`');
+      expect(noteFor('T'.repeat(200))).toContain(`\`${'T'.repeat(200)}\``);
+    });
+
+    it('cannot leave the code span or start a new line', () => {
+      // Line separator, right-to-left override, zero-width space.
+      const [ls, rlo, zwsp] = [0x2028, 0x202e, 0x200b].map((c) =>
+        String.fromCodePoint(c),
+      );
+      const body = noteFor(`a\` b\r\nc${ls}d${rlo}e${zwsp}f`, 'g`h\ni');
+      expect(body).toContain("`a' b c def` (`g'h i`)");
+      for (const banned of ['\r', '\n', ls, rlo, zwsp])
+        expect(body).not.toContain(banned);
+    });
   });
 
   it('a failing row with no blocker says so', () => {
@@ -907,6 +1003,1165 @@ describe('results', () => {
 
 // --- the PR body is untrusted: settle stays inside the trial worktree ---------
 
+/**
+ * Commit `edit` on the trial branch only: from a detached checkout of the
+ * pushed branch, with the operator's own main put back afterwards.
+ */
+function onTrialBranch(repo: string, edit: () => void) {
+  git(repo, 'fetch', '-q', 'origin', 'refs/heads/canary/trial');
+  git(repo, 'checkout', '-q', 'FETCH_HEAD');
+  edit();
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '-m', 'on the trial branch');
+  git(repo, 'push', '-q', 'origin', 'HEAD:refs/heads/canary/trial');
+  git(repo, 'checkout', '-q', 'main');
+}
+
+describe('verdict --apply acts only on what the default branch vouches for', () => {
+  type Outcomes = Parameters<typeof report>[0];
+  type Suite = ReturnType<typeof makeSuite>;
+  const ALL_PASS = { card: 'expected', event: 'expected', v2: 'expected' };
+  const CARD_FAILS = { ...ALL_PASS, card: 'unexpected' };
+  const EVENT_FAILS = { ...ALL_PASS, event: 'unexpected' };
+  const LEDGER = '.canary/quarantine.json';
+  const THIS_REPO = 'acme/orders-suite';
+
+  /** Commit a ledger change on main and push it: what the default branch says. */
+  function onMain(repo: string, edit: (entries: any[]) => any[]) {
+    const file = path.join(repo, LEDGER);
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+    doc.entries = edit(doc.entries);
+    fs.writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'ledger');
+    git(repo, 'push', '-q', 'origin', 'main');
+  }
+  const rowNamed =
+    (test: string, issue: string) =>
+    (entries: any[]): any[] =>
+      entries.map((e) => (e.test === test ? { ...e, issue } : e));
+
+  /** Open a trial, let `change` edit its manifest as an editor could, apply. */
+  function settle(
+    outcomes: Outcomes,
+    {
+      change = () => {},
+      before = () => {},
+      after = () => {},
+    }: {
+      change?: (m: any) => void;
+      before?: (s: Suite) => void;
+      after?: (s: Suite, h: ReturnType<typeof harness>) => void;
+    } = {},
+  ) {
+    const suite = makeSuite();
+    before(suite);
+    const h = harness({ results: report(outcomes) });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    const manifest = readManifest(h.state.body!);
+    change(manifest);
+    h.state.body = `edited\n\n${embedManifest(manifest)}\n`;
+    after(suite, h);
+    const head = git(suite.origin, 'rev-parse', 'canary/trial');
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        suite.repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+        '--json',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    const told = {
+      github: h.calls.filter((c) => c.args[0] === 'issue'),
+      jira: h.calls.filter((c) => c.cmd === 'curl' && c.args.includes('POST')),
+    };
+    return { ...suite, h, r, head, told };
+  }
+  type Settled = ReturnType<typeof settle>;
+
+  const leafOf = (m: any, test: string) =>
+    m.lifts.find((l: any) => l.test === test).blockers.at(-1);
+  const liftOf = (m: any, test: string) =>
+    m.lifts.find((l: any) => l.test === test);
+  const trialLedger = (t: Settled) =>
+    JSON.parse(git(t.origin, 'show', `canary/trial:${LEDGER}`)).entries;
+  const rowOf = (t: Settled, test: string) =>
+    trialLedger(t).find((e: any) => e.test === test);
+
+  function expectRefused(t: Settled, why: RegExp) {
+    expect(t.r.code).not.toBe(0);
+    expect(t.r.stderr).toMatch(why);
+    expect(git(t.origin, 'rev-parse', 'canary/trial')).toBe(t.head);
+    expect(t.told.github).toEqual([]);
+    expect(t.told.jira).toEqual([]);
+  }
+
+  /** Settled, but the note went to a person and the ticket heard nothing. */
+  function expectListed(t: Settled, target: string) {
+    expect(t.r.stderr).toBe('');
+    expect(t.r.code).toBe(0);
+    expect(t.told.github).toEqual([]);
+    expect(t.told.jira).toEqual([]);
+    const [note] = JSON.parse(t.r.stdout).comments;
+    expect(note).toMatchObject({ commented: false, target });
+    expect(note.why).toMatch(/hand-off/);
+    expect(git(t.origin, 'rev-parse', 'canary/trial')).not.toBe(t.head);
+  }
+
+  describe('a blocker the trusted row names is told', () => {
+    it('on GitHub, from the trusted ref, whatever URL the manifest carries', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          leafOf(m, CARD).url = 'https://example.com/elsewhere';
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.told.github).toHaveLength(1);
+      expect(t.told.github[0].args.slice(0, 3)).toEqual([
+        'issue',
+        'comment',
+        '505',
+      ]);
+      expect(t.told.github[0].args).toContain(THIS_REPO);
+      expect(rowOf(t, CARD).issue).toBe(
+        `https://github.com/${THIS_REPO}/issues/505`,
+      );
+    });
+
+    it('on GitHub when the manifest spells the id bare or in another case', () => {
+      for (const id of ['#505', 'ACME/orders-suite#505']) {
+        const t = settle(CARD_FAILS, {
+          change: (m) => {
+            leafOf(m, CARD).id = id;
+          },
+        });
+        expect(t.r.stderr).toBe('');
+        expect(t.told.github[0].args).toContain(THIS_REPO);
+      }
+    });
+
+    it('on Jira, when the row itself names the key', () => {
+      const url = 'https://acme.atlassian.net/browse/CORE-101';
+      const t = settle(EVENT_FAILS, {
+        before: (s) => onMain(s.repo, rowNamed(EVENT, url)),
+        change: (m) => {
+          leafOf(m, EVENT).url = 'https://example.com/elsewhere';
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.told.jira).toHaveLength(1);
+      expect(t.told.jira[0].args.at(-1)).toBe(
+        'https://acme.atlassian.net/rest/api/2/issue/CORE-101/comment',
+      );
+      expect(rowOf(t, EVENT).issue).toBe(url);
+    });
+  });
+
+  describe('a blocker it does not name, claiming no hand-off, refuses the whole settle', () => {
+    it.each([
+      ['no chain', undefined],
+      ['a one-entry chain', ['someone/else#9']],
+      ['a chain not ending at the blocker', [`${THIS_REPO}#505`, '#1']],
+      ['a chain not starting at a named ticket', ['#1', 'someone/else#9']],
+      ['a chain that is not a list', 'someone/else#9'],
+    ])('GitHub, %s', (_n, via) => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), { id: 'someone/else#9', via });
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it('Jira, naming another ticket in an allowed project', () => {
+      const t = settle(EVENT_FAILS, {
+        before: (s) => onMain(s.repo, rowNamed(EVENT, 'CORE-101')),
+        change: (m) => {
+          Object.assign(leafOf(m, EVENT), {
+            id: 'CORE-999',
+            key: 'CORE-999',
+            via: ['CORE-999'],
+          });
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it('even when only the passing lifts would otherwise settle', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), { id: 'someone/else#9', via: [] });
+        },
+      });
+      expect(rowOf(t, EVENT)).toBeDefined();
+      expectRefused(t, /not named by its ledger row/);
+    });
+  });
+
+  describe('a claimed hand-off is listed for a person, forged or not', () => {
+    it('GitHub: the chain starts at a named ticket, and the target hears nothing', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), {
+            id: 'someone/else#9',
+            url: 'https://example.com/elsewhere',
+            via: [`${THIS_REPO}#505`, 'someone/else#9'],
+          });
+        },
+      });
+      expectListed(t, 'someone/else#9');
+      expect(rowOf(t, CARD).issue ?? '').toBe('');
+    });
+
+    it('Jira: the same, with another ticket in an allowed project', () => {
+      const t = settle(EVENT_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, EVENT), {
+            id: 'CORE-999',
+            key: 'CORE-999',
+            via: [`${THIS_REPO}#506`, 'CORE-999'],
+          });
+        },
+      });
+      expectListed(t, 'CORE-999');
+      expect(rowOf(t, EVENT).issue ?? '').toBe('');
+    });
+
+    it('a manifest cannot declare its own verified target', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          const forged = { id: 'someone/else#9', tracker: 'github' };
+          Object.assign(leafOf(m, CARD), {
+            ...forged,
+            via: [`${THIS_REPO}#505`, forged.id],
+          });
+          liftOf(m, CARD).trustedTarget = forged;
+        },
+      });
+      expectListed(t, 'someone/else#9');
+    });
+
+    it('the listed target is shown as plain, bounded text', () => {
+      const id = `someone/else#9\n${'x'.repeat(500)}`;
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), {
+            id,
+            via: [`${THIS_REPO}#505`, id],
+          });
+        },
+      });
+      const [note] = JSON.parse(t.r.stdout).comments;
+      expect(note.target).not.toContain('\n');
+      expect(note.target.length).toBeLessThanOrEqual(201);
+      expect(t.told.github).toEqual([]);
+    });
+  });
+
+  describe('the trust source', () => {
+    it('a manifest ledger other than the operator ledger is refused, even inside the tree', () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          m.ledger = REF_FILE;
+        },
+      });
+      expectRefused(t, /not the ledger this verdict was told to trust/);
+    });
+
+    it('a ticket only the trial branch ledger names is not trusted', () => {
+      // A row the default branch does not name it on, pushed to the head only.
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          Object.assign(leafOf(m, CARD), { id: 'someone/else#9', via: [] });
+        },
+        after: (s) => {
+          git(s.repo, 'fetch', '-q', 'origin', 'canary/trial');
+          git(s.repo, 'checkout', '-q', 'FETCH_HEAD');
+          const file = path.join(s.repo, LEDGER);
+          const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+          doc.entries = rowNamed(CARD, 'someone/else#9')(doc.entries);
+          fs.writeFileSync(file, JSON.stringify(doc));
+          git(s.repo, 'commit', '-qam', 'head only');
+          git(s.repo, 'push', '-q', 'origin', 'HEAD:refs/heads/canary/trial');
+          git(s.repo, 'checkout', '-q', 'main');
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it('a row the default branch does not have is refused (a trial on another branch)', () => {
+      const t = settle(CARD_FAILS, {
+        after: (s) =>
+          onMain(s.repo, (entries) => entries.filter((e) => e.test !== CARD)),
+      });
+      expectRefused(t, /not on the default branch/);
+    });
+
+    it('a default branch gh cannot name is refused', () => {
+      const t = settle(ALL_PASS, {
+        after: (_s, h) => {
+          h.state.defaultBranch = '';
+        },
+      });
+      expectRefused(t, /default branch/);
+    });
+  });
+
+  describe('the default branch is read from the remote branch, and nowhere else', () => {
+    const FORGED = 'someone/else#9';
+    const forgedCard = (m: any) =>
+      Object.assign(leafOf(m, CARD), { id: FORGED, via: [] });
+    const forgedEvent = (m: any) =>
+      Object.assign(leafOf(m, EVENT), {
+        id: 'CORE-999',
+        key: 'CORE-999',
+        via: [],
+      });
+
+    /** A commit naming `issue` on `test`'s row, on no branch; returns its id. */
+    function looseCommit(repo: string, test: string, issue: string) {
+      git(repo, 'checkout', '-q', '--detach');
+      const file = path.join(repo, LEDGER);
+      const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+      doc.entries = rowNamed(test, issue)(doc.entries);
+      fs.writeFileSync(file, JSON.stringify(doc));
+      git(repo, 'commit', '-qam', 'loose');
+      const sha = git(repo, 'rev-parse', 'HEAD');
+      git(repo, 'checkout', '-q', 'main');
+      return sha;
+    }
+
+    it('a tag named after the default branch does not replace it (GitHub)', () => {
+      const t = settle(CARD_FAILS, {
+        change: forgedCard,
+        after: (s) => {
+          const sha = looseCommit(s.repo, CARD, FORGED);
+          git(s.repo, 'push', '-q', 'origin', `${sha}:refs/tags/main`);
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it('a tag named after the default branch does not replace it (Jira)', () => {
+      const t = settle(EVENT_FAILS, {
+        change: forgedEvent,
+        after: (s) => {
+          const sha = looseCommit(s.repo, EVENT, 'CORE-999');
+          git(s.repo, 'push', '-q', 'origin', `${sha}:refs/tags/main`);
+        },
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    it("the operator's local HEAD is not the trust source", () => {
+      const t = settle(CARD_FAILS, {
+        change: forgedCard,
+        after: (s) => onLocalMainOnly(s.repo, rowNamed(CARD, FORGED)),
+      });
+      expectRefused(t, /not named by its ledger row/);
+    });
+
+    /** Commit a ledger change on the operator's main, and do not push it. */
+    function onLocalMainOnly(repo: string, edit: (e: any[]) => any[]) {
+      const file = path.join(repo, LEDGER);
+      const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+      doc.entries = edit(doc.entries);
+      fs.writeFileSync(file, JSON.stringify(doc));
+      git(repo, 'commit', '-qam', 'local only');
+    }
+
+    it('a fetch of the default branch that fails refuses the settle', () => {
+      const t = settle(ALL_PASS, {
+        after: (_s, h) => {
+          const real = h.run;
+          h.run = (cmd, args, o) =>
+            cmd === 'git' &&
+            args.includes('fetch') &&
+            args.some((a) => a === 'main' || a.includes('refs/heads/main'))
+              ? { status: 1, stdout: '', stderr: 'unreachable', error: '' }
+              : real(cmd, args, o);
+        },
+      });
+      expectRefused(t, /git fetch failed/);
+    });
+
+    it('a default branch with another name is the one read', () => {
+      const t = settle(CARD_FAILS, {
+        after: (s, h) => {
+          git(s.origin, 'branch', '-m', 'main', 'trunk');
+          h.state.defaultBranch = 'trunk';
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.r.code).toBe(0);
+      expect(t.told.github).toHaveLength(1);
+    });
+
+    it('a repository gh cannot name is refused', () => {
+      const t = settle(CARD_FAILS, {
+        after: (_s, h) => {
+          h.state.repoName = '';
+        },
+      });
+      expectRefused(t, /which repository/);
+    });
+
+    it('a ticket only a lower-priority source names is refused', () => {
+      // V2's `issue` names #505, so its marker comment's #502 is not its ticket.
+      const t = settle(
+        { ...ALL_PASS, v2: 'unexpected' },
+        {
+          change: (m) => {
+            Object.assign(leafOf(m, V2), { id: `${THIS_REPO}#502`, via: [] });
+          },
+        },
+      );
+      expectRefused(t, /not named by its ledger row/);
+    });
+  });
+
+  describe('the head', () => {
+    it('a head that is the default branch is refused, and the branch does not move', () => {
+      const t = settle(ALL_PASS, {
+        after: (_s, h) => {
+          h.state.headRefName = 'main';
+        },
+      });
+      expectRefused(t, /is the default branch/);
+      expect(git(t.origin, 'log', '--format=%s', 'refs/heads/main')).toBe(
+        'suite',
+      );
+    });
+
+    it('a tag named after the head does not replace it', () => {
+      const t = settle(ALL_PASS, {
+        after: (s) => {
+          git(s.origin, 'tag', 'canary/trial', 'refs/heads/main');
+        },
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.r.code).toBe(0);
+      expect(
+        git(t.origin, 'log', '-1', '--format=%s', 'refs/heads/canary/trial'),
+      ).toMatch(/release 3 trial-passed/);
+    });
+
+    it('a head name cannot act as a git option', () => {
+      const dir = mkTmp();
+      const marker = path.join(dir, 'ran');
+      const t = settle(ALL_PASS, {
+        after: (_s, h) => {
+          h.state.headRefName = `--upload-pack=touch ${marker}`;
+        },
+      });
+      expect(t.r.code).not.toBe(0);
+      expect(fs.existsSync(marker)).toBe(false);
+    });
+  });
+
+  describe.skipIf(process.platform === 'win32')(
+    'nothing from the trial branch runs on the operator machine',
+    () => {
+      const HOOKS = [
+        'pre-commit',
+        'prepare-commit-msg',
+        'commit-msg',
+        'post-commit',
+        'post-checkout',
+        'pre-push',
+        'reference-transaction',
+        'post-index-change',
+      ];
+      const PLANTED = 'planted.sh';
+      const script = (marker: string) => `#!/bin/sh\necho ran >> "${marker}"\n`;
+      const writeExec = (file: string, text: string) => {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, text);
+        fs.chmodSync(file, 0o755);
+      };
+      const plantHooks = (dir: string, text: string) =>
+        HOOKS.forEach((h) => writeExec(path.join(dir, h), text));
+      /** A program at the trial branch's root, and optional other tracked files. */
+      const plantOnTrial = (
+        repo: string,
+        marker: string,
+        more: () => void = () => {},
+      ) =>
+        onTrialBranch(repo, () => {
+          writeExec(path.join(repo, PLANTED), script(marker));
+          more();
+        });
+      const setConfig = (repo: string, cfg: Record<string, string>) =>
+        Object.entries(cfg).forEach(([k, v]) => git(repo, 'config', k, v));
+      const attributes = (repo: string, line: string) =>
+        fs.writeFileSync(path.join(repo, '.gitattributes'), `${line}\n`);
+
+      /** Settled for real, and nothing recorded that it ran. */
+      function expectSettledUnseen(t: Settled, marker: string) {
+        expect(fs.existsSync(marker)).toBe(false);
+        expect(t.r.stderr).toBe('');
+        expect(t.r.code).toBe(0);
+        expect(git(t.origin, 'rev-parse', 'refs/heads/canary/trial')).not.toBe(
+          t.head,
+        );
+      }
+
+      /** Each case gets the temp marker, then arranges its plant and config. */
+      const cases: [string, (s: Suite, marker: string) => void][] = [
+        [
+          'a relative core.hooksPath with hooks on the trial branch',
+          (s, m) => {
+            plantOnTrial(s.repo, m, () =>
+              plantHooks(path.join(s.repo, '.hooks'), script(m)),
+            );
+            setConfig(s.repo, { 'core.hooksPath': '.hooks' });
+          },
+        ],
+        [
+          'an absolute core.hooksPath',
+          (s, m) => {
+            const dir = mkTmp();
+            plantHooks(dir, script(m));
+            setConfig(s.repo, { 'core.hooksPath': dir });
+          },
+        ],
+        [
+          'no core.hooksPath, with hooks in .git/hooks',
+          (s, m) => plantHooks(path.join(s.repo, '.git/hooks'), script(m)),
+        ],
+        [
+          'an installed hook that runs a script from the worktree',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            plantHooks(
+              path.join(s.repo, '.git/hooks'),
+              `#!/bin/sh\n[ -x ./${PLANTED} ] && ./${PLANTED} < /dev/null\nexit 0\n`,
+            );
+          },
+        ],
+        [
+          'hooks set through includeIf, only for the worktree',
+          (s, m) => {
+            const dir = mkTmp();
+            plantHooks(dir, script(m));
+            const inc = path.join(mkTmp(), 'inc.gitconfig');
+            fs.writeFileSync(inc, `[core]\n\thooksPath = ${dir}\n`);
+            setConfig(s.repo, { 'includeIf.gitdir:**/worktrees/**.path': inc });
+          },
+        ],
+        ...(['smudge', 'clean', 'process'] as const).map(
+          (key): [string, (s: Suite, marker: string) => void] => [
+            `a relative filter.*.${key}`,
+            (s, m) => {
+              plantOnTrial(s.repo, m, () => attributes(s.repo, '* filter=fx'));
+              setConfig(s.repo, {
+                [`filter.fx.${key}`]: `./${PLANTED}`,
+                'filter.fx.required': 'true',
+              });
+            },
+          ],
+        ),
+        [
+          'a relative git-lfs style filter',
+          (s, m) => {
+            plantOnTrial(s.repo, m, () => attributes(s.repo, '* filter=lfs'));
+            setConfig(s.repo, {
+              'filter.lfs.process': `./${PLANTED} filter-process`,
+              'filter.lfs.required': 'true',
+            });
+          },
+        ],
+        [
+          'a relative core.fsmonitor',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            setConfig(s.repo, { 'core.fsmonitor': `./${PLANTED}` });
+          },
+        ],
+        [
+          'a relative gpg.program with commit.gpgsign',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            setConfig(s.repo, {
+              'commit.gpgsign': 'true',
+              'gpg.program': `./${PLANTED}`,
+            });
+          },
+        ],
+        [
+          'a relative gpg.ssh.program with commit.gpgsign',
+          (s, m) => {
+            plantOnTrial(s.repo, m);
+            setConfig(s.repo, {
+              'commit.gpgsign': 'true',
+              'gpg.format': 'ssh',
+              'user.signingkey': 'key::ssh-ed25519 AAAA',
+              'gpg.ssh.program': `./${PLANTED}`,
+            });
+          },
+        ],
+      ];
+
+      it.each(cases)('%s', (_n, arrange) => {
+        const marker = path.join(mkTmp(), 'ran');
+        const t = settle(ALL_PASS, { after: (s) => arrange(s, marker) });
+        expectSettledUnseen(t, marker);
+      });
+
+      it('a filter with no required key is still switched off', () => {
+        const marker = path.join(mkTmp(), 'ran');
+        const t = settle(ALL_PASS, {
+          after: (s) => {
+            plantOnTrial(s.repo, marker, () =>
+              attributes(s.repo, '* filter=fx'),
+            );
+            setConfig(s.repo, { 'filter.fx.smudge': `./${PLANTED}` });
+          },
+        });
+        expectSettledUnseen(t, marker);
+      });
+
+      it.each(['filter.a=b.smudge', 'hook.a=b.event'])(
+        'a %s name that -c cannot express is refused',
+        (key) => {
+          const t = settle(ALL_PASS, {
+            after: (s) => setConfig(s.repo, { [key]: 'x' }),
+          });
+          expectRefused(t, /cannot be switched off/);
+        },
+      );
+
+      describe('config-defined hooks', () => {
+        const EVENTS = ['pre-commit', 'post-checkout', 'reference-transaction'];
+        /** Git before config-defined hooks ignores them: nothing to prove there. */
+        const firesHere = (() => {
+          const dir = mkTmp();
+          const marker = path.join(dir, 'fired');
+          const repo = path.join(dir, 'r');
+          fs.mkdirSync(repo);
+          const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null' };
+          const g = (...a: string[]) =>
+            spawnSync(
+              'git',
+              ['-C', repo, '-c', 'user.name=a', '-c', 'user.email=a@b', ...a],
+              { env },
+            );
+          g('init', '-q');
+          g('config', 'hook.ctl.event', 'pre-commit');
+          g('config', 'hook.ctl.command', `touch "${marker}"`);
+          g('commit', '-q', '--allow-empty', '-m', 'x');
+          return fs.existsSync(marker);
+        })();
+        const hookIn = (file: string[], marker: string) => {
+          const set = (...a: string[]) => {
+            const r = spawnSync('git', ['config', ...file, ...a], {
+              encoding: 'utf8',
+            });
+            if (r.status !== 0) throw new Error(r.stderr);
+          };
+          for (const e of EVENTS) set('--add', 'hook.planted.event', e);
+          set('hook.planted.command', `pwd >> "${marker}"`);
+        };
+
+        // Runs on every git: the setting is passed whether or not git honours it.
+        it('every git call switches a configured hook off by name', () => {
+          const t = settle(ALL_PASS, {
+            after: (s) =>
+              hookIn(['--file', path.join(s.repo, '.git/config')], '/dev/null'),
+          });
+          expect(t.r.stderr).toBe('');
+          const push = t.h.calls.filter((c) => c.args.includes('push')).at(-1)!;
+          expect(push.args).toContain('hook.planted.enabled=false');
+        });
+
+        it.skipIf(!firesHere)(
+          'a repository config hook does not run (needs a git with config-defined hooks; skipped on older git, which ignores them)',
+          () => {
+            const marker = path.join(mkTmp(), 'ran');
+            const t = settle(ALL_PASS, {
+              after: (s) =>
+                hookIn(['--file', path.join(s.repo, '.git/config')], marker),
+            });
+            expectSettledUnseen(t, marker);
+          },
+        );
+
+        it.skipIf(!firesHere)(
+          'a global config hook does not run (needs a git with config-defined hooks; skipped on older git, which ignores them)',
+          () => {
+            const marker = path.join(mkTmp(), 'ran');
+            const global = path.join(mkTmp(), 'global.gitconfig');
+            fs.writeFileSync(global, '');
+            const t = settle(ALL_PASS, {
+              after: () => {
+                hookIn(['--file', global], marker);
+                vi.stubEnv('GIT_CONFIG_GLOBAL', global);
+              },
+            });
+            // A local origin's receive-pack gets a clean config environment, so a
+            // global hook fires there, server side; a real remote has no such step.
+            const where = fs.existsSync(marker)
+              ? fs.readFileSync(marker, 'utf8').trim().split('\n')
+              : [];
+            expect(where.filter((d) => !d.endsWith('origin.git'))).toEqual([]);
+            expect(t.r.stderr).toBe('');
+            expect(t.r.code).toBe(0);
+          },
+        );
+      });
+
+      it.each([
+        ['remote.origin.promisor', 'true'],
+        ['extensions.partialClone', 'origin'],
+      ])(
+        'a partial clone (%s) is refused before anything is written',
+        (k, v) => {
+          const t = settle(ALL_PASS, {
+            after: (s) => setConfig(s.repo, { [k]: v }),
+          });
+          expectRefused(t, /partial clone/);
+          expect(t.h.calls.some((c) => c.args.includes('fetch'))).toBe(false);
+        },
+      );
+
+      it('remote.origin.promisor=false is not a partial clone', () => {
+        const t = settle(ALL_PASS, {
+          after: (s) =>
+            setConfig(s.repo, { 'remote.origin.promisor': 'false' }),
+        });
+        expect(t.r.stderr).toBe('');
+        expect(t.r.code).toBe(0);
+      });
+
+      it('the push runs from the operator repository, not the trial worktree', () => {
+        // Stands in for core.sshCommand and credential.helper, which a local
+        // origin never calls: a relative program resolves from where git runs.
+        const marker = path.join(mkTmp(), 'ran');
+        const t = settle(ALL_PASS, {
+          after: (s) => {
+            plantOnTrial(s.repo, marker);
+            setConfig(s.repo, { 'remote.origin.receivepack': `./${PLANTED}` });
+          },
+        });
+        expect(fs.existsSync(marker)).toBe(false);
+        expect(t.r.code).not.toBe(0); // no such program in the operator's tree
+        expect(t.r.stderr).toMatch(/git push failed/);
+      });
+
+      it('auth settings are left alone on the push', () => {
+        const t = settle(ALL_PASS);
+        const push = t.h.calls.filter((c) => c.args.includes('push')).at(-1)!;
+        expect(push.args.join(' ')).not.toMatch(
+          /core\.sshCommand|credential\.helper|core\.askPass/,
+        );
+        expect(push.args[push.args.indexOf('-C') + 1]).toBe(t.repo);
+      });
+
+      it('submodule.recurse does not populate a submodule the branch names', () => {
+        const sub = mkTmp();
+        git(sub, 'init', '-q', '-b', 'main');
+        git(sub, 'commit', '-q', '--allow-empty', '-m', 'sub');
+        const sha = git(sub, 'rev-parse', 'HEAD');
+        const t = settle(ALL_PASS, {
+          after: (s) => {
+            onTrialBranch(s.repo, () => {
+              fs.writeFileSync(
+                path.join(s.repo, '.gitmodules'),
+                `[submodule "sub"]\n\tpath = sub\n\turl = ${sub}\n`,
+              );
+              git(
+                s.repo,
+                'update-index',
+                '--add',
+                '--cacheinfo',
+                `160000,${sha},sub`,
+              );
+            });
+            setConfig(s.repo, { 'submodule.recurse': 'true' });
+          },
+        });
+        expect(t.r.stderr).toBe('');
+        expect(t.r.code).toBe(0);
+      });
+
+      it('with filters off, a filtered file goes back byte for byte', () => {
+        // A required filter that would change the bytes if it ran: the rebuilt
+        // file must still be the stored blob, as a pointer file would need.
+        const upper = path.join(mkTmp(), 'upper.sh');
+        writeExec(upper, '#!/bin/sh\ntr a-z A-Z\n');
+        let blob = '';
+        const t = settle(
+          { card: 'flaky', event: 'flaky', v2: 'flaky' },
+          {
+            before: (s) => {
+              attributes(s.repo, `${REF_FILE} filter=lfs`);
+              git(s.repo, 'add', '-A');
+              git(s.repo, 'commit', '-q', '-m', 'attributes');
+              git(s.repo, 'push', '-q', 'origin', 'main');
+            },
+            after: (s) => {
+              blob = git(s.origin, 'show', `refs/heads/main:${REF_FILE}`);
+              setConfig(s.repo, {
+                'filter.lfs.clean': upper,
+                'filter.lfs.smudge': upper,
+                'filter.lfs.required': 'true',
+              });
+            },
+          },
+        );
+        expect(t.r.stderr).toBe('');
+        const after = git(
+          t.origin,
+          'show',
+          `refs/heads/canary/trial:${REF_FILE}`,
+        );
+        expect(after).toBe(blob);
+      });
+
+      describe("this repository's own hook setup", () => {
+        const HOOK = fs.readFileSync(
+          path.join(HERE, '..', '..', '..', '.githooks', 'pre-commit'),
+          'utf8',
+        );
+        const INPUTS = ['docs/roadmap.md', '.harness/security/timeline.json'];
+
+        /** Planted scripts and changed inputs, for the trial branch. */
+        function plantOwn(repo: string, marker: string) {
+          const planted = `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(marker)}, 'ran');\n`;
+          fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
+          for (const name of [
+            'roadmap_comment_guard.mjs',
+            'security_ledger.mjs',
+          ])
+            fs.writeFileSync(path.join(repo, 'scripts', name), planted);
+          for (const file of INPUTS)
+            fs.writeFileSync(path.join(repo, file), 'on the trial\n');
+        }
+
+        /** The real hook on main; on the trial branch, changed inputs and planted scripts. */
+        function ownHook(hooksPath: (repo: string) => string, marker: string) {
+          const forge = (m: any) =>
+            m.lifts.push(
+              ...INPUTS.map((file) => ({
+                ...structuredClone(m.lifts[0]),
+                test: `never in the run ${file}`,
+                file,
+              })),
+            );
+          return settle(ALL_PASS, {
+            change: forge,
+            before: (s) => {
+              writeExec(path.join(s.repo, '.githooks/pre-commit'), HOOK);
+              for (const f of INPUTS) {
+                fs.mkdirSync(path.dirname(path.join(s.repo, f)), {
+                  recursive: true,
+                });
+                fs.writeFileSync(path.join(s.repo, f), 'on main\n');
+              }
+              git(s.repo, 'add', '-A');
+              git(s.repo, 'commit', '-q', '-m', 'own hook');
+              git(s.repo, 'push', '-q', 'origin', 'main');
+            },
+            after: (s) => {
+              onTrialBranch(s.repo, () => plantOwn(s.repo, marker));
+              setConfig(s.repo, { 'core.hooksPath': hooksPath(s.repo) });
+            },
+          });
+        }
+
+        it.each([
+          ['relative, as AGENTS.md documents', () => '.githooks'],
+          ['absolute', (repo: string) => path.join(repo, '.githooks')],
+        ])(
+          'core.hooksPath %s: settles, and no planted script runs',
+          (_n, p) => {
+            const marker = path.join(mkTmp(), 'ran');
+            const t = ownHook(p, marker);
+            expectSettledUnseen(t, marker);
+            expect(
+              git(t.origin, 'show', 'refs/heads/canary/trial:docs/roadmap.md'),
+            ).toBe('on main');
+          },
+        );
+      });
+    },
+  );
+
+  describe('the shape of a lift', () => {
+    it.each([
+      '.git/hooks/pre-commit',
+      '.GIT/config',
+      'sub/.git/config',
+      '.git./config',
+      'git~1/config',
+    ])(
+      'a lift file %s is refused, even for a lift the run never saw',
+      (file) => {
+        const t = settle(ALL_PASS, {
+          change: (m) => {
+            m.lifts.push({
+              ...structuredClone(m.lifts[0]),
+              test: 'never in the run',
+              file,
+            });
+          },
+        });
+        expectRefused(t, /names a \.git directory/);
+      },
+    );
+
+    it('a ledger path with a .git segment is refused', () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          m.ledger = '.git/quarantine.json';
+        },
+      });
+      expectRefused(t, /names a \.git directory/);
+    });
+
+    it('a repeated lift is refused, and its ticket hears nothing', () => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          const lift = liftOf(m, CARD);
+          m.lifts.push(structuredClone(lift), structuredClone(lift));
+        },
+      });
+      expectRefused(t, /more than once/);
+    });
+
+    it.each([
+      ['empty blockers', (l: any) => (l.blockers = [])],
+      ['no blockers', (l: any) => delete l.blockers],
+      ['blockers that are not a list', (l: any) => (l.blockers = 'x')],
+    ])('a failing lift with %s is refused', (_n, mangle) => {
+      const t = settle(CARD_FAILS, {
+        change: (m) => {
+          mangle(liftOf(m, CARD));
+        },
+      });
+      expectRefused(t, /no blocker/);
+    });
+  });
+
+  describe('the report shows manifest strings as plain, bounded text', () => {
+    const LONG = 'x'.repeat(500);
+    const report_ = (t: Settled, ...extra: string[]) =>
+      callMain(
+        [
+          'verdict',
+          '--repo',
+          t.repo,
+          '--pr',
+          '77',
+          '--artifact',
+          'playwright-json',
+          ...extra,
+        ],
+        { run: t.h.run, env: JIRA_ENV },
+      );
+    const forgedLift = () =>
+      settle(ALL_PASS, {
+        change: (m) => {
+          m.lifts.push({
+            ...structuredClone(m.lifts[0]),
+            test: `line one\nline two${LONG}`,
+            file: `dir\nfile${LONG}`,
+          });
+        },
+      });
+
+    it('plain verdict', () => {
+      const r = report_(forgedLift());
+      expect(r.code).toBe(0);
+      expect(r.stdout).not.toContain('line one\nline two');
+      expect(r.stdout).not.toContain('dir\nfile');
+      expect(r.stdout).not.toContain(LONG);
+    });
+
+    it('--json', () => {
+      const doc = JSON.parse(report_(forgedLift(), '--json').stdout);
+      const added = doc.tests.at(-1);
+      expect(added.test).toBe(`line one line two${'x'.repeat(183)}…`);
+      expect(added.file).not.toContain('\n');
+      expect(added.file.length).toBeLessThanOrEqual(201);
+    });
+  });
+
+  describe('ledgerRows are checked against the trusted ledger', () => {
+    const OTHER = 'a row whose ticket cannot be read';
+
+    it('a row in another file is refused, even at the same marker line', () => {
+      const OTHER_FILE = 'tests/api/other.spec.js';
+      const row = {
+        test: 'a row in another file',
+        file: OTHER_FILE,
+        kind: 'skipped',
+        marker: 'test.skip',
+      };
+      const t = settle(ALL_PASS, {
+        before: (s) => {
+          const lines = fs
+            .readFileSync(path.join(s.repo, REF_FILE), 'utf8')
+            .split('\n');
+          const at = lines.findIndex((l) => l.includes(EVENT));
+          fs.writeFileSync(
+            path.join(s.repo, OTHER_FILE),
+            `${'\n'.repeat(at)}test.skip('${row.test}', async () => {});\n`,
+          );
+          onMain(s.repo, (entries) => [
+            ...entries,
+            { ...entries.find((e) => e.test === EVENT), ...row },
+          ]);
+        },
+        change: (m) => {
+          liftOf(m, EVENT).ledgerRows.push(row);
+        },
+      });
+      expectRefused(t, /belongs to another marker/);
+    });
+
+    it('with no marker on the default branch, another title cannot join the lift', () => {
+      const GONE = 'a row for a test that is gone';
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          const lift = liftOf(m, EVENT);
+          lift.ledgerRows.push({ ...lift.ledgerRows[0], test: GONE });
+        },
+        after: (s) => {
+          const file = path.join(s.repo, REF_FILE);
+          const src = fs.readFileSync(file, 'utf8');
+          fs.writeFileSync(
+            file,
+            src.replace(`test.skip('${EVENT}'`, `test('${EVENT}'`),
+          );
+          onMain(s.repo, (entries) => [
+            ...entries,
+            { ...entries.find((e) => e.test === EVENT), test: GONE },
+          ]);
+        },
+      });
+      expectRefused(t, /belongs to another marker/);
+    });
+
+    it("a passing lift cannot drop another test's row", () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          const lift = liftOf(m, EVENT);
+          lift.ledgerRows.push({ ...lift.ledgerRows[0], test: OTHER });
+        },
+      });
+      expectRefused(t, /belongs to another marker/);
+    });
+
+    it('a row the trusted ledger does not hold is refused', () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          liftOf(m, EVENT).ledgerRows[0].marker = 'test.fixme';
+        },
+      });
+      expectRefused(t, /not on the default branch/);
+    });
+
+    it('a lift that names none of its own rows is refused', () => {
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          liftOf(m, EVENT).ledgerRows = [];
+        },
+      });
+      expectRefused(t, /no ledger row of its own/);
+    });
+
+    it('rows the audit grouped on one marker still settle together', () => {
+      const SHORT = 'the warehouse list is unreachable';
+      const t = settle(ALL_PASS, {
+        before: (s) =>
+          onMain(s.repo, (entries) => [
+            ...entries,
+            { ...entries.find((e) => e.test === CARD), test: SHORT },
+          ]),
+      });
+      expect(t.r.stderr).toBe('');
+      expect(t.r.code).toBe(0);
+      expect(rowOf(t, CARD)).toBeUndefined();
+      expect(rowOf(t, SHORT)).toBeUndefined();
+    });
+  });
+});
+
+describe('verdict refuses a trial whose head is not in this repository', () => {
+  const opened = () => {
+    const suite = makeSuite();
+    const h = harness({
+      results: report({
+        card: 'unexpected',
+        event: 'expected',
+        v2: 'expected',
+      }),
+    });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    return { ...suite, h };
+  };
+  const apply = (repo: string, h: ReturnType<typeof harness>) =>
+    callMain(
+      [
+        'verdict',
+        '--repo',
+        repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+
+  // `null` is a gh that did not report the field: not known to be this repo.
+  it.each([
+    ['a cross-repository head', true],
+    ['a head gh did not report on', null],
+  ])(
+    '%s: exits non-zero, fetches, pushes and comments nothing',
+    (_n, cross) => {
+      const { repo, origin, h } = opened();
+      h.state.isCrossRepository = cross;
+      const head = git(origin, 'rev-parse', 'canary/trial');
+      h.calls.length = 0;
+
+      const r = apply(repo, h);
+
+      expect(r.code).not.toBe(0);
+      expect(r.stderr).toMatch(/not a branch of this repository/);
+      expect(git(origin, 'rev-parse', 'canary/trial')).toBe(head);
+      expect(h.calls.filter((c) => c.cmd !== 'gh')).toEqual([]);
+      expect(h.calls.some((c) => c.args[0] === 'issue')).toBe(false);
+    },
+  );
+
+  it('a head in this repository still settles', () => {
+    const { repo, origin, h } = opened();
+    const head = git(origin, 'rev-parse', 'canary/trial');
+    expect(apply(repo, h).code).toBe(0);
+    expect(git(origin, 'rev-parse', 'canary/trial')).not.toBe(head);
+  });
+});
+
 describe('verdict --apply refuses a manifest that reaches outside the worktree', () => {
   /** Open a trial, then rewrite its PR-body manifest the way an editor of the PR could. */
   function tampered(change: (m: any) => void) {
@@ -1007,14 +2262,16 @@ describe('verdict --apply refuses a manifest that reaches outside the worktree',
         'quarantine.json',
         '{"schema_version":1,"entries":[]}\n',
       );
-      const t = tampered((m) => {
-        m.ledger = 'escape/quarantine.json';
+      const t = tampered(() => {});
+      // tampered() ran with the link absent; commit it on the trial branch
+      // only, so only the check against the checked-out tree can see it.
+      onTrialBranch(t.repo, () => {
+        fs.rmSync(path.join(t.repo, '.canary'), { recursive: true });
+        fs.symlinkSync(v.dir, path.join(t.repo, '.canary'));
       });
-      // tampered() ran with the link absent; commit it and run again.
-      fs.symlinkSync(v.dir, path.join(t.repo, 'escape'));
-      git(t.repo, 'add', 'escape');
-      git(t.repo, 'commit', '-q', '-m', 'link');
-      git(t.repo, 'push', '-q', 'origin', 'HEAD:refs/heads/canary/trial', '-f');
+      expect(fs.lstatSync(path.join(t.repo, '.canary')).isSymbolicLink()).toBe(
+        false,
+      );
       const head = git(t.origin, 'rev-parse', 'canary/trial');
       const r = callMain(
         [
