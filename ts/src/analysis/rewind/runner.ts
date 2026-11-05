@@ -185,20 +185,25 @@ function syntheticStatus(
 
 /** The absolute paths of the files a report says ran. */
 function reportedFiles(runner: ReplayRunner, parsed: unknown): string[] {
-  if (runner === 'vitest') {
-    const { testResults } = parsed as { testResults?: { name?: unknown }[] };
-    return strings((testResults ?? []).map((f) => f.name));
-  }
-  // Playwright lists a file relative to its rootDir, and only if the run loaded.
-  const { config, suites } = parsed as {
+  return runner === 'vitest' ? vitestFiles(parsed) : playwrightFiles(parsed);
+}
+
+function vitestFiles(parsed: unknown): string[] {
+  const { testResults = [] } = parsed as {
+    testResults?: { name?: unknown }[];
+  };
+  return strings(testResults.map((f) => f.name));
+}
+
+/** Playwright lists a file relative to its rootDir, and only if the run loaded. */
+function playwrightFiles(parsed: unknown): string[] {
+  const { config, suites = [] } = parsed as {
     config?: { rootDir?: unknown };
     suites?: { file?: unknown }[];
   };
   const rootDir = config?.rootDir;
   if (typeof rootDir !== 'string') return [];
-  return strings((suites ?? []).map((s) => s.file)).map((f) =>
-    resolve(rootDir, f),
-  );
+  return strings(suites.map((s) => s.file)).map((f) => resolve(rootDir, f));
 }
 
 const strings = (values: unknown[]): string[] =>
