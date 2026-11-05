@@ -364,17 +364,15 @@ describe('#1413: credentials on one side only excuse that side', () => {
 
     /** 1 if anything failed or some but not all could run, 3 if none could. */
     function expectedExit(c: Cell): number {
-      const commentRuns = c.mode.comment && c.commentUrl;
-      const transitionRuns = c.mode.transition && c.transitionUrl;
-      const rejected =
-        !c.dryRun &&
-        ((commentRuns && !c.commentOk) || (transitionRuns && !c.transitionOk));
-      if (rejected) return 1;
-      const blocked =
-        (c.mode.comment && !c.commentUrl) ||
-        (c.mode.transition && !c.transitionUrl);
-      if (!blocked) return 0;
-      return commentRuns || transitionRuns ? 1 : 3;
+      const asked = [
+        { wanted: c.mode.comment, url: c.commentUrl, ok: c.commentOk },
+        { wanted: c.mode.transition, url: c.transitionUrl, ok: c.transitionOk },
+      ].filter((action) => action.wanted);
+      const runnable = asked.filter((action) => action.url);
+      // A dry run posts nothing, so Jira cannot reject anything in one.
+      if (!c.dryRun && runnable.some((action) => !action.ok)) return 1;
+      if (runnable.length === asked.length) return 0;
+      return runnable.length > 0 ? 1 : 3;
     }
 
     it('exercises every exit code, so the sweep below is not vacuous', () => {
