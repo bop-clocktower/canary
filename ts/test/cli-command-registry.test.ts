@@ -57,6 +57,7 @@ const EXPECTED_COMMANDS = [
   'batwoman',
   'rewind',
   'order',
+  'critical-areas',
   'scaling-curve',
   'permission-matrix',
   'ci-ready',

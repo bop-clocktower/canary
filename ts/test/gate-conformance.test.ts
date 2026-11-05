@@ -519,6 +519,15 @@ const ROWS: GateRow[] = [
       });
     },
   },
+  {
+    command: 'critical-areas',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['Wrote '],
+    // #1529: not a git repository -> zero files to rank, and nothing written.
+    run: (base) => invokeCanary(['critical-areas', '--root', base]),
+  },
 ];
 
 describe('gate conformance registry (#508)', () => {
