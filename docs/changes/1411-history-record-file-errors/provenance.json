@@ -36,7 +36,7 @@
         "Playwright replays of a synthetic target drop `--grep`: real Playwright 1.64.1 answers a grep on the synthetic title with empty `suites`, so a clean load could never be told from an unselected file.",
         "A numbered target (` #2`) whose file ran without that row counts as passed: that error did not recur.",
         "A row stored under the old absolute name is matched through its repo-relative test_file, so a failing attempt is not misread as passed.",
-        "An attempt that cannot show the file ran is not counted, as for any other test. So 1 failure plus 4 uncounted attempts still reads `reproduced`, tracked separately."
+        "An attempt that cannot show the file ran is not counted, as for any other test. So 1 failure plus 4 uncounted attempts still reads `reproduced`, tracked in #1584."
       ],
       "closingKeyword": "Closes",
       "baseSha": "bffba2d3504289e4b9f006bce8a446a8029abb85"
