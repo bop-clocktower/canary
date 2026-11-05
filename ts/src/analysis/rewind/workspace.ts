@@ -1,11 +1,11 @@
 /**
  * The scratch workspace a rewind runs in (#461 PR 2): which directory the
- * runner starts from, installing the old commit's dependencies, and the files
- * that ran before the failed one.
+ * runner starts from, installing the old commit's dependencies, the files that
+ * ran before the failed one, and running the replay attempts.
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
 import type { RunRecord, TestResultRecord } from '../../history/record.js';
@@ -15,6 +15,38 @@ export type ExecFn = (
   args: string[],
   opts: { cwd: string; env: Record<string, string> },
 ) => Promise<{ code: number; output: string }>;
+
+export interface AttemptPlan {
+  exec: ExecFn;
+  command: { command: string; args: string[]; env: Record<string, string> };
+  cwd: string;
+  reportPath: string;
+  attempts: number;
+  /** The status a report gives, or null when it cannot say. */
+  read(reportText: string): string | null;
+}
+
+/**
+ * Run the command `attempts` times, each status read from a fresh report. An
+ * attempt whose report cannot say is left out, not counted as either result.
+ */
+export async function runAttempts(plan: AttemptPlan): Promise<string[]> {
+  const { command, reportPath } = plan;
+  const statuses: string[] = [];
+  for (let i = 0; i < plan.attempts; i++) {
+    rmSync(reportPath, { force: true });
+    await plan.exec(command.command, command.args, {
+      cwd: plan.cwd,
+      env: command.env,
+    });
+    const text = existsSync(reportPath)
+      ? readFileSync(reportPath, 'utf-8')
+      : '';
+    const status = plan.read(text);
+    if (status !== null) statuses.push(status);
+  }
+  return statuses;
+}
 
 /** The nearest directory holding a package.json, walking up to the tree root. */
 export function packageDir(tree: string, file: string): string {
