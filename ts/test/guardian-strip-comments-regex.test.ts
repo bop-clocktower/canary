@@ -12,8 +12,8 @@
  * A division read as a regex usually keeps comment text as code (noise), and may
  * not cross a quote, because that exposes a `/*` in a string. A regex read as
  * division still drops text, as every regex did before, so the detector below
- * has to refuse what that leaves behind. Both known ways left to blank lines
- * are pinned as limits.
+ * has to refuse what that leaves behind; that known way left to blank lines is
+ * pinned as a limit. After a guess, a `/*` must close on its line (#1583).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -224,16 +224,55 @@ describe('a guessed regex may not cross a quote (PR #1548 review)', () => {
   });
 });
 
-describe('stripComments: the known limit of a division read as a regex', () => {
+describe('after a guessed regex, a `/*` must close on its line (#1583)', () => {
+  /** The #1583 repro: `head`, then a statement whose second line has no record. */
+  const followedByStatement = (head: string): string =>
+    [
+      'export function f() {',
+      head,
+      '  run(',
+      '    other());',
+      '  const n = 1;',
+      '  return n; // */',
+      '}',
+    ].join('\n');
+  const MEASURED = new Set([2, 3, 5, 6]);
+
   it.each([
-    ['a glob in the comment', "const a = 'x' / b; // see a/b/*.ts"],
-    ['a comment starting `//*`', 'const r = i++ / 2; //* old'],
-  ])('%s: no quote in the guess, so a block opens', (_name, line) => {
-    // Pinned so it stays visible (#1583): the base branch read this `//`
-    // correctly and this head does not. It needs slashes in the comment that
-    // pair off to expose a `/*`.
-    expect(stripComments(`${line}\nrun();\n// */\nz();`).split('\n')[1]).toBe(
-      '',
+    [
+      'a glob in the comment, after a string',
+      "  const a = 'x' / b; // a/b/*.ts",
+    ],
+    ['a comment starting `//*`, after `++`', '  const r = i++ / 2; //* old'],
+    ['a glob in the comment, after `++`', '  const r = i++ / 2; // a/b/*.ts'],
+    [
+      'a comment starting `//*`, after a string',
+      "  const a = 'x' / b; //* old",
+    ],
+  ])('%s: no block opens, nothing is hidden', (_name, head) => {
+    const source = followedByStatement(head);
+    expect(attributeLines([4], MEASURED, source)?.get(4)).toBe(3);
+    const blanked = stripComments(source)
+      .split('\n')
+      .filter((line) => line.trim() === '');
+    expect(blanked).toHaveLength(0);
+  });
+
+  it('a one-line block after a regex is still stripped', () => {
+    expect(stripComments('const r = /a/; /* note */ f();')).toBe(
+      'const r = /a/;  f();',
+    );
+  });
+
+  it('a multi-line block after a real regex stays code: noise, not hidden', () => {
+    // The cost of the rule: the comment's later lines are read as code.
+    const source = 'const r = /a/; /* one\ntwo */\nrun();';
+    expect(stripComments(source)).toBe(source);
+  });
+
+  it('a block opened on a line with no guess still spans lines', () => {
+    expect(stripComments('const r = 1; /* one\ntwo */ run();')).toBe(
+      'const r = 1; \n run();',
     );
   });
 });

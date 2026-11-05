@@ -11,20 +11,33 @@ interface CommentScan {
   inBlock: boolean;
   /** The code before the current position, for {@link startsRegex}. */
   before: string;
+  /** True once a regex has been guessed on the current line. */
+  guessed: boolean;
 }
 
 /** Drop `//` and `/* *\/` comments so keywords inside prose never count. */
 export function stripComments(source: string): string {
-  const scan: CommentScan = { inBlock: false, before: '' };
+  const scan: CommentScan = { inBlock: false, before: '', guessed: false };
   return splitLines(source)
     .map((line) => stripLine(line, scan))
     .join('\n');
 }
 
-/** `line` without its comments, in one forward pass. */
+/**
+ * `line` without its comments, in one forward pass.
+ *
+ * After a regex guess on the line, a `/*` opens a block only if its `*\/` is on
+ * the same line; otherwise the rest of the line stays code (#1583). A division
+ * misread as a regex can close on the first `/` of a real `//`, and the
+ * comment's own slashes then pair off to expose a `/*` (`'x' / b; // a/b/*.ts`),
+ * which blanked every line to the next `*\/`. Gating the block, not the guess,
+ * keeps a real `/re/// note` stripped. The cost is noise: a real multi-line
+ * comment after a real regex leaves its later lines as code, never hidden.
+ */
 function stripLine(line: string, scan: CommentScan): string {
   let out = '';
   let i = 0;
+  scan.guessed = false;
   while (i < line.length) {
     if (scan.inBlock) {
       const end = line.indexOf('*/', i);
@@ -36,6 +49,9 @@ function stripLine(line: string, scan: CommentScan): string {
     const start = commentStart(line, i, scan);
     out += line.slice(i, start);
     if (line[start + 1] !== '*') return out;
+    if (scan.guessed && !line.includes('*/', start + 2)) {
+      return out + line.slice(start);
+    }
     scan.inBlock = true;
     i = start + 2;
   }
@@ -73,6 +89,7 @@ function commentStart(line: string, from: number, scan: CommentScan): number {
     } else if (startsRegex(ch, scan.before)) {
       const end = skipRegex(line, i);
       if (hasQuote(line, i, end)) return line.length;
+      scan.guessed = true;
       i = end;
     } else {
       scan.before = afterCode(scan.before, ch);
@@ -98,11 +115,11 @@ const REGEX_BEFORE = /(?:^|[=([,:?!&|{};+\-*%<>~^]|\breturn|\btypeof)$/;
  * The one rule for both passes over a file, here and in the continuation
  * lexer: passes that disagree would read the same `/` two ways. It is a guess.
  *
- * A division read as a regex usually keeps comment text as code, and when the
- * guess crosses a quote {@link commentStart} stops looking for comments. With no
- * quote it can still pair off the first `/` of a real `//`, so a `/*` later in
- * that comment opens a block and blanks the lines up to the next `*\/`:
- * `'x' / b; // a/b/*.ts` (#1583).
+ * A division read as a regex usually keeps comment text as code. When the
+ * guess crosses a quote, {@link commentStart} stops looking for comments; when
+ * it pairs off the first `/` of a real `//` and exposes a `/*`
+ * (`'x' / b; // a/b/*.ts`), `stripLine` keeps that `/*` as code unless it
+ * closes on the line (#1583).
  *
  * A regex read as division (after `)`, or a keyword the rule lacks) is what this
  * module did for every regex before #1515: a `//` in it drops the rest of the
