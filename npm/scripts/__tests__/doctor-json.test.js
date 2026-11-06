@@ -51,7 +51,10 @@ describe('doctor --json output contract', () => {
     assert.ok(checks.length > 0, 'engine checks should always be present');
     for (const c of checks) {
       assert.equal(typeof c.id, 'string');
-      assert.ok(['pass', 'fail', 'skip', 'info'].includes(c.status), c.status);
+      assert.ok(
+        ['pass', 'warn', 'fail', 'skip', 'info'].includes(c.status),
+        c.status,
+      );
       assert.equal(typeof c.label, 'string');
       assert.equal(typeof c.group, 'string');
     }
