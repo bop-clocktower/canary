@@ -16,6 +16,11 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary migrate` now names every framework it accepts when detection is
+  uncertain (#1521).** The "Known test framework(s)" hint read a hardcoded list
+  of 6 names. That list had drifted from the registry `--framework` is checked
+  against (#1416), so the hint left out `phpunit`, `pest` and the other registry
+  frameworks. The hint now reads its list from that registry.
 - **`canary history record` now records Playwright failures outside any test
   (#1411).** A spec that fails to load, global setup or teardown, a webServer
   that never starts and a global timeout all become failed rows. A load failure
@@ -64,15 +69,15 @@ under the project's former name) are documented in the
   read never reads as clear. GitHub is built in through `gh`; Jira is used only
   for projects in company.json `jira_projects`, with credentials in the
   environment.
-- **`canary-unquarantine trial` and `verdict` release tests through CI (#1457).**
-  `trial` prints its plan and writes nothing without `--yes`. With it, the
-  candidates' markers are lifted in a throwaway worktree and a draft PR opens,
-  leaving your checkout alone. `verdict --pr N` reads per-test results from a
-  Playwright JSON or JUnit report and abstains when it has none; it never falls
-  back to the run's overall conclusion. `--apply` keeps a passing test released
-  and drops its rows, restores a failing, flaky or missing test's marker, and
-  tells the blocking ticket about a failure. See `### Security` for the limits
-  of `--apply`.
+- **`canary-unquarantine trial` and `verdict` release tests through CI
+  (#1457).** `trial` prints its plan and writes nothing without `--yes`. With
+  it, the candidates' markers are lifted in a throwaway worktree and a draft PR
+  opens, leaving your checkout alone. `verdict --pr N` reads per-test results
+  from a Playwright JSON or JUnit report and abstains when it has none; it never
+  falls back to the run's overall conclusion. `--apply` keeps a passing test
+  released and drops its rows, restores a failing, flaky or missing test's
+  marker, and tells the blocking ticket about a failure. See `### Security` for
+  the limits of `--apply`.
 - **`canary-unquarantine quarantine` and `migrate`, the producer side (#1459).**
   `quarantine` writes a marker and a caused ledger row together, or neither, and
   refuses an unknown cause, a missing or already-skipped test, a corrupt ledger,
@@ -97,10 +102,10 @@ under the project's former name) are documented in the
   still unchecked (#1549).
 
 - **`@hono/node-server` bumped to 2.1.6 (GHSA-rmxm-3fg6-px4f).** The transitive
-  dependency (via `@modelcontextprotocol/sdk`) moves in both the `ts/` and `npm/`
-  lockfiles. Exposure was low: the affected `serveStatic` helper appears nowhere
-  in `ts/src` or `npm/src`, and the MCP server is stdio only. This clears the
-  audit finding; it does not close a reachable path.
+  dependency (via `@modelcontextprotocol/sdk`) moves in both the `ts/` and
+  `npm/` lockfiles. Exposure was low: the affected `serveStatic` helper appears
+  nowhere in `ts/src` or `npm/src`, and the MCP server is stdio only. This
+  clears the audit finding; it does not close a reachable path.
 - **`body-parser` bumped to 2.4.0 (GHSA-27r3-jxmh-p828) and `fast-uri` to 3.1.9
   (GHSA-w74x-v6f9-j3xg, GHSA-333x-w4r6-6crp, GHSA-wjr9-j795-jxcr,
   GHSA-xhq7-xmqj-769h).** Both transitive dependencies move in the `ts/` and
@@ -167,16 +172,17 @@ under the project's former name) are documented in the
   the count. The per-snapshot `Supply` table column is gone.
 
 - **An append no longer makes a history store unreadable (#1297).**
-  `NdjsonHistoryStore.pushRun` assumed the store ended in a newline, so on a file
-  left unterminated by another tool or a hand edit the new record joined the last
-  line, and every later read threw `HistoryContentError`. A separator now goes in
-  when the file has content and no final newline. A store already corrupted by a
-  joined line is still refused.
+  `NdjsonHistoryStore.pushRun` assumed the store ended in a newline, so on a
+  file left unterminated by another tool or a hand edit the new record joined
+  the last line, and every later read threw `HistoryContentError`. A separator
+  now goes in when the file has content and no final newline. A store already
+  corrupted by a joined line is still refused.
 
-- **`canary history push --dry-run` abstains with no remote store (#1412).** With
-  neither `--db-url` nor `CANARY_HISTORY_DB_URL` it printed `would push run` and
-  exited 0, promising a push that can't happen. It now exits 3 with the same
-  message as the real push. A dry run with a remote configured is unchanged.
+- **`canary history push --dry-run` abstains with no remote store (#1412).**
+  With neither `--db-url` nor `CANARY_HISTORY_DB_URL` it printed
+  `would push run` and exited 0, promising a push that can't happen. It now
+  exits 3 with the same message as the real push. A dry run with a remote
+  configured is unchanged.
 
 - **guardian: a coverage report can no longer verify a file it never measured
   through two more paths (#1414, #1415).** `resolveFromReport` takes an optional
@@ -193,9 +199,9 @@ under the project's former name) are documented in the
 
 - **`common_imports` counts every consecutive Python import line (#1311).**
   `PatternMatcher` let one bare `import` match run on through the following
-  `import` and `from` lines and kept only the first module, so later modules were
-  dropped from the conventions used for generated tests. Order can change as a
-  result, because modules sort by their real counts.
+  `import` and `from` lines and kept only the first module, so later modules
+  were dropped from the conventions used for generated tests. Order can change
+  as a result, because modules sort by their real counts.
 
 - **`migrate --framework` rejects an unknown name (#1416)** with exit 1 and the
   known list, before any write, instead of silently using detection.

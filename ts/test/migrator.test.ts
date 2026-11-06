@@ -30,6 +30,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { FrameworkRegistry } from '../src/core/framework-registry.js';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import {
   DEPLOY_MANIFEST_NAME,
@@ -1169,6 +1170,25 @@ describe('TestUnknownFrameworkFailsLoud', () => {
       expect(joined).toContain('playwright');
       expect(joined).toContain('pytest');
       expect(joined).toContain('wdio');
+    }));
+  // #1521: the hint used a hardcoded 6-name list that drifted from the
+  // registry `--framework` validates against (#1416), so it omitted phpunit
+  // and pest. Every name the override accepts must be named in the hint.
+  it('unknown followup names every registry framework', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'unknown-lang' });
+      const hint = mig()
+        .migrate(root, { dryRun: true })
+        .manual_followups.find((f) => f.includes('Known test framework(s):'));
+      expect(hint).toBeDefined();
+      const listed = /Known test framework\(s\): ([^.]*)\./
+        .exec(hint ?? '')?.[1]
+        ?.split(', ');
+      const names = new FrameworkRegistry()
+        .getAllFrameworks()
+        .map((f) => f.name);
+      expect(names).toEqual(expect.arrayContaining(['phpunit', 'pest']));
+      expect(listed).toEqual(names);
     }));
   it('unknown followup mentions override flag', () =>
     withTmp((root) => {
