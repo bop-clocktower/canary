@@ -494,19 +494,6 @@ function isLocallyEdited(
 // Constants / probes
 // ---------------------------------------------------------------------------
 
-/**
- * Frameworks a user can pass to `canary migrate --framework <name>`. Surfaced in
- * the fail-loud message when auto-detection is uncertain (issue #295).
- */
-const KNOWN_FRAMEWORKS: readonly string[] = [
-  'playwright',
-  'vitest',
-  'pytest',
-  'k6',
-  'wdio',
-  'locust',
-];
-
 // Layer names that mark a skills/docs *overlay* rather than a test suite (#319 C).
 const _DOC_SKILL_LAYER_NAMES = new Set([
   'skills',
@@ -620,7 +607,9 @@ function unresolvedFrameworkFollowups(
   const out = [
     uncertainDetectionMessage('test framework', {
       reason: unresolvedFrameworkReason(ws, source),
-      candidates: KNOWN_FRAMEWORKS,
+      // Every name `--framework` accepts (#295). Read from the registry the
+      // override is validated against (#1416), not a copy that drifts (#1521).
+      candidates: new FrameworkRegistry().getAllFrameworks().map((f) => f.name),
       overrideHint: '`canary migrate --framework <name>`',
     }),
   ];
@@ -1747,7 +1736,7 @@ export class HarnessMigrator {
    *
    * #1416: an unknown name used to fall back to detection silently. Known
    * means a registry entry -- the test `Scaffolder` applies -- so `phpunit` and
-   * `pest` (absent from KNOWN_FRAMEWORKS) stay valid overrides. Matching is
+   * `pest` stay valid overrides. Matching is
    * case-insensitive; the message echoes the name as typed.
    */
   unknownFrameworkMessage(framework: string): string | null {
