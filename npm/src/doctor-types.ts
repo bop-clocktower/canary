@@ -7,8 +7,11 @@
  * 13's arch gate counts (`circular-deps`). `doctor.ts` re-exports both.
  */
 
-/** Outcome of a single doctor check. */
-export type CheckStatus = 'pass' | 'fail' | 'skip' | 'info';
+/**
+ * Outcome of a single doctor check. `warn` is a verdict that needs attention
+ * but does not fail the run (e.g. an overlay not fetched in 7 days, #1324).
+ */
+export type CheckStatus = 'pass' | 'warn' | 'fail' | 'skip' | 'info';
 
 /** A single doctor check result, rendered as one output line. */
 export interface CheckResult {

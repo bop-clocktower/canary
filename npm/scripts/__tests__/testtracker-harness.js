@@ -49,6 +49,8 @@ async function runCli(args, { env = PUSH_ENV, responses = [] } = {}) {
         collected_count: body?.collected?.length ?? null,
       },
     };
+    // `{ networkError: '<message>' }` makes this attempt fail the way fetch does offline.
+    if (r.networkError) throw new TypeError(r.networkError);
     return {
       ok: r.status >= 200 && r.status < 300,
       status: r.status,
@@ -102,4 +104,12 @@ const row = (payload, title) => {
   return found;
 };
 
-module.exports = { FIXTURES, PUSH_ENV, fixture, tempReport, runCli, push, row };
+const K6_FIXTURES = path.join(__dirname, 'fixtures', 'k6');
+/** `canary testtracker push-perf` on a summary file (#1580); TestTracker answers "stored" unless told otherwise. */
+const pushPerf = (file, extra = [], opts = {}) =>
+  runCli(
+    ['push-perf', '--k6-summary', file, '--client', 'acme', '--suite', 'checkout-load', '--env', 'staging', ...extra],
+    { ...opts, responses: opts.responses ?? [{ status: 200, json: { reportId: 11, duplicate: false } }] },
+  );
+
+module.exports = { FIXTURES, PUSH_ENV, fixture, tempReport, runCli, push, row, K6_FIXTURES, pushPerf };

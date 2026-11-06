@@ -191,9 +191,13 @@ for that precedence ordering.
 ## Updating and freshness
 
 `overlay list` reports freshness against your clone's last-known state of the
-remote — it does not fetch. Run `overlay update` to fetch and fast-forward. If
-you have edited files inside a clone, `update` refuses and prints the clone path
-so nothing is silently discarded; commit or stash your changes, or remove and
+remote — it does not fetch. Run `overlay update` to fetch and fast-forward.
+`canary doctor` reads the same last-fetch time and **warns** (it never fails)
+when a clone has not been fetched in over 7 days, or has no fetch on record, so
+a stale "up to date" cannot pass silently. Pinned clones are exempt: they track
+no remote branch, so a fetch would not change what they report. If you have
+edited files inside a clone, `update` refuses and prints the clone path so
+nothing is silently discarded; commit or stash your changes, or remove and
 re-add the overlay.
 
 ---

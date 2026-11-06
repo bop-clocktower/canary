@@ -338,9 +338,10 @@ export function workingTreeStatus(dest: string, git: GitRunner): CleanStatus {
  * its mtime is the last fetch; a clone that was never fetched again has no
  * FETCH_HEAD, but its `logs/HEAD` opens with a `clone: from` entry whose
  * timestamp is when the tracking refs were populated. Read straight from disk
- * so no extra git call (or network) is needed (#1324).
+ * so no extra git call (or network) is needed (#1324). Exported so
+ * `canary doctor` can judge the fetch's age, not just name it.
  */
-function lastFetchTime(dest: string): Date | null {
+export function lastFetchTime(dest: string): Date | null {
   const gitDir = path.join(dest, '.git');
   try {
     return fs.statSync(path.join(gitDir, 'FETCH_HEAD')).mtime;
