@@ -19,14 +19,14 @@ const lock = JSON.parse(
   fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'),
 );
 
-const FLOORS: Record<string, [number, number, number]> = {
-  minimatch: [11, 0, 1],
+const FLOORS: Record<string, string> = {
+  minimatch: '11.0.1',
 };
 
-const atLeast = (v: string, [a, b, c]: [number, number, number]): boolean => {
-  const [x, y, z] = v.split('-')[0].split('.').map(Number);
-  return x !== a ? x > a : y !== b ? y > b : z >= c;
-};
+// Numeric collation compares x.y.z component by component (10.2.6 < 11.0.1).
+// Any prerelease suffix is dropped before comparing.
+const atLeast = (version: string, floor: string): boolean =>
+  version.split('-')[0].localeCompare(floor, 'en', { numeric: true }) >= 0;
 
 describe('lockfile advisory floors', () => {
   for (const [name, floor] of Object.entries(FLOORS)) {
@@ -43,7 +43,7 @@ describe('lockfile advisory floors', () => {
       expect(installs.length).toBeGreaterThan(0);
     });
 
-    it(`every ${name} install is at or above ${floor.join('.')}`, () => {
+    it(`every ${name} install is at or above ${floor}`, () => {
       const below = installs.filter((i) => !atLeast(i.version, floor));
       expect(below).toEqual([]);
     });
