@@ -3,7 +3,7 @@
   "route": "bug",
   "stages": ["debugging"],
   "reproducingTests": [
-    "npm/scripts/__tests__/engine-checks.test.js ('fetch age (#1324): a zero-behind count is only as fresh as the last fetch')",
+    "npm/scripts/__tests__/engine-checks-fetch-age.test.js (6 cases; split out of engine-checks.test.js to stay under the perf ratchet's 300-line / 50-line-function thresholds)",
     "npm/scripts/__tests__/doctor-abstention.test.js ('a warn is a verdict, not a failure: counted, exit 0, named in the summary (#1324)')",
     "npm/scripts/__tests__/doctor-abstention.test.js ('renders a warn with its remedy and still exits 0 (#1324)')",
     "npm/scripts/__tests__/doctor-abstention.test.js ('--json carries status \"warn\" and allPassed stays true (#1324)')"
