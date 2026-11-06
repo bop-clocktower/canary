@@ -145,7 +145,10 @@ export function el(tag, attrs = {}, ...children) {
  * A panel connected AFTER the load -- a client-rendered route, an async
  * script -- adopts it instead of waiting forever on "No feed loaded yet."
  */
-export const pageFeed = { doc: null, problem: null };
+export const pageFeed = {
+  doc: null,
+  problem: /** @type {string | null} */ (null),
+};
 
 /**
  * Subclasses provide `get heading()` and `build(doc)`, which returns
@@ -154,13 +157,27 @@ export const pageFeed = { doc: null, problem: null };
  */
 export class CanaryPanel extends HTMLElement {
   #doc = null;
-  #problem = null;
+  #problem = /** @type {string | null} */ (null);
   #heading;
   #body;
   #live;
   /** 'card' wraps the body in one surface; a panel of cards sets ''. */
   get bodyClass() {
     return 'card';
+  }
+  /** Overridden by every panel; the base renders an empty heading. */
+  get heading() {
+    return '';
+  }
+  /**
+   * Overridden by every panel. A subclass that forgets it lands in the
+   * contained-error path in #content() with a message naming the element,
+   * rather than "this.build is not a function".
+   * @param {unknown} _doc
+   * @returns {{nodes: Node[], abstentions: string[]}}
+   */
+  build(_doc) {
+    throw new Error(`<${this.localName}> does not implement build()`);
   }
   /** Milliseconds since the epoch; tests pin it. */
   now = () => Date.now();
@@ -215,7 +232,7 @@ export class CanaryPanel extends HTMLElement {
       };
     try {
       return this.build(this.#doc);
-    } catch (exc) {
+    } catch (/** @type {any} */ exc) {
       return {
         nodes: [],
         abstentions: [`This panel could not render the feed: ${exc.message}`],

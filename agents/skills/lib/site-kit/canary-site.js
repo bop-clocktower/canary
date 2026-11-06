@@ -57,13 +57,15 @@ export async function loadFeed(root = document, fetchImpl = globalThis.fetch) {
   try {
     pageFeed.doc = await read(url, fetchImpl);
     pageFeed.problem = null;
-  } catch (exc) {
+  } catch (/** @type {any} */ exc) {
     pageFeed.doc = null;
     pageFeed.problem = `The feed could not be loaded: ${exc.message}`;
   }
   // Each panel contains its own render errors (panel.js), so one panel that
   // cannot render a field never blanks the others.
-  for (const p of root.querySelectorAll(Object.keys(PANELS).join(',')))
+  for (const p of /** @type {NodeListOf<import('./panel.js').CanaryPanel>} */ (
+    root.querySelectorAll(Object.keys(PANELS).join(','))
+  ))
     if (pageFeed.doc) p.feed = pageFeed.doc;
     else p.refuse(pageFeed.problem);
 }

@@ -30,6 +30,15 @@ describe('CanaryPanel (#1151 phase 3)', () => {
     expect(live(root)).toBe('');
   });
 
+  it('a panel with no build() refuses only itself, naming the element (#1201)', () => {
+    class Unbuilt extends CanaryPanel {}
+    const root = mount(Unbuilt, siteFeed({ runs: [runRecord()] }));
+    expect(root.querySelector('h2')!.textContent).toBe('');
+    expect(live(root)).toMatch(
+      /^This panel could not render the feed: <test-panel-\d+> does not implement build\(\)$/,
+    );
+  });
+
   it('puts an abstention as text in a polite status region (criterion 11)', () => {
     const root = mount(Probe, siteFeed());
     const region = root.querySelector('[aria-live]')!;
