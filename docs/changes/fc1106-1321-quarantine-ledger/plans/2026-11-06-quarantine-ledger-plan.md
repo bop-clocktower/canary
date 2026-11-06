@@ -1,8 +1,8 @@
 # Plan: publish quarantine state from the katana ledger
 
-Spec: `docs/changes/fc1106-1321-quarantine-ledger/proposal.md`. Issue #1321.
-One phase, low/medium complexity. Auto-approved: no concerns were raised, there
-are 6 tasks, and every product fork was decided upstream.
+Spec: `docs/changes/fc1106-1321-quarantine-ledger/proposal.md`. Issue #1321. One
+phase, low/medium complexity. Auto-approved: no concerns were raised, there are
+6 tasks, and every product fork was decided upstream.
 
 ## Tasks
 

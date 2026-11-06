@@ -40,21 +40,22 @@ export default defineConfig({
 
 ### Options
 
-| Option           | Env fallback                     | Legacy env (deprecated)        | Default        | Purpose                                                                                           |
-| ---------------- | -------------------------------- | ------------------------------ | -------------- | ------------------------------------------------------------------------------------------------- |
-| `suite`          | `CANARY_INGEST_SUITE`            | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`).                            |
-| `testFilePrefix` | `CANARY_INGEST_TEST_FILE_PREFIX` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                                                    |
-| `environment`    | `CANARY_INGEST_ENVIRONMENT`      | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                                                    |
-| `url`            | `CANARY_INGEST_URL`              | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.                                |
-| `token`          | `CANARY_INGEST_TOKEN`            | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                                               |
-| `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                                                         |
-| `areaMap`        | `CANARY_INGEST_AREA_MAP` (JSON)  | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).                                       |
-| `retryDelaysMs`  | —                                | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                                           |
-| `titleFormat`    | `CANARY_INGEST_TITLE_FORMAT`     | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                                           |
-| `collected`      | `CANARY_INGEST_COLLECTED`        | —                              | `true`         | Send the suite catalog. See [collected](#what-it-sends-besides-results).                          |
-| `runFile`        | `CANARY_RUN_FILE`                | —                              | (unset)        | Also write the run as a `canary.run/1` file. See [The `canary.run/1` file](#the-canaryrun1-file). |
-| `scopeId`        | `CANARY_SCOPE_ID`                | —                              | (unset)        | `canary.run/1` scope id. Required with `runFile`; never inferred.                                 |
-| `scopeEnv`       | `CANARY_SCOPE_ENV`               | —                              | (unset)        | `canary.run/1` scope env. Required with `runFile`; falls back to `environment`.                   |
+| Option             | Env fallback                      | Legacy env (deprecated)        | Default        | Purpose                                                                                                                  |
+| ------------------ | --------------------------------- | ------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `suite`            | `CANARY_INGEST_SUITE`             | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`).                                                   |
+| `testFilePrefix`   | `CANARY_INGEST_TEST_FILE_PREFIX`  | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                                                                           |
+| `environment`      | `CANARY_INGEST_ENVIRONMENT`       | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                                                                           |
+| `url`              | `CANARY_INGEST_URL`               | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.                                                       |
+| `token`            | `CANARY_INGEST_TOKEN`             | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                                                                      |
+| `workflow`         | `CANARY_INGEST_WORKFLOW`          | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                                                                                |
+| `areaMap`          | `CANARY_INGEST_AREA_MAP` (JSON)   | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).                                                              |
+| `retryDelaysMs`    | —                                 | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                                                                  |
+| `titleFormat`      | `CANARY_INGEST_TITLE_FORMAT`      | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                                                                  |
+| `collected`        | `CANARY_INGEST_COLLECTED`         | —                              | `true`         | Send the suite catalog. See [collected](#what-it-sends-besides-results).                                                 |
+| `runFile`          | `CANARY_RUN_FILE`                 | —                              | (unset)        | Also write the run as a `canary.run/1` file. See [The `canary.run/1` file](#the-canaryrun1-file).                        |
+| `scopeId`          | `CANARY_SCOPE_ID`                 | —                              | (unset)        | `canary.run/1` scope id. Required with `runFile`; never inferred.                                                        |
+| `scopeEnv`         | `CANARY_SCOPE_ENV`                | —                              | (unset)        | `canary.run/1` scope env. Required with `runFile`; falls back to `environment`.                                          |
+| `quarantineLedger` | `CANARY_INGEST_QUARANTINE_LEDGER` | —                              | (unset)        | canary-katana ledger to publish quarantine state from. See [Quarantine state](#quarantine-state-from-the-katana-ledger). |
 
 When both a `CANARY_INGEST_*` var and its legacy name are set, the new name
 wins. An empty value counts as unset, so a `${{ secrets.X }}` for a secret that
@@ -111,15 +112,52 @@ history and orphans existing quarantine entries. Coordinate with the dashboard
 
 On top of the test's own Playwright tags (sent once each, without the `@`):
 
-| Tag                | When                                                                                                                                                      |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `project:<name>`   | Always: the Playwright project the test ran in.                                                                                                           |
-| `dependency`       | The project is another project's `dependencies` target. Often setup, sometimes a real suite (`api` before `e2e`); filter it only if yours are setup-only. |
-| `teardown`         | The project is another project's `teardown`.                                                                                                              |
-| `fixme`            | The test is `test.fixme`.                                                                                                                                 |
-| `reason:<text>`    | A `fixme`/`skip` annotation has a description, often an issue ref (capped at 100 chars). Each distinct reason is its own tag value.                       |
-| `interrupted`      | The test was interrupted (see [Status semantics](#status-semantics)).                                                                                     |
-| `expected-failure` | A `test.fail()` test passed on some attempt: sent `failed`, or `flaky` if a retry then failed as expected (see [Status semantics](#status-semantics)).    |
+| Tag                  | When                                                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project:<name>`     | Always: the Playwright project the test ran in.                                                                                                           |
+| `dependency`         | The project is another project's `dependencies` target. Often setup, sometimes a real suite (`api` before `e2e`); filter it only if yours are setup-only. |
+| `teardown`           | The project is another project's `teardown`.                                                                                                              |
+| `fixme`              | The test is `test.fixme`.                                                                                                                                 |
+| `reason:<text>`      | A `fixme`/`skip` annotation has a description, often an issue ref (capped at 100 chars). Each distinct reason is its own tag value.                       |
+| `interrupted`        | The test was interrupted (see [Status semantics](#status-semantics)).                                                                                     |
+| `expected-failure`   | A `test.fail()` test passed on some attempt: sent `failed`, or `flaky` if a retry then failed as expected (see [Status semantics](#status-semantics)).    |
+| `quarantined`        | The test was skipped and a katana ledger row backs it (see [Quarantine state](#quarantine-state-from-the-katana-ledger)).                                 |
+| `quarantine:<issue>` | The same, with the ticket from that row's `issue`. Not sent when the row names no issue.                                                                  |
+
+### Quarantine state from the katana ledger
+
+Set `quarantineLedger` (or `CANARY_INGEST_QUARANTINE_LEDGER`, or
+`--quarantine-ledger <path>` on
+[`canary testtracker push`](#other-runners-junit-xml)) to the
+[canary-katana](../../agents/skills/claude-code/canary-katana/SKILL.md) ledger,
+usually `.canary/quarantine.json`, to publish which skips are quarantines
+(#1321):
+
+- **What is tagged.** A **skipped** result that matches a ledger row gets the
+  `quarantined` tag, plus `quarantine:<issue>` when the row names one. A match
+  uses katana's `(file, test)` identity: the result's `test_file` equals the
+  row's `file`, and its `full_title` ends with the row's `test` (the leaf
+  title). A skip with no ledger row is **not** published as a quarantine. A
+  matching row whose test ran (passed or failed) is not tagged either.
+- **Release is implicit.** Nothing is stored. Tags are computed fresh on every
+  push, so the push after a row is removed sends no quarantine tag for that
+  test. katana's rule still applies: remove the row when the test passes live.
+- **Unmatched rows are reported.** The push output names how many ledger rows
+  matched no skipped result, and lists every one as `file › test`, so a stale or
+  misspelled row is visible and never dropped. `removed` rows (a deleted test
+  never produces a result) are counted separately rather than listed.
+- **A bad ledger is loud.** A missing or unreadable ledger is a `::warning::`
+  under GitHub Actions, and the run is still pushed, without quarantine tags.
+  This matches every other reporter config error: a reporter never costs the run
+  its results. `canary testtracker push` instead exits `1` and pushes nothing.
+- **The ledger is read by katana's own `load()`.** A v1 row's `ticket` therefore
+  publishes as its `issue`, just as katana migrates it.
+
+**The dashboard has to read the tag.** The ingest schema has no quarantine
+field, and the dashboard's quarantine entries key on `full_title`. These are
+ordinary tags until the dashboard reads `quarantined` / `quarantine:<issue>`.
+Until then a quarantined test shows as a tagged skip, not as "quarantined" in
+its UI.
 
 ## Redaction
 
@@ -303,7 +341,8 @@ config, payload builder, size budget and push (#1320):
 
 ```bash
 canary testtracker push --junit <file…> --suite <name> \
-  [--workflow <label>] [--no-collected] [--[no-]strict-budget] [--dry-run]
+  [--workflow <label>] [--no-collected] [--[no-]strict-budget] \
+  [--quarantine-ledger <path>] [--dry-run]
 ```
 
 One adapter covers each runner's JUnit output:
@@ -379,11 +418,16 @@ refused. With the catalog, the budget holds roughly 7,600 tests; split a larger
 run into several suites (chunked push is tracked on #1355). `--dry-run` prints
 the unfitted payload and is not checked.
 
+**Quarantine.** `--quarantine-ledger <path>` (or
+`CANARY_INGEST_QUARANTINE_LEDGER`) tags quarantined skips as in the reporter;
+see [Quarantine state](#quarantine-state-from-the-katana-ledger).
+
 **Exit codes.** `0` pushed (or printed). `1` a report is missing, unreadable or
-not JUnit, the run was not ingested (a rejected push, or a duplicate whose
-results were discarded), or the strict budget refused a lossy fit (nothing was
-pushed). `2` usage. `3` abstained: a report holds zero testcases, so nothing was
-pushed rather than a smaller, greener run.
+not JUnit, the `--quarantine-ledger` file is missing or unreadable, the run was
+not ingested (a rejected push, or a duplicate whose results were discarded), or
+the strict budget refused a lossy fit (nothing was pushed). `2` usage. `3`
+abstained: a report holds zero testcases, so nothing was pushed rather than a
+smaller, greener run.
 
 ## The `canary.run/1` file
 

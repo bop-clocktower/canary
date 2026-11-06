@@ -14,6 +14,19 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **The ingest reporter and `canary testtracker push` publish quarantine state
+  from the canary-katana ledger (#1321).** Set `--quarantine-ledger <path>`
+  (reporter option `quarantineLedger`, env `CANARY_INGEST_QUARANTINE_LEDGER`).
+  Each skipped result that matches a ledger row by `(file, test)` is tagged
+  `quarantined` and `quarantine:<issue>`, inside the existing ingest contract. A
+  skip with no row is not tagged. Release is implicit: remove the row and the
+  tag stops. Rows that match no skipped result are listed in the push output. A
+  missing or unreadable ledger makes the push exit 1 with nothing sent, and
+  makes the reporter warn. The dashboard has to read the tag before its UI shows
+  the test as quarantined.
+
 ### Fixed
 
 - **`canary history record` now records Playwright failures outside any test
