@@ -42,8 +42,7 @@ function parsePerfArgs(args: readonly string[]): PerfArgs {
     // Only the flag name: an inline value may be a secret (`--token=tt_...`).
     if (!key) throw new PerfUsageError(`unknown option "${flag}".`);
     const value = inline ?? args[++i];
-    if (!value || value.startsWith('--'))
-      throw new PerfUsageError(`${flag} needs a value.`);
+    if (!value || value.startsWith('--')) throw new PerfUsageError(`${flag} needs a value.`);
     parsed[key] = value;
   }
   return parsed;
@@ -52,15 +51,13 @@ function parsePerfArgs(args: readonly string[]): PerfArgs {
 // TestTracker's rules for these body fields.
 const SUITE_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ENVIRONMENT = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/;
-const ISO_WITH_OFFSET =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 const isSuite = (s: string) => s.length <= 100 && SUITE_SLUG.test(s);
 const isEnvironment = (e: string) => e.length <= 40 && ENVIRONMENT.test(e);
 const isTime = (t: string | undefined) =>
   t === undefined || (ISO_WITH_OFFSET.test(t) && !Number.isNaN(Date.parse(t)));
-const isRunRef = (r: string | undefined) =>
-  r === undefined || (r.trim() !== '' && r.length <= 200);
+const isRunRef = (r: string | undefined) => r === undefined || (r.trim() !== '' && r.length <= 200);
 
 function isUrl(u: string): boolean {
   if (!u) return true;
@@ -90,10 +87,7 @@ function refuseUnless(ok: boolean, message: string): void {
 function defaultRunRef(env: NodeJS.ProcessEnv): string {
   const id = env.GITHUB_RUN_ID;
   if (!id) return `local-${randomUUID()}`;
-  const parts = [id, env.GITHUB_RUN_ATTEMPT, env.GITHUB_JOB].filter(
-    (p): p is string => !!p,
-  );
-  return parts.join('-').slice(0, 200);
+  return [id, env.GITHUB_RUN_ATTEMPT, env.GITHUB_JOB].filter(Boolean).join('-').slice(0, 200);
 }
 
 export interface PerfConfig {
@@ -108,30 +102,18 @@ export interface PerfConfig {
   token: string;
 }
 
-type Identity = Pick<
-  PerfConfig,
-  'summary' | 'client' | 'suite' | 'environment'
->;
+type Identity = Pick<PerfConfig, 'summary' | 'client' | 'suite' | 'environment'>;
 
 /** The four fields every push needs, each checked as TestTracker would. */
 function identity(a: PerfArgs, env: NodeJS.ProcessEnv): Identity {
   const summary = need(a.summary, '--k6-summary <file>');
-  const client = need(
-    a.client ?? env.CANARY_INGEST_CLIENT,
-    '--client <slug> (or CANARY_INGEST_CLIENT)',
-  );
+  const client = need(a.client ?? env.CANARY_INGEST_CLIENT, '--client <slug> (or CANARY_INGEST_CLIENT)');
   // No CANARY_INGEST_SUITE fallback: a job that also runs a JUnit push sets it
   // to a functional suite, and a perf run filed there would be accepted.
   const suite = need(a.suite, '--suite <slug>');
-  const environment = need(
-    a.env ?? envVar(env, 'environment'),
-    '--env <env> (or CANARY_INGEST_ENVIRONMENT)',
-  );
+  const environment = need(a.env ?? envVar(env, 'environment'), '--env <env> (or CANARY_INGEST_ENVIRONMENT)');
   refuseUnless(client.length <= 100, '--client is longer than 100 characters.');
-  refuseUnless(
-    isSuite(suite),
-    `--suite "${suite}" is not a suite slug (lower-case words joined by single hyphens).`,
-  );
+  refuseUnless(isSuite(suite), `--suite "${suite}" is not a suite slug (lower-case words joined by single hyphens).`);
   refuseUnless(
     isEnvironment(environment),
     `--env "${environment}" is not an environment name (lower-case, e.g. dev, uat, prod).`,
@@ -140,10 +122,7 @@ function identity(a: PerfArgs, env: NodeJS.ProcessEnv): Identity {
 }
 
 /** Where to push, from the JUnit push's env names. Not needed for `--dry-run`. */
-function target(
-  dryRun: boolean,
-  env: NodeJS.ProcessEnv,
-): Pick<PerfConfig, 'url' | 'token'> {
+function target(dryRun: boolean, env: NodeJS.ProcessEnv): Pick<PerfConfig, 'url' | 'token'> {
   const url = envVar(env, 'url') ?? '';
   const token = envVar(env, 'token') ?? '';
   refuseUnless(
@@ -154,23 +133,11 @@ function target(
   return { url, token };
 }
 
-export function configurePerf(
-  args: readonly string[],
-  env: NodeJS.ProcessEnv,
-): PerfConfig {
+export function configurePerf(args: readonly string[], env: NodeJS.ProcessEnv): PerfConfig {
   const a = parsePerfArgs(args);
   const id = identity(a, env);
-  refuseUnless(
-    isTime(a.generatedAt),
-    '--generated-at must be an ISO-8601 time with Z or an offset.',
-  );
+  refuseUnless(isTime(a.generatedAt), '--generated-at must be an ISO-8601 time with Z or an offset.');
   refuseUnless(isRunRef(a.runRef), '--run-ref must be 1 to 200 characters.');
   const runRef = a.runRef ?? defaultRunRef(env);
-  return {
-    ...id,
-    runRef,
-    generatedAt: a.generatedAt,
-    dryRun: a.dryRun,
-    ...target(a.dryRun, env),
-  };
+  return { ...id, runRef, generatedAt: a.generatedAt, dryRun: a.dryRun, ...target(a.dryRun, env) };
 }

@@ -19,20 +19,8 @@ const fixture = () => JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
 // picks values[stat] with this one. Read through k6Objectives (the parser is
 // module-private): a parsed stat yields that values[stat]; an expression that
 // is not k6 grammar yields null, whatever values holds.
-const STAT_VALUES = {
-  'p(99)': 1,
-  'p(99.9)': 2,
-  'p(95)': 3,
-  avg: 4,
-  min: 5,
-  max: 6,
-  med: 7,
-  count: 8,
-  rate: 9,
-  value: 10,
-};
-const statWithValue = (v) =>
-  Object.keys(STAT_VALUES).find((k) => STAT_VALUES[k] === v) ?? null;
+const STAT_VALUES = { 'p(99)': 1, 'p(99.9)': 2, 'p(95)': 3, avg: 4, min: 5, max: 6, med: 7, count: 8, rate: 9, value: 10 };
+const statWithValue = (v) => Object.keys(STAT_VALUES).find((k) => STAT_VALUES[k] === v) ?? null;
 /** The values key one threshold expression was read as, or null. */
 function statOf(expr) {
   const thresholds = { [expr]: { ok: true } };
@@ -68,10 +56,7 @@ const os = require('node:os');
 const tempJson = (value) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-k6-'));
   const file = path.join(dir, 'summary.json');
-  fs.writeFileSync(
-    file,
-    typeof value === 'string' ? value : JSON.stringify(value),
-  );
+  fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value));
   return file;
 };
 
@@ -88,35 +73,16 @@ test('readK6Summary refuses what is not handleSummary data', () => {
     [tempJson({ root_group: {} }), /no "metrics"/],
     [tempJson({ metrics: [] }), /no "metrics"/],
     // --summary-export: values flattened onto the metric, thresholds as booleans
-    [
-      tempJson({
-        metrics: {
-          http_reqs: { count: 3, rate: 1, thresholds: { 'count>1': false } },
-        },
-      }),
-      /--summary-export/,
-    ],
-    [
-      tempJson({
-        metrics: { m: { values: {}, thresholds: { 'avg<1': { ok: 'yes' } } } },
-      }),
-      /boolean "ok"/,
-    ],
+    [tempJson({ metrics: { http_reqs: { count: 3, rate: 1, thresholds: { 'count>1': false } } } }), /--summary-export/],
+    [tempJson({ metrics: { m: { values: {}, thresholds: { 'avg<1': { ok: 'yes' } } } } }), /boolean "ok"/],
   ];
   for (const [file, why] of refused) {
-    assert.throws(
-      () => k6.readK6Summary(file),
-      (e) => e instanceof k6.K6SummaryError && why.test(e.message),
-      file,
-    );
+    assert.throws(() => k6.readK6Summary(file), (e) => e instanceof k6.K6SummaryError && why.test(e.message), file);
   }
 });
 
-test("an empty metrics object is readable: abstaining on it is the command's call", () => {
-  assert.deepEqual(
-    k6.readK6Summary(tempJson({ metrics: {} })).summary.metrics,
-    {},
-  );
+test('an empty metrics object is readable: abstaining on it is the command\'s call', () => {
+  assert.deepEqual(k6.readK6Summary(tempJson({ metrics: {} })).summary.metrics, {});
 });
 
 // --- objectives ------------------------------------------------------------------
@@ -125,12 +91,8 @@ test('SC13: a real nightly run maps to one objective per threshold', () => {
   const objectives = k6.k6Objectives(fixture());
   assert.equal(objectives.length, 105);
   assert.equal(new Set(objectives.map((o) => o.submetric)).size, 70);
-  const duration = objectives.filter((o) =>
-    o.submetric.startsWith('http_req_duration{name:'),
-  );
-  const errors = objectives.filter((o) =>
-    o.submetric.startsWith('dag_errors{name:'),
-  );
+  const duration = objectives.filter((o) => o.submetric.startsWith('http_req_duration{name:'));
+  const errors = objectives.filter((o) => o.submetric.startsWith('dag_errors{name:'));
   assert.equal(duration.length, 70);
   assert.equal(errors.length, 35);
   for (const o of duration) assert.match(o.expression, /^p\((50|99)\)<\d+$/);
@@ -138,64 +100,28 @@ test('SC13: a real nightly run maps to one objective per threshold', () => {
   assert.equal(objectives.filter((o) => o.ok).length, 70);
   assert.equal(objectives.filter((o) => o.observedValue === null).length, 0);
   // Nothing derived is sent: TestTracker owns scenario, stat and comparator.
-  for (const o of objectives)
-    assert.deepEqual(Object.keys(o).sort(), [
-      'expression',
-      'observedValue',
-      'ok',
-      'submetric',
-    ]);
+  for (const o of objectives) assert.deepEqual(Object.keys(o).sort(), ['expression', 'observedValue', 'ok', 'submetric']);
 });
 
 test('observedValue is values[stat] of that sub-metric', () => {
   const data = fixture();
-  const sub = Object.keys(data.metrics).find((k) =>
-    k.startsWith('http_req_duration{name:'),
-  );
-  const p99 = k6
-    .k6Objectives(data)
-    .find((o) => o.submetric === sub && o.expression.startsWith('p(99)'));
+  const sub = Object.keys(data.metrics).find((k) => k.startsWith('http_req_duration{name:'));
+  const p99 = k6.k6Objectives(data).find((o) => o.submetric === sub && o.expression.startsWith('p(99)'));
   assert.equal(p99.observedValue, data.metrics[sub].values['p(99)']);
 });
 
 test('a statistic k6 did not report, a non-finite one, an unparseable expression, and an unsampled rate or trend are unmeasured', () => {
   const data = {
     metrics: {
-      'http_req_duration{name:a}': {
-        type: 'trend',
-        values: { 'p(95)': 120 },
-        thresholds: { 'p(99)<500': { ok: true } },
-      },
-      'http_req_duration{name:b}': {
-        type: 'trend',
-        values: { avg: null },
-        thresholds: { 'avg<100': { ok: true } },
-      },
-      'http_req_duration{name:c}': {
-        type: 'trend',
-        values: { avg: 50 },
-        thresholds: { 'avg<100 && max<900': { ok: true } },
-      },
-      'http_req_duration{name:f}': {
-        type: 'trend',
-        values: { min: 0, max: 0, 'p(99)': 0 },
-        thresholds: { 'p(99)<500': { ok: true } },
-      },
-      'errors{name:d}': {
-        type: 'rate',
-        values: { rate: 0, passes: 0, fails: 0 },
-        thresholds: { 'rate<0.01': { ok: true } },
-      },
-      'errors{name:e}': {
-        type: 'rate',
-        values: { rate: 0, passes: 0, fails: 12 },
-        thresholds: { 'rate<0.01': { ok: true } },
-      },
+      'http_req_duration{name:a}': { type: 'trend', values: { 'p(95)': 120 }, thresholds: { 'p(99)<500': { ok: true } } },
+      'http_req_duration{name:b}': { type: 'trend', values: { avg: null }, thresholds: { 'avg<100': { ok: true } } },
+      'http_req_duration{name:c}': { type: 'trend', values: { avg: 50 }, thresholds: { 'avg<100 && max<900': { ok: true } } },
+      'http_req_duration{name:f}': { type: 'trend', values: { min: 0, max: 0, 'p(99)': 0 }, thresholds: { 'p(99)<500': { ok: true } } },
+      'errors{name:d}': { type: 'rate', values: { rate: 0, passes: 0, fails: 0 }, thresholds: { 'rate<0.01': { ok: true } } },
+      'errors{name:e}': { type: 'rate', values: { rate: 0, passes: 0, fails: 12 }, thresholds: { 'rate<0.01': { ok: true } } },
     },
   };
-  const byName = Object.fromEntries(
-    k6.k6Objectives(data).map((o) => [o.submetric, o.observedValue]),
-  );
+  const byName = Object.fromEntries(k6.k6Objectives(data).map((o) => [o.submetric, o.observedValue]));
   assert.deepEqual(byName, {
     'errors{name:d}': null,
     'errors{name:e}': 0,
@@ -238,36 +164,21 @@ test('k6 v2.2.0 output for a never-sampled Trend and Rate is unmeasured, not met
   };
   const objectives = k6.k6Objectives(data);
   assert.equal(objectives.length, 4);
-  for (const o of objectives)
-    assert.equal(o.observedValue, null, `${o.submetric} ${o.expression}`);
+  for (const o of objectives) assert.equal(o.observedValue, null, `${o.submetric} ${o.expression}`);
 });
 
 // PR #1581 review: summaryTrendStats set to just the gated percentiles leaves
-// min and max out of `values`, so the min/max rule cannot fire. Every finite
+// min and max out of `values`, so a min/max rule cannot fire. Every finite
 // value being 0 is the same "no samples" signal (no real request takes 0 ms).
 test('a never-sampled Trend whose summaryTrendStats omit min and max is unmeasured', () => {
   const data = {
     metrics: {
-      'http_req_duration{name:only-pcts}': {
-        type: 'trend',
-        values: { 'p(95)': 0, 'p(99)': 0 },
-        thresholds: { 'p(99)<500': { ok: true } },
-      },
-      'http_req_duration{name:max-only}': {
-        type: 'trend',
-        values: { max: 0, 'p(95)': 0 },
-        thresholds: { 'p(95)<500': { ok: true } },
-      },
-      'http_req_duration{name:sampled}': {
-        type: 'trend',
-        values: { 'p(95)': 0, 'p(99)': 12 },
-        thresholds: { 'p(95)<500': { ok: true } },
-      },
+      'http_req_duration{name:only-pcts}': { type: 'trend', values: { 'p(95)': 0, 'p(99)': 0 }, thresholds: { 'p(99)<500': { ok: true } } },
+      'http_req_duration{name:max-only}': { type: 'trend', values: { max: 0, 'p(95)': 0 }, thresholds: { 'p(95)<500': { ok: true } } },
+      'http_req_duration{name:sampled}': { type: 'trend', values: { 'p(95)': 0, 'p(99)': 12 }, thresholds: { 'p(95)<500': { ok: true } } },
     },
   };
-  const byName = Object.fromEntries(
-    k6.k6Objectives(data).map((o) => [o.submetric, o.observedValue]),
-  );
+  const byName = Object.fromEntries(k6.k6Objectives(data).map((o) => [o.submetric, o.observedValue]));
   assert.deepEqual(byName, {
     'http_req_duration{name:max-only}': null,
     'http_req_duration{name:only-pcts}': null,
@@ -281,37 +192,17 @@ test('a never-sampled Trend whose summaryTrendStats omit min and max is unmeasur
 test('a never-sampled Gauge is unmeasured; a Counter at 0 stays measured', () => {
   const data = {
     metrics: {
-      'vus{name:g0}': {
-        type: 'gauge',
-        values: { value: 0, min: 0, max: 0 },
-        thresholds: { 'value<10': { ok: true } },
-      },
-      'vus{name:g1}': {
-        type: 'gauge',
-        values: { value: 0, min: 0, max: 3 },
-        thresholds: { 'value<10': { ok: true } },
-      },
-      'errors{name:c0}': {
-        type: 'counter',
-        values: { count: 0, rate: 0 },
-        thresholds: { 'count<1': { ok: true } },
-      },
+      'vus{name:g0}': { type: 'gauge', values: { value: 0, min: 0, max: 0 }, thresholds: { 'value<10': { ok: true } } },
+      'vus{name:g1}': { type: 'gauge', values: { value: 0, min: 0, max: 3 }, thresholds: { 'value<10': { ok: true } } },
+      'errors{name:c0}': { type: 'counter', values: { count: 0, rate: 0 }, thresholds: { 'count<1': { ok: true } } },
     },
   };
-  const byName = Object.fromEntries(
-    k6.k6Objectives(data).map((o) => [o.submetric, o.observedValue]),
-  );
-  assert.deepEqual(byName, {
-    'errors{name:c0}': 0,
-    'vus{name:g0}': null,
-    'vus{name:g1}': 0,
-  });
+  const byName = Object.fromEntries(k6.k6Objectives(data).map((o) => [o.submetric, o.observedValue]));
+  assert.deepEqual(byName, { 'errors{name:c0}': 0, 'vus{name:g0}': null, 'vus{name:g1}': 0 });
 });
 
 test('objectives come out sorted by sub-metric, then expression', () => {
-  const subs = k6
-    .k6Objectives(fixture())
-    .map((o) => `${o.submetric} ${o.expression}`);
+  const subs = k6.k6Objectives(fixture()).map((o) => `${o.submetric} ${o.expression}`);
   assert.deepEqual(subs, [...subs].sort());
 });
 
@@ -329,66 +220,35 @@ test('the headline comes from http_reqs, iterations, http_req_duration and state
 });
 
 test('an absent measurement is null, never 0', () => {
-  assert.deepEqual(
-    k6.k6Headline({ metrics: { iterations: { values: { count: 4 } } } }),
-    {
-      httpReqs: null,
-      httpReqRate: null,
-      iterations: 4,
-      durationMs: null,
-      p95Ms: null,
-      p99Ms: null,
-    },
-  );
+  assert.deepEqual(k6.k6Headline({ metrics: { iterations: { values: { count: 4 } } } }), {
+    httpReqs: null,
+    httpReqRate: null,
+    iterations: 4,
+    durationMs: null,
+    p95Ms: null,
+    p99Ms: null,
+  });
 });
 
 test('abstains on no metrics, and on zero requests and zero iterations (null counts as 0)', () => {
   const reason = (data) => k6.k6Abstention(data, k6.k6Headline(data));
   assert.match(reason({ metrics: {} }), /no metrics/);
-  assert.match(
-    reason({ metrics: { checks: { values: { rate: 1 } } } }),
-    /0 requests and 0 iterations/,
-  );
-  assert.match(
-    reason({
-      metrics: {
-        http_reqs: { values: { count: 0 } },
-        iterations: { values: { count: 0 } },
-      },
-    }),
-    /0 requests/,
-  );
-  assert.equal(
-    reason({ metrics: { iterations: { values: { count: 1 } } } }),
-    null,
-  );
+  assert.match(reason({ metrics: { checks: { values: { rate: 1 } } } }), /0 requests and 0 iterations/);
+  assert.match(reason({ metrics: { http_reqs: { values: { count: 0 } }, iterations: { values: { count: 0 } } } }), /0 requests/);
+  assert.equal(reason({ metrics: { iterations: { values: { count: 1 } } } }), null);
   assert.equal(reason(fixture()), null);
 });
 
 // --- the denominator ---------------------------------------------------------------
 
 test('the denominator states thresholds, sub-metrics, ok, not ok and unmeasured', () => {
-  const line = k6.k6Denominator(
-    'perf-summary.json',
-    k6.k6Objectives(fixture()),
-  );
-  assert.match(
-    line,
-    /read 105 thresholds on 70 sub-metrics from perf-summary\.json: 70 ok, 35 not ok, 0 unmeasured/,
-  );
+  const line = k6.k6Denominator('perf-summary.json', k6.k6Objectives(fixture()));
+  assert.match(line, /read 105 thresholds on 70 sub-metrics from perf-summary\.json: 70 ok, 35 not ok, 0 unmeasured/);
   assert.doesNotMatch(line, /summaryTrendStats|unjudged/);
 });
 
 test('unmeasured objectives name summaryTrendStats; zero thresholds say unjudged', () => {
-  const unmeasured = [
-    { submetric: 'x', expression: 'p(99)<1', observedValue: null, ok: true },
-  ];
-  assert.match(
-    k6.k6Denominator('f', unmeasured),
-    /1 unmeasured[\s\S]*summaryTrendStats/,
-  );
-  assert.match(
-    k6.k6Denominator('f', []),
-    /no thresholds[\s\S]*unjudged, never a pass/,
-  );
+  const unmeasured = [{ submetric: 'x', expression: 'p(99)<1', observedValue: null, ok: true }];
+  assert.match(k6.k6Denominator('f', unmeasured), /1 unmeasured[\s\S]*summaryTrendStats/);
+  assert.match(k6.k6Denominator('f', []), /no thresholds[\s\S]*unjudged, never a pass/);
 });
