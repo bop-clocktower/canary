@@ -16,6 +16,70 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **The ingest reporter and `canary testtracker push` publish quarantine state
+  from the canary-katana ledger (#1321).** Set `--quarantine-ledger <path>`
+  (reporter option `quarantineLedger`, env `CANARY_INGEST_QUARANTINE_LEDGER`).
+  Each skipped result that matches a ledger row by `(file, test)` is tagged
+  `quarantined` and `quarantine:<issue>`, inside the existing ingest contract. A
+  skip with no row is not tagged. Release is implicit: remove the row and the
+  tag stops. Rows that match no skipped result are listed in the push output. A
+  missing or unreadable ledger makes the push exit 1 with nothing sent, and
+  makes the reporter warn. The dashboard has to read the tag before its UI shows
+  the test as quarantined.
+- **`canary testtracker push-perf` (#1580).** Pushes a k6 `handleSummary` run to
+  TestTracker's `/api/v1/tenants/<client>/perf-reports` with the client's `tt_`
+  ingest token: every threshold as an objective (raw sub-metric, raw expression,
+  observed value, k6's `ok`), headline counts and latencies, git provenance.
+  Unmeasured is never met: a statistic k6 did not report, a Rate with no
+  samples, and a Trend or Gauge with no samples (every value it reports is 0,
+  whichever `summaryTrendStats` are listed) are sent as unmeasured. A Counter is
+  always measured (`count: 0` is a real result). The default run ref is
+  `GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT-GITHUB_JOB`; matrix legs of one job need
+  their own `--run-ref`, and a duplicate answer is raised as a warning. An
+  unknown option is echoed by name only, never its inline value. A run with 0
+  requests and 0 iterations abstains (exit 3); more than 2,000 thresholds or a
+  body over 2 MiB is refused rather than truncated.
+
+### Fixed
+
+- **`canary doctor` now warns about an overlay that has not been fetched in 7
+  days (#1324).** `overlay:<name>:fresh` used to pass any clone that was zero
+  commits behind its local tracking ref, even one last fetched weeks ago or
+  never fetched at all. A last fetch older than 7 days, or no fetch on record,
+  now reports a `warn` that names the last fetch time and the threshold, with
+  `canary overlay update <name>` (or `git -C <clone> fetch`) as the remedy.
+  `warn` is a new doctor status: it counts toward `checked`, never fails the
+  run, and leaves `allPassed` true and the exit code 0. Behind, missing and
+  pinned overlays are unchanged.
+- **`canary migrate` now names every framework it accepts when detection is
+  uncertain (#1521).** The "Known test framework(s)" hint read a hardcoded list
+  of 6 names. That list had drifted from the registry `--framework` is checked
+  against (#1416), so the hint left out `phpunit`, `pest` and the other registry
+  frameworks. The hint now reads its list from that registry.
+- **`canary history record` now records Playwright failures outside any test
+  (#1411).** A spec that fails to load, global setup or teardown, a webServer
+  that never starts and a global timeout all become failed rows. A load failure
+  used to abstain with exit 3 and store nothing; it now exits 0 and stores a
+  failed run. `No tests found` still abstains, but an error that only starts
+  with those words is now recorded, and a malformed `errors` entry is ignored
+  instead of crashing the command.
+- **The synthetic `<file> (file failed outside any test)` row is now named with
+  the repo-relative path (#1411),** so one file has one history across machines.
+  Rows stored under the old absolute name stop joining and age out of the
+  window.
+- **`canary rewind` no longer reports a false `reproduced` for a failure outside
+  any test (#1411).** It matches the exact file in the replay checkout, so a
+  same-named file in another directory can't answer for it. An attempt where the
+  file ran cleanly now counts as passed, so these rows can come back
+  `intermittent` or `not-reproduced`; an attempt that doesn't show the file ran
+  isn't counted. Playwright replays of these rows run the whole file instead of
+  a `--grep` that matched nothing. A failure that names no file now abstains
+  with a reason saying so.
+
+## [9.6.0] - 2026-11-04
+
+### Added
+
 - **`canary.tool-review/1` contract (#1524, phase 1 of `canary-blackalice`).** A
   versioned report for reviewing a QA tool from its users' seats: a coverage
   ledger in which every job and result surface ends in exactly one state
@@ -29,23 +93,83 @@ under the project's former name) are documented in the
   `reviewed_at`. `validate.mjs` refuses the contract string and names
   `tool-review.mjs`. Spec: `docs/specs/canary-tool-review-contract.md`;
   ADR 0045.
+- **`canary-unquarantine audit`, the release half of quarantine (#1456, part of
+  #1455).** A new bundled skill that reads the `canary-katana` ledger
+  (`.canary/quarantine.json`, schema v1 or v2) and every marker a quarantine can
+  take in code, then finds the ticket each row waits on. It follows hand-offs,
+  so a closed issue filed upstream waits on the upstream ticket. Each row is
+  classed candidate, blocked, stale, unlinked, abstain or removed, under a
+  printed denominator, and markers with no ledger row are listed. `audit` is
+  read-only. Anything it can't read abstains and names the reason, and zero rows
+  read never reads as clear. GitHub is built in through `gh`; Jira is used only
+  for projects in company.json `jira_projects`, with credentials in the
+  environment.
+- **`canary-unquarantine trial` and `verdict` release tests through CI
+  (#1457).** `trial` prints its plan and writes nothing without `--yes`. With
+  it, the candidates' markers are lifted in a throwaway worktree and a draft PR
+  opens, leaving your checkout alone. `verdict --pr N` reads per-test results
+  from a Playwright JSON or JUnit report and abstains when it has none; it never
+  falls back to the run's overall conclusion. `--apply` keeps a passing test
+  released and drops its rows, restores a failing, flaky or missing test's
+  marker, and tells the blocking ticket about a failure. See `### Security` for
+  the limits of `--apply`.
+- **`canary-unquarantine quarantine` and `migrate`, the producer side (#1459).**
+  `quarantine` writes a marker and a caused ledger row together, or neither, and
+  refuses an unknown cause, a missing or already-skipped test, a corrupt ledger,
+  or a `product-defect`, `blocked-data` or `pending-feature` cause with no
+  `--issue`. `migrate` turns tag-style quarantine and bare skips into ledger
+  rows, offline, keeping every ticket reference in the comment above the marker.
+  It only shows the rows without `--yes`.
 
 ### Security
 
+- **`canary-unquarantine verdict --apply` checks the trial manifest against the
+  default branch (#1496).** It tells only a ticket the row names there, lists a
+  hand-off leaf for a person with no comment or re-point, and refuses a blocker
+  or ledger row that doesn't match, or a cross-repository head. It also refuses
+  a partial clone and a manifest path with a segment spelled `.git`, and runs
+  git with hooks off, so the settle commit is unsigned and skips your own hooks.
+  **This narrows code execution on your machine and does not end it.** A symlink
+  on a trial branch can still run code during `--apply`, so only run it on a
+  trial you trust; #1562 tracks refusing such a path and #1560 tracks never
+  checking out the trial tree. `--apply` can also corrupt a non-UTF-8 test file
+  it restores from the trial's base commit (#1573), and some manifest fields are
+  still unchecked (#1549).
+
+- **`@hono/node-server` bumped to 2.1.6 (GHSA-rmxm-3fg6-px4f).** The transitive
+  dependency (via `@modelcontextprotocol/sdk`) moves in both the `ts/` and
+  `npm/` lockfiles. Exposure was low: the affected `serveStatic` helper appears
+  nowhere in `ts/src` or `npm/src`, and the MCP server is stdio only. This
+  clears the audit finding; it does not close a reachable path.
+- **`body-parser` bumped to 2.4.0 (GHSA-27r3-jxmh-p828) and `fast-uri` to 3.1.9
+  (GHSA-w74x-v6f9-j3xg, GHSA-333x-w4r6-6crp, GHSA-wjr9-j795-jxcr,
+  GHSA-xhq7-xmqj-769h).** Both transitive dependencies move in the `ts/` and
+  `npm/` lockfiles. No canary code changes.
 - **`ip-address` bumped to 10.7.4 (GHSA-rxp7-6hxx-x8q5).** The transitive
   dependency (via `@modelcontextprotocol/sdk` → `express-rate-limit`) matched an
   `Address6` zone identifier in quadratic time before its length limit, so a
   single long string could stall the process. Both the `ts/` and `npm/`
   lockfiles now resolve the patched version.
-- **JUnit root detection no longer backtracks exponentially (CWE-1333).**
+- **JUnit root detection no longer backtracks exponentially (#1538, CWE-1333).**
   `canary history record` and `canary testtracker` could stall on a crafted
   report whose prolog never reaches a root element. Each prolog item now ends at
   its first terminator, so the scan is linear. A document that was recognised
   only because a comment or processing instruction stretched past its own end,
-  such as one whose real root is not JUnit, is now refused.
+  such as one whose real root is not JUnit, is now refused. So is a valid prolog
+  with a declaration, a doctype with an internal subset and a processing
+  instruction before the root, which only ever passed by accident. A prolog of
+  about 1.67 million items now overflows the regex stack, down from about 2.39
+  million; the command exits 1 and records nothing.
 
 ### Changed
 
+- **`canary ticket-update` no longer exits 0 for an action that failed or could
+  not run (#1413).** It exits 1 when a comment was not posted, the current
+  status could not be fetched, `--dry-run` finds an unreachable target, or only
+  one of the two actions has Jira credentials, and 3 (abstained) when no action
+  could run for lack of them, which means Jira was contacted zero times; scripts
+  relying on exit 0 will see this. `--help` no longer promises `--result` and
+  `--test-file` defaults that never existed.
 - **`canary testtracker push` refuses a payload that would lose its catalog
   under CI (#1355).** Fitting a run over the 4 MB ingest budget drops
   `collected`, so the suite lands unmeasured; the push used to warn and exit 0.
@@ -60,9 +184,59 @@ under the project's former name) are documented in the
   `coverageAnalysis: perTest`. This completes the counting rule that shipped in
   v9.4.0 (#1302). Consumers upgrading across it should expect those survivors to
   stay `survived`, so `noCoverage` drops, `survived` can rise, and a run that
-  used to exit 0 can now exit 1.
+  used to exit 0 can now exit 1. The disclosure itself changes report text only:
+  no verdict, exit code or `mutation-report.json` field moves.
+- **`canary-ci-ready`'s flakiness check reads the `canary-unquarantine` audit's
+  classes (#1459)** instead of judging issue state by hand. Blocked counts as
+  verified; candidate, stale and unledgered are flagged; unlinked fails; and
+  abstained is unknown, never clean.
 
 ### Fixed
+
+- **The security ledger no longer prints a false `Supply chain: 0` (#1436).**
+  `docs/SECURITY_LEDGER.md` showed 0 while `npm audit` found 6 across three
+  lockfiles, because no audit ever ran and the renderer printed an empty default
+  as a count. `harness-security.yml` now audits every tracked lockfile into
+  `.harness/security/supply-chain.json`. The line reads a real count with its
+  severities, lockfile count, audit date and commit, or `not measured` with the
+  reason when no audit is recorded, no lockfile is tracked or any audit failed.
+  Anyone reading the ledger should expect `not measured` until the first scan on
+  `main` lands through `chore/security-ledger`, and then a number above 0. That
+  jump is the first real measurement, not a new vulnerability. Totals are summed
+  per lockfile, so one advisory in two lockfiles counts twice. Nothing gates on
+  the count. The per-snapshot `Supply` table column is gone.
+
+- **An append no longer makes a history store unreadable (#1297).**
+  `NdjsonHistoryStore.pushRun` assumed the store ended in a newline, so on a
+  file left unterminated by another tool or a hand edit the new record joined
+  the last line, and every later read threw `HistoryContentError`. A separator
+  now goes in when the file has content and no final newline. A store already
+  corrupted by a joined line is still refused.
+
+- **`canary history push --dry-run` abstains with no remote store (#1412).**
+  With neither `--db-url` nor `CANARY_HISTORY_DB_URL` it printed
+  `would push run` and exited 0, promising a push that can't happen. It now
+  exits 3 with the same message as the real push. A dry run with a remote
+  configured is unchanged.
+
+- **guardian: a coverage report can no longer verify a file it never measured
+  through two more paths (#1414, #1415).** `resolveFromReport` takes an optional
+  repo root and anchors its keys when given one; two-argument callers behave as
+  before. A relative key from a report in a root `coverage/` directory is now
+  looked up across the repo. Found under more than one directory, the entry is
+  dropped and every candidate falls to a lower tier, so it never returns
+  `coverage-verified`. Found under exactly one, it binds to that path only.
+
+- **guardian: lines above a file's first record are not scored as uncovered
+  (#1408).** When the lexer lost its place, imports and signatures above the
+  first recorded line were attributed to line 0, which has no hits, and reported
+  as uncovered code. They now get no attribution and stay not-coverable.
+
+- **`common_imports` counts every consecutive Python import line (#1311).**
+  `PatternMatcher` let one bare `import` match run on through the following
+  `import` and `from` lines and kept only the first module, so later modules
+  were dropped from the conventions used for generated tests. Order can change
+  as a result, because modules sort by their real counts.
 
 - **`migrate --framework` rejects an unknown name (#1416)** with exit 1 and the
   known list, before any write, instead of silently using detection.
@@ -5196,7 +5370,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.5.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.6.0...HEAD
+[9.6.0]: https://github.com/bop-clocktower/canary/compare/v9.5.0...v9.6.0
 [9.5.0]: https://github.com/bop-clocktower/canary/compare/v9.4.0...v9.5.0
 [9.4.0]: https://github.com/bop-clocktower/canary/compare/v9.3.0...v9.4.0
 [9.3.0]: https://github.com/bop-clocktower/canary/compare/v9.2.0...v9.3.0

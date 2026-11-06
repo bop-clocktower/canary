@@ -9,7 +9,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { QUOTES, stepQuote, stripComments } from '../type-only.js';
+import {
+  afterCode,
+  QUOTES,
+  skipRegex,
+  startsRegex,
+  stepQuote,
+  stripComments,
+} from './comments.js';
 import {
   expandRanges,
   matchFile,
@@ -31,8 +38,6 @@ const LEADING_OP =
   /^(?:[.?:+\-*/%&|^=<>]|\?\?|&&|\|\||(?:as|in|instanceof|satisfies)\b)/;
 /** The token before a `{` that makes it an object literal, not a block. */
 const EXPR_BEFORE_BRACE = /(?:[=([,:?!&|+]|\breturn|\byield|\bawait)$/;
-/** The token before a `/` that makes it a regex literal, not division. */
-const REGEX_BEFORE = /(?:^|[=([,:?!&|{};+\-*%<>~^]|\breturn|\btypeof)$/;
 
 /** An open bracket; `{` is split into object-literal (`expr`) vs block. */
 type Frame = '(' | '[' | 'expr' | 'block';
@@ -67,26 +72,14 @@ function scanLine(code: string, p: Pass): void {
     const ch = code[i]!;
     if (quote !== null || QUOTES.has(ch)) {
       [quote, i] = stepQuote(code, i, quote);
-    } else if (ch === '/' && REGEX_BEFORE.test(p.before)) {
+    } else if (startsRegex(ch, p.before)) {
       i = skipRegex(code, i);
     } else {
       stepCode(ch, p);
-      if (ch.trim() !== '') p.before = (p.before + ch).slice(-8);
+      p.before = afterCode(p.before, ch);
     }
   }
   p.inTemplate = quote === '`';
-}
-
-/** Index of a regex literal's closing `/` (or the line end) from its opening. */
-function skipRegex(code: string, start: number): number {
-  let inClass = false;
-  for (let i = start + 1; i < code.length; i++) {
-    const ch = code[i]!;
-    if (ch === '\\') i++;
-    else if (ch === '[' || ch === ']') inClass = ch === '[';
-    else if (ch === '/' && !inClass) return i;
-  }
-  return code.length;
 }
 
 /** Track one code character's effect on nesting and statement end. */

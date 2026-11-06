@@ -6,9 +6,9 @@ created: 2026-07-17
 # `canary doctor`
 
 `canary doctor` answers one question: **is my Canary setup working, and if not,
-what exactly do I fix?** It prints each check as pass/fail with a one-line
-remedy under every failure, and exits non-zero when anything fails — so it drops
-cleanly into a setup script or CI gate.
+what exactly do I fix?** It prints each check as pass/warn/fail with a one-line
+remedy under every failure or warning, and exits non-zero when anything fails —
+so it drops cleanly into a setup script or CI gate.
 
 > **npm install required.** `doctor` ships in the npm package
 > (`npm install -g canary-test-cli`). A pipx/Python install prints a pointer to
@@ -26,11 +26,11 @@ canary doctor --json          # machine-readable report on stdout
 
 Exit codes:
 
-| Code | Meaning                                                                    |
-| ---- | -------------------------------------------------------------------------- |
-| `0`  | At least one check ran and none failed. The summary names the denominator. |
-| `1`  | At least one check failed.                                                 |
-| `3`  | **Abstained** — nothing was actually verified. See below.                  |
+| Code | Meaning                                                                                       |
+| ---- | --------------------------------------------------------------------------------------------- |
+| `0`  | At least one check ran and none failed (warnings allowed). The summary names the denominator. |
+| `1`  | At least one check failed.                                                                    |
+| `3`  | **Abstained** — nothing was actually verified. See below.                                     |
 
 Skipped and informational lines never count as failures, but they also never
 count as passes. A run in which _every_ check was skipped (or which registered
@@ -62,6 +62,8 @@ Engine
   ✓ Claude Code plugin 5.9.0 (marketplace 5.9.0)
   ✓ git present (git version 2.44.0)
   ✓ overlay "example-org-example-overlay": up to date as of 2026-10-20T14:02:11Z
+  ! overlay "example-org-old-overlay": up to date as of 2026-09-21T12:00:00Z — last fetched 30 days ago, past the 7-day threshold
+      → Fetch it: canary overlay update example-org-old-overlay (or git -C ~/.canary/overlays/example-org-old-overlay fetch to refresh without merging)
   ✓ overlay "example-org-example-overlay": no local changes
   ✓ project .canary/ config parses (1 file(s))
   ✓ MCP config resolves
@@ -75,12 +77,13 @@ Overlay: example-org-example-overlay
 1 check(s) failed (1 skipped: overlay:example:smoke-test [command checks need consent])
 ```
 
-| Symbol | Meaning                                                   |
-| ------ | --------------------------------------------------------- |
-| `✓`    | pass                                                      |
-| `✗`    | fail (a remedy line follows)                              |
-| `-`    | skipped (e.g. a `command-succeeds` check without consent) |
-| `ℹ`    | informational (e.g. latest-version lookup was offline)    |
+| Symbol | Meaning                                                     |
+| ------ | ----------------------------------------------------------- |
+| `✓`    | pass                                                        |
+| `!`    | warn: needs attention, never fails the run (remedy follows) |
+| `✗`    | fail (a remedy line follows)                                |
+| `-`    | skipped (e.g. a `command-succeeds` check without consent)   |
+| `ℹ`    | informational (e.g. latest-version lookup was offline)      |
 
 ---
 
@@ -90,18 +93,18 @@ Overlay: example-org-example-overlay
 
 These run with no overlay present and need no configuration:
 
-| Check                       | Passes when                                                                                                                                | On failure                                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `engine:version`            | Installed CLI matches the latest published version                                                                                         | Points at `npm install -g …@latest`. Offline → an `ℹ` line, never a failure.                        |
-| `engine:plugin-version`     | Installed Claude Code plugin matches the `bop-clocktower` marketplace clone                                                                | Prints **both** update commands (see below). Skipped with no plugin install.                        |
-| `engine:git`                | `git` is on `PATH`                                                                                                                         | Install git — `overlay add`/`update` need it.                                                       |
-| `overlay:<name>:present`    | The registered clone still exists on disk                                                                                                  | Re-add the overlay.                                                                                 |
-| `overlay:<name>:fresh`      | The clone is up to date with its last-known remote state, named with the last fetch time (`unknown (never fetched)` when none is recorded) | Run `canary overlay update <name>`. Does **not** hit the network.                                   |
-| `overlay:<name>:clean`      | The clone has no local modifications                                                                                                       | Commit/stash, or remove and re-add.                                                                 |
-| `engine:overlay-conflicts`  | No two overlays ship the same skill name with equal precedence                                                                             | Set a higher `precedence` on the overlay that should win, or run `canary overlay list --conflicts`. |
-| `engine:skill-requirements` | Every installed skill's declared `requires:` runtime tools are present (and new enough)                                                    | Install/upgrade the named tool. Info line when no installed skill declares requirements.            |
-| `engine:project-config`     | `.canary/company.json` (and any `company.<env>.json`) parse as JSON                                                                        | Skipped when there is no project `.canary/`.                                                        |
-| `engine:mcp`                | Project and home `.mcp.json` parse and their `mcpServers` entries resolve                                                                  | Skipped when no `.mcp.json` exists.                                                                 |
+| Check                       | Passes when                                                                                                                         | On failure                                                                                                                                                                                                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `engine:version`            | Installed CLI matches the latest published version                                                                                  | Points at `npm install -g …@latest`. Offline → an `ℹ` line, never a failure.                                                                                                                                                                                 |
+| `engine:plugin-version`     | Installed Claude Code plugin matches the `bop-clocktower` marketplace clone                                                         | Prints **both** update commands (see below). Skipped with no plugin install.                                                                                                                                                                                 |
+| `engine:git`                | `git` is on `PATH`                                                                                                                  | Install git — `overlay add`/`update` need it.                                                                                                                                                                                                                |
+| `overlay:<name>:present`    | The registered clone still exists on disk                                                                                           | Re-add the overlay.                                                                                                                                                                                                                                          |
+| `overlay:<name>:fresh`      | The clone is up to date with its last-known remote state, named with the last fetch time, and that fetch is no more than 7 days old | Behind → fail: run `canary overlay update <name>`. Last fetch over 7 days old, or `unknown (never fetched)` → **warn** (exit stays 0): run `canary overlay update <name>` or `git -C <clone> fetch`. Pinned clones are exempt. Does **not** hit the network. |
+| `overlay:<name>:clean`      | The clone has no local modifications                                                                                                | Commit/stash, or remove and re-add.                                                                                                                                                                                                                          |
+| `engine:overlay-conflicts`  | No two overlays ship the same skill name with equal precedence                                                                      | Set a higher `precedence` on the overlay that should win, or run `canary overlay list --conflicts`.                                                                                                                                                          |
+| `engine:skill-requirements` | Every installed skill's declared `requires:` runtime tools are present (and new enough)                                             | Install/upgrade the named tool. Info line when no installed skill declares requirements.                                                                                                                                                                     |
+| `engine:project-config`     | `.canary/company.json` (and any `company.<env>.json`) parse as JSON                                                                 | Skipped when there is no project `.canary/`.                                                                                                                                                                                                                 |
+| `engine:mcp`                | Project and home `.mcp.json` parse and their `mcpServers` entries resolve                                                           | Skipped when no `.mcp.json` exists.                                                                                                                                                                                                                          |
 
 #### Updating the Claude Code plugin
 
@@ -192,7 +195,7 @@ The exit code is unchanged (0 = passed, 1 = a check failed, 3 = abstained), so
   "checks": [
     {
       "id": "engine:git", // stable check id
-      "status": "pass", // pass | fail | skip | info
+      "status": "pass", // pass | warn | fail | skip | info
       "label": "git present (git version 2.44.0)",
       "group": "Engine", // section: "Engine" or "Overlay: <name>"
       "remedy": "Install git — …", // present only when the check did not pass
@@ -200,7 +203,7 @@ The exit code is unchanged (0 = passed, 1 = a check failed, 3 = abstained), so
   ],
   "allPassed": true, // false whenever a check failed OR the run abstained
   "warnings": [], // non-fatal advisories, e.g. an unknown --persona
-  "checked": 7, // the denominator: checks that produced a verdict (pass + fail)
+  "checked": 7, // the denominator: checks that produced a verdict (pass + warn + fail)
   "skipped": [
     { "name": "smoke-test", "reason": "command checks need consent" },
   ],
@@ -216,9 +219,11 @@ without reading the exit code.
 **This is a canary-owned contract, not `harness doctor --json`.** Only the
 top-level `allPassed` boolean intentionally matches harness's shape. The
 per-check fields (`id` / `label` / `remedy` / `group`) and the `skip` status
-tier are canary's own — harness uses `name` / `message` / `fix` and a `warn`
-tier canary lacks. Do not build a parser that assumes the two are
-interchangeable; branch on `version` if you consume both.
+tier are canary's own — harness uses `name` / `message` / `fix`. Both have a
+`warn` tier; canary's (added for #1324) counts toward `checked`, carries a
+`remedy`, and leaves `allPassed` true and the exit code 0. Do not build a parser
+that assumes the two are interchangeable; branch on `version` if you consume
+both.
 
 ---
 

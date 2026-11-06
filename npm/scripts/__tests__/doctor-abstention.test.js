@@ -76,6 +76,28 @@ describe('summarizeChecks (denominator policy)', () => {
     assert.match(s.summaryLine, /9 skipped/);
   });
 
+  it('a warn is a verdict, not a failure: counted, exit 0, named in the summary (#1324)', () => {
+    const s = summarizeChecks([
+      group('Engine', [r('a', 'pass'), r('stale', 'warn')]),
+    ]);
+    assert.equal(s.checked, 2);
+    assert.equal(s.passed, 1);
+    assert.equal(s.warned, 1);
+    assert.equal(s.failed, 0);
+    assert.equal(s.abstained, false);
+    assert.equal(s.exitCode, 0);
+    assert.match(s.summaryLine, /1 warning/);
+    assert.doesNotMatch(s.summaryLine, /All 2 run check\(s\) passed/);
+  });
+
+  it('a failure still outranks a warn', () => {
+    const s = summarizeChecks([
+      group('Engine', [r('x', 'fail'), r('stale', 'warn')]),
+    ]);
+    assert.equal(s.exitCode, 1);
+    assert.match(s.summaryLine, /1 check\(s\) failed/);
+  });
+
   it('skip reasons prefer the remedy, falling back to the label', () => {
     const s = summarizeChecks([
       group('Engine', [
@@ -128,6 +150,48 @@ describe('runDoctor: human report on a collapsed denominator', () => {
     });
     assert.equal(code, 0);
     assert.match(cap.text(), /All 1 run check\(s\) passed/);
+  });
+
+  it('renders a warn with its remedy and still exits 0 (#1324)', async () => {
+    const cap = capture();
+    const code = await runDoctor([], {
+      ...abstainingDeps(),
+      out: cap.out,
+      runEngineChecks: async () => [
+        { id: 'a', status: 'pass', label: 'a' },
+        {
+          id: 'overlay:x:fresh',
+          status: 'warn',
+          label: 'overlay "x": stale',
+          remedy: 'Fetch it: canary overlay update x',
+        },
+      ],
+    });
+    assert.equal(code, 0);
+    const text = cap.text();
+    assert.match(
+      text,
+      /! overlay "x": stale\n {6}→ Fetch it: canary overlay update x\n/,
+    );
+    assert.match(text, /1 warning/);
+  });
+
+  it('--json carries status "warn" and allPassed stays true (#1324)', async () => {
+    const cap = capture();
+    const code = await runDoctor(['--json'], {
+      ...abstainingDeps(),
+      out: cap.out,
+      runEngineChecks: async () => [
+        { id: 'w', status: 'warn', label: 'w', remedy: 'fix w' },
+      ],
+    });
+    const report = JSON.parse(cap.text());
+    assert.equal(code, 0);
+    assert.equal(report.checks[0].status, 'warn');
+    assert.equal(report.checks[0].remedy, 'fix w');
+    assert.equal(report.allPassed, true);
+    assert.equal(report.checked, 1);
+    assert.equal(report.abstained, false);
   });
 });
 

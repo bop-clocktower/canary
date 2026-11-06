@@ -30,6 +30,11 @@
     },
     {
       "rule": "coupling",
+      "path": "npm/src/testtracker-perf.ts",
+      "why": "`canary testtracker push-perf` (#1580) is the same CLI wiring shape as testtracker.ts: it imports reporters/perf/k6-summary.ts, reporters/perf/perf-args.ts and the ingest transport and is imported only by npm/src/testtracker.ts, which IS a coupling ratio of 1.00. Its argument parsing and validation were split into reporters/perf/perf-args.ts and its run, send and refusal paths flattened into small helpers, so the file-length and complexity findings this module first introduced (302 lines; configurePerf 29, runPushPerf 20, sendPerf 14) were FIXED, not allowanced; only the structural coupling finding is. Its deps type is declared locally rather than imported from testtracker.ts, which removed the import cycle check-deps reported."
+    },
+    {
+      "rule": "coupling",
       "path": "ts/src/**/cli.ts",
       "why": "A CLI wiring module imports many modules and is imported by few, which IS a coupling ratio of 1.00 — the rule fires on the shape, not on a defect. Splitting a subcommand into its own module is the change this repo wants; taxing it pushed work into the already-oversized ts/src/cli.ts."
     },

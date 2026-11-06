@@ -1,0 +1,31 @@
+{
+  "issue": [1321],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "plan",
+    "execute",
+    "review",
+    "verify"
+  ],
+  "spec": "docs/changes/fc1106-1321-quarantine-ledger/proposal.md",
+  "planPath": "docs/changes/fc1106-1321-quarantine-ledger/plans/2026-11-06-quarantine-ledger-plan.md",
+  "closingKeyword": "Closes",
+  "runId": "fc1106-roadmap",
+  "baseSha": "ae77c0dd2e4ab55d3220af14e90b802abe0488c8",
+  "assumptions": [
+    "DECIDED (human, option a): no new ingest field or endpoint; quarantine rides on ResultEntry.tags, the only existing per-result carrier (there is no annotations field).",
+    "Tags: `quarantined` always, plus `quarantine:<issue>` when the ledger row names an issue; an issue-less row sends `quarantined` alone rather than an empty ticket tag.",
+    "Matching is katana's (file, test) identity: test_file === row.file and full_title equals or ends with ' > ' + row.test. Rows are matched AFTER dedupeByFullTitle, so a title skipped in one project/report and run in another is sent with its worst status and no quarantine tag (code-review finding, fixed).",
+    "Ledger rows of kind `removed` are excluded from the unmatched list (a deleted test never yields a result) and counted separately in the summary, so they are not dropped silently.",
+    "Loud-failure choice per neighbouring flags: `canary testtracker push` exits 1 with 'Nothing was pushed.' (same as an unreadable --junit); the Playwright reporter emits warn() (::warning:: under GitHub Actions) and pushes untagged (same as its other config errors, which never abort the run).",
+    "katana's parser is reused by runtime import() of agents/skills/claude-code/canary-katana/scripts/ledger.mjs, resolved from <pkg>/agents/skills (published; staged by build-engine.mjs since #757) then <repo>/agents/skills (checkout). Both paths were exercised locally. Existence is checked first because katana load() reads a missing file as an empty ledger.",
+    "The `collected` catalog carries no quarantine tags on either path (results only).",
+    "Reporter option `quarantineLedger` / env CANARY_INGEST_QUARANTINE_LEDGER resolve through resolveConfig like every other setting; the CLI flag passes the same option.",
+    "The new module is imported by ingest.ts and testtracker.ts, so it is not an entry point and was not added to entropy.entryPoints.",
+    "countTests moved from ingest.ts to ingest/describe.ts to keep ingest.ts under the 300-line perf cap without raising any allowance.",
+    "A roadmap row was added for #1321 (none existed) and AGENTS.md's linked-row counts moved 13 -> 14.",
+    "Autopilot persona dispatch was condensed: planning and execution ran inline in this lane; REVIEW was delegated to a harness-code-reviewer subagent."
+  ]
+}
