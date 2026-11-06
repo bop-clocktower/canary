@@ -97,7 +97,7 @@ export interface JsonReport {
   allPassed: boolean;
   /** Non-fatal advisories (e.g. an unknown `--audience`); empty when none. */
   warnings: string[];
-  /** Checks that produced a verdict (`pass + fail`) -- the denominator (#508). */
+  /** Checks that produced a verdict (`pass + warn + fail`) -- the denominator (#508). */
   checked: number;
   /** Skipped checks, always reported; never folded into `allPassed` (D7). */
   skipped: SkipEntry[];
@@ -107,6 +107,7 @@ export interface JsonReport {
 
 const SYMBOL: Record<CheckStatus, string> = {
   pass: '✓',
+  warn: '!',
   fail: '✗',
   skip: '-',
   info: 'ℹ',
@@ -166,7 +167,7 @@ export function unknownAudienceHint(
 
 function renderCheck(r: CheckResult): string {
   const line = `  ${SYMBOL[r.status]} ${r.label}\n`;
-  return r.status === 'fail' && r.remedy
+  return (r.status === 'fail' || r.status === 'warn') && r.remedy
     ? `${line}      → ${r.remedy}\n`
     : line;
 }
@@ -206,9 +207,11 @@ async function overlayResults(
 
 /** Doctor's denominator, and the decision that follows from it (#508 D7). */
 export interface DoctorSummary {
-  /** Checks that actually produced a verdict: `pass + fail`. */
+  /** Checks that actually produced a verdict: `pass + warn + fail`. */
   checked: number;
   passed: number;
+  /** Verdicts that need attention but do not fail the run (#1324). */
+  warned: number;
   failed: number;
   /** Every skipped check, always visible, never folded into `passed`. */
   skipped: SkipEntry[];
@@ -235,15 +238,19 @@ export function summarizeChecks(groups: readonly CheckGroup[]): DoctorSummary {
   const results = groups.flatMap((g) => g.results);
   const failures = results.filter((r) => r.status === 'fail');
   const passed = results.filter((r) => r.status === 'pass').length;
+  // A warn is a verdict (the check ran and judged), so it counts toward the
+  // denominator, but it is not a finding: it never fails the run (#1324).
+  const warned = results.filter((r) => r.status === 'warn').length;
   const skipped: SkipEntry[] = results
     .filter((r) => r.status === 'skip')
     .map((r) => ({ name: r.id, reason: r.remedy ?? r.label }));
-  const checked = passed + failures.length;
+  const checked = passed + warned + failures.length;
 
   const outcome = gateOutcome({ checked, findings: failures, skipped }, 'gate');
   return {
     checked,
     passed,
+    warned,
     failed: failures.length,
     skipped,
     abstained: outcome.abstained,
@@ -251,7 +258,9 @@ export function summarizeChecks(groups: readonly CheckGroup[]): DoctorSummary {
     summaryLine:
       failures.length > 0
         ? `${failures.length} check(s) failed${skippedSuffix(skipped)}`
-        : outcome.summaryLine,
+        : warned > 0
+          ? `${warned} warning(s) across ${checked} run check(s), none failed${skippedSuffix(skipped)}`
+          : outcome.summaryLine,
   };
 }
 

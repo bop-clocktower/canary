@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary doctor` now warns about an overlay that has not been fetched in 7
+  days (#1324).** `overlay:<name>:fresh` used to pass any clone that was zero
+  commits behind its local tracking ref, even one last fetched weeks ago or
+  never fetched at all. A last fetch older than 7 days, or no fetch on record,
+  now reports a `warn` that names the last fetch time and the threshold, with
+  `canary overlay update <name>` (or `git -C <clone> fetch`) as the remedy.
+  `warn` is a new doctor status: it counts toward `checked`, never fails the
+  run, and leaves `allPassed` true and the exit code 0. Behind, missing and
+  pinned overlays are unchanged.
 - **`canary migrate` now names every framework it accepts when detection is
   uncertain (#1521).** The "Known test framework(s)" hint read a hardcoded list
   of 6 names. That list had drifted from the registry `--framework` is checked
