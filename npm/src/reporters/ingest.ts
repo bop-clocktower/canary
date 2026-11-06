@@ -1,7 +1,7 @@
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from "@playwright/test/reporter";
 import { envVar, resolveConfig, resolveArea, shouldPush } from "./ingest/config.js";
 import { runTiming, buildPayload, fitPayload, resolveTestStatus, errorField, MAX_ERROR_MESSAGE, MAX_ERROR_STACK, mapStatus, runStatus, dedupeByFullTitle } from "./ingest/payload.js";
-import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile } from "./ingest/describe.js";
+import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile, countTests } from "./ingest/describe.js";
 import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push, ingestOutcome, retryWaitMs } from "./ingest/transport.js";
 import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config.js";
 import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload.js";
@@ -210,7 +210,7 @@ export default class IngestReporter implements Reporter {
     if (!this.cfg) return;
     try {
       const raw = buildPayload(
-        await reporterQuarantine(this.cfg, [...this.results.values()]),
+        await reporterQuarantine(this.cfg.quarantineLedger, [...this.results.values()]),
         this.cfg,
         runTiming(result, this.startTime, Date.now()),
         process.env,
@@ -225,14 +225,6 @@ export default class IngestReporter implements Reporter {
     } catch (err) {
       warn(`push error — ${errText(err)}; run not ingested.`);
     }
-  }
-}
-
-function countTests(suite: Suite | undefined): number {
-  try {
-    return suite?.allTests().length ?? 0;
-  } catch {
-    return 0;
   }
 }
 

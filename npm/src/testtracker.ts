@@ -233,7 +233,7 @@ async function runPush(
   const rows = reports.flatMap((r) => r.rows);
   let results = rows;
   try {
-    const q = await quarantineResults(cfg, rows);
+    const q = await quarantineResults(cfg.quarantineLedger, rows);
     results = q.results;
     if (q.summary) out.write(`${q.summary}\n`);
   } catch (e) {

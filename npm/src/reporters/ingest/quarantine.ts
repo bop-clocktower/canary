@@ -9,12 +9,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ResolvedConfig } from "./config.js";
 import { dedupeByFullTitle } from "./payload.js";
+import type { ResultEntry } from "./payload.js";
 import { errText, log, warn } from "./transport.js";
-import type { ResultEntry } from "./types.js";
 
-export const QUARANTINED_TAG = "quarantined";
+const QUARANTINED_TAG = "quarantined";
 
 /** The ledger fields this module reads; katana's `load()` fills every one. */
 export interface LedgerRow {
@@ -55,7 +54,7 @@ function katanaLedgerModule(): string {
  * empty ledger, which here would turn a typo'd path into "nothing is
  * quarantined", so absence is checked first.
  */
-export async function loadLedgerRows(file: string): Promise<LedgerRow[]> {
+async function loadLedgerRows(file: string): Promise<LedgerRow[]> {
   if (!fs.existsSync(file)) throw new Error(`quarantine ledger ${file} not found.`);
   if (!fs.statSync(file).isFile()) throw new Error(`quarantine ledger ${file} is not a file.`);
   try {
@@ -74,7 +73,7 @@ function matches(result: ResultEntry, row: LedgerRow): boolean {
   return result.full_title === row.test || result.full_title.endsWith(` > ${row.test}`);
 }
 
-export function applyQuarantine(
+function applyQuarantine(
   results: ResultEntry[],
   rows: LedgerRow[],
 ): { results: ResultEntry[]; report: QuarantineReport } {
@@ -104,7 +103,7 @@ export function applyQuarantine(
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** One line: what was tagged, and every row that matched nothing, by name. */
-export function quarantineSummary(report: QuarantineReport): string {
+function quarantineSummary(report: QuarantineReport): string {
   const parts = [`quarantine: ${plural(report.tagged, "skipped result")} tagged from ${plural(report.rows, "ledger row")}`];
   if (report.unmatched.length) {
     parts.push(`${plural(report.unmatched.length, "ledger row")} matched no skipped result: ${report.unmatched.join(", ")}`);
@@ -123,11 +122,11 @@ export function quarantineSummary(report: QuarantineReport): string {
  * contradicts.
  */
 export async function quarantineResults(
-  cfg: ResolvedConfig,
+  ledger: string | null,
   results: ResultEntry[],
 ): Promise<{ results: ResultEntry[]; summary?: string }> {
-  if (!cfg.quarantineLedger) return { results };
-  const applied = applyQuarantine(dedupeByFullTitle(results), await loadLedgerRows(cfg.quarantineLedger));
+  if (!ledger) return { results };
+  const applied = applyQuarantine(dedupeByFullTitle(results), await loadLedgerRows(ledger));
   return { results: applied.results, summary: quarantineSummary(applied.report) };
 }
 
@@ -136,9 +135,9 @@ export async function quarantineResults(
  * every other reporter config error, because a reporter must never cost the
  * run its results.
  */
-export async function reporterQuarantine(cfg: ResolvedConfig, results: ResultEntry[]): Promise<ResultEntry[]> {
+export async function reporterQuarantine(ledger: string | null, results: ResultEntry[]): Promise<ResultEntry[]> {
   try {
-    const q = await quarantineResults(cfg, results);
+    const q = await quarantineResults(ledger, results);
     if (q.summary) log(q.summary);
     return q.results;
   } catch (err) {
