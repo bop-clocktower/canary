@@ -1,0 +1,16 @@
+{
+  "issue": [1521],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": ["ts/test/migrator.test.ts"],
+  "baseSha": "ae77c0dd",
+  "reproFailure": "At base (fix absent): TestUnknownFrameworkFailsLoud > 'unknown followup names every registry framework' -> AssertionError: expected [playwright, vitest, pytest, k6, wdio, locust] to deeply equal the 29 FrameworkRegistry names (missing phpunit, pest and 21 others). Passes with the fix; re-verified by reverting the fix (fails) and restoring it (passes).",
+  "closingKeyword": "Closes",
+  "runId": "fc1106-roadmap",
+  "assumptions": [
+    "DECIDED (issue + human): the hint's candidate list comes from FrameworkRegistry, the same source unknownFrameworkMessage (#1416) validates --framework against; the hardcoded KNOWN_FRAMEWORKS constant is deleted.",
+    "The hint lists ALL 29 registry entries in registry order, including non-runner tools (semgrep, faker, opentelemetry, ...). That matches what --framework accepts today; narrowing the set (e.g. scaffoldable-only) would make the hint and the validator disagree again, so it is out of scope.",
+    "The test asserts exact equality with the registry list (not just inclusion of phpunit/pest), so any future divergence between hint and registry fails it.",
+    "The registry is read on each unresolved-framework call; that path runs once per migrate, so no caching was added."
+  ]
+}
