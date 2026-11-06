@@ -212,7 +212,12 @@ function missingRequired({ required, VALUES }, opts) {
 function parseArgv(config, argv) {
   const opts = initialOpts(config);
   const found = [];
-  const result = { opts, positionals: found, help: false, error: null };
+  const result = {
+    opts,
+    positionals: found,
+    help: false,
+    error: /** @type {string | null} */ (null),
+  };
   const state = { ...config, argv, opts, found, endOfOptions: false };
 
   const stop = scanTokens(state);
