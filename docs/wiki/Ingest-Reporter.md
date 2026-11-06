@@ -398,15 +398,15 @@ canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> 
     Authorization: Bearer <the client's tt_ ingest token, scope ingest:runs>
 ```
 
-| Flag                   | Meaning                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------ |
-| `--k6-summary <file>`  | the `handleSummary` JSON (not `--summary-export` output, which is refused)                       |
-| `--client <slug>`      | TestTracker client slug (else `CANARY_INGEST_CLIENT`); must be the client the token belongs to   |
-| `--suite <slug>`       | the perf suite, lower-kebab. **No env fallback**: `CANARY_INGEST_SUITE` names a functional suite |
-| `--env <env>`          | environment, e.g. `dev`, `uat`, `prod` (else `CANARY_INGEST_ENVIRONMENT`); never compared across |
-| `--run-ref <ref>`      | idempotency key (default `GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT` in CI, else `local-<uuid>`)          |
-| `--generated-at <iso>` | when the run ended, ISO-8601 with `Z` or an offset (default: the file's mtime)                   |
-| `--dry-run`            | print the target path and the body instead of pushing; needs no URL or token                     |
+| Flag                   | Meaning                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `--k6-summary <file>`  | the `handleSummary` JSON (not `--summary-export` output, which is refused)                         |
+| `--client <slug>`      | TestTracker client slug (else `CANARY_INGEST_CLIENT`); must be the client the token belongs to     |
+| `--suite <slug>`       | the perf suite, lower-kebab. **No env fallback**: `CANARY_INGEST_SUITE` names a functional suite   |
+| `--env <env>`          | environment, e.g. `dev`, `uat`, `prod` (else `CANARY_INGEST_ENVIRONMENT`); never compared across   |
+| `--run-ref <ref>`      | idempotency key (default `GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT-GITHUB_JOB` in CI, else `local-<uuid>`) |
+| `--generated-at <iso>` | when the run ended, ISO-8601 with `Z` or an offset (default: the file's mtime)                     |
+| `--dry-run`            | print the target path and the body instead of pushing; needs no URL or token                       |
 
 `CANARY_INGEST_URL` (only its origin is used) and `CANARY_INGEST_TOKEN` are
 required unless `--dry-run`. In CI the body also carries `gitSha`, `gitBranch`
@@ -416,13 +416,15 @@ left out, never sent as null.
 **Write `handleSummary` data to a file.** In the k6 script:
 
 ```js
-export function handleSummary(data) { return { 'perf-summary.json': JSON.stringify(data) }; }
+export function handleSummary(data) {
+  return { 'perf-summary.json': JSON.stringify(data) };
+}
 ```
 
-A percentile threshold such as `p(99)<500` is only reported when that
-percentile is listed in `options.summaryTrendStats` (k6's default list stops at
-`p(95)`). Without it the objective is sent as **unmeasured**, and the command
-says so and names `summaryTrendStats`.
+A percentile threshold such as `p(99)<500` is only reported when that percentile
+is listed in `options.summaryTrendStats` (k6's default list stops at `p(95)`).
+Without it the objective is sent as **unmeasured**, and the command says so and
+names `summaryTrendStats`.
 
 **What is sent.** One objective per `metrics[m].thresholds[expr]`: the raw
 sub-metric key (`http_req_duration{name:checkout}`), the raw expression, the
@@ -434,8 +436,14 @@ duration and the overall p95/p99, each `null` when k6 did not report it.
 zeros and judges its thresholds ok, so a route that never ran would read as
 passing. `observedValue` is therefore `null` when the statistic is missing or
 non-finite, the expression is not k6 grammar, a Rate has `passes + fails === 0`,
-or a Trend has `min === 0 && max === 0` (measured on k6 v2.2.0: a Trend with no
-samples reports 0 for every stat; no real request completes in 0 ms).
+or a Trend or Gauge reports 0 for every value it carries. Measured on k6 v2.2.0,
+a Trend with no samples reports 0 for every `summaryTrendStats` stat, and no
+real request completes in 0 ms. The rule holds whichever stats are listed, so a
+script that keeps only `['p(95)', 'p(99)']` (no `min` or `max`) is still caught.
+A Gauge with no samples reports `value`, `min` and `max` as 0. A **Counter is
+always measured**: `count: 0` is a real result (an error counter that stayed at
+0 passed), and k6 gives no way to tell it from a counter that was never
+incremented.
 
 **What TestTracker derives, not canary.** The scenario (the sub-metric's
 `scenario` tag, else its `name` tag, else its sorted tags, else `(run)`), the
@@ -449,29 +457,46 @@ never as a pass.
 
 **Exit codes and answers.**
 
-| TestTracker answers                  | Meaning                                                                          | Exit               |
-| ------------------------------------ | -------------------------------------------------------------------------------- | ------------------ |
-| 200 `{ reportId, duplicate: false }` | stored: `canary ingest: perf report <id> ingested.`                              | `0`                |
-| 200 `{ reportId, duplicate: true }`  | already stored for this `(suite, environment, runRef)`; this push stored nothing | `0`                |
-| 200 without a numeric `reportId`     | cannot confirm it was stored                                                     | `1`                |
-| 400                                  | the body failed the schema (is canary older than the server?)                    | `1`                |
-| 401                                  | the token is unknown, revoked or expired, or not a `tt_` ingest token            | `1`                |
-| 403                                  | the token lacks `ingest:runs`                                                    | `1`                |
-| 404                                  | `--client` is not this token's client (one answer for unknown, by design)        | `1`                |
-| 413                                  | the body is over the route's 2 MB limit                                          | `1`                |
-| 422                                  | refused the content (zero requests and iterations, or a far-future time)         | `1`                |
-| 429, 5xx, network error              | retried with backoff, honouring `Retry-After` (capped at 65 s)                   | `1` if it persists |
+| TestTracker answers                  | Meaning                                                                                                                          | Exit               |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 200 `{ reportId, duplicate: false }` | stored: `canary ingest: perf report <id> ingested.`                                                                              | `0`                |
+| 200 `{ reportId, duplicate: true }`  | already stored for this `(suite, environment, runRef)`; this push stored nothing. A warning (and a `::warning` annotation in CI) | `0`                |
+| 200 without a numeric `reportId`     | cannot confirm it was stored                                                                                                     | `1`                |
+| 400                                  | the body failed the schema (is canary older than the server?)                                                                    | `1`                |
+| 401                                  | the token is unknown, revoked or expired, or not a `tt_` ingest token                                                            | `1`                |
+| 403                                  | the token lacks `ingest:runs`                                                                                                    | `1`                |
+| 404                                  | `--client` is not this token's client (one answer for unknown, by design)                                                        | `1`                |
+| 413                                  | the body is over the route's 2 MB limit                                                                                          | `1`                |
+| 422                                  | refused the content (zero requests and iterations, or a far-future time)                                                         | `1`                |
+| 429, 5xx, network error              | retried with backoff, honouring `Retry-After` (capped at 65 s)                                                                   | `1` if it persists |
+
+**Idempotency.** A report is idempotent on `(suite, environment, runRef)`. The
+default `runRef` is `GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT-GITHUB_JOB`, so a retry
+within a job dedupes, a re-run attempt is its own report, and two jobs of one
+workflow run pushing the same `--suite` and `--env` do not collide. GitHub puts
+no matrix value in the environment, and every leg of a matrix job shares
+`GITHUB_JOB`, so do not push the same suite and env from several matrix legs on
+the default: pass `--run-ref` with the leg in it, for example:
+
+```yaml
+run: >-
+  canary testtracker push-perf ... --run-ref "${{ github.run_id }}-${{
+  github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}"
+```
 
 A duplicate answers with the first report's id even when this push's body
-differs, so re-push under a new `--run-ref` to store a corrected run. A 4xx is
-never retried. Before sending anything the command also exits `2` on
-usage (a missing `--k6-summary`, `--client`, `--suite` or `--env`, or a suite or
-environment the server would refuse), `1` when the file is missing, not JSON or
-not `handleSummary` data, or when it holds more than 2,000 thresholds or the
-body would exceed 2 MiB (refused rather than truncated: dropping objectives
-would push a run judged on fewer bars than it had), and `3` (abstained) when the
-summary holds no metrics or the run made 0 requests and 0 iterations. The token
-is never printed.
+differs, and the answer carries nothing to compare the stored report with. So
+every duplicate is printed as a warning (a `::warning` annotation in CI) saying
+this push stored nothing, and the command still exits `0`: a harmless retry and
+a colliding job look the same. Re-push under a new `--run-ref` to store a
+corrected run. A 4xx is never retried. Before sending anything the command also
+exits `2` on usage (a missing `--k6-summary`, `--client`, `--suite` or `--env`,
+or a suite or environment the server would refuse), `1` when the file is
+missing, not JSON or not `handleSummary` data, or when it holds more than 2,000
+thresholds or the body would exceed 2 MiB (refused rather than truncated:
+dropping objectives would push a run judged on fewer bars than it had), and `3`
+(abstained) when the summary holds no metrics or the run made 0 requests and 0
+iterations. The token is never printed.
 
 **In CI.** k6 exits `99` when a threshold fails, which is exactly the run you
 want reported. Give the push step `if: ${{ !cancelled() }}` so it runs after a

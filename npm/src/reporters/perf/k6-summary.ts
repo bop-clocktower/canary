@@ -38,7 +38,10 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
  * `--summary-export` format, whose thresholds are bare booleans and would
  * otherwise be misread as "no thresholds".
  */
-export function readK6Summary(file: string): { summary: K6Summary; mtime: Date } {
+export function readK6Summary(file: string): {
+  summary: K6Summary;
+  mtime: Date;
+} {
   let text: string;
   let mtime: Date;
   try {
@@ -54,7 +57,9 @@ export function readK6Summary(file: string): { summary: K6Summary; mtime: Date }
     throw new K6SummaryError(`${file} is not JSON.`);
   }
   if (!isObject(data) || !isObject(data.metrics)) {
-    throw new K6SummaryError(`${file} is not k6 handleSummary data (no "metrics" object).`);
+    throw new K6SummaryError(
+      `${file} is not k6 handleSummary data (no "metrics" object).`,
+    );
   }
   for (const [name, m] of Object.entries(data.metrics)) {
     if (!isObject(m) || !isObject(m.values)) {
@@ -64,10 +69,15 @@ export function readK6Summary(file: string): { summary: K6Summary; mtime: Date }
       );
     }
     if (m.thresholds === undefined) continue;
-    if (!isObject(m.thresholds)) throw new K6SummaryError(`${file}: "${name}".thresholds is not an object.`);
+    if (!isObject(m.thresholds))
+      throw new K6SummaryError(
+        `${file}: "${name}".thresholds is not an object.`,
+      );
     for (const [expr, t] of Object.entries(m.thresholds)) {
       if (!isObject(t) || typeof t.ok !== 'boolean') {
-        throw new K6SummaryError(`${file}: threshold "${expr}" on "${name}" has no boolean "ok".`);
+        throw new K6SummaryError(
+          `${file}: threshold "${expr}" on "${name}" has no boolean "ok".`,
+        );
       }
     }
   }
@@ -92,15 +102,27 @@ const finiteOrNull = (v: unknown): number | null =>
  * - a Rate with no samples reports `rate: 0`, and `passes + fails === 0`
  *   says so directly;
  * - a Trend with no samples reports 0 for every `summaryTrendStats` key and
- *   carries no sample count (measured on k6 v2.2.0). `min === 0 && max === 0`
- *   is the signal: no real request completes in 0 ms over HTTP, so a Trend
- *   whose every sample was exactly 0 is treated as unmeasured too.
+ *   carries no sample count (measured on k6 v2.2.0), and a Gauge with no
+ *   samples reports `value`, `min` and `max` as 0. Every finite value being 0
+ *   is the signal. It holds whichever stats `summaryTrendStats` lists (a
+ *   script that keeps only `['p(95)', 'p(99)']` has no min or max to check).
+ *   No real request completes in 0 ms over HTTP, so a Trend whose every
+ *   sample was exactly 0 is treated as unmeasured too;
+ * - a Counter is always measured: `count: 0` is a real result (an error
+ *   counter that stayed at 0 passed), and k6 gives no way to tell it from
+ *   "never incremented".
  */
 function sampled(m: K6Metric): boolean {
   if (m.type === 'rate') {
-    return (finiteOrNull(m.values.passes) ?? 0) + (finiteOrNull(m.values.fails) ?? 0) > 0;
+    return (
+      (finiteOrNull(m.values.passes) ?? 0) +
+        (finiteOrNull(m.values.fails) ?? 0) >
+      0
+    );
   }
-  if (m.type === 'trend') return !(m.values.min === 0 && m.values.max === 0);
+  if (m.type === 'trend' || m.type === 'gauge') {
+    return Object.values(m.values).some((v) => (finiteOrNull(v) ?? 0) !== 0);
+  }
   return true;
 }
 
@@ -118,8 +140,14 @@ export function k6Objectives(summary: K6Summary): PerfObjective[] {
     const thresholds = m.thresholds ?? {};
     for (const expression of Object.keys(thresholds).sort()) {
       const stat = thresholdStat(expression);
-      const observedValue = stat !== null && sampled(m) ? finiteOrNull(m.values[stat]) : null;
-      out.push({ submetric, expression, observedValue, ok: thresholds[expression].ok });
+      const observedValue =
+        stat !== null && sampled(m) ? finiteOrNull(m.values[stat]) : null;
+      out.push({
+        submetric,
+        expression,
+        observedValue,
+        ok: thresholds[expression].ok,
+      });
     }
   }
   return out;
@@ -136,7 +164,8 @@ export interface PerfHeadline {
 }
 
 export function k6Headline(summary: K6Summary): PerfHeadline {
-  const v = (metric: string, key: string) => finiteOrNull(summary.metrics[metric]?.values[key]);
+  const v = (metric: string, key: string) =>
+    finiteOrNull(summary.metrics[metric]?.values[key]);
   const int = (n: number | null) => (n === null ? null : Math.round(n));
   return {
     httpReqs: int(v('http_reqs', 'count')),
@@ -153,8 +182,12 @@ export function k6Headline(summary: K6Summary): PerfHeadline {
  * would read as a smaller, greener history. Null counts as 0, matching the
  * server's own 422 for the same case, which stays only a backstop.
  */
-export function k6Abstention(summary: K6Summary, headline: PerfHeadline): string | null {
-  if (Object.keys(summary.metrics).length === 0) return 'the summary holds no metrics';
+export function k6Abstention(
+  summary: K6Summary,
+  headline: PerfHeadline,
+): string | null {
+  if (Object.keys(summary.metrics).length === 0)
+    return 'the summary holds no metrics';
   if ((headline.httpReqs ?? 0) === 0 && (headline.iterations ?? 0) === 0) {
     return 'the run made 0 requests and 0 iterations';
   }
@@ -162,7 +195,10 @@ export function k6Abstention(summary: K6Summary, headline: PerfHeadline): string
 }
 
 /** What was read, stated every run: a push is only as good as its denominator. */
-export function k6Denominator(file: string, objectives: readonly PerfObjective[]): string {
+export function k6Denominator(
+  file: string,
+  objectives: readonly PerfObjective[],
+): string {
   const measured = objectives.filter((o) => o.observedValue !== null);
   const ok = measured.filter((o) => o.ok).length;
   const unmeasured = objectives.length - measured.length;
@@ -171,7 +207,8 @@ export function k6Denominator(file: string, objectives: readonly PerfObjective[]
     `canary testtracker: read ${objectives.length} thresholds on ${subs} sub-metrics from ${file}: ` +
     `${ok} ok, ${measured.length - ok} not ok, ${unmeasured} unmeasured.\n`;
   if (objectives.length === 0) {
-    s += 'canary testtracker: no thresholds, so TestTracker stores this run as measured, unjudged, never a pass.\n';
+    s +=
+      'canary testtracker: no thresholds, so TestTracker stores this run as measured, unjudged, never a pass.\n';
   }
   if (unmeasured > 0) {
     s +=

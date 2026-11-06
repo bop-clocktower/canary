@@ -7,7 +7,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-const { PUSH_ENV, K6_FIXTURES, runCli, pushPerf, tempReport } = require('./testtracker-harness.js');
+const {
+  PUSH_ENV,
+  K6_FIXTURES,
+  runCli,
+  pushPerf,
+  tempReport,
+} = require('./testtracker-harness.js');
 
 const SUMMARY = path.join(K6_FIXTURES, 'read-slo.json');
 const base = ['push-perf', '--k6-summary', SUMMARY];
@@ -30,19 +36,32 @@ test('exit 2 and nothing sent without a client, a suite or an environment', asyn
 });
 
 test('--suite has no env fallback; --client and --env do', async () => {
-  const env = { ...PUSH_ENV, CANARY_INGEST_SUITE: 'unit', CANARY_INGEST_CLIENT: 'acme', CANARY_INGEST_ENVIRONMENT: 'staging' };
+  const env = {
+    ...PUSH_ENV,
+    CANARY_INGEST_SUITE: 'unit',
+    CANARY_INGEST_CLIENT: 'acme',
+    CANARY_INGEST_ENVIRONMENT: 'staging',
+  };
   assert.equal((await runCli(base, { env })).code, 2);
   const ok = await runCli([...base, '--suite', 'checkout-load'], {
     env,
     responses: [{ status: 200, json: { reportId: 3, duplicate: false } }],
   });
   assert.equal(ok.code, 0);
-  assert.equal(ok.pushes[0].url, 'https://dash.example/api/v1/tenants/acme/perf-reports');
+  assert.equal(
+    ok.pushes[0].url,
+    'https://dash.example/api/v1/tenants/acme/perf-reports',
+  );
   assert.equal(ok.payload.environment, 'staging');
 });
 
 test('a suite or environment the server would refuse is a usage error, not a failed push', async () => {
-  for (const extra of [['--suite', 'Checkout Load'], ['--env', 'Prod'], ['--env', 'x'.repeat(41)], ['--generated-at', 'yesterday']]) {
+  for (const extra of [
+    ['--suite', 'Checkout Load'],
+    ['--env', 'Prod'],
+    ['--env', 'x'.repeat(41)],
+    ['--generated-at', 'yesterday'],
+  ]) {
     const { code, requests } = await pushPerf(SUMMARY, extra);
     assert.equal(code, 2, extra.join(' '));
     assert.equal(requests.length, 0);
@@ -78,7 +97,9 @@ const CI_ENV = {
 };
 
 test('--dry-run prints the target and the body, sends nothing, needs no URL or token', async () => {
-  const { code, out, requests } = await pushPerf(SUMMARY, ['--dry-run'], { env: {} });
+  const { code, out, requests } = await pushPerf(SUMMARY, ['--dry-run'], {
+    env: {},
+  });
   assert.equal(code, 0);
   assert.equal(requests.length, 0);
   assert.match(out, /POST \/api\/v1\/tenants\/acme\/perf-reports/);
@@ -90,7 +111,15 @@ test('--dry-run prints the target and the body, sends nothing, needs no URL or t
 test('the body carries exactly the fields TestTracker accepts, camelCase', async () => {
   const { payload } = await pushPerf(SUMMARY, [], { env: CI_ENV });
   assert.deepEqual(Object.keys(payload).sort(), [
-    'environment', 'generatedAt', 'gitBranch', 'gitSha', 'headline', 'objectives', 'runRef', 'runUrl', 'suite',
+    'environment',
+    'generatedAt',
+    'gitBranch',
+    'gitSha',
+    'headline',
+    'objectives',
+    'runRef',
+    'runUrl',
+    'suite',
   ]);
   assert.equal(payload.suite, 'checkout-load');
   assert.equal(payload.environment, 'staging');
@@ -103,16 +132,25 @@ test('the body carries exactly the fields TestTracker accepts, camelCase', async
 
 test('unknown provenance is omitted, never null (the server would 400 on null)', async () => {
   const { payload } = await pushPerf(SUMMARY, [], { env: PUSH_ENV });
-  for (const k of ['gitSha', 'gitBranch', 'runUrl']) assert.equal(k in payload, false, k);
-  const plainHttp = await pushPerf(SUMMARY, [], { env: { ...CI_ENV, GITHUB_SERVER_URL: 'http://ghe.local' } });
+  for (const k of ['gitSha', 'gitBranch', 'runUrl'])
+    assert.equal(k in payload, false, k);
+  const plainHttp = await pushPerf(SUMMARY, [], {
+    env: { ...CI_ENV, GITHUB_SERVER_URL: 'http://ghe.local' },
+  });
   assert.equal('runUrl' in plainHttp.payload, false);
 });
 
 test('generatedAt is --generated-at when given, else the file mtime', async () => {
-  const given = await pushPerf(SUMMARY, ['--generated-at', '2026-11-04T04:13:20+00:00']);
+  const given = await pushPerf(SUMMARY, [
+    '--generated-at',
+    '2026-11-04T04:13:20+00:00',
+  ]);
   assert.equal(given.payload.generatedAt, '2026-11-04T04:13:20.000Z');
   const mtime = await pushPerf(SUMMARY);
-  assert.equal(mtime.payload.generatedAt, require('node:fs').statSync(SUMMARY).mtime.toISOString());
+  assert.equal(
+    mtime.payload.generatedAt,
+    require('node:fs').statSync(SUMMARY).mtime.toISOString(),
+  );
 });
 
 test('--run-ref overrides the CI default', async () => {
@@ -128,26 +166,56 @@ test('the token is never printed', async () => {
   }
 });
 
+// PR #1581 review: push-perf has no --token flag, so `--token=tt_...` is the
+// natural mistake, and the unknown-option error must not echo its value.
+test('the token is never printed when passed inline to an unknown --token= option', async () => {
+  const { code, out, err, logs } = await pushPerf(SUMMARY, [
+    '--token=tt_secret_canary_value',
+  ]);
+  assert.equal(code, 2);
+  const printed = out + err + logs.join('\n');
+  assert.match(printed, /unknown option "--token"/);
+  assert.doesNotMatch(printed, /tt_secret_canary_value/);
+});
+
 // The failure paths print the most (the server's text, the hint, the retry
 // count), and in CI they also raise a GitHub annotation, so each is checked
 // with annotations on.
 test('the token is never printed on a refusal, a server error or a network failure', async () => {
-  const env = { ...PUSH_ENV, CANARY_INGEST_TOKEN: 'tt_secret_canary_value', GITHUB_ACTIONS: 'true' };
-  const refused = (status) => [{ status, json: { code: 'X', message: 'server says why' } }];
+  const env = {
+    ...PUSH_ENV,
+    CANARY_INGEST_TOKEN: 'tt_secret_canary_value',
+    GITHUB_ACTIONS: 'true',
+  };
+  const refused = (status) => [
+    { status, json: { code: 'X', message: 'server says why' } },
+  ];
   const thrice = (r) => [r, r, r];
   const cases = {
     401: refused(401),
     404: refused(404),
     413: refused(413),
     422: refused(422),
-    '503 retried to exhaustion': thrice({ status: 503, json: { code: 'INTERNAL_SERVER_ERROR' } }),
-    'network error': thrice({ networkError: 'fetch failed: connect ECONNREFUSED' }),
+    '503 retried to exhaustion': thrice({
+      status: 503,
+      json: { code: 'INTERNAL_SERVER_ERROR' },
+    }),
+    'network error': thrice({
+      networkError: 'fetch failed: connect ECONNREFUSED',
+    }),
   };
   for (const [name, responses] of Object.entries(cases)) {
-    const { code, out, err, logs } = await pushPerf(SUMMARY, [], { env, responses });
+    const { code, out, err, logs } = await pushPerf(SUMMARY, [], {
+      env,
+      responses,
+    });
     assert.equal(code, 1, name);
     const printed = out + err + logs.join('\n');
-    assert.match(printed, /perf report (rejected|not ingested)/, `${name}: the failure was reported`);
+    assert.match(
+      printed,
+      /perf report (rejected|not ingested)/,
+      `${name}: the failure was reported`,
+    );
     assert.doesNotMatch(printed, /tt_secret_canary_value/, name);
   }
 });
@@ -155,12 +223,21 @@ test('the token is never printed on a refusal, a server error or a network failu
 // --- refusals: nothing is sent ------------------------------------------------------
 
 const summaryFile = (data) => tempReport(JSON.stringify(data));
-const metric = (values, thresholds) => ({ type: 'trend', values, ...(thresholds ? { thresholds } : {}) });
+const metric = (values, thresholds) => ({
+  type: 'trend',
+  values,
+  ...(thresholds ? { thresholds } : {}),
+});
 
 test('SC14a: no metrics, or 0 requests and 0 iterations, abstains with exit 3', async () => {
   for (const data of [
     { metrics: {} },
-    { metrics: { http_reqs: { type: 'counter', values: { count: 0, rate: 0 } }, iterations: { type: 'counter', values: { count: 0 } } } },
+    {
+      metrics: {
+        http_reqs: { type: 'counter', values: { count: 0, rate: 0 } },
+        iterations: { type: 'counter', values: { count: 0 } },
+      },
+    },
   ]) {
     const { code, requests, err, out } = await pushPerf(summaryFile(data));
     assert.equal(code, 3);
@@ -171,7 +248,11 @@ test('SC14a: no metrics, or 0 requests and 0 iterations, abstains with exit 3', 
 });
 
 test('SC14c: a missing, non-JSON or --summary-export file exits 1 and sends nothing', async () => {
-  for (const file of [path.join(K6_FIXTURES, 'nope.json'), tempReport('<xml/>'), summaryFile({ metrics: { http_reqs: { count: 1 } } })]) {
+  for (const file of [
+    path.join(K6_FIXTURES, 'nope.json'),
+    tempReport('<xml/>'),
+    summaryFile({ metrics: { http_reqs: { count: 1 } } }),
+  ]) {
     const { code, requests, err } = await pushPerf(file);
     assert.equal(code, 1, file);
     assert.equal(requests.length, 0);
@@ -182,7 +263,11 @@ test('SC14c: a missing, non-JSON or --summary-export file exits 1 and sends noth
 test('more than 2,000 thresholds exits 1 rather than truncating; exactly 2,000 is sent', async () => {
   const many = (n) => {
     const metrics = { iterations: { type: 'counter', values: { count: 1 } } };
-    for (let i = 0; i < n; i++) metrics[`http_req_duration{name:r${i}}`] = metric({ 'p(99)': 1 }, { 'p(99)<5': { ok: true } });
+    for (let i = 0; i < n; i++)
+      metrics[`http_req_duration{name:r${i}}`] = metric(
+        { 'p(99)': 1 },
+        { 'p(99)<5': { ok: true } },
+      );
     return summaryFile({ metrics });
   };
   const over = await pushPerf(many(2001));
@@ -199,7 +284,11 @@ test('more than 2,000 thresholds exits 1 rather than truncating; exactly 2,000 i
 // The check exists so that case is refused here, not misread from a 413.
 test('a body over 2 MiB exits 1 and sends nothing', async () => {
   const metrics = { iterations: { type: 'counter', values: { count: 1 } } };
-  for (let i = 0; i < 2000; i++) metrics[`m{name:${'x'.repeat(1100)}${i}}`] = metric({ avg: 1 }, { [`avg<${i}`]: { ok: true } });
+  for (let i = 0; i < 2000; i++)
+    metrics[`m{name:${'x'.repeat(1100)}${i}}`] = metric(
+      { avg: 1 },
+      { [`avg<${i}`]: { ok: true } },
+    );
   const { code, requests, err } = await pushPerf(summaryFile({ metrics }));
   assert.equal(code, 1);
   assert.equal(requests.length, 0);
@@ -209,22 +298,56 @@ test('a body over 2 MiB exits 1 and sends nothing', async () => {
 // --- the push and its outcome ---------------------------------------------------------
 
 test('posts to <origin>/api/v1/tenants/<client>/perf-reports with the bearer token', async () => {
-  const env = { ...PUSH_ENV, CANARY_INGEST_URL: 'https://dash.example/some/path/' };
+  const env = {
+    ...PUSH_ENV,
+    CANARY_INGEST_URL: 'https://dash.example/some/path/',
+  };
   const { code, pushes, logs } = await pushPerf(SUMMARY, [], { env });
   assert.equal(code, 0);
   assert.equal(pushes.length, 1);
-  assert.equal(pushes[0].url, 'https://dash.example/api/v1/tenants/acme/perf-reports');
+  assert.equal(
+    pushes[0].url,
+    'https://dash.example/api/v1/tenants/acme/perf-reports',
+  );
   assert.match(logs.join('\n'), /canary ingest: perf report 11 ingested\./);
 });
 
-test('a duplicate exits 0 and says this push stored nothing', async () => {
-  const { code, logs } = await pushPerf(SUMMARY, [], { responses: [{ status: 200, json: { reportId: 9, duplicate: true } }] });
+// PR #1581 review: a duplicate may be another job or matrix leg's report under
+// the same key, so this push's measurements were discarded. The response
+// carries no comparable body (only reportId and duplicate), so it cannot be
+// told apart from a harmless retry: warn (a CI annotation), exit 0.
+test('a duplicate exits 0 and warns, with a CI annotation, that this push stored nothing', async () => {
+  const env = { ...PUSH_ENV, GITHUB_ACTIONS: 'true' };
+  const { code, logs } = await pushPerf(SUMMARY, [], {
+    env,
+    responses: [{ status: 200, json: { reportId: 9, duplicate: true } }],
+  });
   assert.equal(code, 0);
-  assert.match(logs.join('\n'), /canary ingest: perf report 9 already ingested \(duplicate re-push of run 42-1\); this push stored nothing\./);
+  const printed = logs.join('\n');
+  assert.match(
+    printed,
+    /::warning title=canary ingest::perf report 9 already ingested \(duplicate push of run 42-1\); this push stored nothing\./,
+  );
+  assert.match(printed, /--run-ref/);
+});
+
+// PR #1581 review: two jobs (or matrix legs) of one workflow run pushing the
+// same --suite/--env must not share the default key.
+test('the default run ref includes GITHUB_JOB, so two jobs in one run do not collide', async () => {
+  const { payload } = await pushPerf(SUMMARY, [], {
+    env: { ...PUSH_ENV, GITHUB_JOB: 'perf-read' },
+  });
+  assert.equal(payload.runRef, '42-1-perf-read');
+  const other = await pushPerf(SUMMARY, [], {
+    env: { ...PUSH_ENV, GITHUB_JOB: 'perf-write' },
+  });
+  assert.notEqual(other.payload.runRef, payload.runRef);
 });
 
 test('a 200 without a reportId cannot be confirmed: exit 1', async () => {
-  const { code, logs } = await pushPerf(SUMMARY, [], { responses: [{ status: 200, json: { ok: true } }] });
+  const { code, logs } = await pushPerf(SUMMARY, [], {
+    responses: [{ status: 200, json: { ok: true } }],
+  });
   assert.equal(code, 1);
   assert.match(logs.join('\n'), /cannot confirm/);
 });
@@ -240,7 +363,12 @@ test('4xx is not retried, exits 1, and names the likely cause', async () => {
   };
   for (const [status, hint] of Object.entries(cases)) {
     const { code, pushes, logs } = await pushPerf(SUMMARY, [], {
-      responses: [{ status: Number(status), json: { code: 'X', message: 'server says why' } }],
+      responses: [
+        {
+          status: Number(status),
+          json: { code: 'X', message: 'server says why' },
+        },
+      ],
     });
     assert.equal(code, 1, status);
     assert.equal(pushes.length, 1, `${status} must not be retried`);
@@ -253,7 +381,11 @@ test('4xx is not retried, exits 1, and names the likely cause', async () => {
 
 test('429 and 5xx are retried; success on a retry exits 0', async () => {
   const { code, pushes } = await pushPerf(SUMMARY, [], {
-    responses: [{ status: 429, json: {} }, { status: 502, json: {} }, { status: 200, json: { reportId: 4, duplicate: false } }],
+    responses: [
+      { status: 429, json: {} },
+      { status: 502, json: {} },
+      { status: 200, json: { reportId: 4, duplicate: false } },
+    ],
   });
   assert.equal(code, 0);
   assert.equal(pushes.length, 3);
@@ -274,13 +406,26 @@ test('SC13: the real nightly fixture reaches the wire as per-route p(50)/p(99) l
   const { code, payload, out } = await pushPerf(SUMMARY);
   assert.equal(code, 0);
   assert.match(out, /read 105 thresholds on 70 sub-metrics/);
-  const routes = new Set(payload.objectives.map((o) => /\{name:([^}]+)\}$/.exec(o.submetric)?.[1]));
+  const routes = new Set(
+    payload.objectives.map((o) => /\{name:([^}]+)\}$/.exec(o.submetric)?.[1]),
+  );
   assert.equal(routes.size, 35);
   for (const route of routes) {
     const exprs = payload.objectives
       .filter((o) => o.submetric.endsWith(`{name:${route}}`))
-      .map((o) => `${o.submetric.split('{')[0]} ${o.expression.replace(/[\d.]+$/, 'N')}`)
+      .map(
+        (o) =>
+          `${o.submetric.split('{')[0]} ${o.expression.replace(/[\d.]+$/, 'N')}`,
+      )
       .sort();
-    assert.deepEqual(exprs, ['dag_errors rate<N', 'http_req_duration p(50)<N', 'http_req_duration p(99)<N'], route);
+    assert.deepEqual(
+      exprs,
+      [
+        'dag_errors rate<N',
+        'http_req_duration p(50)<N',
+        'http_req_duration p(99)<N',
+      ],
+      route,
+    );
   }
 });
