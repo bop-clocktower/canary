@@ -90,7 +90,7 @@ When no arguments are provided (standalone invocation), discover plan from `docs
 4. **Load session summary for cold start.** If resuming (session slug known):
    - Call `listActiveSessions()` to read the session index.
    - Call `loadSessionSummary()` for the target session.
-   - If ambiguous, present the index and ask which session to resume.
+   - If ambiguous, present the index and ask which session to resume. Ask in plain text — do not elevate this to `AskUserQuestion` (the session index can exceed its 4-option cap and a natural header like "Pick session" can exceed its 12-char cap, rendering the call as ERR).
 
 5. **Check for known dead ends.** Review `learnings` tagged `[outcome:failure]`. Warn if any match current plan approaches.
 
@@ -131,6 +131,52 @@ Do not improvise past unknowns. An assumption that turns out wrong is cheaper th
 ### Phase 2: EXECUTE — Implement Tasks Atomically
 
 Report progress with: `**[Phase N/M]** Task N — <description>`
+
+#### Step 0: Claim the roadmap item (execution-start claim)
+
+Execution start is the one true "who is working on this now" moment — so this is
+where the `assignee` is written, **not** at selection (roadmap-pilot no longer
+assigns). The invariant is `assignee ≠ null ⟺ status == in-progress`, enforced by
+RMH005 (`harness validate`).
+
+1. **Resolve `currentUser`** the same way roadmap-pilot does: the `--user` argument
+   if provided, else `git config user.name` (fall back to `git config user.email`).
+2. **If `docs/roadmap.md` exists and a row matches this plan** (match by the row's
+   `Spec`/`Plan` path or the feature name from the handoff/spec):
+   - **If `currentUser` cannot be resolved, STOP** with an actionable message —
+     "Set your identity via `git config user.name`/`user.email` (or pass `--user`)
+     before starting execution" — rather than claiming with a null owner (S4-002).
+     Leave the row `planned` and unassigned.
+   - Otherwise claim it:
+
+     ```json
+     manage_roadmap({
+       path: "<project-root>",
+       action: "update",
+       feature: "<feature-name>",
+       status: "in-progress",
+       assignee: "<currentUser>"
+     })
+     ```
+
+     This routes through the assignee-lifecycle `claim()` chokepoint
+     (first-claim-wins: if the row is already `in-progress` under a different
+     owner, the claim is a no-op and you should treat the item as taken).
+
+   - If no roadmap row matches this plan (e.g. ad-hoc execution), skip the claim.
+
+#### Step 0.5: Plan parallelization (standard automatic parallelism)
+
+Before the per-task loop, decide the safe parallel structure so independent tasks dispatch concurrently by default (no human typing "in parallel").
+
+1. Collect this run's tasks with their `files`, `dependsOn`, and optional `owns` (from the plan's task headers — `owns` comes from the `**Owns:**` line) and call the `plan_parallelization` MCP tool (`{ path, tasks, depth: 1 }`). It returns `ParallelizationPlan` (`waves[]`, `serialized[]`, `cyclic[]`, `narration`, `ownershipForecast`). Forwarding `owns` lets the deterministic owns-overlap forecast add implicit DAG edges and surface overlapping-ownership pairs in `ownershipForecast`; omit it for tasks that declare none.
+2. If `cyclic` is non-empty, STOP and escalate (dependency cycle = plan defect). Do not execute.
+3. Emit `narration` (announce-and-proceed — do not pause).
+4. Run `serialized` tasks first (serially, in order — cross-bucket prerequisites), then process `waves` **in array order** (topologically sorted; do not reorder, do not key off `firing` alone).
+5. Per wave: `auto-dispatch` (multi-task) → dispatch the wave via **harness-parallel-agents** with worktree-per-unit isolation (`docs/guides/agent-worktree-patterns.md`), announce and proceed; `confirm` → one plain-text confirmation, then parallel or serial per the answer; `serialize` / single-task → run through the per-task loop below serially.
+6. **Serial fallback preserved:** when independent tasks < `minWaveSize` (default 3), a `confirm` is declined, or no graph is available and the human does not confirm, run every task through the per-task loop below serially — the standing "when in doubt, run serially" default.
+
+Tasks dispatched into a parallel wave are executed by harness-parallel-agents' focused agents; tasks that fall to serial run through the loop below unchanged.
 
 For each task, starting from current position:
 
@@ -177,7 +223,14 @@ For each task, starting from current position:
    }
    ```
 
-7. **Handle checkpoints** per the checkpoint protocol below.
+7. **Check the context budget (mid-turn trip wire).** After each task, evaluate this turn's resident tokens with `evaluateContextBudget(usedTokens, window)` from `@harness-engineering/core` (classify on TOTAL resident tokens = input + output + tool results; prefer the model's real cumulative usage counter, fall back to `chars/4`). Act on the verdict:
+   - **`ok`** — proceed to the next task normally.
+   - **`warn`** — converge: finish the unit cleanly, then flush `state.json` / `handoff.json` to disk before continuing. Do not start large new tool-output-heavy work without flushing first.
+   - **`trip`** — STOP. Do not push a task-executor past a `trip`. Write a **distilled** handoff (summarized state and next-step, not a raw-truncated tail — a raw tail drops the middle, per _Lost in the Middle_) and hand off for **cold re-dispatch** into a fresh subagent seeded with that distilled state.
+
+   Anchors are window-keyed (absolute resident tokens): `1m` window warn 250K / trip 350K; `200k` window warn 80K / trip 100K; `local` (≤128K) warn ~30% / trip ~37.5%. Utilization is display-only; the trip fires on the absolute token count.
+
+8. **Handle checkpoints** per the checkpoint protocol below.
 
 ---
 
@@ -187,40 +240,37 @@ Three checkpoint types. Each requires pausing execution.
 
 **`[checkpoint:human-verify]` — Show and Confirm**
 
-Stop. Present via `emit_interaction`:
+Stop. Present the confirmation in plain text in your reply — do NOT route this through `emit_interaction`, `AskUserQuestion`, or any tool. `emit_interaction` records the prompt but does not display it to the human (the client collapses the call to "Called harness" and the rendered text only returns to the model); `AskUserQuestion` is Claude-Code-only and caps headers at 12 chars / 4 options. Plain text in your own message is the only channel that reliably reaches the human across every tool (Claude Code, Cursor, Codex, Gemini CLI).
 
-```json
-emit_interaction({
-  path: "<project-root>",
-  type: "confirmation",
-  confirmation: {
-    text: "Task N complete. Output: <summary>. Continue to Task N+1?",
-    context: "<test output or diff summary>",
-    impact: "Continuing proceeds to next task. Declining pauses for review.",
-    risk: "low"
-  }
-})
+```markdown
+Task N complete. Output: <summary>. Continue to Task N+1?
+
+Context: <test output or diff summary>
+Impact: Continuing proceeds to next task. Declining pauses for review.
+Risk: low
+
+Proceed? (yes/no)
 ```
 
 Wait for human confirmation.
 
 **`[checkpoint:decision]` — Present Options and Wait**
 
-Stop. Present via `emit_interaction`:
+Stop. Present the decision in plain text in your reply — do NOT route this through `emit_interaction`, `AskUserQuestion`, or any tool. `emit_interaction` records the prompt but does not display it to the human (the client collapses the call to "Called harness" and the rendered text only returns to the model); `AskUserQuestion` is Claude-Code-only and caps headers at 12 chars / 4 options. Plain text in your own message is the only channel that reliably reaches the human across every tool (Claude Code, Cursor, Codex, Gemini CLI).
 
-```json
-emit_interaction({
-  path: "<project-root>",
-  type: "question",
-  question: {
-    text: "Task N requires a decision: <description>",
-    options: [
-      { label: "<option A>", pros: ["..."], cons: ["..."], risk: "low", effort: "low" },
-      { label: "<option B>", pros: ["..."], cons: ["..."], risk: "medium", effort: "medium" }
-    ],
-    recommendation: { optionIndex: 0, reason: "<why>", confidence: "medium" }
-  }
-})
+Present the options as a markdown table so tradeoffs are scannable, state your recommendation, then STOP and wait for the human's reply:
+
+```markdown
+### Decision needed: Task N requires a decision: <description>
+
+|            | A) <option A>   | B) <option B>   |
+| ---------- | --------------- | --------------- |
+| **Pros**   | <option A pros> | <option B pros> |
+| **Cons**   | <option A cons> | <option B cons> |
+| **Risk**   | low             | medium          |
+| **Effort** | low             | medium          |
+
+**Recommendation:** A) <option A> (confidence: medium) — <why>.
 ```
 
 Wait for human choice.
@@ -378,11 +428,14 @@ Claims about task completion, test results, or code behavior MUST cite evidence:
 - **`harness state show`** — View current position and progress.
 - **`harness state learn "<message>"`** — Append a learning from CLI.
 - **State/Learnings files** — Session-scoped when session known, otherwise `.harness/`. State updated after every task; learnings append-only.
+- **Roadmap claim** — Phase 2 Step 0: `manage_roadmap update` with `status: in-progress` + `assignee: <currentUser>` claims the item at execution start (the assignee = "who is executing" invariant). Stop if `currentUser` is unresolvable. Marking the row `done` later auto-clears the assignee via the lifecycle `setStatus` chokepoint — never leave a non-in-progress row assigned (RMH005).
+- **Auto-done (do NOT hand-mark rows done)** — A row reaches `done` automatically when the implementing PR merges and closes its linked issue: the merge-triggered auto-done reconciler flips exactly that shard via `External-ID` (CI Action authoritative; `harness roadmap reconcile` is the offline fallback). Execution should claim the row `in-progress` and let the merge drive it to `done` — do not call `manage_roadmap update status:done` by hand. See knowledge [`merge-triggered-auto-done.md`](../../../../docs/knowledge/roadmap/merge-triggered-auto-done.md). In sharded mode (`docs/roadmap.d/` present) the claim writes one shard and regenerates the aggregate.
 - **Roadmap sync** — After plan completion, `manage_roadmap sync` with `apply: true`. Mandatory when roadmap exists. No `force_sync: true`.
 - **`emit_interaction`** — Auto-transition to harness-verification at plan completion.
 
 ## Success Criteria
 
+- The roadmap item is claimed at execution start (`status=in-progress` + `assignee=<currentUser>`) when a matching row exists; execution stops with an actionable message if `currentUser` is unresolvable
 - Every task executed in order, atomically, one commit per task
 - `.harness/state.json` accurately reflects position and progress
 - `.harness/learnings.md` has entries for sessions with non-trivial discoveries

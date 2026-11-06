@@ -263,8 +263,8 @@ function decode(p) {
 /**
  * Files stamped by a generator ("Do not edit"). Their links are the
  * generator's output, not this repo's prose — `harness
- * generate-agent-definitions` emits 30 links to `references/*.md` files it
- * never writes, which is a third upstream defect and not one a commit here can
+ * generate-agent-definitions` emits 32 links to files it never writes (30 to
+ * `references/*.md`, 2 to a harness-repo-relative docs path, #1595), which is a third upstream defect and not one a commit here can
  * repair. They are counted and reported separately rather than excluded by
  * path, so the day one of these trees becomes hand-authored it re-enters the
  * gate on its own. `docs-lint.yml` already draws the same line for

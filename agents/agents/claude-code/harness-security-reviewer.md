@@ -499,6 +499,12 @@ When no session is available, skip silently. Evidence checking enhances but does
 
 **Exit:** If harness validate, typecheck, or tests fail, report in Strengths/Issues/Assessment format and stop. Lint warnings and security findings do not stop the pipeline -- recorded for exclusion only.
 
+#### Lifecycle skill hooks — `after:mechanical`
+
+This skill is a hook-supporting consumer of the cross-skill `skillHooks` framework (defined in `@harness-engineering/core`, `resolveSkillHooks`; see harness-autopilot's "Lifecycle skill hooks" section for the full contract). Its declared hookable event is **`after:mechanical`**: additional project-declared checks that run once the mechanical exclusion boundary is established, before the AI fan-out.
+
+Resolve `resolveSkillHooks(config, "harness-code-review", "after:mechanical")` from `skillHooks` in `harness.config.json` (default none ⇒ no-op, no regression). Run each hook in order by kind: a `command` hook runs via the command-runner with the hook env/stdin context (cannot-spawn ⇒ hard halt; ran-and-non-zero ⇒ a finding); a `prompt` hook appends its text to the review context; a `skill` hook runs as an extra reviewer with the same mechanical context. An unresolvable hooked skill is a hard halt (recorded, never a silent skip), matching the framework's false-green protection. Hook findings merge into the same exclusion/aggregation as the built-in mechanical checks. Additional lifecycle events (`before:run` / `after:run`, `on:failure`) follow the same grammar when this skill opts in at those points.
+
 ---
 
 ### Phase 3: CONTEXT
@@ -841,17 +847,16 @@ gh api repos/{owner}/{repo}/pulls/{pr}/comments \
 
 ### Review Acceptance
 
-```json
-emit_interaction({
-  path: "<project-root>",
-  type: "confirmation",
-  confirmation: {
-    text: "Review complete: <Assessment>. Accept review?",
-    context: "<N critical, N important, N suggestion findings>",
-    impact: "Accepting finalizes findings. Approve = ready for merge. Request-changes = fixes needed.",
-    risk: "<low if approve, high if critical>"
-  }
-})
+Ask for acceptance directly in your reply. Do NOT route this through `emit_interaction`, `AskUserQuestion`, or any tool. `emit_interaction` records the prompt but does not display it to the human (the client collapses the call to "Called harness" and the rendered text only returns to the model); `AskUserQuestion` is Claude-Code-only and caps headers at 12 chars / 4 options. Plain text in your own message is the only channel that reliably reaches the human across every tool (Claude Code, Cursor, Codex, Gemini CLI). Present it as:
+
+```markdown
+Review complete: <Assessment>. Accept review?
+
+Context: <N critical, N important, N suggestion findings>
+Impact: Accepting finalizes findings. Approve = ready for merge. Request-changes = fixes needed.
+Risk: <low if approve, high if critical>
+
+Proceed? (yes/no)
 ```
 
 #### Handoff and Transition

@@ -102,6 +102,16 @@ jobs:
         run: |
           npx --yes -p "$HARNESS_CLI_EXACT" -c 'node scripts/gemini-commands-drift.mjs'
 
+      # #1595: the same gate for `agents/agents/{claude-code,gemini-cli}/`, the
+      # vendored agent definitions (ADR 0015) from `generate-agent-definitions`.
+      # They sat unregenerated from 2026-06-07 to harness 13.0.0 with
+      # `harness-harness-pm.md` missing, invisible because the doc gates skip
+      # generated trees on purpose. Same exit-3-on-abstention contract.
+      - name: Agent definitions drift gate (blocking)
+        if: ${{ !cancelled() && steps.harness-cli.outcome == 'success' }}
+        run: |
+          npx --yes -p "$HARNESS_CLI_EXACT" -c 'node scripts/agent-definitions-drift.mjs'
+
       # BLOCKING as of #718; a merge-base RATCHET rather than a floor as of
       # #865. History below, then why the floor went.
       #
