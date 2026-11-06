@@ -34,6 +34,7 @@ import {
   dedupeByFullTitle,
   fitPayload,
 } from './reporters/ingest/payload.js';
+import { quarantineResults } from './reporters/ingest/quarantine.js';
 import { errText, push, warn } from './reporters/ingest/transport.js';
 
 interface Writer {
@@ -62,6 +63,12 @@ same payload, retry and size budget as the Playwright reporter.
                      payload under the 4 MB budget would drop the catalog or
                      still leave it over budget; on by default when CI is set
   --no-strict-budget push a degraded payload anyway, even under CI
+  --quarantine-ledger <path>
+                     canary-katana ledger: tag each skipped result with a
+                     matching (file, test) row "quarantined" and
+                     "quarantine:<issue>", and name rows that matched nothing
+                     (else CANARY_INGEST_QUARANTINE_LEDGER); a missing or
+                     unreadable ledger exits 1 with nothing pushed
   --dry-run          print the payload instead of pushing
   -h, --help         show this help
 
@@ -74,7 +81,7 @@ Producing a report:
   newman     newman run collection.json -r junit --reporter-junit-export junit.xml
   maestro    maestro test flows/ --format junit --output junit.xml
 
-Exit: 0 pushed, 1 unreadable report, push not ingested, or refused by the
+Exit: 0 pushed, 1 unreadable report or ledger, push not ingested, or refused by the
 strict budget (nothing pushed), 2 usage, 3 abstained (a report holds zero
 testcases; nothing pushed).
 `;
@@ -87,6 +94,7 @@ interface PushArgs {
   dryRun: boolean;
   /** Unset = the CI default (`isCi`); a flag always wins. */
   strictBudget?: boolean;
+  quarantineLedger?: string;
 }
 
 class UsageError extends Error {}
@@ -102,6 +110,7 @@ const FLAGS: Record<
   '--dry-run': { takes: false, set: (p) => (p.dryRun = true) },
   '--strict-budget': { takes: false, set: (p) => (p.strictBudget = true) },
   '--no-strict-budget': { takes: false, set: (p) => (p.strictBudget = false) },
+  '--quarantine-ledger': { takes: true, set: (p, v) => (p.quarantineLedger = v) },
 };
 
 /**
@@ -165,6 +174,7 @@ function configure(
       suite: opts.suite,
       workflow: opts.workflow ?? envVar(env, 'workflow') ?? 'junit',
       collected: opts.collected && envVar(env, 'collected') !== 'false',
+      quarantineLedger: opts.quarantineLedger,
       ...(deps.retryDelaysMs ? { retryDelaysMs: deps.retryDelaysMs } : {}),
     },
     env,
@@ -220,7 +230,15 @@ async function runPush(
     );
     return EXIT_ABSTAINED;
   }
-  const rows = reports.flatMap((r) => r.rows);
+  let rows = reports.flatMap((r) => r.rows);
+  try {
+    const q = await quarantineResults(cfg, rows);
+    rows = q.results;
+    if (q.summary) out.write(`${q.summary}\n`);
+  } catch (e) {
+    err.write(`canary testtracker: ${errText(e)} Nothing was pushed.\n`);
+    return 1;
+  }
   const payload = buildPayload(
     rows,
     cfg,

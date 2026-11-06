@@ -7,6 +7,7 @@ import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config.js";
 import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload.js";
 import { clearRunFile, emitRunFile, toRunRecord, runFilePath, INTERRUPTED_PREFIX } from "./ingest/run-record.js";
 import { redactText, redactTitle } from "./ingest/redact.js";
+import { reporterQuarantine } from "./ingest/quarantine.js";
 
 // Optional .env load — MUST NOT crash the suite if dotenv is absent.
 try {
@@ -209,7 +210,7 @@ export default class IngestReporter implements Reporter {
     if (!this.cfg) return;
     try {
       const raw = buildPayload(
-        [...this.results.values()],
+        await reporterQuarantine(this.cfg, [...this.results.values()]),
         this.cfg,
         runTiming(result, this.startTime, Date.now()),
         process.env,
