@@ -76,6 +76,14 @@ under the project's former name) are documented in the
   a `--grep` that matched nothing. A failure that names no file now abstains
   with a reason saying so.
 
+- **`minimatch` pinned to 11.x in the skills dev toolchain (GHSA-g3hv-75wg-m249,
+  Dependabot alert 65).** eslint 10.14.0, the latest release, still requires
+  `minimatch@^10`, so Dependabot could not raise it and failed every security
+  update run. An `overrides` entry in `agents/skills/package.json` now resolves
+  it to 11.0.5, and `npm audit` there drops from 3 moderate findings to 0. It's
+  a dev-only dependency that never ships in the published package. A new
+  lockfile test fails if the override is dropped.
+
 ## [9.6.0] - 2026-11-04
 
 ### Added
