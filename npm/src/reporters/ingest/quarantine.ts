@@ -9,8 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import { dedupeByFullTitle } from "./payload.js";
-import type { ResultEntry } from "./payload.js";
+import { dedupeByFullTitle, type ResultEntry } from "./payload.js";
 import { errText, log, warn } from "./transport.js";
 
 const QUARANTINED_TAG = "quarantined";
