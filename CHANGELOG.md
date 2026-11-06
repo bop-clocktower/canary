@@ -14,6 +14,22 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary testtracker push-perf` (#1580).** Pushes a k6 `handleSummary` run to
+  TestTracker's `/api/v1/tenants/<client>/perf-reports` with the client's `tt_`
+  ingest token: every threshold as an objective (raw sub-metric, raw expression,
+  observed value, k6's `ok`), headline counts and latencies, git provenance.
+  Unmeasured is never met: a statistic k6 did not report, a Rate with no
+  samples, and a Trend or Gauge with no samples (every value it reports is 0,
+  whichever `summaryTrendStats` are listed) are sent as unmeasured. A Counter is
+  always measured (`count: 0` is a real result). The default run ref is
+  `GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT-GITHUB_JOB`; matrix legs of one job need
+  their own `--run-ref`, and a duplicate answer is raised as a warning. An
+  unknown option is echoed by name only, never its inline value. A run with 0
+  requests and 0 iterations abstains (exit 3); more than 2,000 thresholds or a
+  body over 2 MiB is refused rather than truncated.
+
 ### Fixed
 
 - **`canary doctor` now warns about an overlay that has not been fetched in 7

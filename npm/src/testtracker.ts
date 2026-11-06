@@ -35,6 +35,7 @@ import {
   fitPayload,
 } from './reporters/ingest/payload.js';
 import { errText, push, warn } from './reporters/ingest/transport.js';
+import { runPushPerf } from './testtracker-perf.js';
 
 interface Writer {
   write(s: string): unknown;
@@ -49,6 +50,7 @@ export interface TesttrackerDeps {
 }
 
 const USAGE = `usage: canary testtracker push --junit <file…> --suite <name> [options]
+       canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> --env <env>   (k6; see push-perf --help)
 
 Push JUnit XML test reports to a TestTracker /api/ingest endpoint, with the
 same payload, retry and size budget as the Playwright reporter.
@@ -263,6 +265,7 @@ export async function runTesttracker(
     err.write(USAGE);
     return 2;
   }
+  if (sub === 'push-perf') return runPushPerf(rest, deps);
   if (isHelp(sub) || rest.some(isHelp)) {
     (deps.out ?? process.stdout).write(USAGE);
     return 0;

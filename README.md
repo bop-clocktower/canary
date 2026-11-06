@@ -242,6 +242,7 @@ Use, process, escalation) lives in
 | `canary-fail-fast` skill                          | Audits Playwright fail-fast config knobs and prints a loud, categorized CI failure digest.                                                                                                        |
 | `canary-test-reporter` skill                      | Playwright JSON results → Markdown + JSON report with pass/fail/flaky/skipped counts.                                                                                                             |
 | `canary testtracker push --junit <file…>`         | CLI — push vitest / `node --test` / Newman / Maestro JUnit XML to the TestTracker ingest API (npm install required; see [Ingest Reporter](docs/wiki/Ingest-Reporter.md#other-runners-junit-xml)). |
+| `canary testtracker push-perf --k6-summary <f…>`  | CLI — push a k6 `handleSummary` run to TestTracker's perf-reports route (npm install required; see [Ingest Reporter](docs/wiki/Ingest-Reporter.md#k6-perf-reports-canary-testtracker-push-perf)). |
 | `canary history summary` / `canary history flaky` | CLI — recent-run summary / flake leaderboard for one suite, ranked on the worse of the retry-flake and cross-run flip rates (#604).                                                               |
 
 ### I want to find what to test

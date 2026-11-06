@@ -84,8 +84,10 @@ const POST_TIMEOUT_MS = 30_000;
  * network error). Ingest is idempotent on `(canary_run_id, suite)`, so a
  * retry can never double-count. A 4xx is a payload problem and is never
  * retried: the same bytes cannot succeed.
+ *
+ * Exported for `canary testtracker push-perf`, which posts to a different route.
  */
-async function postWithRetry(
+export async function postWithRetry(
   url: string,
   init: RequestInit,
   delaysMs: number[],
