@@ -1,0 +1,56 @@
+{
+  "issues": [1529],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "execution",
+    "verification",
+    "review"
+  ],
+  "planPath": "docs/changes/1529-critical-areas-cli/plans/2026-11-03-critical-areas-cli-plan.md",
+  "baseSha": "bffba2d3",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "All three asks in #1529 land here: the deterministic CLI, the command pointing at the skill instead of a missing agent, and katana's degraded line naming the generator.",
+  "assumptions": [
+    "D3: score is 0.5 * churn + 0.5 * importers, each normalized to the largest in scope, plus 0.15 * (1 - coverage) when known, capped at 1.0.",
+    "D4: the coverage boost is proportional and only added to a file with churn or importers.",
+    "D5: areas are the 25 highest-scoring candidates above 0, plus any path that already declares symbols.",
+    "D6: candidates come from git ls-tree -r HEAD: JS/TS/Python/PHP sources minus tests, fixtures, vendored and built trees, and .d.ts.",
+    "D7: only non-test source files count as importers.",
+    "D8: the churn window is 90 days back from HEAD's commit time, not the wall clock.",
+    "D9: a shallow clone writes churn null with a reason, and the score falls back to importers.",
+    "D10: nothing to rank exits 3 and writes nothing.",
+    "D11: coverage comes from --coverage, else the first of five conventional report paths, through readReportIndex and anchorIndex.",
+    "D12: an explicit missing or unparseable report exits 2; a discovered unusable one, or one measuring 0 files, is absent with a reason.",
+    "D13: declared symbols are kept and stay listed below the top 25; symbols for a path not tracked in HEAD are dropped, and the CLI says so.",
+    "D14: rank_score is written equal to risk_score, because the briefing reads rank_score.",
+    "D15: registered in ts/src/commands/audit/cli.ts, because readiness is at its import cap.",
+    "D16: --root resolves to the repository top level, including the default output.",
+    "D17: an existing map, including a skill-written one, is overwritten, keeping symbols.",
+    "A new critical-areas arch layer holds the modules; it may depend on core, for the Python stdlib list.",
+    "Scores here top out at 0.54 (under katana's CRITICAL_RISK 0.7), so such an area alarms as HIGH rather than CRITICAL.",
+    "Review fixes: an unreadable source makes importers partial or, with none read, absent with null counts and churn-only scores (D1, new status value `partial`, tolerated by the schema); log.showRoot and log.showSignature are pinned on the log and show calls, and an unparsable HEAD time is unmeasured churn."
+  ],
+  "fixes": [
+    {
+      "run": "fc1105",
+      "route": "bug",
+      "stages": ["debugging"],
+      "finding": "writeAtomically wrote to a predictable temp path through any symlink planted there, and the default output followed a tracked .canary symlink out of the repository, both at exit 0.",
+      "reproducingTests": ["ts/test/critical-areas-cli.test.ts"],
+      "assumptions": [
+        "F3=A (human): a default output whose .canary resolves outside the top level is refused and writes nothing.",
+        "F4=A (human): all non-blocking findings stay in #1575.",
+        "The refusal exits 1, not 3: 1 is the documented 'could not be written' failure, while 3 means nothing to rank, and a refusal must not read as an abstention. 2 is specific to --coverage.",
+        "A .canary link that cannot be resolved (dangling or a loop) is refused too, because mkdir or the read could otherwise go through it.",
+        "A .canary link that stays inside the top level is followed, including one into .git; the file name is fixed, so nothing there is executed.",
+        "mkdtemp in the target's directory over flag wx: creation is both exclusive and randomly named in one call, so neither half can be dropped alone.",
+        "The refusal message omits the link's target, because that text comes from the scanned tree."
+      ],
+      "closingKeyword": "Closes",
+      "baseSha": "bffba2d3"
+    }
+  ]
+}

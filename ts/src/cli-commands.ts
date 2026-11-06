@@ -39,8 +39,8 @@ import {
 import { frameworkForPath } from './core/static-linter.js';
 import { SCANNABLE_DESC, collectTestFiles, isDir } from './core/test-files.js';
 import type { LintFinding } from './core/static-linter.js';
-import { RunSummary } from './core/ticket-updater.js';
-import type { TransitionResult } from './core/ticket-updater.js'; // canary:allow-untested type-only import, erased at compile time so no test can execute it
+import { DRY_RUN_REASON, RunSummary } from './core/ticket-updater.js';
+import type { UpdateResult } from './core/ticket-updater.js'; // canary:allow-untested type-only import, erased at compile time so no test can execute it
 import { renderBanner } from './ui/banner.js';
 import {
   ARROW,
@@ -1383,37 +1383,73 @@ export async function ticketUpdateCmd(
 
   for (const msg of updateResult.messages) deps.out(msg);
 
-  if (!opts.dryRun) {
-    if (updateResult.comment_posted) {
-      deps.out(
-        `${pc.green(CHECK)} Comment posted to ${updateResult.ticket_key}`,
-      );
-    }
-    const tr = updateResult.transition;
-    if (tr.attempted && tr.succeeded) {
-      deps.out(
-        `${pc.green(CHECK)} Transitioned ${updateResult.ticket_key}: "${tr.from_status}" ${ARROW} "${tr.to_status}"`,
-      );
-    } else if (tr.attempted && !tr.succeeded) {
-      deps.out(`${pc.yellow(WARN)}  Transition failed: ${tr.reason}`);
-    }
-  }
+  if (!opts.dryRun) renderTicketUpdate(updateResult, opts, deps);
 
-  if (ticketUpdateFailed(updateResult.transition, opts.dryRun ?? false)) {
-    throw new CliExitError(1);
+  const exitCode = ticketUpdateExitCode(updateResult, opts);
+  if (exitCode === EXIT_ABSTAINED) {
+    abstain('Configure the Jira credentials and re-run.', deps, false);
+  }
+  if (exitCode !== 0) throw new CliExitError(exitCode);
+}
+
+/** Whether this run owed a comment that has not been posted. */
+function commentMissing(res: UpdateResult, opts: TicketUpdateOptions): boolean {
+  // No ticket key is the "no linkage" skip, which already says so itself.
+  return !opts.transitionOnly && res.ticket_key !== null && !res.comment_posted;
+}
+
+/** Report what a live run did; a dry run has only the updater's messages. */
+function renderTicketUpdate(
+  res: UpdateResult,
+  opts: TicketUpdateOptions,
+  deps: MainDeps,
+): void {
+  if (res.comment_posted) {
+    deps.out(`${pc.green(CHECK)} Comment posted to ${res.ticket_key}`);
+  } else if (commentMissing(res, opts)) {
+    // #1040: a failure report belongs on stderr.
+    deps.err(`${pc.yellow(WARN)}  Comment not posted to ${res.ticket_key}`);
+  }
+  const tr = res.transition;
+  if (tr.attempted && tr.succeeded) {
+    deps.out(
+      `${pc.green(CHECK)} Transitioned ${res.ticket_key}: "${tr.from_status}" ${ARROW} "${tr.to_status}"`,
+    );
+  } else if (tr.attempted && !tr.succeeded) {
+    deps.out(`${pc.yellow(WARN)}  Transition failed: ${tr.reason}`);
   }
 }
 
 /**
- * Whether `ticket-update` must exit 1 for this transition outcome (#1283). An
- * attempted transition that did not succeed is a failed update, so a CI step
- * gating on `$?` has to see it; keying the exit on the WARN glyph alone missed
- * "transition API call failed". A dry run reports attempted-but-not-succeeded
- * by design, so it never fails on that ground.
+ * The `ticket-update` exit code, so a CI step gating on `$?` sees what happened
+ * (#1283, #1413). Exit 1 when an action failed or a dry run shows it would. A
+ * confirmed dry-run transition is attempted-but-not-succeeded by design, which
+ * is why it is told apart by reason, not by the dry-run flag: an unreachable
+ * target is the same shape and the real run would reject it.
+ *
+ * Missing credentials abstain (3): nothing was reached, so this is not a
+ * verdict on the ticket. Each action's credentials excuse only that action,
+ * since `--project` can give the two different ones. Failures outrank the
+ * abstention, and so does the other action having run (or, in a dry run, being
+ * able to), because "nothing happened" would then be false. So exit 3 always
+ * means Jira was contacted zero times.
  */
-function ticketUpdateFailed(tr: TransitionResult, dryRun: boolean): boolean {
-  if (tr.reason.startsWith(WARN)) return true;
-  return !dryRun && tr.attempted && !tr.succeeded;
+function ticketUpdateExitCode(
+  res: UpdateResult,
+  opts: TicketUpdateOptions,
+): number {
+  const tr = res.transition;
+  const transitionFailed =
+    tr.reason.startsWith(WARN) ||
+    (tr.attempted && !tr.succeeded && tr.reason !== DRY_RUN_REASON);
+  const commentBlocked = res.comment_credentials_missing;
+  const commentFailed = commentMissing(res, opts) && !commentBlocked;
+  if (transitionFailed || commentFailed) return 1;
+  if (!commentBlocked && !tr.credentials_missing) return 0;
+  // A dry run marks a comment it would post as posted, whatever the credentials.
+  const commentRan = res.comment_posted && !commentBlocked;
+  const transitionRan = tr.succeeded || tr.reason === DRY_RUN_REASON;
+  return commentRan || transitionRan ? 1 : EXIT_ABSTAINED;
 }
 
 /**

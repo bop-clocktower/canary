@@ -271,6 +271,7 @@ Use, process, escalation) lives in
 | `canary vacuity-check <path>`             | CLI, deterministic — tests that pass without proving anything; advisory.         |
 | `canary ci-ready`                         | CLI, deterministic — five CI-readiness checks; missing inputs skip, never pass.  |
 | `canary inventory [testDir]`              | CLI, deterministic — writes `.canary/test-inventory.json` for `ci-ready`.        |
+| `canary critical-areas`                   | CLI, deterministic — writes `.canary/critical-areas.json` for `canary-katana`.   |
 | `canary briefing [--diff <f>]`            | CLI, deterministic — a test charter for a human tester; advisory, never a gate.  |
 | `canary scaling-curve [points]`           | CLI, deterministic — growth exponent of cost vs input size (`--run` drives k6).  |
 | `canary permission-matrix <model>`        | CLI, deterministic — role × tenant × endpoint authz tests from a declared grid.  |

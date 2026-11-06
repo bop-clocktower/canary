@@ -12,11 +12,19 @@
  *   - per-test `duration_ms` as the SUM of every attempt (retries cost the
  *     suite real time), and a run `duration_ms` from `stats.duration`, which is
  *     wall clock -- Playwright runs workers in parallel, so the sum of tests
- *     overstates it.
+ *     overstates it;
+ *   - a failed row per top-level error (#1411), so a run that broke outside any
+ *     test is not stored as clean or dropped as empty.
  *
  * Validation is the caller's job (`../run-recorder.ts` `validateBuiltRun`); this
- * module only imports the schema so the two files cannot form an import cycle.
+ * module only imports the schema and its own error rows, so the two files cannot
+ * form an import cycle.
  */
+import {
+  countTopLevelErrors,
+  ERROR_TEXT_LIMIT,
+  errorRows,
+} from './playwright-errors.js';
 import {
   makeRunId,
   type RecordContext,
@@ -71,8 +79,6 @@ interface PwEntry {
   suiteFile: string;
 }
 
-const ERROR_TEXT_LIMIT = 2000;
-
 /** A top-level `suites` array. The vitest check runs first in the caller. */
 export function isPlaywrightReport(parsed: object): boolean {
   return Array.isArray((parsed as PwReport).suites);
@@ -105,7 +111,7 @@ function collectEntries(parsed: unknown): PwEntry[] {
 }
 
 export function countPlaywrightResults(parsed: unknown): number {
-  return collectEntries(parsed).length;
+  return collectEntries(parsed).length + countTopLevelErrors(parsed);
 }
 
 function isPassing(status: string | undefined): boolean {
@@ -206,7 +212,10 @@ export function buildRunFromPlaywrightReport(
     ctx.runId ??
     makeRunId(ctx.suite, ctx.commitSha, Math.floor(started / 1000));
   const ids = { runId, suite: ctx.suite, repo: ctx.repo };
-  const results = collectEntries(parsed).map((e) => toResultRow(e, ids));
+  const results = [
+    ...collectEntries(parsed).map((e) => toResultRow(e, ids)),
+    ...errorRows(parsed, ids),
+  ];
   const count = (status: string): number =>
     results.filter((r) => r.status === status).length;
 

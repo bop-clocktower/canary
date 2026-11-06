@@ -1,0 +1,41 @@
+{
+  "issues": [1413],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/ticket-update-exit-codes.test.ts",
+  "baseSha": "16a8ad2e",
+  "reproFailure": "At 16a8ad2e, with the real TicketUpdater and a fake http seam, 15 of 20 cases failed: 'expected +0 to be 1' for paths 1, 3/6 and 5, 'expected +0 to be 3' for path 2, and the help text for path 4. All six listed paths reproduced; none had already been fixed. The help case's first red was a test defect (--help writes outside the capture sinks), so it was rewritten to read helpInformation(); path 4 is proven by the literal old strings being gone from that text.",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "All six listed paths are handled: paths 1, 2, 3, 5, 6 by exit code and output, path 4 by the human's decision to correct the help text.",
+  "assumptions": [
+    "DECIDED (human): correct the help text for --result and --test-file; do not implement auto-detect or last-run defaults.",
+    "DECIDED (issue): exit 1 for a failed action, exit 3 when nothing could be checked.",
+    "Exit 3 is reserved for missing Jira credentials, which reach Jira zero times. A status fetch failure (path 5) is exit 1: the issue comment calls it a network or auth failure, so Jira was tried.",
+    "Failures outrank the abstention: no workflow mapping stays the existing #1283 exit 1 even with no credentials.",
+    "A comment that landed while the transition has no credentials exits 1, not 3, because 3 would claim nothing happened. Reachable only when --project selects a project without a stored URL.",
+    "--dry-run with no credentials also exits 3, matching #1412's rule that a dry run promising what the real run refuses is the same false green. It still prints the comment preview, under a line saying it cannot be posted.",
+    "No ticket linkage stays exit 0. It is not one of the six paths and it already prints its own skip message; reported as a follow-up rather than changed here.",
+    "A non-PASS result that blocks the transition stays exit 0: that is the safety gate working, not a failure.",
+    "Help wording states actual behaviour: no --result means the run counts as FAIL; no --test-file means the report's test_file is used if present.",
+    "Removed 'Comment was posted.' from the no-mapping reason. It was printed whether or not the comment was posted, and would now contradict the new 'Comment not posted' line.",
+    "Two existing fixtures in ts/test/canary-cli-coverage.test.ts pinned the bug (ticket key, comment_posted=false, exit 0). They now model no linkage, the quiet outcome they described.",
+    "Added a row to the #508 gate-conformance registry for the new exit 3; its stdout says 'Abstained' through the shared abstain() helper.",
+    "CHANGELOG edit explicitly allowed by the lane prompt; expect a rebase against PRs #1537, #1538 and the #1404 lane."
+  ],
+  "fixes": [
+    {
+      "run": "fc1105",
+      "route": "bug",
+      "stages": ["debugging"],
+      "finding": "One credentials_missing flag covered both actions, so ticket-update exited 3 after a real Jira transition, over a rejected comment, or over a failed gh comment; the last line also ignored tr.succeeded.",
+      "reproducingTests": ["ts/test/ticket-update-exit-codes.test.ts"],
+      "assumptions": [
+        "Fork F7=A as answered by the human: reproduce the dry/live disagreement and fix it in this push if it comes from the same flag split. It reproduced (3 dry, 1 live) and it does: the dry-run guard existed because the single flag could not say whether a would-post comment could really post.",
+        "A dry run exits as the matching live run would when everything it can see goes right: one action able to run and the other without credentials is 1 in both.",
+        "#1552's five items stay out of scope."
+      ],
+      "closingKeyword": "Closes",
+      "baseSha": "bffba2d3504289e4b9f006bce8a446a8029abb85"
+    }
+  ]
+}
