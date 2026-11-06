@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "commit": "30e21eb77bb83c837f153ff4cbdcb05b5b3952f1",
+  "capturedAt": "2026-11-06T22:23:43.464Z",
+  "lockfiles": [
+    {
+      "path": "agents/skills/package-lock.json",
+      "status": "measured",
+      "dependencies": 161,
+      "vulnerabilities": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      }
+    },
+    {
+      "path": "npm/package-lock.json",
+      "status": "measured",
+      "dependencies": 112,
+      "vulnerabilities": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      }
+    },
+    {
+      "path": "ts/package-lock.json",
+      "status": "measured",
+      "dependencies": 182,
+      "vulnerabilities": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      }
+    }
+  ]
+}
