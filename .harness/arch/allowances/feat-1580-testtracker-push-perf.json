@@ -1,7 +1,7 @@
 {
-  "reason": "k6 perf push for TestTracker (#1580), re-measured after merging main (ae77c0d) and the PR 1581 review fixes (fc1106): module-size 56787->57467 (+680 non-blank lines) measured with harness check-arch --json (CLI 13.0.0) in clean detached worktrees at origin/main ae77c0d and at branch head 8607c05. The floor main now records is 56321 (raised by #1550 above this file's previous 56067), and main itself sits +466 over it, inside tolerance. newViolations is 0 and module-size is the only regression. The first round's +523 is unchanged in kind (npm/src/reporters/perf, a new module, and npm/src/testtracker-perf.ts); the review round adds about +157, most of it prettier --write (repo .prettierrc, printWidth 80) on the touched npm files, which the first round had not formatted, plus the Trend/Gauge unsampled rule, the GITHUB_JOB run ref and the duplicate warning.",
+  "reason": "k6 perf push for TestTracker (#1580), re-measured after merging main (ae77c0d) and the PR 1581 review fixes (fc1106): module-size 56787->57330 (+543 non-blank lines) measured with harness check-arch --json (CLI 13.0.0) in clean detached worktrees at origin/main ae77c0d and at branch head 47c8f25. The floor main now records is 56321 (raised by #1550 above this file's previous 56067), and main itself sits +466 over it, inside tolerance. newViolations is 0 and module-size is the only regression. The first round's +523 is unchanged in kind (npm/src/reporters/perf, a new module, and npm/src/testtracker-perf.ts); the review round adds about +20: the Trend/Gauge unsampled rule, the GITHUB_JOB run ref and the duplicate warning.",
   "categories": {
-    "module-size": 57467
+    "module-size": 57330
   },
   "violationIds": [],
   "createdFrom": "ae77c0d"
