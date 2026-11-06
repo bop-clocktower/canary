@@ -58,3 +58,26 @@ test("a missing ledger warns loudly and still pushes, untagged", async () => {
   assert.ok(logs.some((l) => /::warning title=canary ingest::quarantine ledger .*not found/.test(l)), logs.join("\n"));
   assert.ok(payload.results.every((r) => quarantineTags(r).length === 0));
 });
+
+test("clean titles: skipped in one project, run in another, is not published as a quarantine", async () => {
+  const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue: "#9" }]);
+  const webkit = fakeTest({ title: "checkout total", project: "webkit", expectedStatus: "skipped" });
+  const chromium = fakeTest({ title: "checkout total", project: "chromium" });
+  const { payload, logs } = await runReporter({
+    options: { quarantineLedger: file, titleFormat: "clean" },
+    tests: [
+      [webkit, fakeResult("skipped")],
+      [chromium, fakeResult("passed")],
+    ],
+  });
+  const merged = byTitle(payload, "checkout total");
+  assert.equal(merged.status, "passed");
+  assert.deepEqual(quarantineTags(merged), []);
+  assert.ok(logs.some((l) => /1 ledger row matched no skipped result/.test(l)), logs.join("\n"));
+});
+
+test("the catalog carries no quarantine tags: only results do", async () => {
+  const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue: "#77" }]);
+  const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
+  assert.ok(payload.collected.every((c) => quarantineTags(c).length === 0));
+});

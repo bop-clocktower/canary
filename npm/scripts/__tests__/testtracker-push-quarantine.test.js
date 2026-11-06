@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { fixture, push, row } = require('./testtracker-harness.js');
+const { fixture, push, row, tempReport } = require('./testtracker-harness.js');
 
 const FILE = 'tests/cart/math.test.ts';
 const SKIPPED = `${FILE} > math > skipped one`;
@@ -141,4 +141,31 @@ test('--quarantine-ledger needs a value', async () => {
   );
   assert.equal(code, 2);
   assert.match(err, /--quarantine-ledger needs a value/);
+});
+
+test('a title skipped in one report and run in another is not tagged after the merge', async () => {
+  const ran = tempReport(
+    `<testsuites><testsuite name="${FILE}"><testcase classname="${FILE}" name="math &gt; skipped one"></testcase></testsuite></testsuites>`,
+  );
+  const { code, out, payload } = await push(
+    [fixture('vitest.xml'), ran],
+    ['--quarantine-ledger', ledger([entry({ test: 'skipped one', issue: '#1' })])],
+  );
+  assert.equal(code, 0);
+  assert.equal(row(payload, SKIPPED).status, 'passed');
+  assert.deepEqual(quarantineTags(row(payload, SKIPPED)), []);
+  assert.match(out, /1 ledger row matched no skipped result/);
+});
+
+test('the JUnit catalog carries no quarantine tags, like the reporter', async () => {
+  const { payload } = await pushWith(
+    ledger([entry({ test: 'skipped one', issue: '#123' })]),
+  );
+  assert.ok(payload.collected.every((c) => quarantineTags(c).length === 0));
+});
+
+test('a directory as the ledger is named as such, not as bad JSON', async () => {
+  const { code, err } = await pushWith(os.tmpdir());
+  assert.equal(code, 1);
+  assert.match(err, /is not a file/);
 });

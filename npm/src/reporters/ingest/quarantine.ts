@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ResolvedConfig } from "./config.js";
+import { dedupeByFullTitle } from "./payload.js";
 import { errText, log, warn } from "./transport.js";
 import type { ResultEntry } from "./types.js";
 
@@ -56,13 +57,14 @@ function katanaLedgerModule(): string {
  */
 export async function loadLedgerRows(file: string): Promise<LedgerRow[]> {
   if (!fs.existsSync(file)) throw new Error(`quarantine ledger ${file} not found.`);
-  const katana = (await import(pathToFileURL(katanaLedgerModule()).href)) as {
-    load(filePath: string): { entries: LedgerRow[] };
-  };
+  if (!fs.statSync(file).isFile()) throw new Error(`quarantine ledger ${file} is not a file.`);
   try {
+    const katana = (await import(pathToFileURL(katanaLedgerModule()).href)) as {
+      load(filePath: string): { entries: LedgerRow[] };
+    };
     return katana.load(file).entries;
   } catch (err) {
-    throw new Error(`cannot read quarantine ledger: ${errText(err)}`);
+    throw new Error(`cannot read the quarantine ledger: ${errText(err)}`);
   }
 }
 
@@ -113,13 +115,19 @@ export function quarantineSummary(report: QuarantineReport): string {
   return `${parts.join("; ")}.`;
 }
 
-/** Load and apply; the results unchanged when no ledger is configured. Throws on a bad ledger. */
+/**
+ * Load and apply; the results unchanged when no ledger is configured. Throws
+ * on a bad ledger. Rows are merged by title FIRST, as buildPayload will: a
+ * skip tagged before the merge would keep its tags on a row sent `passed`
+ * (one project skipped it, another ran it), a quarantine claim the run
+ * contradicts.
+ */
 export async function quarantineResults(
   cfg: ResolvedConfig,
   results: ResultEntry[],
 ): Promise<{ results: ResultEntry[]; summary?: string }> {
   if (!cfg.quarantineLedger) return { results };
-  const applied = applyQuarantine(results, await loadLedgerRows(cfg.quarantineLedger));
+  const applied = applyQuarantine(dedupeByFullTitle(results), await loadLedgerRows(cfg.quarantineLedger));
   return { results: applied.results, summary: quarantineSummary(applied.report) };
 }
 

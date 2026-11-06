@@ -230,17 +230,18 @@ async function runPush(
     );
     return EXIT_ABSTAINED;
   }
-  let rows = reports.flatMap((r) => r.rows);
+  const rows = reports.flatMap((r) => r.rows);
+  let results = rows;
   try {
     const q = await quarantineResults(cfg, rows);
-    rows = q.results;
+    results = q.results;
     if (q.summary) out.write(`${q.summary}\n`);
   } catch (e) {
     err.write(`canary testtracker: ${errText(e)} Nothing was pushed.\n`);
     return 1;
   }
   const payload = buildPayload(
-    rows,
+    results,
     cfg,
     junitRunTiming(reports, Date.now()),
     env,

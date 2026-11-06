@@ -81,8 +81,11 @@ Wiring:
 - `ingest.ts` `deliver()`: call `quarantineResults` on the results before
   `buildPayload`. On a load error, warn and continue untagged. Log the summary.
 
-The tags are added before `buildPayload`, so they pass through redaction and
-dedupe like any other tag: a test that runs in several projects merges its tags.
+`quarantineResults` merges rows by `full_title` (`dedupeByFullTitle`, as
+`buildPayload` will) **before** matching. Without that, a skip tagged in one
+project and merged with a run in another would keep the tags on a row sent as
+`passed` (a review finding). The tags then pass through redaction like any other
+tag. The catalog (`collected`) carries no quarantine tags on either path.
 
 ## Integration Points
 

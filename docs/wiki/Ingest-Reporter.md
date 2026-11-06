@@ -138,7 +138,22 @@ usually `.canary/quarantine.json`, to publish which skips are quarantines
   uses katana's `(file, test)` identity: the result's `test_file` equals the
   row's `file`, and its `full_title` ends with the row's `test` (the leaf
   title). A skip with no ledger row is **not** published as a quarantine. A
-  matching row whose test ran (passed or failed) is not tagged either.
+  matching row whose test ran (passed or failed) is not tagged either. Rows are
+  matched after they merge by `full_title`, so a test that was skipped in one
+  project or report but ran in another is sent with its worst status and no
+  quarantine tag. Because the identity is the leaf title, one row tags every
+  skipped test in that file with that leaf name (`cart > adds` and
+  `math > adds`). Only results carry the tags. The `collected` catalog does not.
+- **`file` must be repo-relative on both sides.** katana records the file path
+  relative to the repo root. The reporter's `test_file` is the test's path with
+  `testFilePrefix` stripped, and that defaults to the working directory. Run
+  Playwright from a subdirectory and you must set `testFilePrefix` to the repo
+  root, or nothing matches. On the JUnit path, only a report that names each
+  test's file can match: vitest does, and so does a `file` attribute (surefire,
+  vitest's `addFileAttribute`). `node --test`, Newman, Maestro and a pytest
+  report without a `file` attribute fall back to the report's own path, so their
+  rows come back as unmatched. Parametrized pytest names (`test_x[a]`) do not
+  match katana's `test_x`.
 - **Release is implicit.** Nothing is stored. Tags are computed fresh on every
   push, so the push after a row is removed sends no quarantine tag for that
   test. katana's rule still applies: remove the row when the test passes live.
