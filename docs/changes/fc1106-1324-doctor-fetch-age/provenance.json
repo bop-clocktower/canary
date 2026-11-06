@@ -1,0 +1,25 @@
+{
+  "issues": [1324],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "npm/scripts/__tests__/engine-checks.test.js ('fetch age (#1324): a zero-behind count is only as fresh as the last fetch')",
+    "npm/scripts/__tests__/doctor-abstention.test.js ('a warn is a verdict, not a failure: counted, exit 0, named in the summary (#1324)')",
+    "npm/scripts/__tests__/doctor-abstention.test.js ('renders a warn with its remedy and still exits 0 (#1324)')",
+    "npm/scripts/__tests__/doctor-abstention.test.js ('--json carries status \"warn\" and allPassed stays true (#1324)')"
+  ],
+  "closingKeyword": "Closes",
+  "runId": "fc1106-roadmap",
+  "baseSha": "ae77c0dd2e4ab55d3220af14e90b802abe0488c8",
+  "assumptions": [
+    "Doctor had no warn tier (CheckStatus was pass|fail|skip|info). The human-decided 'severity is warn' is implemented by adding 'warn' to CheckStatus: rendered '!', remedy shown, counted in checked (a verdict), never a failure, so exit 0 and allPassed true. JSON contract version stays 1 (additive enum value, like #508's additive fields).",
+    "Summary line when warnings exist and nothing failed: '<W> warning(s) across <N> run check(s), none failed' plus the usual skip suffix, instead of 'All N run check(s) passed'.",
+    "Threshold is 'older than 7 days': exactly 7 days old still passes. N is the fixed constant FETCH_AGE_DAYS = 7; no flag, no config.",
+    "Last fetch time reuses PR #1474's lastFetchTime (FETCH_HEAD mtime, else the clone entry in logs/HEAD); it is now exported from overlay-commands.ts for engine-checks.ts. No network call.",
+    "'unknown (never fetched)' warns. A clone fetched within 7 days keeps its pass.",
+    "Behind stays fail (fail outranks warn), missing stays a present:fail, pinned @ <ref> and 'unknown (no upstream tracking ref)' keep their pass: neither is compared against a tracking ref, so a fetch would not change what they report.",
+    "A ref-pinned overlay whose ref is a branch with an upstream goes through the zero-behind path and so is subject to the fetch-age warn, consistent with how freshness() already treats it.",
+    "Remedy names both 'canary overlay update <name>' (pull --ff-only, rewrites FETCH_HEAD) and 'git -C <clone> fetch' (refresh without merging).",
+    "The clock is injectable as EngineCheckDeps.now; runDoctor does not pass it, so production uses new Date(). Tests pin 2026-10-05T12:00:00Z."
+  ]
+}

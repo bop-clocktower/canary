@@ -18,6 +18,19 @@ function tmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
+/** The pinned "now" for every fetch-age assertion -- never the wall clock. */
+const NOW = new Date('2026-10-05T12:00:00Z');
+
+/** Record a fetch at `iso` the way git does: FETCH_HEAD, mtime = fetch time. */
+function fetchedAt(clone, iso) {
+  const gitDir = path.join(clone, '.git');
+  fs.mkdirSync(gitDir, { recursive: true });
+  const fetchHead = path.join(gitDir, 'FETCH_HEAD');
+  fs.writeFileSync(fetchHead, '');
+  const t = new Date(iso);
+  fs.utimesSync(fetchHead, t, t);
+}
+
 describe('isOlder', () => {
   it('compares numeric semver components', () => {
     assert.equal(isOlder('5.8.0', '5.9.0'), true);
@@ -134,10 +147,12 @@ describe('checkOverlays', () => {
   });
 
   it('passes a fresh, clean overlay', () => {
-    register('example-overlay');
+    const clone = register('example-overlay');
+    fetchedAt(clone, '2026-10-04T12:00:00Z');
     const rs = checkOverlays({
       homeDir: home,
       git: gitStub({ behind: '0', porcelain: '' }),
+      now: () => NOW,
     });
     assert.ok(
       rs.every((r) => r.status === 'pass'),
@@ -166,6 +181,92 @@ describe('checkOverlays', () => {
     });
     const rs = checkOverlays({ homeDir: home, git: gitStub() });
     assert.ok(rs.some((r) => r.status === 'fail' && r.id.endsWith(':present')));
+  });
+
+  describe('fetch age (#1324): a zero-behind count is only as fresh as the last fetch', () => {
+    const fresh = (rs) =>
+      rs.find((r) => r.id === 'overlay:example-overlay:fresh');
+
+    it('warns when the last fetch is older than 7 days, naming the time, threshold, and fix', () => {
+      const clone = register('example-overlay');
+      fetchedAt(clone, '2026-09-21T12:00:00Z'); // 14 days before NOW
+      const r = fresh(
+        checkOverlays({ homeDir: home, git: gitStub(), now: () => NOW }),
+      );
+      assert.equal(r.status, 'warn');
+      assert.match(r.label, /2026-09-21T12:00:00Z/);
+      assert.match(r.label, /7-day threshold/);
+      assert.match(r.remedy, /canary overlay update example-overlay/);
+      assert.ok(r.remedy.includes(`git -C ${clone} fetch`), r.remedy);
+    });
+
+    it('warns when no fetch was ever recorded', () => {
+      register('example-overlay'); // no .git/FETCH_HEAD, no clone reflog
+      const r = fresh(
+        checkOverlays({ homeDir: home, git: gitStub(), now: () => NOW }),
+      );
+      assert.equal(r.status, 'warn');
+      assert.match(r.label, /unknown \(never fetched\)/);
+      assert.match(r.label, /7-day threshold/);
+      assert.match(r.remedy, /canary overlay update example-overlay/);
+    });
+
+    it('passes a clone fetched within 7 days', () => {
+      const clone = register('example-overlay');
+      fetchedAt(clone, '2026-10-02T12:00:00Z'); // 3 days before NOW
+      const r = fresh(
+        checkOverlays({ homeDir: home, git: gitStub(), now: () => NOW }),
+      );
+      assert.equal(r.status, 'pass');
+      assert.match(r.label, /up to date as of 2026-10-02T12:00:00Z/);
+    });
+
+    it('passes at exactly 7 days (the threshold is "older than", not "at")', () => {
+      const clone = register('example-overlay');
+      fetchedAt(clone, '2026-09-28T12:00:00Z');
+      const r = fresh(
+        checkOverlays({ homeDir: home, git: gitStub(), now: () => NOW }),
+      );
+      assert.equal(r.status, 'pass');
+    });
+
+    it('a stale clone that is also behind still fails (fail outranks warn)', () => {
+      const clone = register('example-overlay');
+      fetchedAt(clone, '2026-09-01T12:00:00Z');
+      const r = fresh(
+        checkOverlays({
+          homeDir: home,
+          git: gitStub({ behind: '2' }),
+          now: () => NOW,
+        }),
+      );
+      assert.equal(r.status, 'fail');
+    });
+
+    it('a pinned overlay keeps its pass, however old its last fetch', () => {
+      const clone = registry.clonePath('example-overlay', home);
+      fs.mkdirSync(clone, { recursive: true });
+      registry.write(
+        registry.add(registry.emptyRegistry(), {
+          name: 'example-overlay',
+          source: 'github:example-org/example-overlay',
+          ref: 'v1.0.0',
+          path: clone,
+          addedDate: '2026-07-17',
+          consent: null,
+        }),
+        home,
+      );
+      const noUpstream = (args) =>
+        args[0] === 'rev-list'
+          ? { status: 128, stdout: '', stderr: 'no upstream' }
+          : { status: 0, stdout: '', stderr: '' };
+      const r = fresh(
+        checkOverlays({ homeDir: home, git: noUpstream, now: () => NOW }),
+      );
+      assert.equal(r.status, 'pass');
+      assert.match(r.label, /pinned @ v1\.0\.0/);
+    });
   });
 });
 
