@@ -90,6 +90,15 @@ states the window, and when every run in it came from the vitest reader (which
 has no `flaky` status) it adds `retry flakes not measurable` so a structural
 zero is never read as a measured one.
 
+Since #1500 rows from a deleted test file **retire** when the inventory shows
+the file is gone: not listed, a file name the inventory collects, and a live
+sibling in the same directory. The reason line names what retired and `--json`
+carries `retirement.retired`. Retirement is file-level, so a test deleted from a
+surviving file, rows with no `test_file`, and the last file in a directory keep
+scoring until they age out; that is a false fail, not a false green. With no
+usable inventory every row scores as before and the output says retirement was
+not applied. Rules: `docs/guides/test-inventory.md`.
+
 A quarantined test is acceptable only when it has a linked open issue (Jira or
 GitHub). Classify the katana ledger (`.canary/quarantine.json`) with
 `canary skills run canary-unquarantine -- --json` rather than reading issue

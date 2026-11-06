@@ -67,15 +67,23 @@ const JS_TEST_FILE_RE = new RegExp(
   `\\.(test|spec)\\.(${JS_TEST_EXTENSIONS.map((e) => e.slice(1)).join('|')})$`,
 );
 
+/**
+ * True when a bare file name is one {@link collectTestFiles} collects. Exported
+ * so a file's absence from an inventory can be read correctly (#1500): a
+ * `foo_test.py` is absent because no inventory ever lists it, not because it
+ * was deleted.
+ */
+export function isCollectedTestFile(name: string): boolean {
+  return (
+    (name.startsWith('test_') && name.endsWith('.py')) ||
+    JS_TEST_FILE_RE.test(name)
+  );
+}
+
 /** Recursive test-file glob (union of the test patterns), sorted by path. */
 export function collectTestFiles(dir: string): string[] {
   return walkFiles(dir)
-    .filter((p) => {
-      const b = basename(p);
-      return (
-        (b.startsWith('test_') && b.endsWith('.py')) || JS_TEST_FILE_RE.test(b)
-      );
-    })
+    .filter((p) => isCollectedTestFile(basename(p)))
     .sort();
 }
 

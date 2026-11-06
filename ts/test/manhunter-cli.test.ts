@@ -11,6 +11,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createCanaryCommand } from '../src/cli.js';
+import type { FlakinessRetirement } from '../src/core/flake-retirement.js';
+import { retirementNotes } from '../src/core/flakiness-check.js';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
@@ -253,6 +255,7 @@ describe('canary manhunter', () => {
     const report = JSON.parse(ci.stdout) as {
       verdict: string;
       checks: { name: string; verdict: string; reason: string }[];
+      retirement: FlakinessRetirement | null;
     };
     const out = join(root, 'dossier.json');
     await invokeCanary(['manhunter', '--root', root, '--json-out', out]);
@@ -263,6 +266,7 @@ describe('canary manhunter', () => {
     expect(section.facts).toEqual([
       `ci-ready verdict: ${report.verdict}`,
       ...report.checks.map((c) => `${c.verdict} ${c.name}: ${c.reason}`),
+      ...retirementNotes(report.retirement),
     ]);
   });
 

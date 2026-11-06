@@ -6,6 +6,11 @@
  * suite renders exactly as the check always has, several name each suite's
  * denominator. The skip cases (no store, unreadable store, no runs) stay in
  * `ci-ready.ts`, which owns the store input. Pure: callers pass the runs in.
+ *
+ * Rows from deleted test files retire before scoring (#1500; the rule is on
+ * `flake-retirement.ts`). The score's prose changes only when something retired:
+ * the rest of what retirement has to say is on the report and in its notes, so a
+ * reason consumers pin stays the reason they pin.
  */
 import {
   flakeSignals,
@@ -13,6 +18,11 @@ import {
   type FlakeSignal,
   type SuiteWindow,
 } from './flake-signals.js';
+import {
+  applyRetirement,
+  type FlakinessRetirement,
+} from './flake-retirement.js';
+import type { InventoryInput } from './inventory-checks.js';
 import {
   MIN_WINDOW_RUNS,
   NOT_MEASURABLE_NOTE,
@@ -27,7 +37,12 @@ interface ScoredRun {
   suite?: string | null;
   timestamp?: string | null;
   reporter_format?: string | null;
-  tests?: { test_name: string; status: string }[];
+  tests?: { test_name: string; status: string; test_file?: string | null }[];
+}
+
+interface FlakinessScore {
+  check: CiCheck;
+  retirement: FlakinessRetirement;
 }
 
 /**
@@ -51,6 +66,7 @@ interface CheckMeasure {
 /** Matches `canary analyze flaky`'s defaults: a 30-run window, 10% flake rate. */
 const FLAKY_WINDOW_RUNS = 30;
 const FLAKY_FAIL_RATE = 0.1;
+const MAX_NOTE_FILES = 5;
 
 /**
  * The measurability suffix for a clean window (#604 G3/SC4).
@@ -101,13 +117,69 @@ function scoreCleanWindow(window: ScoredRun[]): CiCheck {
   };
 }
 
+/** Names what left the denominator: a check must not go green by deletion. */
+function retiredSuffix(retirement: FlakinessRetirement): string {
+  const worst = retirement.retired[0];
+  if (!worst) return '';
+  const was =
+    worst.axis === null
+      ? ''
+      : `, was ${Math.round(worst.rate * 100)}% on ${worst.axis}`;
+  return (
+    `; ${retirement.retired_count} retired test(s) excluded ` +
+    `(${worst.file} \u{203A} ${worst.title}${was})`
+  );
+}
+
 /** Score flakiness over a NON-EMPTY run history. */
-export function scoreFlakyRuns(runs: ScoredRun[]): CiCheck {
-  const windows = suiteWindows(runs, FLAKY_WINDOW_RUNS);
+export function scoreFlakyRuns(
+  runs: ScoredRun[],
+  inventory: InventoryInput,
+): FlakinessScore {
+  const { windows, retirement } = applyRetirement(
+    suiteWindows(runs, FLAKY_WINDOW_RUNS),
+    inventory,
+  );
   // One suite reads exactly as it always has; several name each denominator.
-  return windows.length === 1
-    ? scoreWindow(windows[0]!.runs)
-    : scoreSuites(windows);
+  const check =
+    windows.length === 1 ? scoreWindow(windows[0]!.runs) : scoreSuites(windows);
+  check.reason += retiredSuffix(retirement);
+  return { check, retirement };
+}
+
+/**
+ * The renderers' lines for what stayed scored or could not be judged. A deleted
+ * test that keeps scoring is a false fail, and it should be explainable from
+ * the output rather than from this module's docs.
+ */
+export function retirementNotes(r: FlakinessRetirement | null): string[] {
+  if (r === null) return [];
+  if (!r.applied) {
+    return [
+      `Flakiness retirement not applied: ${r.reason}; tests from deleted files keep scoring until they age out.`,
+    ];
+  }
+  const notes: string[] = [];
+  if (r.unmatched_rows > 0) {
+    notes.push(
+      `Flakiness retirement: ${r.unmatched_rows} row(s) with no test_file stayed scored; they cannot be matched to a file.`,
+    );
+  }
+  if (r.kept.length > 0) {
+    // A scoped inventory can leave hundreds here on every run; --json has them all.
+    const named = r.kept
+      .slice(0, MAX_NOTE_FILES)
+      .map((k) => `${k.file}: ${k.why}`)
+      .join(', ');
+    const more =
+      r.kept.length > MAX_NOTE_FILES
+        ? `, and ${r.kept.length - MAX_NOTE_FILES} more`
+        : '';
+    notes.push(
+      `Flakiness retirement: ${r.kept.length} file(s) missing from the inventory stayed scored (${named}${more}).`,
+    );
+  }
+  return notes;
 }
 
 /** The worst of a set of signals; a tie keeps the first seen. */

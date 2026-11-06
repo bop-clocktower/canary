@@ -87,3 +87,43 @@ cases:
 - it lists 0 tests
 - the scope is empty
 - for critical-paths, `critical-areas.json` is absent or lists no areas
+
+## How the flakiness check uses it
+
+The flakiness check scores the run history, but the inventory decides which of
+its rows still count. Rows from a **deleted test file** retire, so a file that
+no longer exists stops failing the check on PRs that never touched it (#1500).
+
+A row retires only when all of these hold:
+
+- its file is not in the inventory (an entry under `skipped` counts as present:
+  unreadable is not deleted)
+- its file name is one `canary inventory` collects, so a `foo_test.py` next to a
+  collected file does not count as deleted
+- another stored file in the same directory, in the same suite's window, is in
+  the inventory, which is what stops an inventory of `tests/` from retiring a
+  live `src/` test
+- live files in that directory at least match the missing ones, because deleting
+  a file leaves most of its directory behind, and one colliding path from
+  another package's inventory is not evidence about a whole directory
+- the file did not run after the inventory's `generated` time, because a stale
+  inventory cannot list a file newer than itself
+
+Retired tests are named in the check's reason, and `canary ci-ready --json`
+lists them under `retirement.retired` as `{ suite, file, title, rate, axis }`,
+with `retirement.retired_count`. `retirement.applied` is `false` when the
+inventory is missing, unusable or lists no tests; every row then scores as
+before, and the output says retirement was not applied.
+
+Matching is by file, not by test title, because title matching wrongly retired
+23% of live rows on this repo (the inventory cannot see `it.each` or
+loop-generated titles). These keep scoring until they age out of the window:
+
+- a test deleted from a file that still exists
+- rows with no `test_file` (default-family pytest JUnit output has none);
+  counted in `retirement.unmatched_rows`
+- the last test file in a directory, or most of a directory deleted at once;
+  listed in `retirement.kept` with the reason it stayed
+
+Each of those is a false fail, not a false green. Keeping `canary inventory`
+current matters: a retirement is only as good as the inventory it reads.

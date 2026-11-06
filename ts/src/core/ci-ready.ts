@@ -22,7 +22,12 @@ import {
   type CriticalAreasInput,
   type InventoryInput,
 } from './inventory-checks.js';
+import type { FlakinessRetirement } from './flake-retirement.js';
 import { scoreFlakyRuns } from './flakiness-check.js';
+
+// Re-exported so both report renderers read one module: a direct import took
+// `manhunter/readiness.ts` over the perf coupling threshold.
+export { retirementNotes } from './flakiness-check.js';
 
 interface ScoredRun {
   /** The flakiness window is per suite, newest first by timestamp (#1506). */
@@ -31,7 +36,7 @@ interface ScoredRun {
   duration_ms?: number | null;
   /** Which reader produced the run (#604); absent on legacy rows. */
   reporter_format?: string | null;
-  tests?: { test_name: string; status: string }[];
+  tests?: { test_name: string; status: string; test_file?: string | null }[];
 }
 
 export type CheckVerdict = 'pass' | 'warn' | 'fail' | 'skip';
@@ -62,6 +67,11 @@ export interface CiReadyReport {
   /** Checks that actually scored something. Skipped checks do NOT count. */
   checked: number;
   checks: CiCheck[];
+  /**
+   * Which deleted test files left the flakiness score (#1500), or null when
+   * there was no run history for it to apply to.
+   */
+  retirement: FlakinessRetirement | null;
 }
 
 /**
@@ -87,19 +97,22 @@ function unreadableSkip(name: string, runs: RunsInput): CiCheck | null {
   return { name, verdict: 'skip', reason: runs.reason, measure: null };
 }
 
-function scoreFlakiness(runs: RunsInput, historyPath: string): CiCheck {
+function scoreFlakiness(inputs: CiReadyInputs): {
+  check: CiCheck;
+  retirement: FlakinessRetirement | null;
+} {
   const name = 'flakiness';
+  const { runs, historyPath, inventory } = inputs;
   const unreadable = unreadableSkip(name, runs);
-  if (unreadable) return unreadable;
+  if (unreadable) return { check: unreadable, retirement: null };
   if (!Array.isArray(runs) || runs.length === 0) {
+    const reason = `no runs recorded in ${historyPath}`;
     return {
-      name,
-      verdict: 'skip',
-      reason: `no runs recorded in ${historyPath}`,
-      measure: null,
+      check: { name, verdict: 'skip', reason, measure: null },
+      retirement: null,
     };
   }
-  return scoreFlakyRuns(runs);
+  return scoreFlakyRuns(runs, inventory);
 }
 
 /**
@@ -172,9 +185,10 @@ export function scoreCiReady(inputs: CiReadyInputs): CiReadyReport {
     inputs.inventory,
     inputs.criticalAreas,
   );
+  const flakiness = scoreFlakiness(inputs);
   const checks: CiCheck[] = [
     coverage!,
-    scoreFlakiness(inputs.runs, inputs.historyPath),
+    flakiness.check,
     assertions!,
     criticalPaths!,
     scoreRuntime(inputs.runs, inputs.historyPath),
@@ -183,5 +197,6 @@ export function scoreCiReady(inputs: CiReadyInputs): CiReadyReport {
     verdict: readinessVerdict(checks),
     checked: checks.filter((c) => c.verdict !== 'skip').length,
     checks,
+    retirement: flakiness.retirement,
   };
 }

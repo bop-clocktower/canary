@@ -15,6 +15,7 @@ import { Command } from 'commander';
 import { CliExitError } from './cli-common.js';
 import { EXIT_ABSTAINED, errnoCode } from './core/gate-result.js';
 import {
+  retirementNotes,
   scoreCiReady,
   type CiReadyReport,
   type RunsInput,
@@ -83,6 +84,7 @@ function renderText(report: CiReadyReport): string[] {
   ];
   for (const c of report.checks)
     lines.push(`  ${c.verdict.padEnd(4)}  ${c.name}: ${c.reason}`);
+  lines.push(...retirementNotes(report.retirement));
   const skipped = report.checks.length - report.checked;
   if (report.verdict === 'incomplete') {
     lines.push(

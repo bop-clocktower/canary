@@ -1,0 +1,24 @@
+{
+  "issues": [1500],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/ci-ready-retired-files.test.ts",
+  "baseSha": "16a8ad2e",
+  "reproFailure": "Before the fix the issue's fixture (a deleted file that flaked in 4 of 27 runs, next to a live sibling, with an inventory that no longer lists it) scored fail. Planting the original behaviour back, with retirement disabled in flake-retirement.ts, turns 12 of 41 tests red.",
+  "closingKeyword": "Refs",
+  "closingKeywordWhy": "Human decision: this PR lands one slice of #1500, so the issue stays open. Left open: a test deleted from a surviving file, rows with no test_file, the last file in a directory, and the issue's rename warning.",
+  "decision": "Option B, file-level retirement with guards (human). A test-level join is out: measured, it wrongly retired 23% of live rows.",
+  "assumptions": [
+    "DECIDED (human): retire only when the file is not in the inventory, its name is one the inventory collects, and a sibling in its directory is live. No test-level join.",
+    "ADDED, narrows the human's rule: live files in the directory must at least match the missing ones. Real data forced it: with only the human's guards, agents/skills rows against an inventory of ts/ wrongly retired 2604 of 2731 live rows (58 of 61 files), because 3 same-named paths gave whole directories a bogus live sibling. With this guard, 0. Cost: deleting most of a directory at once keeps scoring until it ages out, a false fail.",
+    "ADDED, narrows the human's rule: a file that ran after the inventory's generated time stays scored, because a stale inventory cannot list a file newer than itself and must not turn a new test green. Reasoned, not measured on real data; covered by a test.",
+    "ADDED: a run left with no rows after retirement leaves the window, so it cannot pad the 10-run sample floor.",
+    "An inventory is empty when it lists no tests, matching what `canary inventory` refuses to write. A skipped-only inventory is empty too.",
+    "Report shape: `retirement` is a new top-level key on the ci-ready report, not on the flakiness check, so the check object and every single-suite reason stay byte-identical when nothing retired, including with no inventory. `--json` carries retirement.retired and retirement.retired_count as the issue asks, under that key.",
+    "The not-applied and stayed-scored notes are separate lines in text output and dossier facts, never in `reason`. Only an actual retirement changes `reason`. One pin changed: manhunter-cli's facts equality now derives the notes the same way it derives the checks.",
+    "retired entries also carry suite and axis, beyond the issue's file, title and rate; rate is 0 and axis is null for a retired test that never flaked.",
+    "A limit forced a new module: retirement in flake-signals.ts took it to 337 lines and flakiness-check.ts to 322, against the 300-line perf threshold. ts/src/core/flake-retirement.ts is declared in both entryPoints arrays.",
+    "No identity change: flake-signals.ts stays keyed by test_name (#1350). No change to the fail threshold, alternation rules or verdict logic (#1523).",
+    "CHANGELOG.md not edited (decision 4a); the entry is in the PR body."
+  ]
+}

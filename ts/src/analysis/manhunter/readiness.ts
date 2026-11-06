@@ -17,6 +17,7 @@
  */
 
 import {
+  retirementNotes,
   scoreCiReady,
   type CiReadyReport,
   type RunsInput,
@@ -96,6 +97,7 @@ function fedReadiness(report: CiReadyReport, sources: SourceRef[]): Section {
     facts: [
       `ci-ready verdict: ${report.verdict}`,
       ...report.checks.map((c) => `${c.verdict} ${c.name}: ${c.reason}`),
+      ...retirementNotes(report.retirement),
     ],
     eyes,
   });
