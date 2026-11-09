@@ -463,8 +463,14 @@ describe('check_doc_links', () => {
      * Measured at `7995370b` (2026-09-22): 30 dead links across 38 stamped
      * files. Note the issue body is stale on the file total (it says 36) and on
      * the scanned total (it says 255, today 381) — 30 is the number that held.
+     *
+     * 30 -> 32 at the harness 13.0.0 regeneration (#1595, 2026-11-06): the
+     * CLI's harness-task-executor.md now links
+     * `../../../../docs/knowledge/roadmap/merge-triggered-auto-done.md`, a path
+     * in the harness repo, not this one (1 per host). Same upstream class as
+     * #838 / harness#2132. A deliberate, explained bump, which is the pin working.
      */
-    const GENERATED_DEAD_LINKS = 30;
+    const GENERATED_DEAD_LINKS = 32;
 
     it('pins the generator-stamped dead-link count', () => {
       const parsed = parseContract(exec(['--json']).out);

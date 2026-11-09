@@ -1,6 +1,6 @@
 # ![Canary](docs/assets/icon-gold.svg) Canary
 
-![version](https://img.shields.io/badge/version-9.5.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
+![version](https://img.shields.io/badge/version-9.6.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
 ![node](https://img.shields.io/badge/node-22+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
 ![tests](https://img.shields.io/badge/tests-passing-28C840?style=flat-square&labelColor=1C1C1C&color=1C1C1C&logoColor=28C840)
 ![frameworks](https://img.shields.io/badge/playwright_·_vitest_·_pytest-F0C040?style=flat-square&labelColor=C09018&color=F0C040)
@@ -242,6 +242,7 @@ Use, process, escalation) lives in
 | `canary-fail-fast` skill                          | Audits Playwright fail-fast config knobs and prints a loud, categorized CI failure digest.                                                                                                        |
 | `canary-test-reporter` skill                      | Playwright JSON results → Markdown + JSON report with pass/fail/flaky/skipped counts.                                                                                                             |
 | `canary testtracker push --junit <file…>`         | CLI — push vitest / `node --test` / Newman / Maestro JUnit XML to the TestTracker ingest API (npm install required; see [Ingest Reporter](docs/wiki/Ingest-Reporter.md#other-runners-junit-xml)). |
+| `canary testtracker push-perf --k6-summary <f…>`  | CLI — push a k6 `handleSummary` run to TestTracker's perf-reports route (npm install required; see [Ingest Reporter](docs/wiki/Ingest-Reporter.md#k6-perf-reports-canary-testtracker-push-perf)). |
 | `canary history summary` / `canary history flaky` | CLI — recent-run summary / flake leaderboard for one suite, ranked on the worse of the retry-flake and cross-run flip rates (#604).                                                               |
 
 ### I want to find what to test
@@ -270,6 +271,7 @@ Use, process, escalation) lives in
 | `canary vacuity-check <path>`             | CLI, deterministic — tests that pass without proving anything; advisory.         |
 | `canary ci-ready`                         | CLI, deterministic — five CI-readiness checks; missing inputs skip, never pass.  |
 | `canary inventory [testDir]`              | CLI, deterministic — writes `.canary/test-inventory.json` for `ci-ready`.        |
+| `canary critical-areas`                   | CLI, deterministic — writes `.canary/critical-areas.json` for `canary-katana`.   |
 | `canary briefing [--diff <f>]`            | CLI, deterministic — a test charter for a human tester; advisory, never a gate.  |
 | `canary scaling-curve [points]`           | CLI, deterministic — growth exponent of cost vs input size (`--run` drives k6).  |
 | `canary permission-matrix <model>`        | CLI, deterministic — role × tenant × endpoint authz tests from a declared grid.  |

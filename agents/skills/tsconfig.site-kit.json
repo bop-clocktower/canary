@@ -1,0 +1,23 @@
+{
+  // The browser surface (#1201): the site kit and the tests that render it.
+  // Kept out of tsconfig.json so node-only skill tests never see DOM globals
+  // (`name`, `close`, `event`, `document` would typecheck and fail at runtime).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // checkJs is new for the kit; it was typechecked zero times before #1201.
+    // noImplicitAny stays off until the kit's JSDoc annotations land
+    // (~317 TS7006 parameter annotations, tracked in #1593): what this
+    // catches today is real type errors, not missing annotations.
+    "checkJs": true,
+    "noImplicitAny": false
+  },
+  "include": [
+    "lib/site-kit/**/*.js",
+    "test/site-kit-*.ts",
+    "test/canary-barda-render.test.ts"
+  ],
+  // The base config excludes exactly these files; `exclude` is inherited
+  // through `extends`, so it must be reset here or this config checks nothing.
+  "exclude": []
+}

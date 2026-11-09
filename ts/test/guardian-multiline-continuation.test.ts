@@ -228,9 +228,11 @@ describe('attributeLines: the lexical continuation judgement', () => {
 });
 
 /**
- * #1408: a source the lexer loses (here a regex literal ending in `//`, which
- * the comment stripper reads as a line comment, leaving `p.replace(` open) falls
- * back to "nearest record above". With no record above, that pointed a line at
+ * #1408: a source the lexer loses falls back to "nearest record above". The
+ * lexer is lost here by a regex after `)`, which the regex rule reads as
+ * division, so its `//` is stripped as a comment and its `\(` stays open. (The
+ * `report-anchor.ts` trigger stopped losing the lexer in #1515; this fixture has
+ * to stay lost to reach the fallback.) With no record above, that pointed a line at
  * line 0, which has no hits, so module-load imports became a finding. Synthesized
  * from the `report-anchor.ts` shape on PR #1406; v8 records nothing before line 26.
  */
@@ -249,7 +251,7 @@ describe('#1408: no recorded line above means no attribution, not line 0', () =>
     '  root: string,', // 24
     '): string | null {', // 25
     '  const rel = relative(root, reportPath);', // 26
-    "  const clean = rel.replace(/^\\.\\//, '');", // 27
+    '  const clean = rel; if (rel) /\\(\\//.test(rel);', // 27
     '  return existsSync(join(root, clean)) ? clean : null;', // 28
     '}', // 29
     '', // 30

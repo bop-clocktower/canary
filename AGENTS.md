@@ -547,6 +547,12 @@ narrowed to the diff, so it is not described as diff-scoped.
   on every `mutation-report.json`, zero included. `sampled + untested` is the
   report's mutant total. Every non-abstained report renders the count, zero
   included, and an abstention renders it whenever it is not zero.
+- **A survivor with no `coveredBy` stays a survivor (ADR 0037).** Stryker writes
+  the field only under `coverageAnalysis: perTest`, so its absence means
+  attribution was not recorded. The survivor counts in `survived` and drives
+  exit 1, its line says so, and one line under the headline counts such
+  survivors and points at `perTest`. Only an explicit `coveredBy: []` is
+  `no-coverage`.
 - **Author obligation.** For each survivor, either strengthen a test until it
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,
@@ -1185,7 +1191,7 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 13 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 14 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place, then 27 shipped rows archived by the
   2026-09-14 `roadmap-groom --check-issues` reconciliation, then 11 more
@@ -1193,7 +1199,8 @@ Two related facts worth not rediscovering:
   `canary-batwoman` linked to #749 and 5 shipped rows archived on 2026-09-29,
   then the canary QA site row linked to #1151 on 2026-10-05, then the
   canary-huntress row (#617, closed `NOT_PLANNED` by ADR 0021) archived on
-  2026-10-16, then the canary-blackalice row linked to #1524 on 2026-10-28. The
+  2026-10-16, then the canary-blackalice row linked to #1524 on 2026-10-28,
+  then the TestTracker quarantine-ledger row linked to #1321 on 2026-11-06. The
   count is of LINKED rows, and every row in the roadmap is linked, so
   `--check-issues` abstains on none of them — and `Priority`, serialized in that
   same extended group, is populated on every one of them.
@@ -1220,7 +1227,7 @@ Two related facts worth not rediscovering:
   one issue is reported as `conflicted` and never auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 13 rows
+  effectively blind gate that reported a real number nobody read. All 14 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless
@@ -1719,8 +1726,11 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
   before they reach CI.
 - Re-runs `node scripts/security_ledger.mjs` and restages its outputs only when
   the commit stages a ledger input (`.harness/security/timeline.json`,
-  `docs/SECURITY_LEDGER.md`, or the script itself). Unrelated commits leave the
-  ledger alone; CI (`harness-security.yml`) is its canonical writer (#1446).
+  `.harness/security/supply-chain.json`, `docs/SECURITY_LEDGER.md`, or the script
+  itself). Unrelated commits leave the ledger alone; CI (`harness-security.yml`)
+  is its canonical writer (#1446). The ledger's supply-chain line comes from the
+  sidecar `scripts/supply_chain_audit.mjs` writes, and reads "not measured" when
+  nothing was audited (#1436). It informs and gates nothing.
 
 Then install the Python test dependency (pytest) into the `python3` on your
 `PATH` — the same interpreter the tests spawn:

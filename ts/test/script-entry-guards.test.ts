@@ -118,6 +118,11 @@ function driftedSyncTree(dir: string): string {
 
 const usage = { args: [], status: 2, output: /usage:/ };
 const CASES: Record<string, Case> = {
+  'scripts/agent-definitions-drift.mjs': {
+    args: ['--bogus'],
+    status: 2,
+    output: /usage:/,
+  },
   'scripts/arch-verdict.mjs': {
     args: ['absent.json'],
     status: 3,

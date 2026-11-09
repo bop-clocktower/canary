@@ -63,11 +63,15 @@ export function locateFailure(
 
 /**
  * Why a stored `test_file` cannot name a file at the old commit, or null.
- * Absolute paths predate #1021; a `..` segment would leave the worktree.
+ * A failure outside any file has none (#1411); absolute paths predate #1021; a
+ * `..` segment would leave the worktree.
  */
 export function testFileProblem(file: string | undefined): string | null {
   const f = file ?? '';
-  if (f === '' || f.startsWith('/') || /^[A-Za-z]:/.test(f)) {
+  if (f === '') {
+    return 'the record names no test file for this failure, so there is no file to replay';
+  }
+  if (f.startsWith('/') || /^[A-Za-z]:/.test(f)) {
     return `test_file '${f}' is not repo-relative (recorded before #1021), so it names no file at the old commit`;
   }
   return f.split(/[\\/]/).includes('..')

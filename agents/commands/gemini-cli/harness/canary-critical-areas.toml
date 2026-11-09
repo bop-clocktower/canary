@@ -116,6 +116,10 @@ all.
 
 ## Optional Artifact
 
+For the deterministic map without any judgement, run `canary critical-areas`. It
+writes this same file from churn, importers and any coverage report, and keeps
+declared `symbols`. See `docs/guides/critical-areas.md`.
+
 When `--save` flag is passed (or when invoked by `/canary-test-pipeline`), write
 `.canary/critical-areas.json`:
 

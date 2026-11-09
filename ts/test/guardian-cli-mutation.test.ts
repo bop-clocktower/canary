@@ -74,6 +74,24 @@ describe('guardian mutation exit codes', () => {
     expect(res.stdout).toContain('a covering test');
   });
 
+  it('exits 1 on an unattributed survivor and discloses the missing attribution (ADR 0037 F1)', async () => {
+    const { reportPath, root } = writeReport([
+      { line: 1, status: 'Killed' },
+      { line: 2, status: 'Survived' },
+    ]);
+    const res = await invokeGuardian([
+      'mutation',
+      '--report',
+      reportPath,
+      '--repo-root',
+      root,
+    ]);
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain('attribution not recorded');
+    expect(res.stdout).toContain('coverageAnalysis: perTest');
+    expect(res.stdout).not.toContain('no covering test');
+  });
+
   it('exits 3 and abstains when the report holds no mutants', async () => {
     const { reportPath, root } = writeReport([]);
     const res = await invokeGuardian([

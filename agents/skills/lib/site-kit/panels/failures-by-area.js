@@ -77,10 +77,10 @@ export class FailuresByArea extends CanaryPanel {
     const partial = latest.filter((r) => r.incomplete).length;
     const unlisted = latest.filter((r) => !r.incomplete && r.results === null);
     const carried = latest.filter((r) => !r.incomplete && r.results !== null);
-    const abstentions = [
+    const abstentions = /** @type {Array<[number, string]>} */ ([
       [unlisted.length, 'carry no per-test results in their latest run'],
       [partial, 'have a latest run missing shards'],
-    ]
+    ])
       .filter(([n]) => n > 0)
       .map(
         ([n, why]) =>

@@ -38,8 +38,10 @@ import { covers, related, tiedDeletion, tiedToArea } from './ties.mjs';
 // reachability model drops a module that is both imported and re-exported.
 export { areaSymbols, loadCriticalAreas, repoTestFiles };
 
+// Katana has no default path for this file, so the line names both steps.
 export const DEGRADED_NOTICE =
-  'critical-area data unavailable, recording only, not alarming';
+  'critical-area data unavailable, recording only, not alarming; ' +
+  'run `canary critical-areas`, then pass --critical-areas .canary/critical-areas.json';
 
 export const Fidelity = {
   NAME_MATCHED: { value: 'name-matched', rank: 0 },

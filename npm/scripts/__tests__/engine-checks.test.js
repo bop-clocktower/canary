@@ -18,6 +18,19 @@ function tmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
+/** The pinned "now" for every fetch-age assertion -- never the wall clock. */
+const NOW = new Date('2026-10-05T12:00:00Z');
+
+/** Record a fetch at `iso` the way git does: FETCH_HEAD, mtime = fetch time. */
+function fetchedAt(clone, iso) {
+  const gitDir = path.join(clone, '.git');
+  fs.mkdirSync(gitDir, { recursive: true });
+  const fetchHead = path.join(gitDir, 'FETCH_HEAD');
+  fs.writeFileSync(fetchHead, '');
+  const t = new Date(iso);
+  fs.utimesSync(fetchHead, t, t);
+}
+
 describe('isOlder', () => {
   it('compares numeric semver components', () => {
     assert.equal(isOlder('5.8.0', '5.9.0'), true);
@@ -134,10 +147,12 @@ describe('checkOverlays', () => {
   });
 
   it('passes a fresh, clean overlay', () => {
-    register('example-overlay');
+    const clone = register('example-overlay');
+    fetchedAt(clone, '2026-10-04T12:00:00Z');
     const rs = checkOverlays({
       homeDir: home,
       git: gitStub({ behind: '0', porcelain: '' }),
+      now: () => NOW,
     });
     assert.ok(
       rs.every((r) => r.status === 'pass'),

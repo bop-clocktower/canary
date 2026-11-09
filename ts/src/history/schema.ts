@@ -38,6 +38,14 @@ export interface RunInput {
   order?: OrderOutcome; // #460, local-only
 }
 
+/**
+ * Closes the name of a synthetic row: a failure that belongs to a file rather
+ * than to any test (#1351, #1411). A reader writes `<path as reported><this>`;
+ * `keys/test-file-key.ts` then swaps in the repo-relative path, because the name
+ * is the key flake and timeline queries group on.
+ */
+export const FILE_FAILURE_SUFFIX = ' (file failed outside any test)';
+
 /** Mirrors the Python `TestResult` dataclass. */
 export interface TestResultInput {
   run_id: string;

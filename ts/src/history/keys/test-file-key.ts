@@ -21,7 +21,7 @@ import { realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import type { BuiltRun, ReportShape } from '../run-recorder.js';
-import type { TestResultInput } from '../schema.js';
+import { FILE_FAILURE_SUFFIX, type TestResultInput } from '../schema.js';
 
 export interface PathBase {
   /** `git rev-parse --show-toplevel`, or null outside a repository. */
@@ -60,6 +60,18 @@ function isInside(rel: string): boolean {
   return rel !== '' && !escapes && !isAbsolute(rel);
 }
 
+/**
+ * A synthetic row's name embeds its path, so it follows the path to the key
+ * (#1411): the name is what queries group on, and an absolute path would split
+ * one file's history per machine. A real test's name never starts this way.
+ */
+function keyedName(row: TestResultInput, key: string): string {
+  const { test_name: name, test_file: file } = row;
+  return name.startsWith(`${file}${FILE_FAILURE_SUFFIX}`)
+    ? `${key}${name.slice(file.length)}`
+    : name;
+}
+
 /** Rewrite every row's `test_file` to its key; count the rows left as-is. */
 export function normalizeTestFiles(
   results: TestResultInput[],
@@ -72,7 +84,7 @@ export function normalizeTestFiles(
       unjoinable += 1;
       return r;
     }
-    return { ...r, test_file: key };
+    return { ...r, test_file: key, test_name: keyedName(r, key) };
   });
   return { results: out, unjoinable };
 }
