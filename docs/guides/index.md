@@ -86,6 +86,13 @@ the three modes and cold start, and the permutation guarantee.
 **Best for:** Surfacing a failure in minute one of a long suite instead of hour
 three.
 
+### [Critical Areas Guide](./critical-areas.md)
+
+`canary critical-areas` — ranks tracked source files by churn, importers and
+coverage, and writes the map `canary-katana` alarms against.
+
+**Best for:** Giving katana real critical-area data in a fresh worktree.
+
 ### [Release Dossier Guide](./release-dossier.md)
 
 `canary manhunter` — assembles run history, guardian coverage tiers and

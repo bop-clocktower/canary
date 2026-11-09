@@ -121,44 +121,21 @@ Store the parsed skill list for use in Phase 2 task annotation.
 
    **Read-only constraint:** Steps 1-6 above are research and analysis. Do not propose task structure, file organization, or implementation approaches during SCOPE. Record what must be true (observable truths) and what you do not know (uncertainties). Solutions belong in DECOMPOSE.
 
-   When scope is ambiguous, use `emit_interaction`:
+   When scope is ambiguous, ask in plain text in your reply. **Do NOT route this through `emit_interaction`, `AskUserQuestion`, or any tool.** `emit_interaction` records the prompt but does not display it to the human — the client collapses the call to "Called harness" and the rendered text only returns to the model. `AskUserQuestion` is Claude-Code-only and caps headers at 12 chars / 4 options. Plain text in your own message is the only channel that reliably reaches the human across every tool (Claude Code, Cursor, Codex, Gemini CLI).
 
-   ```json
-   emit_interaction({
-     path: "<project-root>",
-     type: "question",
-     question: {
-       text: "The spec mentions X but does not define behavior for Y. Should we:",
-       options: [
-         {
-           label: "A) Include Y in this plan",
-           pros: ["Complete feature in one pass", "No follow-up coordination"],
-           cons: ["Increases scope and time", "May delay delivery"],
-           risk: "medium",
-           effort: "high"
-         },
-         {
-           label: "B) Defer Y to a follow-up plan",
-           pros: ["Keeps current plan focused", "Ship sooner"],
-           cons: ["Y remains unhandled", "May need rework when Y is added"],
-           risk: "low",
-           effort: "low"
-         },
-         {
-           label: "C) Update the spec first",
-           pros: ["Design is complete before planning", "No surprises during execution"],
-           cons: ["Blocks planning until spec is updated", "Extra round-trip"],
-           risk: "low",
-           effort: "medium"
-         }
-       ],
-       recommendation: {
-         optionIndex: 1,
-         reason: "Keeping the current plan focused reduces risk. Y can be addressed in a follow-up.",
-         confidence: "medium"
-       }
-     }
-   })
+   Present the choice as a markdown table so tradeoffs are scannable, state your recommendation, then STOP and wait for the human's reply:
+
+   ```markdown
+   ### Decision needed: The spec mentions X but does not define behavior for Y. Should we:
+
+   |            | A) Include Y in this plan                               | B) Defer Y to a follow-up plan                       | C) Update the spec first                                          |
+   | ---------- | ------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------- |
+   | **Pros**   | Complete feature in one pass; no follow-up coordination | Keeps current plan focused; ship sooner              | Design is complete before planning; no surprises during execution |
+   | **Cons**   | Increases scope and time; may delay delivery            | Y remains unhandled; may need rework when Y is added | Blocks planning until spec is updated; extra round-trip           |
+   | **Risk**   | Medium                                                  | Low                                                  | Low                                                               |
+   | **Effort** | High                                                    | Low                                                  | Medium                                                            |
+
+   **Recommendation:** B) Defer Y to a follow-up plan (confidence: medium) — keeping the current plan focused reduces risk; Y can be addressed in a follow-up.
    ```
 
 #### EARS Requirement Patterns
@@ -224,6 +201,42 @@ Before decomposing into tasks, ensure domain knowledge from PRDs and specs is do
 
 ---
 
+### Phase 1.6: NFR ELICITATION — Turn Quality Targets into Verifiable Tasks
+
+Non-functional requirements (NFRs) are quality targets — how fast, how safe, how far it scales, how it fails — that are cheapest to honor when treated as **design inputs during planning**, not as findings surfaced in review after the code is written. This phase elicits NFR targets across four dimensions (performance, security, scalability, resilience) and turns each stated target into a concrete plan task wired to machinery the harness already runs.
+
+**Additive by default.** Elicitation is opt-in per dimension: every dimension offers a sensible default and an explicit skip. If the human skips every dimension, no NFR tasks are emitted and planning proceeds exactly as it would without this phase. **Skip this phase entirely** when rigor level is `fast`.
+
+**Elicitation protocol.** Ask one dimension at a time, in plain text in your reply — do NOT route this through `emit_interaction` or `AskUserQuestion` (same channel constraint as the rest of this skill: neither reliably displays to the human, `emit_interaction` collapses to "Called harness" and `AskUserQuestion` is Claude-Code-only). For each dimension state the question, the default, and how to skip ("skip" / blank reply), then wait for the reply before asking the next. Keep answers plain-text and short.
+
+| Dimension       | Prompt                                                                                 | Default (if skipped)                                   |
+| --------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| **Performance** | "Any latency/throughput target for a hot path? (e.g. `p99 < 5ms for parseDocument`)"   | No new benchmark; existing `check-perf` budgets stand. |
+| **Security**    | "Any module handling untrusted input or secrets that must pass a clean scan?"          | `check-security` runs at its configured floor.         |
+| **Scalability** | "Any target input size or concurrency the code must hold shape at? (e.g. `10k items`)" | No load-oriented benchmark; complexity budgets stand.  |
+| **Resilience**  | "Any failure mode that must degrade gracefully rather than crash? (e.g. `DB down`)"    | Failure paths covered by ordinary task tests only.     |
+
+**Phrase each stated target as an EARS acceptance criterion** (see the EARS table in Phase 1) and add it to the Observable Truths list so it traces to a task in Phase 2:
+
+- **Performance / Scalability** → State-driven or Event-driven: "While processing `10k` items, the system shall keep `p99` latency under `200ms`."
+- **Security** → Unwanted: "If `check-security` reports an error-severity finding in `<module>`, then the build shall not pass."
+- **Resilience** → Unwanted / State-driven: "While the database is unreachable, the system shall serve cached data and shall not crash."
+
+**Wire each target to existing machinery.** Do NOT invent new subsystems. Each dimension maps to a gate the harness already ships:
+
+| Dimension       | Existing machinery                                                                                              | Emitted plan task (template)                                                                                                                                                                   | Verifying command                                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **Performance** | Perf baselines (`.harness/perf/baselines.json`) + `harness perf bench`                                          | "Add a `*.bench.ts` benchmark for `<hot-path>`; run `harness perf bench`; record the baseline with `harness perf baselines update`. Target: `<p99 target>`."                                   | `harness perf bench` + `harness perf baselines show`     |
+| **Security**    | Mechanical scan `harness check-security` (gate: FAIL on error-severity findings after the `--severity` filter)  | "`harness check-security --severity error` must report zero findings for the files under `<module>`. If the module warrants a stricter floor, set `security.strict` in `harness.config.json`." | `harness check-security --severity error`                |
+| **Scalability** | Perf benchmarks at target load + structural/coupling budgets (`harness check-perf`)                             | "Add a `*.bench.ts` that exercises `<component>` at `<target load>`; assert it stays within budget. Keep complexity within budget via `harness check-perf --structural --coupling`."           | `harness perf bench` + `harness check-perf --structural` |
+| **Resilience**  | Ordinary TDD task with a failure-path test + graph failure signals (`predict_failures`, `compute_blast_radius`) | "Write a test that simulates `<failure mode>` and asserts graceful degradation (no crash, documented fallback). Use `predict_failures` to find where else this failure propagates."            | The failure-path test (`npx vitest run <test-file>`)     |
+
+**Record the elicited targets** in the `constraints` session section via `manage_state` — they are constraints the plan must honor — and carry them into Phase 2 as tasks tagged `category: "nfr"`.
+
+> **Honest scope.** Performance, security, and scalability wire to mechanical gates (`harness perf` / `harness check-perf` / `harness check-security`) that pass or fail deterministically. Resilience has no dedicated scanner — it wires to the plan's own failure-path tests plus the graph failure-prediction signals this skill already uses. Do not claim a resilience "gate" the harness does not have; the verifiable artifact is the test.
+
+---
+
 ### Phase 2: DECOMPOSE — Map File Structure and Create Tasks
 
 Report progress: `**[Phase 2/4]** DECOMPOSE — mapping file structure and creating tasks`
@@ -249,7 +262,7 @@ Report progress: `**[Phase 2/4]** DECOMPOSE — mapping file structure and creat
    **Estimated total:** 8 tasks, ~33 minutes
    ```
 
-   **Approval gate:** Present via `emit_interaction` (type: `confirmation`, text: "Approve skeleton direction?"). If approved, proceed to step 3. If rejected, revise and re-present.
+   **Approval gate:** Ask in plain text in your reply — do NOT route this through `emit_interaction` or `AskUserQuestion` (they do not display to the human; `emit_interaction` collapses to "Called harness" and `AskUserQuestion` is Claude-Code-only). Ask directly: "Approve skeleton direction?" and wait. If approved, proceed to step 3. If rejected, revise and re-present.
 
 3. **Decompose into atomic tasks.** Each task must:
    - Be completable in 2-5 minutes, fit in a single context window
@@ -300,12 +313,28 @@ Report progress: `**[Phase 2/4]** DECOMPOSE — mapping file structure and creat
 
    If the spec has no Integration Points section, skip this step.
 
+8. **Emit NFR tasks from Phase 1.6.** For each NFR target elicited in Phase 1.6 (skipped dimensions emit nothing), create one atomic task using the template from the NFR wiring table. Tag it `**Category:** nfr` in the task header. NFR tasks follow the same atomic rules (2-5 minutes, exact file paths, exact commands) and appear after implementation tasks, alongside integration tasks. Each NFR task's final step is its verifying command from the table, so the target is checkable at execution time rather than aspirational.
+
+   ```
+   ### Task N: Lock in p99 budget for parseDocument
+
+   **Depends on:** Task N-1 | **Files:** `src/parse.bench.ts` | **Category:** nfr
+
+   1. Create `src/parse.bench.ts` benchmarking `parseDocument`.
+   2. Run: `harness perf bench`
+   3. Record baseline: `harness perf baselines update`
+   4. Verify `p99Ms` in `.harness/perf/baselines.json` meets the target (`p99 < 5ms`).
+   5. Commit: `perf(parse): add parseDocument benchmark and baseline`
+   ```
+
+   If Phase 1.6 was skipped, or every dimension was skipped, emit no NFR tasks — the plan is identical to one produced without NFR elicitation.
+
 ---
 
 ### Phase 3: SEQUENCE — Order Tasks and Identify Dependencies
 
 1. **Order by dependency.** Types before implementations. Implementations before integrations. Integration tasks (tagged `category: "integration"`) after all implementation tasks. Tests alongside implementations (same task, TDD style).
-2. **Identify parallel opportunities.** Tasks touching different subsystems with no shared state can be marked parallelizable.
+2. **Identify parallel opportunities and record dependency edges.** Tasks touching different subsystems with no shared state can run in parallel. Record each task's real dependencies as `dependsOn` (the task IDs it must follow) in the task header `**Depends on:**` line, and keep the task's `**Files:**` list accurate — together these are exactly the edges `plan_parallelization` consumes (explicit `dependsOn` unioned with file-overlap edges) to build the wave DAG at execution time. A task with no dependencies records `**Depends on:** none`. Optionally, add an `**Owns:**` line listing glob paths a task claims ownership of (e.g. `src/api/**`); it feeds the cheap, deterministic, graph-free `owns`-overlap forecast in `plan_parallelization` — two tasks whose owned globs overlap are flagged in `ownershipForecast` and gain an implicit DAG edge, alongside the file-overlap edges. `Owns` is OPTIONAL: a task with no distinct ownership just omits it.
 3. **Number tasks sequentially.** Use `Task 1`, `Task 2`, etc. Dependencies reference task numbers.
 4. **Estimate total time.** Sum 2-5 minutes per task. If total exceeds available time, identify a milestone boundary for pausing.
 
@@ -339,7 +368,7 @@ Report progress: `**[Phase 2/4]** DECOMPOSE — mapping file structure and creat
 
 10. **Write session summary (if session is known).** Call `writeSessionSummary` with skill, status, plan path, keyContext, nextStep. Skip if no session slug.
 
-11. **Request plan sign-off:** Use `emit_interaction` (type: `confirmation`) with plan path, task count, and time estimate.
+11. **Request plan sign-off in plain text.** Ask directly in your reply — do NOT route this through `emit_interaction` or `AskUserQuestion` (the human will not see it; `emit_interaction` collapses to "Called harness" and `AskUserQuestion` is Claude-Code-only). Present the plan path, task count, and time estimate, then ask: "Proceed? (yes/no)" and wait for the reply.
 
 12. **Suggest transition to execution.** After approval, call `emit_interaction` with type: `transition`, `completedPhase: "planning"`, `suggestedNext: "execution"`, `requiresConfirmation: true`. Include `qualityGate` with checks: plan-written, harness-validate, observable-truths-traced, human-approved. If confirmed: invoke harness-execution. If declined: stop (handoff already written).
 
@@ -360,6 +389,12 @@ One sentence.
 
 1. [observable truth]
 
+## NFR Targets (if elicited)
+
+- [Performance] EARS criterion → task N (verified by `harness perf bench`)
+- [Security] EARS criterion → task N (verified by `harness check-security --severity error`)
+  _Omit this section entirely when no NFR dimension was elicited._
+
 ## File Map
 
 - CREATE path/to/file.ts
@@ -374,7 +409,9 @@ One sentence.
 
 ### Task 1: <descriptive name>
 
-**Depends on:** none | **Files:** path/to/file.ts, path/to/file.test.ts
+**Depends on:** none | **Files:** path/to/file.ts, path/to/file.test.ts | **Owns:** path/to/\*\*
+
+<!-- `Depends on` lists the task IDs this task must follow (its `dependsOn` edges); `Files` is the independence-checking input; `Owns` (optional) lists glob paths this task claims, feeding the deterministic owns-overlap forecast. All three feed `plan_parallelization` during execution. -->
 
 1. Create test file with exact test code
 2. Run test — observe failure
@@ -427,7 +464,9 @@ When referencing existing code in task specs, cite evidence using `file:line` fo
 
 - **`harness validate`** — Run in Phase 4 (before writing plan) and included in every task.
 - **`harness check-deps`** — Referenced in tasks adding imports or creating modules.
-- **Plan commit** — After writing the plan (Phase 4 Step 8), commit `docs/changes/<topic>/plans/YYYY-MM-DD-<feature-name>-plan.md` so the paper trail enters git history at planning time. `harness-execution` does not backfill — see issue #487.
+- **`harness perf bench` / `harness perf baselines update` / `harness check-perf`** — The verifying commands for performance and scalability NFR tasks emitted from Phase 1.6. Perf baselines live in `.harness/perf/baselines.json`; complexity/coupling/size budgets live in the `performance` block of `harness.config.json`.
+- **`harness check-security`** — The verifying command for security NFR tasks emitted from Phase 1.6. Its gate fails on error-severity findings after the `--severity` filter; `security.strict` in `harness.config.json` promotes warnings to errors for stricter modules.
+- **Plan commit** — After writing the plan (Phase 4 Step 8), commit `docs/changes/<topic>/plans/YYYY-MM-DD-<feature-name>-plan.md` so the paper trail enters git history at planning time. `harness-execution` does not backfill this commit.
 - **Plan location** — `docs/changes/<topic>/plans/YYYY-MM-DD-<feature-name>-plan.md` when the spec lives under `docs/changes/<topic>/proposal.md`; otherwise `docs/plans/` as a fallback.
 - **Handoff** — Once approved, invoke harness-execution for task-by-task implementation.
 - **Session directory** — Session-scoped writes go to `.harness/sessions/<slug>/`. Structure: `handoff.json`, `state.json`, `artifacts.json` (registry of spec/plan paths and produced file lists). Global `.harness/handoff.json` is deprecated for session-aware invocations.
@@ -468,6 +507,7 @@ Only apply when modifying existing documented behavior. When `docs/changes/` exi
 - `harness validate` passes before plan is written and is in every task
 - Human has reviewed and approved the plan
 - Rigor level rules followed: fast skips skeleton; thorough always skeletons with approval; standard skeletons at >= 8 tasks
+- NFR targets elicited in Phase 1.6 each trace to a task tagged `category: nfr` whose final step is a verifying command, or the dimension was explicitly skipped (no NFR task emitted)
 
 ## Red Flags
 
@@ -480,17 +520,18 @@ Only apply when modifying existing documented behavior. When `docs/changes/` exi
 
 ## Rationalizations to Reject
 
-| Rationalization                                                                                               | Reality                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "The task is conceptually clear so I do not need to include exact code in the plan"                           | Every task must have exact file paths, exact code, and exact commands. If you cannot write the code in the plan, you do not understand the task well enough to plan it.                                     |
-| "This task touches 5 files but it is logically one unit of work, so splitting it would add overhead"          | Tasks touching more than 3 files must be split. The overhead of splitting is far less than the cost of a failed oversized task.                                                                             |
-| "Tests for this task can be added in a follow-up task since the implementation is straightforward"            | No skipping TDD in tasks. Every code-producing task must start with writing a test. "Add tests later" is explicitly forbidden.                                                                              |
-| "The spec does not cover this edge case, but I can fill in the gap during planning"                           | When the spec is missing information, do not fill in the gaps yourself. Escalate. Filling gaps silently creates undocumented design decisions that no one reviewed.                                         |
-| "I discovered we need an additional file during decomposition, but updating the file map is just bookkeeping" | The file map must be complete. Every file that will be created or modified must appear in the file map before task decomposition.                                                                           |
-| "There are no real uncertainties — the spec is clear enough"                                                  | Every plan has unknowns. If you listed zero uncertainties, you skipped the step. Re-read the spec and list what is assumed but not stated.                                                                  |
-| "I already know how to structure this, no need to finish scoping"                                             | Premature decomposition anchors on the first approach found. Complete SCOPE (observable truths + uncertainties) before proposing any task structure.                                                        |
-| "The skeleton pass adds overhead for a plan this size — I will go straight to full tasks"                     | Rigor level rules are not optional. In thorough mode, the skeleton is always required. In standard mode, 8+ tasks require a skeleton. Skipping it risks task-level misalignment with the goal.              |
-| "I will write implementation code in the plan to make the tasks more concrete"                                | Planning produces a plan document, not code. Writing code during planning violates the phase boundary — code belongs in execution. Exact snippets in task descriptions are plan content, not executed code. |
+| Rationalization                                                                                                          | Reality                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "The task is conceptually clear so I do not need to include exact code in the plan"                                      | Every task must have exact file paths, exact code, and exact commands. If you cannot write the code in the plan, you do not understand the task well enough to plan it.                                                                                           |
+| "This task touches 5 files but it is logically one unit of work, so splitting it would add overhead"                     | Tasks touching more than 3 files must be split. The overhead of splitting is far less than the cost of a failed oversized task.                                                                                                                                   |
+| "Tests for this task can be added in a follow-up task since the implementation is straightforward"                       | No skipping TDD in tasks. Every code-producing task must start with writing a test. "Add tests later" is explicitly forbidden.                                                                                                                                    |
+| "The spec does not cover this edge case, but I can fill in the gap during planning"                                      | When the spec is missing information, do not fill in the gaps yourself. Escalate. Filling gaps silently creates undocumented design decisions that no one reviewed.                                                                                               |
+| "I discovered we need an additional file during decomposition, but updating the file map is just bookkeeping"            | The file map must be complete. Every file that will be created or modified must appear in the file map before task decomposition.                                                                                                                                 |
+| "There are no real uncertainties — the spec is clear enough"                                                             | Every plan has unknowns. If you listed zero uncertainties, you skipped the step. Re-read the spec and list what is assumed but not stated.                                                                                                                        |
+| "I already know how to structure this, no need to finish scoping"                                                        | Premature decomposition anchors on the first approach found. Complete SCOPE (observable truths + uncertainties) before proposing any task structure.                                                                                                              |
+| "The skeleton pass adds overhead for a plan this size — I will go straight to full tasks"                                | Rigor level rules are not optional. In thorough mode, the skeleton is always required. In standard mode, 8+ tasks require a skeleton. Skipping it risks task-level misalignment with the goal.                                                                    |
+| "I will write implementation code in the plan to make the tasks more concrete"                                           | Planning produces a plan document, not code. Writing code during planning violates the phase boundary — code belongs in execution. Exact snippets in task descriptions are plan content, not executed code.                                                       |
+| "NFRs are quality concerns — the review pipeline will catch performance and security problems after the code is written" | NFRs are cheapest as design inputs. Phase 1.6 elicits them up front and emits tasks wired to `harness perf` / `harness check-security` so the target is planned, not discovered in review. Skipping a dimension is fine; assuming review will backfill it is not. |
 
 ## Examples
 

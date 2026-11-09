@@ -44,6 +44,16 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P1
 - **External-ID:** github:bop-clocktower/canary#603
 
+### TestTracker quarantine state from the katana ledger
+
+- **Status:** planned
+- **Spec:** docs/changes/fc1106-1321-quarantine-ledger/proposal.md
+- **Summary:** `--quarantine-ledger <path>` on the ingest reporter and `canary testtracker push`: a skipped result matching a katana ledger row by `(file, test)` is tagged `quarantined` + `quarantine:<issue>` within the existing ingest contract; unmatched rows are reported; release is implicit. The dashboard must read the tag before it means "quarantined" in its UI.
+- **Blockers:** —
+- **Plan:** docs/changes/fc1106-1321-quarantine-ledger/plans/
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1321
+
 ### Mutation-testing signal via Stryker
 
 - **Status:** backlog

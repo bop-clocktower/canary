@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { QUOTES, stepQuote, stripComments } from './lexical/comments.js';
 import { splitLines } from './types.js';
 
 /**
@@ -52,74 +53,6 @@ export function isTypeOnlyModule(path: string, repoRoot: string): boolean {
     return false; // unreadable -> unproven -> keep the finding
   }
   return isTypeOnlySource(source);
-}
-
-/** Drop `//` and `/* *\/` comments so keywords inside prose never count. */
-export function stripComments(source: string): string {
-  const out: string[] = [];
-  let inBlock = false;
-  for (const line of splitLines(source)) {
-    let text = line;
-    if (inBlock) {
-      const end = text.indexOf('*/');
-      if (end === -1) {
-        out.push('');
-        continue;
-      }
-      text = text.slice(end + 2);
-      inBlock = false;
-    }
-    for (;;) {
-      const start = commentStart(text);
-      if (start === -1) break;
-      if (text[start + 1] === '/') {
-        text = text.slice(0, start);
-        break;
-      }
-      const end = text.indexOf('*/', start + 2);
-      if (end === -1) {
-        text = text.slice(0, start);
-        inBlock = true;
-        break;
-      }
-      text = text.slice(0, start) + text.slice(end + 2);
-    }
-    out.push(text);
-  }
-  return out.join('\n');
-}
-
-/**
- * Index of the first `//` or `/*` that is NOT inside a string literal, or -1.
- *
- * A glob-typed literal such as `'**\/*.test.ts'` is ordinary in a types file;
- * read as a comment opener, its `/*` blanked every following line, so runtime
- * code after it was never judged and the module was wrongly suppressed. A
- * quote left open at end of line just ends the scan: the rest stays code,
- * which can only keep a finding, never hide one.
- */
-function commentStart(text: string): number {
-  let quote: string | null = null;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    if (quote !== null) {
-      if (ch === '\\') i++;
-      else if (ch === quote) quote = null;
-    } else if (QUOTES.has(ch)) {
-      quote = ch;
-    } else if (opensComment(text, i)) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-export const QUOTES: ReadonlySet<string> = new Set(["'", '"', '`']);
-const COMMENT_SECOND: ReadonlySet<string> = new Set(['/', '*']);
-
-/** True if a `//` or `/*` begins at `text[i]`. */
-function opensComment(text: string, i: number): boolean {
-  return text[i] === '/' && COMMENT_SECOND.has(text[i + 1] ?? '');
 }
 
 /**
@@ -204,6 +137,11 @@ function scanLine(line: string, scan: Scan): boolean {
  */
 function stepCode(line: string, i: number, scan: Scan): boolean {
   const ch = line[i]!;
+  // A type has no division or regex, so a `/` that survived stripComments is
+  // never erasable. This is what makes every wrong regex guess fail closed: a
+  // regex read as division still leaves its opening `/`, and its brackets and
+  // quotes can no longer be counted as the statement's own (#1515).
+  if (ch === '/') return false;
   scan.depth += BRACKET_DELTA[ch] ?? 0;
   if (scan.depth < 0) return false;
   return !endsStatement(ch, scan) || startStatement(line.slice(i + 1), scan);
@@ -217,18 +155,6 @@ const BRACKET_DELTA: Readonly<Record<string, number>> = {
   ')': -1,
   ']': -1,
 };
-
-/** Advance through a string literal: the new quote state and index. */
-export function stepQuote(
-  line: string,
-  i: number,
-  quote: string | null,
-): [string | null, number] {
-  const ch = line[i]!;
-  if (quote === null) return [ch, i];
-  if (ch === '\\') return [quote, i + 1];
-  return [ch === quote ? null : quote, i];
-}
 
 /** True if `ch`, just consumed, closed the current top-level statement. */
 function endsStatement(ch: string, scan: Scan): boolean {

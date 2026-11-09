@@ -77,3 +77,12 @@ function projectFilter(config: FullConfig, suite: Suite | undefined): string | n
 export function relativeFile(file: string, prefix: string): string {
   return file.startsWith(prefix) ? file.slice(prefix.length) : file;
 }
+
+/** How many tests the run collected; 0 when the suite cannot be read. */
+export function countTests(suite: Suite | undefined): number {
+  try {
+    return suite?.allTests().length ?? 0;
+  } catch {
+    return 0;
+  }
+}

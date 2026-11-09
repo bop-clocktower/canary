@@ -1,0 +1,21 @@
+{
+  "issues": [1580, 1581],
+  "route": "bug",
+  "stages": ["debugging"],
+  "runId": "fc1106-roadmap",
+  "closingKeyword": "Closes #1580 (already in the PR 1581 body; kept unchanged)",
+  "reproducingTests": [
+    "npm/scripts/__tests__/testtracker-perf-k6.test.js: a never-sampled Trend whose summaryTrendStats omit min and max is unmeasured",
+    "npm/scripts/__tests__/testtracker-perf-k6.test.js: a never-sampled Gauge is unmeasured; a Counter at 0 stays measured",
+    "npm/scripts/__tests__/testtracker-perf-cli.test.js: an inline --token= value is never echoed by the unknown-option error",
+    "npm/scripts/__tests__/testtracker-perf-cli.test.js: a duplicate exits 0 and warns, with a CI annotation, that this push stored nothing",
+    "npm/scripts/__tests__/testtracker-perf-cli.test.js: the default run ref adds GITHUB_JOB, so two jobs of one run do not collide"
+  ],
+  "assumptions": [
+    "Unsampled rule (option a): a Trend or Gauge is unmeasured when every finite value it reports is 0. This replaces the min===0&&max===0 rule, which it subsumes; it holds whichever summaryTrendStats are listed. Counters stay measured (count: 0 is a real result), documented in docs/wiki/Ingest-Reporter.md and CHANGELOG.",
+    "Default run ref is GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT-GITHUB_JOB (parts that are set, joined by '-', capped at 200 chars). GitHub Actions exposes no matrix value in the environment and matrix legs share GITHUB_JOB, so GITHUB_JOB is the only stably available job identity; matrix legs must pass --run-ref (documented with a strategy.job-index example).",
+    "Parked sub-fork: mismatch detection parked: server response carries no comparable body. The perf-reports answer is { reportId, duplicate } only, so a duplicate always goes down the warn path (CI annotation) and exits 0; no server field was invented.",
+    "The unknown-option error echoes the flag name (the part before '='), never the inline value.",
+    "prettier --write (root .prettierrc, printWidth 80) was run, but its reflow of the touched npm files was reverted: those files are not formatted to the root config or format-checked in CI, and the reflow pushed testtracker-perf.ts and both test files past the 300-line fileLength rule (perf-ratchet: 3 new violations on head 9585fcb). Markdown and JSON changes are prettier-formatted."
+  ]
+}

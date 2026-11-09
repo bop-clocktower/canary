@@ -150,9 +150,29 @@ export function renderTrialAbstained(why, refused) {
   ].join('\n');
 }
 
+/** Longest title or path a note or verdict report quotes, in characters. */
+const MAX_NOTE_FIELD = 200;
+
+/**
+ * A manifest string as one bounded line of inline code. It comes from the PR
+ * body and lands in a ticket comment and the operator's report, so it cannot
+ * leave a code span, start a new line, carry invisible or reordering
+ * characters, or run on.
+ */
+export function noteField(text) {
+  const plain = String(text ?? '')
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ')
+    .replace(/\p{Cf}/gu, '')
+    .replace(/`/g, "'");
+  const chars = Array.from(plain);
+  return chars.length > MAX_NOTE_FIELD
+    ? `${chars.slice(0, MAX_NOTE_FIELD).join('')}…`
+    : plain;
+}
+
 const ACTION = {
   pass: 'release: marker stays lifted, ledger row dropped',
-  fail: 're-quarantine: marker restored, row re-pointed, ticket told',
+  fail: 're-quarantine: marker restored; a ticket its row names is told, a hand-off is listed',
   flaky: 're-quarantine: marker restored; hand to canary-flake-hunter',
   missing: 'not in the run: marker restored, nothing else changed',
   skipped: 'still skipped in the run: marker restored, nothing else changed',
@@ -196,6 +216,14 @@ export function renderVerdict(doc) {
   return out.join('\n');
 }
 
+/** The verdict's exit code: under --strict, 1 for a person to act, 3 for an abstention. */
+export function verdictExit(args, doc) {
+  if (!args.strict) return 0;
+  const needsPerson = (t) => t.outcome === 'fail' || t.outcome === 'flaky';
+  if (doc.tests.some(needsPerson)) return 1;
+  return doc.abstained ? 3 : 0;
+}
+
 /** The --json verdict document. */
 export function verdictDoc(args, plan, comments) {
   const { judged } = plan;
@@ -210,15 +238,20 @@ export function verdictDoc(args, plan, comments) {
     abstained: unrun > 0,
     documents: plan.documents,
     cases: plan.cases,
+    // Plain text: unchecked lifts reach this report, and the operator reads it
+    // before choosing --apply.
     tests: judged.map(({ test, file, outcome, cases }) => ({
-      test,
-      file,
+      test: noteField(test),
+      file: noteField(file),
       outcome,
       cases,
     })),
     flake_hunter: judged
       .filter((j) => j.outcome === 'flaky')
-      .map(({ test, file }) => ({ test, file })),
+      .map(({ test, file }) => ({
+        test: noteField(test),
+        file: noteField(file),
+      })),
     comments,
   };
 }

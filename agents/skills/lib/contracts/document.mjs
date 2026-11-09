@@ -153,7 +153,7 @@ export function validateText(text, opts = {}) {
   let doc;
   try {
     doc = JSON.parse(stripBom(text));
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     return verdict(
       null,
       [{ path: '$', message: `not parseable JSON: ${err.message}` }],

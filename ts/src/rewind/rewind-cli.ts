@@ -15,7 +15,7 @@
  * finding, not a failure of the command.
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 
@@ -34,7 +34,6 @@ import { renderRewind, type RewindReport } from '../analysis/rewind/render.js';
 import {
   readReplayStatus,
   replayCommand,
-  type ReplayCommand,
   type ReplayRunner,
 } from '../analysis/rewind/runner.js';
 import {
@@ -43,6 +42,7 @@ import {
   packageDir,
   predecessors,
   reachable,
+  runAttempts,
   spawnExec,
   type ExecFn,
 } from '../analysis/rewind/workspace.js';
@@ -174,7 +174,21 @@ async function replayInTree(ctx: TreeContext): Promise<RewindReport> {
     reportPath: join(ctx.scratch, 'report.json'),
   });
   const attempts = installFailed === null ? opts.repeat : 0;
-  const statuses = await runAttempts(ctx, command, pkgDir, attempts);
+  const runner = run.reporter_format as ReplayRunner;
+  const target = {
+    testName: test.test_name,
+    file: test.test_file!,
+    // A runner reports real paths, and the scratch dir can sit behind a link.
+    root: realpathSync(tree),
+  };
+  const statuses = await runAttempts({
+    exec: deps.exec,
+    command,
+    cwd: pkgDir,
+    reportPath: join(ctx.scratch, 'report.json'),
+    attempts,
+    read: (text) => readReplayStatus(runner, text, target),
+  });
   const counted = countedAttempts(statuses);
   return {
     runId: run.run_id,
@@ -193,31 +207,6 @@ async function replayInTree(ctx: TreeContext): Promise<RewindReport> {
     recorded: test,
     green: nearestGreen(ctx.runs, run, test.test_name, firstParent(ctx)),
   };
-}
-
-/** Run the command `attempts` times; each status read from a fresh report. */
-async function runAttempts(
-  ctx: TreeContext,
-  command: ReplayCommand,
-  pkgDir: string,
-  attempts: number,
-): Promise<string[]> {
-  const reportPath = join(ctx.scratch, 'report.json');
-  const runner = ctx.run.reporter_format as ReplayRunner;
-  const statuses: string[] = [];
-  for (let i = 0; i < attempts; i++) {
-    rmSync(reportPath, { force: true });
-    await ctx.deps.exec(command.command, command.args, {
-      cwd: pkgDir,
-      env: command.env,
-    });
-    const text = existsSync(reportPath)
-      ? readFileSync(reportPath, 'utf-8')
-      : '';
-    const status = readReplayStatus(runner, text, ctx.test.test_name);
-    if (status !== null) statuses.push(status);
-  }
-  return statuses;
 }
 
 /** `git rev-list --first-parent` from the failing commit, newest first. */

@@ -45,6 +45,12 @@ export interface IngestReporterOptions {
   scopeId?: string;
   /** `canary.run/1` scope env. Falls back to an explicit `environment`. */
   scopeEnv?: string;
+  /**
+   * The canary-katana ledger (`.canary/quarantine.json`). A skipped result
+   * with a matching `(file, test)` row is tagged `quarantined` and
+   * `quarantine:<issue>` (#1321). Off by default.
+   */
+  quarantineLedger?: string;
 }
 
 export type TitleFormat = "legacy" | "clean";
@@ -65,6 +71,7 @@ export interface ResolvedConfig {
   collected: boolean;
   runFile: string | null;
   scope: { id: string; env: string } | null;
+  quarantineLedger: string | null;
   /** Optional settings that were invalid and fell back to their default. */
   configWarnings: string[];
   /** Legacy `TESTTRACKER_*` names this config was resolved from. */
@@ -87,6 +94,7 @@ const ENV_NAMES = {
   runFile: ["CANARY_RUN_FILE"],
   scopeId: ["CANARY_SCOPE_ID"],
   scopeEnv: ["CANARY_SCOPE_ENV"],
+  quarantineLedger: ["CANARY_INGEST_QUARANTINE_LEDGER"],
 } as const satisfies Record<string, readonly [string] | readonly [string, string]>;
 
 /**
@@ -137,6 +145,7 @@ export function resolveConfig(
     collected: opts.collected ?? read("collected") !== "false",
     runFile,
     scope,
+    quarantineLedger: opts.quarantineLedger || read("quarantineLedger") || null,
     deprecatedEnv,
     configWarnings,
   };

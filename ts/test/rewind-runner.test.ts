@@ -80,6 +80,12 @@ describe('replayCommand: playwright', () => {
 });
 
 describe('readReplayStatus', () => {
+  const named = (testName: string) => ({
+    testName,
+    file: 'test/a.test.ts',
+    root: '/w',
+  });
+
   it('reads the named vitest test status', () => {
     const report = JSON.stringify({
       testResults: [
@@ -92,7 +98,9 @@ describe('readReplayStatus', () => {
         },
       ],
     });
-    expect(readReplayStatus('vitest', report, 'math adds')).toBe('failed');
+    expect(readReplayStatus('vitest', report, named('math adds'))).toBe(
+      'failed',
+    );
   });
 
   it('reads the named Playwright test status, project suffix included', () => {
@@ -125,15 +133,17 @@ describe('readReplayStatus', () => {
       readReplayStatus(
         'playwright',
         report,
-        'checkout.spec.ts > checkout > adds an item [chromium]',
+        named('checkout.spec.ts > checkout > adds an item [chromium]'),
       ),
     ).toBe('failed');
   });
 
   it('returns null when the test is absent or the report is unreadable', () => {
     expect(
-      readReplayStatus('vitest', '{"testResults":[]}', 'math adds'),
+      readReplayStatus('vitest', '{"testResults":[]}', named('math adds')),
     ).toBeNull();
-    expect(readReplayStatus('vitest', 'not json', 'math adds')).toBeNull();
+    expect(
+      readReplayStatus('vitest', 'not json', named('math adds')),
+    ).toBeNull();
   });
 });

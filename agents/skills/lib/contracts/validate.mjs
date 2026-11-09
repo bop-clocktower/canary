@@ -59,7 +59,7 @@ function readInput(file, readStdin) {
   const fromStdin = file === undefined || file === '-';
   try {
     return { text: fromStdin ? readStdin() : readFileSync(file, 'utf8') };
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     const what = fromStdin ? 'stdin' : file;
     return { error: `cannot read ${what}: ${err.code ?? err.message}` };
   }
@@ -94,12 +94,14 @@ export function main(argv = process.argv.slice(2), io = {}) {
   }
   const problem = argsProblem(parsed);
   const input = problem ? null : readInput(parsed.positionals[0], readStdin);
-  const usage = problem ?? input.error;
-  if (usage) {
+  const usage = problem ?? input?.error;
+  if (usage || !input) {
     globalThis.console.error(formatUsageError(PROG, usage));
     return EXIT_USAGE;
   }
-  const res = validateText(input.text, { layer: parsed.opts.layer });
+  const res = validateText(input.text, {
+    layer: /** @type {string | null} */ (parsed.opts.layer),
+  });
   printVerdict(res, parsed.opts.json);
   return res.valid ? 0 : 1;
 }

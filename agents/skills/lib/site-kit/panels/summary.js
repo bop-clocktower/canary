@@ -117,9 +117,7 @@ export class Summary extends CanaryPanel {
     });
     return {
       nodes: [el('ul', { class: 'stats' }, ...items)],
-      abstentions: Object.values(found)
-        .map((t) => t.why)
-        .filter(Boolean),
+      abstentions: Object.values(found).flatMap((t) => (t.why ? [t.why] : [])),
     };
   }
 }

@@ -9,7 +9,7 @@ import {
 import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
 import { readFeed } from '../claude-code/canary-barda/scripts/feed.mjs';
 import { page, PANEL_TAGS } from '../claude-code/canary-barda/scripts/page.mjs';
-import { siteFeed } from './site-kit-helpers.js';
+import { siteFeed } from './site-feed-builders.js';
 
 describe('canary-barda page', () => {
   const html = page({ title: 'QA' });

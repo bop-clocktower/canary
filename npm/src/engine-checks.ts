@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import type { CheckResult } from './doctor-types.js';
 import {
   freshness,
+  lastFetchTime,
   workingTreeStatus,
   type GitRunner,
   type GitResult,
@@ -41,7 +42,16 @@ export interface EngineCheckDeps {
   timeoutMs?: number;
   /** Probe a command's presence + version (#336). Injectable for tests. */
   skillProbe?: CommandProbe;
+  /** The clock for fetch-age checks (#1324); tests pin it. */
+  now?: () => Date;
 }
+
+/**
+ * An overlay whose last fetch is older than this warns (#1324). Fixed by
+ * decision -- no flag, no config.
+ */
+const FETCH_AGE_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const realGit: GitRunner = (args, opts = {}) => {
   const { spawnSync } =
@@ -278,10 +288,58 @@ export function checkGit(deps: EngineCheckDeps = {}): CheckResult {
   };
 }
 
+/**
+ * The `overlay:<name>:fresh` result for a clone that exists. A zero-behind
+ * count is only as current as the last fetch, so a clone whose last fetch is
+ * older than {@link FETCH_AGE_DAYS} -- or that has no fetch on record -- warns
+ * rather than passes (#1324). Pinned and no-upstream clones are not compared
+ * against a tracking ref at all, so a fetch would not change their status and
+ * they keep their pass; a clone that is behind still fails.
+ */
+function freshCheck(
+  o: registry.OverlayEntry,
+  fresh: string,
+  now: Date,
+): CheckResult {
+  const id = `overlay:${o.name}:fresh`;
+  const label = `overlay "${o.name}": ${fresh}`;
+  if (fresh.includes('behind')) {
+    return {
+      id,
+      status: 'fail',
+      label,
+      remedy: `Update it: canary overlay update ${o.name}`,
+    };
+  }
+  const remedy =
+    `Fetch it: canary overlay update ${o.name} ` +
+    `(or git -C ${o.path} fetch to refresh without merging)`;
+  if (fresh === 'unknown (never fetched)') {
+    return {
+      id,
+      status: 'warn',
+      label: `${label} — no fetch on record, so it cannot be shown to be within the ${FETCH_AGE_DAYS}-day threshold`,
+      remedy,
+    };
+  }
+  const fetched = fresh.startsWith('up to date') ? lastFetchTime(o.path) : null;
+  const ageMs = fetched ? now.getTime() - fetched.getTime() : 0;
+  if (ageMs > FETCH_AGE_DAYS * DAY_MS) {
+    return {
+      id,
+      status: 'warn',
+      label: `${label} — last fetched ${Math.floor(ageMs / DAY_MS)} days ago, past the ${FETCH_AGE_DAYS}-day threshold`,
+      remedy,
+    };
+  }
+  return { id, status: 'pass', label };
+}
+
 /** Registered overlays present, fresh, and free of local modifications. */
 export function checkOverlays(deps: EngineCheckDeps = {}): CheckResult[] {
   const git = deps.git ?? realGit;
   const homeDir = deps.homeDir ?? os.homedir();
+  const now = deps.now ?? (() => new Date());
   let reg;
   try {
     reg = registry.read(homeDir);
@@ -316,20 +374,7 @@ export function checkOverlays(deps: EngineCheckDeps = {}): CheckResult[] {
       });
       continue;
     }
-    if (fresh.includes('behind')) {
-      results.push({
-        id: `overlay:${o.name}:fresh`,
-        status: 'fail',
-        label: `overlay "${o.name}": ${fresh}`,
-        remedy: `Update it: canary overlay update ${o.name}`,
-      });
-    } else {
-      results.push({
-        id: `overlay:${o.name}:fresh`,
-        status: 'pass',
-        label: `overlay "${o.name}": ${fresh}`,
-      });
-    }
+    results.push(freshCheck(o, fresh, now()));
     const clean = workingTreeStatus(o.path, git);
     if (clean === 'clean') {
       results.push({

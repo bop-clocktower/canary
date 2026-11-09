@@ -175,6 +175,66 @@ describe('NdjsonHistoryStore.pushRun', () => {
     store.pushRun(run, results);
     expect(store.readAll().map((r) => r.run_id)).toEqual(['api-1']);
   });
+
+  // #1297: another tool or a hand edit can leave a store with no final newline.
+  describe('on a store with no final newline', () => {
+    const existing = JSON.stringify({ run_id: 'r1', suite: 'api' });
+
+    it('keeps the new run on its own line, so the store stays readable', () => {
+      const path = writeHistory([], existing);
+      const store = new NdjsonHistoryStore(path);
+
+      store.pushRun(run, results);
+
+      expect(store.readAll().map((r) => r.run_id)).toEqual(['r1', 'api-1']);
+    });
+
+    it('terminates the record it writes', () => {
+      const path = writeHistory([], existing);
+
+      new NdjsonHistoryStore(path).pushRun(run, results);
+
+      expect(readFileSync(path, 'utf-8').endsWith('\n')).toBe(true);
+    });
+
+    it('leaves the file untouched when the run is already present', () => {
+      const path = writeHistory([], existing);
+
+      new NdjsonHistoryStore(path).pushRun({ ...run, run_id: 'r1' }, results);
+
+      expect(readFileSync(path, 'utf-8')).toBe(existing);
+    });
+  });
+
+  // The separator must only ever fill a real gap: a stray one would add blank
+  // lines to a healthy store on every append.
+  it.each([
+    ['a newline-terminated store', `{"run_id":"r1"}\n`],
+    ['a CRLF-terminated store', `{"run_id":"r1"}\r\n`],
+    ['an empty store', ''],
+  ])('adds no separator on %s', (_name, before) => {
+    const path = writeHistory([], before);
+
+    new NdjsonHistoryStore(path).pushRun(run, results);
+
+    const after = readFileSync(path, 'utf-8');
+    expect(after.startsWith(before)).toBe(true);
+    expect(after.slice(before.length).split('\n')).toEqual([
+      expect.stringContaining('"run_id":"api-1"'),
+      '',
+    ]);
+  });
+
+  it('adds no separator when the store does not exist yet', () => {
+    const path = join(dir, 'nested', 'history-v2.jsonl');
+
+    new NdjsonHistoryStore(path).pushRun(run, results);
+
+    expect(readFileSync(path, 'utf-8').split('\n')).toEqual([
+      expect.stringContaining('"run_id":"api-1"'),
+      '',
+    ]);
+  });
 });
 
 describe('NdjsonHistoryStore.queryFlaky', () => {

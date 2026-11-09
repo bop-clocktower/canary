@@ -2,7 +2,8 @@
 
 <!-- markdownlint-disable-file MD013 -->
 
-Auto-generated summary of `.harness/security/timeline.json`.
+Auto-generated summary of `.harness/security/timeline.json`
+and `.harness/security/supply-chain.json`.
 Do not edit by hand — run `node scripts/security_ledger.mjs`
 to refresh.
 
@@ -12,23 +13,23 @@ to refresh.
 - **Commit:** `78ab2be35fa7`
 - **Score:** 100
 - **Findings:** 0 (error: 0, warning: 0, info: 0)
-- **Supply chain:** 0 (critical: 0, high: 0, moderate: 0, low: 0)
+- **Supply chain:** not measured (no audit recorded)
 - **Suppressions:** 0
 
 ## Recent Snapshots (last 10)
 
-| Captured | Commit | Score | Findings | Err/Warn/Info | Supply |
-| --- | --- | ---: | ---: | --- | ---: |
-| 2026-06-01T04:58:05 | `0d40160` | 100 | 1 | 0/0/1 | 0 |
-| 2026-07-01T01:42:23 | `bf91dc4` | 100 | 2 | 0/0/2 | 0 |
-| 2026-07-01T03:56:47 | `dc14ff8` | 100 | 2 | 0/0/2 | 0 |
-| 2026-07-01T05:44:28 | `a55dd93` | 100 | 2 | 0/0/2 | 0 |
-| 2026-07-08T01:29:10 | `6657838` | 100 | 2 | 0/0/2 | 0 |
-| 2026-07-18T22:39:06 | `b82e007` | 97 | 9 | 0/1/8 | 0 |
-| 2026-07-18T23:43:07 | `72fa4f5` | 79 | 15 | 6/1/8 | 0 |
-| 2026-07-26T18:52:34 | `f438109` | 78 | 10 | 7/0/3 | 0 |
-| 2026-07-27T23:27:13 | `c025931` | 100 | 0 | 0/0/0 | 0 |
-| 2026-10-19T16:44:02 | `78ab2be` | 100 | 0 | 0/0/0 | 0 |
+| Captured | Commit | Score | Findings | Err/Warn/Info |
+| --- | --- | ---: | ---: | --- |
+| 2026-06-01T04:58:05 | `0d40160` | 100 | 1 | 0/0/1 |
+| 2026-07-01T01:42:23 | `bf91dc4` | 100 | 2 | 0/0/2 |
+| 2026-07-01T03:56:47 | `dc14ff8` | 100 | 2 | 0/0/2 |
+| 2026-07-01T05:44:28 | `a55dd93` | 100 | 2 | 0/0/2 |
+| 2026-07-08T01:29:10 | `6657838` | 100 | 2 | 0/0/2 |
+| 2026-07-18T22:39:06 | `b82e007` | 97 | 9 | 0/1/8 |
+| 2026-07-18T23:43:07 | `72fa4f5` | 79 | 15 | 6/1/8 |
+| 2026-07-26T18:52:34 | `f438109` | 78 | 10 | 7/0/3 |
+| 2026-07-27T23:27:13 | `c025931` | 100 | 0 | 0/0/0 |
+| 2026-10-19T16:44:02 | `78ab2be` | 100 | 0 | 0/0/0 |
 
 ## Open Findings
 
