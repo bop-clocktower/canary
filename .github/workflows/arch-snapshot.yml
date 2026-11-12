@@ -27,7 +27,7 @@ concurrency:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@13'
+  HARNESS_CLI: '@harness-engineering/cli@14'
 
 # #1426 (CWE-250 / CWE-272): read-only by default. `snapshot` runs a floating
 # `@harness-engineering/cli` through `npx`, and `actions/checkout` leaves the

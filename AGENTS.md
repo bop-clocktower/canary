@@ -638,7 +638,7 @@ neither run directly nor left inside `ci check` (`--skip phase-gate`).
 must be run by each workflow it names, and an abstaining gate may not reappear.
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
-workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@13'` — rather
+workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@14'` — rather
 than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
 silent CI break with nothing to roll back to.
@@ -736,10 +736,10 @@ before you push. It is, but only from a clean tree:
 ```bash
 git worktree add ../canary-entropy origin/main --detach
 cd ../canary-entropy
-npx --yes -p '@harness-engineering/cli@13' harness cleanup --findings-json \
+npx --yes -p '@harness-engineering/cli@14' harness cleanup --findings-json \
   > /tmp/entropy-report.txt || true
 node scripts/entropy-ratchet.mjs --report /tmp/entropy-report.txt \
-  --cli-version "$(npx --yes -p '@harness-engineering/cli@13' harness --version)"
+  --cli-version "$(npx --yes -p '@harness-engineering/cli@14' harness --version)"
 ```
 
 `--cli-version` is not optional in practice (#744). The pin is a floating major,
