@@ -7,8 +7,8 @@
  * inventory cannot see `it.each` or loop-generated titles. A row retires only
  * when ALL hold: its file is not in the inventory, its file name is one the
  * inventory collects, a sibling in its directory is live, live siblings at
- * least match the missing ones, and it did not run after the inventory was
- * written. The sixth guard, the working tree (#1561), and the rename warning
+ * least match the missing ones, and its newest row predates the inventory's
+ * `generated` stamp. The sixth guard, the working tree (#1561), and the rename warning
  * are in `ci-ready-retirement-disk.test.ts`; here nothing is on disk.
  *
  * A miss is meant to be a false FAIL (still scored), and the cases that stay
