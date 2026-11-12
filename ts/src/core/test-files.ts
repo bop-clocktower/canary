@@ -41,7 +41,20 @@ const IGNORED_DIRS: ReadonlySet<string> = new Set([
   '.nuxt',
 ]);
 
-function walkFiles(dir: string): string[] {
+/** True when `p` is a symlink that resolves to a regular file. */
+function isLinkToFile(p: string): boolean {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every file under `dir`. A symlink is followed only with `links`, and only to
+ * a file: a linked DIRECTORY is never walked, so a link cycle cannot loop.
+ */
+function walkFiles(dir: string, links = false): string[] {
   const out: string[] = [];
   let entries;
   try {
@@ -52,8 +65,9 @@ function walkFiles(dir: string): string[] {
   for (const e of entries) {
     const full = join(dir, e.name);
     if (e.isDirectory()) {
-      if (!IGNORED_DIRS.has(e.name)) out.push(...walkFiles(full));
+      if (!IGNORED_DIRS.has(e.name)) out.push(...walkFiles(full, links));
     } else if (e.isFile()) out.push(full);
+    else if (links && e.isSymbolicLink() && isLinkToFile(full)) out.push(full);
   }
   return out;
 }
@@ -67,15 +81,34 @@ const JS_TEST_FILE_RE = new RegExp(
   `\\.(test|spec)\\.(${JS_TEST_EXTENSIONS.map((e) => e.slice(1)).join('|')})$`,
 );
 
+/**
+ * True when a bare file name is one {@link collectTestFiles} collects. Exported
+ * so a file's absence from an inventory can be read correctly (#1500): a
+ * `foo_test.py` is absent because no inventory ever lists it, not because it
+ * was deleted.
+ */
+export function isCollectedTestFile(name: string): boolean {
+  return (
+    (name.startsWith('test_') && name.endsWith('.py')) ||
+    JS_TEST_FILE_RE.test(name)
+  );
+}
+
 /** Recursive test-file glob (union of the test patterns), sorted by path. */
 export function collectTestFiles(dir: string): string[] {
   return walkFiles(dir)
-    .filter((p) => {
-      const b = basename(p);
-      return (
-        (b.startsWith('test_') && b.endsWith('.py')) || JS_TEST_FILE_RE.test(b)
-      );
-    })
+    .filter((p) => isCollectedTestFile(basename(p)))
+    .sort();
+}
+
+/**
+ * {@link collectTestFiles} plus symlinks to test files. For asking whether a
+ * test still exists (#1561), not for scanning: the inventory does not collect
+ * a linked test, so its absence there says nothing about the disk.
+ */
+export function collectTestFilesAndLinks(dir: string): string[] {
+  return walkFiles(dir, true)
+    .filter((p) => isCollectedTestFile(basename(p)))
     .sort();
 }
 

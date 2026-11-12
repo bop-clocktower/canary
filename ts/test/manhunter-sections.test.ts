@@ -277,6 +277,7 @@ describe('guardian sections (coverage tiers + findings)', () => {
 
 describe('ci-readiness section', () => {
   const paths = () => ({
+    root: tmp,
     historyPath: join(tmp, 'history.jsonl'),
     inventoryPath: join(tmp, '.canary', 'test-inventory.json'),
     criticalAreasPath: join(tmp, '.canary', 'critical-areas.json'),

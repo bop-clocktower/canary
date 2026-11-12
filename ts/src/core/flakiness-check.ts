@@ -6,6 +6,11 @@
  * suite renders exactly as the check always has, several name each suite's
  * denominator. The skip cases (no store, unreadable store, no runs) stay in
  * `ci-ready.ts`, which owns the store input. Pure: callers pass the runs in.
+ *
+ * Rows from deleted test files retire before scoring (#1500; the rule is on
+ * `flake-retirement.ts`). The score's prose changes only when something retired:
+ * the rest of what retirement has to say is on the report and in its notes, so a
+ * reason consumers pin stays the reason they pin.
  */
 import {
   flakeSignals,
@@ -13,6 +18,12 @@ import {
   type FlakeSignal,
   type SuiteWindow,
 } from './flake-signals.js';
+import {
+  applyRetirement,
+  type FlakinessRetirement,
+} from './flake-retirement.js';
+import type { InventoryInput } from './inventory-checks.js';
+import type { WorkingTree } from './working-tree.js';
 import {
   MIN_WINDOW_RUNS,
   NOT_MEASURABLE_NOTE,
@@ -27,7 +38,12 @@ interface ScoredRun {
   suite?: string | null;
   timestamp?: string | null;
   reporter_format?: string | null;
-  tests?: { test_name: string; status: string }[];
+  tests?: { test_name: string; status: string; test_file?: string | null }[];
+}
+
+interface FlakinessScore {
+  check: CiCheck;
+  retirement: FlakinessRetirement;
 }
 
 /**
@@ -51,6 +67,7 @@ interface CheckMeasure {
 /** Matches `canary analyze flaky`'s defaults: a 30-run window, 10% flake rate. */
 const FLAKY_WINDOW_RUNS = 30;
 const FLAKY_FAIL_RATE = 0.1;
+const MAX_NOTE_FILES = 5;
 
 /**
  * The measurability suffix for a clean window (#604 G3/SC4).
@@ -101,13 +118,93 @@ function scoreCleanWindow(window: ScoredRun[]): CiCheck {
   };
 }
 
+/** Names what left the denominator: a check must not go green by deletion. */
+function retiredSuffix(retirement: FlakinessRetirement): string {
+  const worst = retirement.retired[0];
+  if (!worst) return '';
+  const was =
+    worst.axis === null
+      ? ''
+      : `, was ${Math.round(worst.rate * 100)}% on ${worst.axis}`;
+  return (
+    `; ${retirement.retired_count} retired test(s) excluded ` +
+    `(${worst.file} \u{203A} ${worst.title}${was})`
+  );
+}
+
 /** Score flakiness over a NON-EMPTY run history. */
-export function scoreFlakyRuns(runs: ScoredRun[]): CiCheck {
-  const windows = suiteWindows(runs, FLAKY_WINDOW_RUNS);
+export function scoreFlakyRuns(
+  runs: ScoredRun[],
+  inventory: InventoryInput,
+  tree: WorkingTree | null,
+): FlakinessScore {
+  const { windows, retirement } = applyRetirement(
+    suiteWindows(runs, FLAKY_WINDOW_RUNS),
+    inventory,
+    tree,
+  );
   // One suite reads exactly as it always has; several name each denominator.
-  return windows.length === 1
-    ? scoreWindow(windows[0]!.runs)
-    : scoreSuites(windows);
+  const check =
+    windows.length === 1 ? scoreWindow(windows[0]!.runs) : scoreSuites(windows);
+  check.reason += retiredSuffix(retirement);
+  return { check, retirement };
+}
+
+/** Up to {@link MAX_NOTE_FILES} items, then how many more there are. */
+function capped(items: string[], sep: string): string {
+  const more = items.length - MAX_NOTE_FILES;
+  const named = items.slice(0, MAX_NOTE_FILES).join(sep);
+  return more > 0 ? `${named}${sep}and ${more} more` : named;
+}
+
+/**
+ * A rename retires the old file's rows while the title lives on (#1561 F2):
+ * the retirement stands by decision, so the output has to say it happened.
+ */
+function titleMatchNote(r: FlakinessRetirement): string[] {
+  if (r.title_matches.length === 0) return [];
+  const named = capped(
+    r.title_matches.map(
+      (m) =>
+        `retired ${m.file} \u{203A} ${m.title}, but the same title exists in ${m.live_files.join(', ')}`,
+    ),
+    '; ',
+  );
+  return [
+    `Flakiness retirement warning: ${r.title_matches.length} retired test(s) share a title with a live file, so a rename may have taken live history with it (${named}).`,
+  ];
+}
+
+/**
+ * The renderers' lines for what stayed scored, could not be judged, or retired
+ * under a title that lives on. A deleted test that keeps scoring is a false
+ * fail, and it should be explainable from the output rather than from this
+ * module's docs.
+ */
+export function retirementNotes(r: FlakinessRetirement | null): string[] {
+  if (r === null) return [];
+  if (!r.applied) {
+    return [
+      `Flakiness retirement not applied: ${r.reason}; tests from deleted files keep scoring until they age out.`,
+    ];
+  }
+  const notes: string[] = [];
+  if (r.unmatched_rows > 0) {
+    notes.push(
+      `Flakiness retirement: ${r.unmatched_rows} row(s) with no test_file stayed scored; they cannot be matched to a file.`,
+    );
+  }
+  if (r.kept.length > 0) {
+    // A scoped inventory can leave hundreds here on every run; --json has them all.
+    const named = capped(
+      r.kept.map((k) => `${k.file}: ${k.why}`),
+      ', ',
+    );
+    notes.push(
+      `Flakiness retirement: ${r.kept.length} file(s) missing from the inventory stayed scored (${named}).`,
+    );
+  }
+  return [...notes, ...titleMatchNote(r)];
 }
 
 /** The worst of a set of signals; a tie keeps the first seen. */

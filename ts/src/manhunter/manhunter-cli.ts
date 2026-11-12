@@ -110,6 +110,7 @@ function gatherSections(
     ...guardianSections(at(opts.analyses)),
     // ci-ready reads the default store, never --history; so must its section.
     readinessSection({
+      root: resolve(root),
       historyPath: at(DEFAULT_HISTORY),
       inventoryPath: at('.canary/test-inventory.json'),
       criticalAreasPath: at('.canary/critical-areas.json'),

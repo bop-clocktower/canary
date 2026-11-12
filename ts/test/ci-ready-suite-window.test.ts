@@ -56,6 +56,7 @@ function flakiness(runs: Run[]): CiCheck {
     historyPath: 'history-v2.jsonl',
     inventory: parseInventory(null),
     criticalAreas: parseCriticalAreas(null),
+    workingTree: null,
   });
   return report.checks.find((c) => c.name === 'flakiness')!;
 }

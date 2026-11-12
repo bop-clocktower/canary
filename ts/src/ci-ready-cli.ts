@@ -15,7 +15,9 @@ import { Command } from 'commander';
 import { CliExitError } from './cli-common.js';
 import { EXIT_ABSTAINED, errnoCode } from './core/gate-result.js';
 import {
+  retirementNotes,
   scoreCiReady,
+  workingTreeAt,
   type CiReadyReport,
   type RunsInput,
 } from './core/ci-ready.js';
@@ -83,6 +85,7 @@ function renderText(report: CiReadyReport): string[] {
   ];
   for (const c of report.checks)
     lines.push(`  ${c.verdict.padEnd(4)}  ${c.name}: ${c.reason}`);
+  lines.push(...retirementNotes(report.retirement));
   const skipped = report.checks.length - report.checked;
   if (report.verdict === 'incomplete') {
     lines.push(
@@ -122,6 +125,7 @@ export function buildCiReadyCommand(deps: MainDeps): Command {
           'critical-areas.json',
           parseCriticalAreas,
         ),
+        workingTree: workingTreeAt(root),
       });
       if (opts.json === true) {
         // When the checks ran, so a feed can order reports (#1151 phase 2).

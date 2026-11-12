@@ -87,3 +87,75 @@ cases:
 - it lists 0 tests
 - the scope is empty
 - for critical-paths, `critical-areas.json` is absent or lists no areas
+
+## How the flakiness check uses it
+
+The flakiness check scores the run history, but the inventory decides which of
+its rows still count. Rows from a **deleted test file** retire, so a file that
+no longer exists stops failing the check on PRs that never touched it (#1500).
+
+A row retires only when all of these hold:
+
+- its file is not in the inventory (an entry under `skipped` counts as present:
+  unreadable is not deleted)
+- its file name is one `canary inventory` collects, so a `foo_test.py` next to a
+  collected file does not count as deleted
+- another stored file in the same directory, in the same suite's window, is in
+  the inventory, which is what stops an inventory of `tests/` from retiring a
+  live `src/` test
+- live files in that directory at least match the missing ones, because deleting
+  a file leaves most of its directory behind, and one colliding path from
+  another package's inventory is not evidence about a whole directory
+- the file did not run after the inventory's `generated` time, because a stale
+  inventory cannot list a file newer than itself
+- the file is also gone from the working tree (#1561). The stored path must not
+  exist as written (absolute, or relative to `--root`), and no test file on disk
+  under `--root`, symlinks to files included, may join it the way it would join
+  the inventory. Every guard above trusts the inventory, and `.canary/` is
+  gitignored, so an inventory written on another branch survives a checkout and
+  omits files that are there. Without this guard such an inventory retired a
+  live flaky test and read `pass`. It also keeps a same-named file from another
+  package, a bare stored name such as Playwright's `a.spec.ts`, and a symlinked
+  test (which `canary inventory` does not collect) scored. The disk is walked
+  only when one of the other guards would let a file retire.
+
+Retired tests are named in the check's reason, and `canary ci-ready --json`
+lists them under `retirement.retired` as `{ suite, file, title, rate, axis }`,
+with `retirement.retired_count`. Files that stayed scored are in
+`retirement.kept` with the guard that kept them. `retirement.applied` is `false`
+when the inventory is missing, unusable or lists no tests, or when no working
+tree was checked; every row then scores as before, and the output says
+retirement was not applied.
+
+### Renamed files
+
+A file renamed with its tests inside is a deleted file to every guard, so its
+old rows retire and the title is scored over the new file's rows alone. A flaky
+test moved from `tests/pay.spec.ts` to `tests/payment.spec.ts` can read `pass`
+that way. Retirement stands, by decision, but it is not silent: when a retired
+title still has rows from a live file in the same suite window, the output says
+so,
+
+```text
+Flakiness retirement warning: 1 retired test(s) share a title with a live file, so a rename may have taken live history with it (retired tests/pay.spec.ts › charges the card, but the same title exists in tests/payment.spec.ts).
+```
+
+and `--json` lists each one under `retirement.title_matches` as
+`{ suite, file, title, live_files }`. Two tests can share a title without one
+being the other, so this is a warning, not a verdict.
+
+Matching is by file, not by test title, because title matching wrongly retired
+23% of live rows on this repo (the inventory cannot see `it.each` or
+loop-generated titles). These keep scoring until they age out of the window:
+
+- a test deleted from a file that still exists
+- rows with no `test_file` (default-family pytest JUnit output has none);
+  counted in `retirement.unmatched_rows`
+- the last test file in a directory, or most of a directory deleted at once;
+  listed in `retirement.kept` with the reason it stayed
+
+Each of those is a false fail. The guards narrow false greens rather than rule
+them out: a renamed file is one, reported above, and history recorded in another
+checkout of a package outside `--root` (say, a CI runner's absolute paths) can
+only be found on this disk by name. Keeping `canary inventory` current still
+matters.
