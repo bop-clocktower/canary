@@ -1,12 +1,17 @@
 /**
- * An `edited` event that cannot change the scan's answer skips the scan, and
- * the required check still reports a pass (#1582).
+ * An `edited` event on a PR that is no longer open skips the scan, and the
+ * required check still reports a pass (#1582).
  *
  * leak-gate.yml listens for `edited` so that retargeting a PR to another base
  * re-runs the gate. GitHub also sends `edited` for a title or body edit, and
  * for edits to a PR that has already merged or closed. That run scanned the
  * PR's old head against today's denylist, and could go red on a PR nobody can
  * change any more.
+ *
+ * Only a PR that is not open skips. Every `edited` event on an OPEN PR still
+ * scans, base change or not: a skip there would record a passing run for a
+ * head whose last real scan may have been red, and a title/body edit would
+ * then turn the required check green without a scan.
  *
  * The fix gates at STEP level, never with a job-level `if:`. A skipped job
  * reports "skipped" rather than "success", and the job is the only producer
@@ -79,7 +84,6 @@ interface Event {
   EVENT_NAME: string;
   EVENT_ACTION?: string;
   PR_STATE?: string;
-  BASE_REF_FROM?: string;
 }
 
 describe('the decide step classifies each event (#1582)', () => {
@@ -102,7 +106,6 @@ describe('the decide step classifies each event (#1582)', () => {
         GITHUB_OUTPUT: out,
         EVENT_ACTION: '',
         PR_STATE: '',
-        BASE_REF_FROM: '',
         ...event,
       },
     });
@@ -122,12 +125,11 @@ describe('the decide step classifies each event (#1582)', () => {
   }
 
   it('(1) an edit to a merged or closed PR skips the scan and exits 0', () => {
-    for (const BASE_REF_FROM of ['', 'release/1.x']) {
+    {
       const r = decide({
         EVENT_NAME: 'pull_request_target',
         EVENT_ACTION: 'edited',
         PR_STATE: 'closed',
-        BASE_REF_FROM,
       });
       expect(r.status, r.log).toBe(0);
       expect(r.values).toHaveLength(1);
@@ -137,25 +139,21 @@ describe('the decide step classifies each event (#1582)', () => {
     }
   });
 
-  it('(2) a title/body edit on an open PR (no base change) skips', () => {
+  it('(2) a title/body edit on an open PR (no base change) still scans', () => {
+    // A skip here could green-wash a head whose last real scan was red.
     const r = decide({
       EVENT_NAME: 'pull_request_target',
       EVENT_ACTION: 'edited',
       PR_STATE: 'open',
-    });
-    expect(r.status, r.log).toBe(0);
-    expect(r.skip).toBe('true');
-  });
-
-  it('(3) retargeting an open PR to another base still scans', () => {
-    const r = decide({
-      EVENT_NAME: 'pull_request_target',
-      EVENT_ACTION: 'edited',
-      PR_STATE: 'open',
-      BASE_REF_FROM: 'release/1.x',
     });
     expect(r.status, r.log).toBe(0);
     expect(r.skip).toBe('false');
+  });
+
+  it('(3) the skip turns on PR state alone, not on any base-change field', () => {
+    // A retarget of an open PR scans by (2). The decision must not read
+    // `changes.base`, or a body edit and a retarget could diverge again.
+    expect(decideStep().run).not.toMatch(/BASE_REF|changes\.base/);
   });
 
   it('(4) opened, synchronize, reopened and push still scan', () => {
@@ -217,7 +215,6 @@ describe('new event values reach the shell only through env (#1582)', () => {
       EVENT_NAME: '${{ github.event_name }}',
       EVENT_ACTION: '${{ github.event.action }}',
       PR_STATE: '${{ github.event.pull_request.state }}',
-      BASE_REF_FROM: '${{ github.event.changes.base.ref.from }}',
     });
     for (const name of Object.keys(d.env!)) {
       expect(d.run, name).toContain(`$${name}`);

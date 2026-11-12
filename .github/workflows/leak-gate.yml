@@ -53,12 +53,15 @@ jobs:
     steps:
       # #1582. `edited` also fires on title/body edits, including edits to a
       # PR that has already merged or closed. Scanning that PR's old head
-      # against today's denylist can go red with nothing left to fix, and a
-      # body edit changes no code. So an `edited` event scans only when the PR
-      # is open AND its base changed (a retarget). Gated at STEP level, never
-      # with a job-level `if:`: a skipped job reports "skipped", not success,
-      # and this job is the required context's only producer. On a skip the
-      # remaining steps are skipped and the job still finishes green.
+      # against today's denylist can go red with nothing left to fix. So an
+      # `edited` event skips the scan ONLY when the PR is not open. Every
+      # `edited` event on an open PR still scans, base change or not: a skip
+      # there would record a passing run for a head whose last real scan may
+      # have been red, turning the required check green without a scan.
+      # Gated at STEP level, never with a job-level `if:`: a skipped job
+      # reports "skipped", not success, and this job is the required context's
+      # only producer. On a skip, checkout and setup-node still run; only the
+      # head fetch and the scan are skipped, and the job finishes green.
       # ts/test/leak-gate-stale-edited.test.ts runs this script per event.
       - name: Decide whether this event needs a scan
         id: decide
@@ -66,23 +69,12 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
           PR_STATE: ${{ github.event.pull_request.state }}
-          # Set only when an `edited` event retargeted the PR's base.
-          BASE_REF_FROM: ${{ github.event.changes.base.ref.from }}
         run: |
           set -euo pipefail
           skip=false
-          if [ "$EVENT_NAME" = pull_request_target ] && [ "$EVENT_ACTION" = edited ]; then
-            if [ "$PR_STATE" != open ]; then
-              skip=true
-              echo "::notice::Leak scan skipped: edit to a PR that is not open (state '$PR_STATE')."
-            elif [ -z "$BASE_REF_FROM" ]; then
-              skip=true
-              echo "::notice::Leak scan skipped: edit did not change the base (title/body only)."
-            else
-              # The ref name is not echoed: log lines are parsed for
-              # workflow commands, and event strings stay data.
-              echo "Base changed: re-running the leak scan."
-            fi
+          if [ "$EVENT_NAME" = pull_request_target ] && [ "$EVENT_ACTION" = edited ] && [ "$PR_STATE" != open ]; then
+            skip=true
+            echo "::notice::Leak scan skipped: edit to a PR that is not open (state '$PR_STATE')."
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7

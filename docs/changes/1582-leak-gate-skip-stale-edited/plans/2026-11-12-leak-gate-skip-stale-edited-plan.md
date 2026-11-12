@@ -25,15 +25,20 @@ had grown since, the run went red on a PR nobody can change.
 | J1 injection          | Event values go via `env:`; no head checkout under `pull_request_target`. Clean.                                                                       |
 | **Trigger semantics** | **WARNING:** `edited` fires on non-code edits and closed PRs, so it scans a stale head and can produce red runs that nobody can act on. This is #1582. |
 
-## Fix (human decision: option a)
+## Fix (human decision: option b, narrowed after VERIFY)
+
+The first cut (option a) also skipped `edited` on an open PR when the base did
+not change. VERIFY found that this could record a passing run for a head whose
+last real scan was red, so a title or body edit could turn the required check
+green without a scan. The human narrowed the scope: skip only when the PR is not
+open.
 
 - A new first step, `decide` (id `decide`), reads `github.event_name`,
-  `github.event.action`, `github.event.pull_request.state` and
-  `github.event.changes.base.ref.from` through `env:` only. It writes
-  `skip=true` when the event is `pull_request_target`/`edited` and either the PR
-  is not `open`, or `changes.base.ref.from` is empty (no retarget). Every other
-  event gets `skip=false`. A skip logs a `::notice::` so a green run says why it
-  scanned nothing.
+  `github.event.action` and `github.event.pull_request.state` through `env:`
+  only. It writes `skip=true` only when the event is
+  `pull_request_target`/`edited` and the PR is not `open`. Every other event,
+  including any `edited` event on an open PR, gets `skip=false`. A skip logs a
+  `::notice::` so a green run says why it scanned nothing.
 - The fetch-head and scan steps take
   `if: ... steps.decide.outputs.skip != 'true'`. Base checkout and setup-node
   still run.
@@ -44,9 +49,7 @@ had grown since, the run went red on a PR nobody can change.
 
 ## Assumptions
 
-1. `github.event.changes.base.ref.from` is set exactly when an `edited` event
-   changed the base (GitHub webhook docs, `pull_request.edited` `changes.base`).
-   A missing property renders as an empty string in `env:`.
+1. An open PR's `edited` event always scans, so no base-change field is read.
 2. Closed or merged PRs need no scan on `edited`. Their merge already passed the
    gate, and `push` to `main` re-scans after the merge.
 3. `pull_request_target` uses the workflow from the base branch, so this change
@@ -55,22 +58,24 @@ had grown since, the run went red on a PR nobody can change.
 4. actionlint is not installed locally (no binary, no Docker daemon). The
    `workflow-lint.yml` actionlint job checks the edited file in CI.
 
-## Tests (written first, red: 9 failed / 1 passed before the fix)
+## Tests (written first)
+
+First cut: 9 failed / 1 passed before the fix. Narrowed scope: 3 failed / 7
+passed against the first-cut workflow, then green.
 
 `ts/test/leak-gate-stale-edited.test.ts` runs the decide step's own script under
 bash with stub events:
 
-1. An `edited` event on a closed PR, with or without a base change, gives
-   `skip=true`, exits 0 and logs the reason. The fetch and scan steps are gated,
-   so the job passes.
-2. An `edited` event on an open PR with no base change gives `skip=true`.
-3. An `edited` event on an open PR with a base change gives `skip=false`, so it
-   still scans.
+1. An `edited` event on a closed PR gives `skip=true`, exits 0 and logs the
+   reason. The fetch and scan steps are gated, so the job passes.
+2. An `edited` event on an open PR with no base change gives `skip=false`.
+3. The decision reads no base-change field, so a retarget and a body edit on an
+   open PR both scan.
 4. `opened`, `synchronize`, `reopened` and `push` give `skip=false`.
-5. The decide step's `env:` is exactly the four event expressions. Its `run:`
+5. The decide step's `env:` is exactly the three event expressions. Its `run:`
    has no `${{ }}` and no secret.
 
-The test also checks that there is no job-level `if:`, that the decide step runs
-first with no `if:` and no `continue-on-error`, and that only the fetch and scan
-steps are gated. `ts/test/leak-gate-workflow.test.ts`, which holds the safety
-invariants, is unchanged and still green.
+The test also checks that there is no job-level `if:`, that the decide step is
+at index 0 with no `if:` and no `continue-on-error`, and that only the fetch and
+scan steps are gated. `ts/test/leak-gate-workflow.test.ts`, which holds the
+safety invariants, is unchanged and still green.
