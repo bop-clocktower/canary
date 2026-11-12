@@ -310,7 +310,13 @@ the chain again from the row's own ticket. Two things follow:
 cross-repository head, or one `gh` does not report on, is refused before
 anything is fetched. A ticket note and the verdict report (text and `--json`)
 quote the test title and file as one line of plain text, capped at 200
-characters each, so a longer title reads truncated in `flake_hunter` too.
+characters each, so a longer title reads truncated in `flake_hunter` too. The
+same rewrite turns control and line-break characters into spaces, drops
+invisible format characters, and turns a backtick into `'`, so a consumer of
+`--json` that matches a title must match it rewritten (`` adds `x` `` reads
+`adds 'x'`). A note that was not posted is printed in full under its `NOT told`
+line, in the plain report as well as under `--json`: a second `--apply` cannot
+list it again.
 
 `--apply` also refuses, before anything is written:
 
@@ -322,14 +328,14 @@ a tree the PR's editor wrote, and a program run there, or one that reads from
 there, would run on this machine with your credentials. So every git call has
 file-based hooks (whatever `core.hooksPath` says), config-defined hooks, filter
 drivers, `core.fsmonitor`, commit signing and submodule recursion switched off.
-That is a list of the programs known to run on this path, not a guarantee: a
-later git can add another. A filter or hook named only by an `includeIf` that
-matches the worktree stays on. A partial clone is refused, because it could
-fetch from inside the tree; use a full clone. A path with a segment spelled
-`.git` is refused too, but a symlink on the trial branch that reaches `.git` is
-not, so a trial branch can still run code during the settle that way. Only run
-`--apply` on a trial you trust until #1560 closes this. The settle commit is
-therefore unsigned and unchecked by your hooks; a person reviews it. With
+The settle commit is therefore unsigned and unchecked by your hooks; a person
+reviews it. That is a list of the programs known to run on this path, not a
+guarantee: a later git can add another. A filter or hook named only by an
+`includeIf` that matches the worktree stays on. A partial clone is refused,
+because it could fetch from inside the tree; use a full clone. A path with a
+segment spelled `.git` is refused too, but a symlink on the trial branch that
+reaches `.git` is not, so a trial branch can still run code during the settle
+that way. Only run `--apply` on a trial you trust until #1560 closes this. With
 filters off, files are rebuilt from their stored blobs, so a pointer file goes
 back unchanged. A ledger stored encrypted, or an encrypted test file on a
 passing lift, can't be read and the settle stops. A test file that is not UTF-8
