@@ -9,7 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import { dedupeByFullTitle, type ResultEntry } from "./payload.js";
+import { dedupeByFullTitle, tagText, type ResultEntry } from "./payload.js";
 import { errText, log, warn } from "./transport.js";
 
 const QUARANTINED_TAG = "quarantined";
@@ -38,11 +38,15 @@ const KATANA_LEDGER = ["agents", "skills", "claude-code", "canary-katana", "scri
  * katana's own reader, never a copy: `load()` is also where a v1 `ticket`
  * migrates onto `issue`, so a second parser would drift exactly there. It is
  * `<pkg>/agents/skills` in the published package (staged by build-engine,
- * #757) and `<repo>/agents/skills` in a checkout.
+ * #757) and `<repo>/agents/skills` in a checkout. A checkout (a `.git` beside
+ * the package) tries the repo first: its staged copy is gitignored and goes
+ * stale between builds, silently shadowing edits to the source (#1588).
  */
 function katanaLedgerModule(): string {
-  for (const up of ["../../..", "../../../.."]) {
-    const candidate = path.resolve(__dirname, up, ...KATANA_LEDGER);
+  const pkg = path.resolve(__dirname, "../../..");
+  const repo = path.dirname(pkg);
+  for (const root of fs.existsSync(path.join(repo, ".git")) ? [repo, pkg] : [pkg, repo]) {
+    const candidate = path.join(root, ...KATANA_LEDGER);
     if (fs.existsSync(candidate)) return candidate;
   }
   throw new Error("canary-katana's ledger reader (agents/skills/claude-code/canary-katana) is not installed.");
@@ -84,7 +88,9 @@ function applyQuarantine(
     if (!hits.length) return r;
     for (const h of hits) used.add(h);
     tagged += 1;
-    const tickets = hits.filter((h) => h.issue).map((h) => `quarantine:${h.issue}`);
+    // Capped like `reason:` (#1589): a pasted URL or paragraph rides every match.
+    // String(): a hand-edited ledger can hold `"issue": 77`, which katana keeps.
+    const tickets = hits.map((h) => tagText(String(h.issue))).filter(Boolean).map((issue) => `quarantine:${issue}`);
     return { ...r, tags: [...new Set([...r.tags, QUARANTINED_TAG, ...tickets])] };
   });
   const left = rows.filter((row) => !used.has(row));

@@ -25,8 +25,17 @@ export function projectName(test: TestCase): string | undefined {
   return undefined;
 }
 
-/** The longest `reason:` tag; enough for an issue ref and a sentence. */
+/** The longest `reason:`/`quarantine:` tag; enough for an issue ref and a sentence. */
 const MAX_REASON = 100;
+
+/**
+ * A free-text tag value, `reason:` and `quarantine:` alike (#1589): one line,
+ * redacted before the cut (#1354) so a credential straddling MAX_REASON never
+ * leaves a fragment; buildPayload redacts again with the caller's env.
+ */
+export function tagText(text: string): string {
+  return redactText(text.replace(/\s+/g, " ").trim()).slice(0, MAX_REASON);
+}
 
 /**
  * Tags that say why a test did not run: `fixme`, and `reason:<text>` from a
@@ -38,10 +47,8 @@ export function skipTags(annotations: ReadonlyArray<{ type: string; description?
   for (const a of annotations) {
     if (a.type !== "fixme" && a.type !== "skip") continue;
     if (a.type === "fixme") tags.push("fixme");
-    // Redacted before the cut (#1354), so a credential straddling MAX_REASON
-    // never leaves a fragment; buildPayload redacts again with the caller's env.
-    const reason = a.description === undefined ? undefined : redactText(a.description.replace(/\s+/g, " ").trim());
-    if (reason) tags.push(`reason:${reason.slice(0, MAX_REASON)}`);
+    const reason = a.description === undefined ? undefined : tagText(a.description);
+    if (reason) tags.push(`reason:${reason}`);
   }
   return tags;
 }

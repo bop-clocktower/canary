@@ -1,0 +1,20 @@
+{
+  "issues": [1584],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/rewind-replay.test.ts::runRewind: replay > #1584: one failure plus unreadable attempts discloses the dropped ones in text",
+    "ts/test/rewind-replay.test.ts::runRewind: replay > #1584: one failure plus unreadable attempts discloses the dropped ones in JSON",
+    "ts/test/rewind-render-cli.test.ts::renderRewind: text result line > discloses requested attempts that were not counted",
+    "ts/test/rewind-render-cli.test.ts::renderRewind: JSON > %i attempts with statuses %j reports %i dropped (#1584)"
+  ],
+  "assumptions": [
+    "Disclose rather than downgrade: the outcome is still classified from the readable attempts (one failure plus unreadable attempts stays `reproduced`), but the text line appends `N of M requested attempts not counted` and JSON gains `dropped` whenever any requested attempt was not counted. This is the lane's recommended default for the disclose-vs-downgrade fork.",
+    "`dropped` counts both unreadable attempts and skipped/pending ones (everything requested that the outcome was not built from); `statuses` already lists the skipped/pending ones, so unreadable = attempts - statuses.length is derivable.",
+    "For `not-run` (e.g. install failed, zero attempts executed) JSON reports `dropped` = attempts; the text line for not-run is unchanged."
+  ],
+  "closingKeywords": { "1584": "Closes" },
+  "run": "fc1112",
+  "fleet": "roadmap-fleet",
+  "baseSha": "f94dbec5"
+}

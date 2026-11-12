@@ -1,0 +1,22 @@
+{
+  "issues": [1573, 1574, 1576],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "agents/skills/test/canary-unquarantine-trial.test.ts::verdict --apply refuses a test file it cannot restore byte for byte > a non-UTF-8 file at base is refused: non-zero, named, nothing pushed, no ticket told",
+    "agents/skills/test/canary-unquarantine-trial.test.ts::verdict leaves nothing behind in the temp directory > after a read, an --apply, and an --apply that is refused",
+    "agents/skills/test/canary-unquarantine-trial.test.ts::verdict leaves nothing behind in the temp directory > when the run has no such artifact",
+    "agents/skills/test/canary-unquarantine-trial.test.ts::verdict > --apply prints a listed note in full in plain output, so a person can post it"
+  ],
+  "assumptions": [
+    "#1573: a decoded blob containing U+FFFD is treated as not UTF-8 and refused; a file that genuinely contains U+FFFD is refused too (loud, never a corruption). The #1560 private-index redesign is out of scope.",
+    "#1574: real CLI runs leak, not only tests: every `verdict --artifact` left an unquarantine-results-* dir. withWorktree already removed its dir; test-made dirs were already cleaned in afterEach. Existing leaked dirs on developer machines are not deleted by this change.",
+    "#1576: the --json title rewrite is documented (and pinned by a test), not stopped, since noteField also guards the ticket-note code span.",
+    "#1576: the stale core.hooksPath bullet lives only in the #1549 issue body; it is noted in the PR rather than editing another issue.",
+    "CHANGELOG.md still describes the #1573 corruption as current behaviour; CHANGELOG is not edited by fleet lanes."
+  ],
+  "closingKeywords": { "1573": "Closes", "1574": "Closes", "1576": "Closes" },
+  "run": "fc1112",
+  "fleet": "roadmap-fleet",
+  "baseSha": "f94dbec5"
+}

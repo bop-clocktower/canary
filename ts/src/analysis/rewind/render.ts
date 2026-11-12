@@ -40,6 +40,7 @@ function toJson(report: RewindReport): Record<string, unknown> {
     fidelity: report.fidelity,
     attempts: report.attempts,
     statuses: report.statuses,
+    dropped: dropped(report),
     outcome: report.outcome,
     nearestGreen: greenJson(report),
     recorded: {
@@ -83,9 +84,29 @@ function resultLine(report: RewindReport): string {
       `${report.statuses.join(', ') || 'none reported'}; see the environment row)`
     );
   }
-  const ran = report.statuses.filter((s) => s !== 'skipped' && s !== 'pending');
+  const ran = ranStatuses(report);
   const failed = ran.filter((s) => s !== 'passed').length;
-  return `Result: ${report.outcome} (${failed} of ${ran.length} attempts failed)`;
+  const lost = dropped(report);
+  const note =
+    lost === 0
+      ? ''
+      : `; ${lost} of ${report.attempts} requested attempts not counted: unreadable, skipped or pending`;
+  return `Result: ${report.outcome} (${failed} of ${ran.length} attempts failed${note})`;
+}
+
+/** Statuses from attempts that ran the test: skipped/pending ones say nothing. */
+function ranStatuses(report: RewindReport): string[] {
+  return report.statuses.filter((s) => s !== 'skipped' && s !== 'pending');
+}
+
+/**
+ * Requested attempts the outcome was not built from (#1584): ones whose report
+ * held no readable status (`statuses` never sees them) plus skipped/pending
+ * ones. Without this, one failure among unreadable attempts reads as a
+ * reproduction counted over every attempt.
+ */
+function dropped(report: RewindReport): number {
+  return report.attempts - ranStatuses(report).length;
 }
 
 function greenLines(report: RewindReport): string[] {
