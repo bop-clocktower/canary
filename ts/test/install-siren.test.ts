@@ -787,11 +787,11 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
       ].join('\n'),
       { mode: 0o755 },
     );
-    const started = Date.now();
+    const started = performance.now();
     const msg = findings('9.5.0', {
       CANARY_SIREN_LS_REMOTE_TIMEOUT: '1',
     });
-    expect(Date.now() - started).toBeLessThan(15_000);
+    expect(performance.now() - started).toBeLessThan(15_000);
     expect(msg).toContain('timed out after 1s');
     expect(msg).toContain('unverifiable');
   });
