@@ -2422,6 +2422,97 @@ describe('verdict --apply refuses a manifest that reaches outside the worktree',
     },
   );
 
+  // #1562: a symlink that stays inside the tree still decides where a read or
+  // a write lands, so any symlink on a manifest path is refused, before the
+  // ledger or a lifted file is read or written through it. Each link is
+  // committed on the trial branch only, where only the second check sees it.
+  describe.skipIf(process.platform === 'win32')(
+    'a manifest path that is, or passes through, a symlink (#1562)',
+    () => {
+      /**
+       * Open a trial, commit `edit` on its branch, then --apply a verdict
+       * that re-quarantines (so a settle has a commit to push).
+       */
+      function linkedOnTrial(edit: (repo: string) => void) {
+        const suite = makeSuite();
+        const h = harness({
+          results: report({ card: 'flaky', event: 'expected', v2: 'flaky' }),
+        });
+        expect(
+          callMain(
+            [
+              'trial',
+              '--repo',
+              suite.repo,
+              '--yes',
+              '--branch',
+              'canary/trial',
+            ],
+            { run: h.run, env: JIRA_ENV },
+          ).code,
+        ).toBe(0);
+        const t = { ...suite, h };
+        onTrialBranch(t.repo, () => edit(t.repo));
+        const head = git(t.origin, 'rev-parse', 'canary/trial');
+        t.h.calls.length = 0;
+        const r = callMain(
+          [
+            'verdict',
+            '--repo',
+            t.repo,
+            '--pr',
+            '77',
+            '--artifact',
+            'playwright-json',
+            '--apply',
+          ],
+          { run: t.h.run, env: JIRA_ENV },
+        );
+        return { ...t, r, head };
+      }
+
+      it('a ledger whose final segment is a symlink is refused, and nothing is written', () => {
+        const t = linkedOnTrial((repo) => {
+          const dir = path.join(repo, '.canary');
+          fs.renameSync(
+            path.join(dir, 'quarantine.json'),
+            path.join(dir, 'real.json'),
+          );
+          fs.symlinkSync('real.json', path.join(dir, 'quarantine.json'));
+        });
+        expectRefused(t, /is or passes through a symlink/);
+        expect(t.r.stderr).toContain('.canary/quarantine.json');
+      });
+
+      it('a ledger reached through a symlinked parent directory is refused', () => {
+        const t = linkedOnTrial((repo) => {
+          fs.renameSync(
+            path.join(repo, '.canary'),
+            path.join(repo, 'ledger-store'),
+          );
+          fs.symlinkSync('ledger-store', path.join(repo, '.canary'));
+        });
+        expectRefused(t, /is or passes through a symlink/);
+      });
+
+      it('a lifted file reached through a symlinked parent directory is refused', () => {
+        const t = linkedOnTrial((repo) => {
+          fs.renameSync(path.join(repo, 'tests'), path.join(repo, 'specs'));
+          fs.symlinkSync('specs', path.join(repo, 'tests'));
+        });
+        expectRefused(t, /is or passes through a symlink/);
+      });
+
+      it('plain paths still settle', () => {
+        const t = linkedOnTrial((repo) =>
+          fs.writeFileSync(path.join(repo, 'notes.txt'), 'no links here\n'),
+        );
+        expect(t.r.code).toBe(0);
+        expect(git(t.origin, 'rev-parse', 'canary/trial')).not.toBe(t.head);
+      });
+    },
+  );
+
   it('a manifest base that is not a commit id is refused (it is passed to git show)', () => {
     expectRefused(
       tampered((m) => {
