@@ -131,6 +131,13 @@ under the project's former name) are documented in the
 
 ### Security
 
+- **`refresh-arch-baseline.yml` no longer runs registry or PR-head code under a
+  write token (#1463, CWE-250).** The one `refresh` job is now three. `measure`
+  runs the CLI and the refresh script read-only, with no token left in the
+  checkout. `push` holds only `contents: write`, copies the two expected regular
+  files from an artifact, and refuses a stale commit. `consume-label` holds only
+  `pull-requests: write`. A read failure on the branch check now fails the run
+  instead of reading as "branch deleted".
 - **`canary-unquarantine verdict --apply` checks the trial manifest against the
   default branch (#1496).** It tells only a ticket the row names there, lists a
   hand-off leaf for a person with no comment or re-point, and refuses a blocker
