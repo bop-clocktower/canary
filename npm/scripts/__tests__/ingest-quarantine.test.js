@@ -104,14 +104,21 @@ test("the catalog carries no quarantine tags: only results do", async () => {
 
 // #1588: which katana reader the compiled module loads. The built ingest
 // directory is copied into a temp layout beside a stub `ledger.mjs` whose
-// row's issue names the copy it came from.
+// row's issue names the copy it came from. The stub is data-free: it reads
+// its row from a sibling row.json, so no value is spliced into generated code.
 const LEDGER_PARTS = ["agents", "skills", "claude-code", "canary-katana", "scripts", "ledger.mjs"];
+const STUB_LEDGER =
+  'import { readFileSync } from "node:fs";\n' +
+  "export function load() {\n" +
+  '  return { entries: [JSON.parse(readFileSync(new URL("./row.json", import.meta.url), "utf8"))] };\n' +
+  "}\n";
 
 function stubReader(root, who) {
   const file = path.join(root, ...LEDGER_PARTS);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const row = { test: "t", file: "a.spec.ts", kind: "skipped", issue: who };
-  fs.writeFileSync(file, `export function load() { return { entries: [${JSON.stringify(row)}] }; }\n`);
+  fs.writeFileSync(path.join(path.dirname(file), "row.json"), JSON.stringify(row));
+  fs.writeFileSync(file, STUB_LEDGER);
 }
 
 async function readerUsed(pkg) {
