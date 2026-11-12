@@ -76,8 +76,75 @@ test("clean titles: skipped in one project, run in another, is not published as 
   assert.ok(logs.some((l) => /1 ledger row matched no skipped result/.test(l)), logs.join("\n"));
 });
 
+test("#1589: an over-long issue is cut like a reason: tag", async () => {
+  const issue = `https://example.test/issues/77 ${"x".repeat(300)}`;
+  const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue }]);
+  const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
+  const tags = quarantineTags(byTitle(payload, "tests/a.spec.ts > cart > checkout total"));
+  assert.deepEqual(tags, ["quarantined", `quarantine:${issue.slice(0, 100)}`]);
+});
+
+test("#1589: a blank issue gets no quarantine:<issue> tag", async () => {
+  const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue: " \n " }]);
+  const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
+  assert.deepEqual(quarantineTags(byTitle(payload, "tests/a.spec.ts > cart > checkout total")), ["quarantined"]);
+});
+
+test("#1589: a numeric issue in a hand-edited ledger is still tagged", async () => {
+  const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue: 77 }]);
+  const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
+  assert.deepEqual(quarantineTags(byTitle(payload, "tests/a.spec.ts > cart > checkout total")), ["quarantined", "quarantine:77"]);
+});
+
 test("the catalog carries no quarantine tags: only results do", async () => {
   const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue: "#77" }]);
   const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
   assert.ok(payload.collected.every((c) => quarantineTags(c).length === 0));
+});
+
+// #1588: which katana reader the compiled module loads. The built ingest
+// directory is copied into a temp layout beside a stub `ledger.mjs` whose
+// row's issue names the copy it came from. The stub is data-free: it reads
+// its row from a sibling row.json, so no value is spliced into generated code.
+const LEDGER_PARTS = ["agents", "skills", "claude-code", "canary-katana", "scripts", "ledger.mjs"];
+const STUB_LEDGER =
+  'import { readFileSync } from "node:fs";\n' +
+  "export function load() {\n" +
+  '  return { entries: [JSON.parse(readFileSync(new URL("./row.json", import.meta.url), "utf8"))] };\n' +
+  "}\n";
+
+function stubReader(root, who) {
+  const file = path.join(root, ...LEDGER_PARTS);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const row = { test: "t", file: "a.spec.ts", kind: "skipped", issue: who };
+  fs.writeFileSync(path.join(path.dirname(file), "row.json"), JSON.stringify(row));
+  fs.writeFileSync(file, STUB_LEDGER);
+}
+
+async function readerUsed(pkg) {
+  const ingest = path.join(pkg, "dist", "reporters", "ingest");
+  fs.cpSync(path.join(__dirname, "..", "..", "dist", "reporters", "ingest"), ingest, { recursive: true });
+  const file = path.join(pkg, "quarantine.json");
+  fs.writeFileSync(file, "{}");
+  const { quarantineResults } = require(path.join(ingest, "quarantine.js"));
+  const skip = { full_title: "a.spec.ts > t", test_file: "a.spec.ts", status: "skipped", retries: 0, tags: [] };
+  const { results } = await quarantineResults(file, [skip]);
+  return results[0].tags.find((t) => t.startsWith("quarantine:"));
+}
+
+test("checkout: the repo's agents/skills wins over a stale staged npm/agents copy", async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ingest-checkout-"));
+  fs.mkdirSync(path.join(repo, ".git"));
+  stubReader(repo, "repo");
+  stubReader(path.join(repo, "npm"), "staged");
+  assert.equal(await readerUsed(path.join(repo, "npm")), "quarantine:repo");
+});
+
+test("published package: the bundled <pkg>/agents/skills is used", async () => {
+  const consumer = fs.mkdtempSync(path.join(os.tmpdir(), "ingest-published-"));
+  fs.mkdirSync(path.join(consumer, ".git"));
+  const pkg = path.join(consumer, "node_modules", "canary-test-cli");
+  stubReader(pkg, "bundled");
+  stubReader(path.dirname(pkg), "decoy"); // no `.git` beside it: not a checkout
+  assert.equal(await readerUsed(pkg), "quarantine:bundled");
 });
