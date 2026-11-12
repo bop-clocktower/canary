@@ -234,8 +234,10 @@ With `--yes`:
    lifted. A runtime guard is never lifted either: it skips on a condition and
    lifts itself when the condition clears. A method skipped only through its
    class, and a tag in a Playwright details object, are refused with the reason:
-   lifting them safely needs a person. Duplicate ledger rows lift one marker
-   once.
+   lifting them safely needs a person. A test file that is not UTF-8 text (an
+   encrypted or binary one, or a Latin-1 comment) is refused the same way: the
+   lift reads and writes the file as UTF-8, so its other bytes would change.
+   Duplicate ledger rows lift one marker once.
 
 3. The branch is pushed and `gh pr create --draft` opens the PR (`--pr-base` to
    choose its base). The trial's plan travels in the PR body as an HTML comment,
