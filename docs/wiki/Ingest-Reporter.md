@@ -122,7 +122,7 @@ On top of the test's own Playwright tags (sent once each, without the `@`):
 | `interrupted`        | The test was interrupted (see [Status semantics](#status-semantics)).                                                                                     |
 | `expected-failure`   | A `test.fail()` test passed on some attempt: sent `failed`, or `flaky` if a retry then failed as expected (see [Status semantics](#status-semantics)).    |
 | `quarantined`        | The test was skipped and a katana ledger row backs it (see [Quarantine state](#quarantine-state-from-the-katana-ledger)).                                 |
-| `quarantine:<issue>` | The same, with the ticket from that row's `issue`. Not sent when the row names no issue.                                                                  |
+| `quarantine:<issue>` | The same, with the ticket from that row's `issue` (capped at 100 chars, like `reason:`). Not sent when the row names no issue.                            |
 
 ### Quarantine state from the katana ledger
 
