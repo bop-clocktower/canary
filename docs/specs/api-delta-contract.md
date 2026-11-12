@@ -70,6 +70,14 @@ created: 2026-07-01
   with the same `name` + `in` overrides the path-level one. So retyping a
   path-level parameter is a `params` change on each operation under the path.
 
+  The same "effective operation" rule covers the rest of what OpenAPI applies
+  implicitly: every local `$ref` (`#/...`) is compared by its resolved target,
+  so retyping a referenced schema or parameter is a change on each operation
+  that uses it (an external or cyclic `$ref` is compared as written); the spec's
+  top-level `security` is an `auth` input to every operation that does not
+  declare its own `security` (an explicit `[]` opts out); and `trace` is diffed
+  like every other HTTP method.
+
 ## Consumers
 
 The artifact is generic — it names only HTTP methods, paths, and change
