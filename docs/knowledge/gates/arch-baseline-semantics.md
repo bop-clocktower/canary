@@ -126,6 +126,25 @@ abstention: it reads the `measurements` block harness 13 emits and prints a
 which reports `skipped`, or which is missing — and for all three when the report
 has no `measurements` at all, as every 12.x report does.
 
+## `coupling` was a hollow 0 until harness 14
+
+A fourth metric had the same shape and survived the 13.0.0 fix. Through 13.x,
+the arch `coupling` collector classified a snapshot that had no import edges as
+a clean, measured `0`, even when the analysed files contained imports
+(Intense-Visions/harness-engineering#2284, fixed in 14.0.0 by #2304). So the
+`coupling: 0` in `.harness/arch/baselines.json` before the `@14` pin is an
+abstention too. It is unrelated to the perf-side coupling rule in
+`harness check-perf`, which has always been live.
+
+At the bump (2026-11-12, the same tree measured under 13.0.0 and 14.0.0 side by
+side), `coupling` went `0 -> 52`. All 52 modules already existed and sit at
+`couplingRatio 1.00`: CLI wiring modules that import many modules and are
+imported by few. The same bump moved arch `complexity` `39 -> 25`, because 14
+stopped inventing functions named `for`, `if` and `while` (#1075). The 52 are
+recorded in `.harness/arch/allowances/chore-harness-cli-14.json` rather than
+banked with the `refresh-baseline` label, so that the instrument change carries
+its own name in the record.
+
 ## Optional markers in inline type literals cost branches
 
 Each `?` optional marker in an **inline** type literal counts as a branch
