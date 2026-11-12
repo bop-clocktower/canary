@@ -33,8 +33,11 @@ interface OpenCase {
 /** Surefire's retry encodings; none of the four target runners writes them. */
 const RETRY_TAGS = ['flakyFailure', 'flakyError', 'rerunFailure', 'rerunError'];
 const OUTCOME_TAGS = new Set(['failure', 'error', 'skipped', ...RETRY_TAGS]);
+// Linear on unterminated markup (#1541): bare tag text stops at the next `<`,
+// the tag name is maximal so it cannot backtrack, and an unclosed CDATA,
+// comment or PI runs to the end of input instead of failing at every start.
 const TOKEN_RE =
-  /<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)([A-Za-z_][\w.:-]*)((?:"[^"]*"|'[^']*'|[^'">])*?)(\/?)>|([^<]+)/g;
+  /<!\[CDATA\[([\s\S]*?)(?:\]\]>|$)|<!--[\s\S]*?(?:-->|$)|<\?[\s\S]*?(?:\?>|$)|<(\/?)([A-Za-z_][\w.:-]*)(?![\w.:-])((?:"[^"]*"|'[^']*'|[^'"<>])*?)(\/?)>|([^<]+)/g;
 const ATTR_RE = /([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const ROOT_RE = // (?=(x))\1 is atomic: an item ends at its first terminator
   /^﻿?\s*(?:(?=(<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>))\1\s*)*<(testsuites|testsuite)[\s/>]/;
