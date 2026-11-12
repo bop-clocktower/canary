@@ -1,0 +1,25 @@
+{
+  "issues": [1588, 1589],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "npm/scripts/__tests__/ingest-quarantine.test.js::checkout: the repo's agents/skills wins over a stale staged npm/agents copy",
+    "npm/scripts/__tests__/ingest-quarantine.test.js::published package: the bundled <pkg>/agents/skills is used",
+    "npm/scripts/__tests__/ingest-quarantine.test.js::#1589: an over-long issue is cut like a reason: tag",
+    "npm/scripts/__tests__/ingest-quarantine.test.js::#1589: a blank issue gets no quarantine:<issue> tag",
+    "npm/scripts/__tests__/ingest-quarantine.test.js::#1589: a numeric issue in a hand-edited ledger is still tagged"
+  ],
+  "assumptions": [
+    "A checkout is detected by a .git entry (dir or worktree file) in the parent of the npm package root; a published install's parent (node_modules) never has one.",
+    "The quarantine:<issue> value follows the full reason: rule (whitespace collapsed, redacted, cut to 100), not only the length cap.",
+    "Touched npm/ files keep their existing (non-prettier) style; reformatting them would add ~105 LOC of churn to npm/src/reporters/ingest against its 1800 maxLoc. npm/ is outside the ts format:check gate.",
+    "tagText lives in describe.ts beside the reason: tags and reaches quarantine.ts through a one-line re-export in payload.ts (an edge quarantine.ts already has): a direct describe.ts import raised a check-arch coupling violation on quarantine.ts, and defining it in payload.ts pushed that file past the 300-line perf threshold."
+  ],
+  "closingKeywords": {
+    "1588": "Closes",
+    "1589": "Closes"
+  },
+  "run": "fc1112",
+  "fleet": "roadmap-fleet",
+  "baseSha": "f94dbec5"
+}

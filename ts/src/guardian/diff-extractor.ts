@@ -7,6 +7,7 @@
  * Input: parsed objects (from JSON.parse or a YAML loader).
  * Output: an `ApiDiff` with three lists of `EndpointChange`.
  */
+import { withPathParameters } from './path-parameters.js';
 
 /** How an endpoint differs between the two specs. */
 export enum ChangeType {
@@ -219,13 +220,14 @@ function iterOperations(spec: Record<string, unknown>): Map<string, Operation> {
     // no operation, so skip it rather than dereference it.
     if (typeof pathItemRaw !== 'object' || pathItemRaw === null) continue;
     const pathItem = pathItemRaw as Record<string, unknown>;
+    const shared = orDefault(pathItem['parameters'], []);
     for (const method of HTTP_METHODS) {
       const op = pathItem[method];
       if (isTruthy(op)) {
         result.set(opKey(path, method), {
           path,
           method,
-          op: op as Record<string, unknown>,
+          op: withPathParameters(op as Record<string, unknown>, shared),
         });
       }
     }

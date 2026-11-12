@@ -1,0 +1,29 @@
+{
+  "issues": [1290, 1445],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/guardian-diff.test.ts::path-item level contract > a path-level parameter change is a change to every operation under it",
+    "ts/test/guardian-diff.test.ts::path-item level contract > classifies a path-level parameter change as params on each operation",
+    "ts/test/guardian-diff.test.ts::path-item level contract > a parameter moved from the operation up to the path item is not a change",
+    "ts/test/guardian-diff.test.ts::path-item level contract > a path-level $ref parameter is inherited even when the operation declares parameters",
+    "ts/test/guardian-diff.test.ts::path-item level contract > an added operation reports its effective parameters, path-level included",
+    "ts/test/guardian-comment-token.test.ts::RestGitHubClient rejects an empty token > createComment and listComments reject naming GITHUB_TOKEN without calling fetch",
+    "ts/test/guardian-comment-token.test.ts::RestGitHubClient rejects an empty token > the sticky upsert degrades with a notice naming GITHUB_TOKEN",
+    "ts/test/guardian-comment-token.test.ts::pr-check --post-comment reads the token from deps.env > authenticates with the deps.env token, not the process.env one",
+    "ts/test/guardian-comment-token.test.ts::pr-check --post-comment reads the token from deps.env > with no deps.env token it sends nothing, warns naming GITHUB_TOKEN, and keeps the verdict",
+    "ts/test/guardian-cli-default-deps.test.ts::defaultDeps() GitHub client builders > buildCommentClient never sends an empty bearer (#1445)"
+  ],
+  "assumptions": [
+    "#1290 scope is path-item-level parameters only (human-settled fork); $ref resolution, global security and the trace method stay unfixed and the issue stays open (Refs).",
+    "#1290 merge semantics follow OpenAPI: an operation parameter with the same name + in overrides the path-level one; a $ref or malformed path-level parameter has no identity, so it is always inherited (unresolved).",
+    "#1290 effective parameter order is surviving path-level parameters first, then the operation's own; an operation on a path with no path-level parameters is unchanged, so existing diffs are byte-identical.",
+    "#1290 the frozen api-delta vocabulary is unchanged; docs/specs/api-delta-contract.md gains a clarifying paragraph that params compares effective parameters.",
+    "#1445 chose degrade-with-notice over fail-fast: an empty token makes RestGitHubClient reject before any fetch and upsertStickyComment degrades with a ::warning:: naming GITHUB_TOKEN, reusing the existing degraded path (verdict printed to log and step summary, exit code = computed verdict).",
+    "#1445 the empty-token check is at request time, not in the constructor, so briefing's commentClientFor (which builds the client outside its try) keeps degrading instead of throwing."
+  ],
+  "closingKeywords": { "1290": "Refs", "1445": "Closes" },
+  "run": "fc1112",
+  "fleet": "roadmap-fleet",
+  "baseSha": "f94dbec5"
+}
