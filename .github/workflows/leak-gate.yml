@@ -51,6 +51,40 @@ jobs:
     name: No removed-symbol or proprietary leaks
     runs-on: ubuntu-latest
     steps:
+      # #1582. `edited` also fires on title/body edits, including edits to a
+      # PR that has already merged or closed. Scanning that PR's old head
+      # against today's denylist can go red with nothing left to fix, and a
+      # body edit changes no code. So an `edited` event scans only when the PR
+      # is open AND its base changed (a retarget). Gated at STEP level, never
+      # with a job-level `if:`: a skipped job reports "skipped", not success,
+      # and this job is the required context's only producer. On a skip the
+      # remaining steps are skipped and the job still finishes green.
+      # ts/test/leak-gate-stale-edited.test.ts runs this script per event.
+      - name: Decide whether this event needs a scan
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          PR_STATE: ${{ github.event.pull_request.state }}
+          # Set only when an `edited` event retargeted the PR's base.
+          BASE_REF_FROM: ${{ github.event.changes.base.ref.from }}
+        run: |
+          set -euo pipefail
+          skip=false
+          if [ "$EVENT_NAME" = pull_request_target ] && [ "$EVENT_ACTION" = edited ]; then
+            if [ "$PR_STATE" != open ]; then
+              skip=true
+              echo "::notice::Leak scan skipped: edit to a PR that is not open (state '$PR_STATE')."
+            elif [ -z "$BASE_REF_FROM" ]; then
+              skip=true
+              echo "::notice::Leak scan skipped: edit did not change the base (title/body only)."
+            else
+              # The ref name is not echoed: log lines are parsed for
+              # workflow commands, and event strings stay data.
+              echo "Base changed: re-running the leak scan."
+            fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
           # Base ref only (see invariant 1). Full history so that the
@@ -62,7 +96,9 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Fetch the PR head commit as data (never checked out)
-        if: github.event_name == 'pull_request_target'
+        if: >-
+          github.event_name == 'pull_request_target' &&
+          steps.decide.outputs.skip != 'true'
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -80,6 +116,7 @@ jobs:
           git fetch --no-tags --no-recurse-submodules origin "$PR_HEAD_SHA"
           git cat-file -e "${PR_HEAD_SHA}^{commit}"
       - name: Check for removed-symbol drift and proprietary leaks
+        if: steps.decide.outputs.skip != 'true'
         # If the secret is unset the authorship scan ABSTAINS and this step
         # fails (#784). A gate matching zero patterns has verified nothing.
         # Under pull_request_target with no readable head commit the scanner
