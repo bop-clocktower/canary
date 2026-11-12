@@ -1001,6 +1001,69 @@ describe('results', () => {
   });
 });
 
+describe('verdict leaves nothing behind in the temp directory', () => {
+  // #1574: every `verdict --artifact` left an `unquarantine-results-*` copy of
+  // the CI results in the OS temp dir. The temp dir here is a private one, so
+  // the count is this test's alone and other workers cannot move it.
+  function privateTmp() {
+    const dir = mkTmp();
+    for (const name of ['TMPDIR', 'TMP', 'TEMP']) vi.stubEnv(name, dir);
+    expect(os.tmpdir()).toBe(dir);
+    return () =>
+      fs.readdirSync(dir).filter((n) => n.startsWith('unquarantine'));
+  }
+  const verdict = (
+    repo: string,
+    h: ReturnType<typeof harness>,
+    ...extra: string[]
+  ) =>
+    callMain(
+      [
+        'verdict',
+        '--repo',
+        repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        ...extra,
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+  function opened(results?: object) {
+    const suite = makeSuite();
+    const h = harness({ results });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    return { ...suite, h };
+  }
+
+  it('after a read, an --apply, and an --apply that is refused', () => {
+    const t = opened(report({ card: 'flaky', event: 'expected', v2: 'flaky' }));
+    const left = privateTmp();
+    expect(verdict(t.repo, t.h).code).toBe(0);
+    expect(left()).toEqual([]);
+    expect(verdict(t.repo, t.h, '--apply').stderr).toBe('');
+    expect(left()).toEqual([]);
+    // Refused part-way: the settle throws after the results were downloaded.
+    t.h.state.body = `edited\n\n${embedManifest({ ...readManifest(t.h.state.body!)!, base: 'nope' })}\n`;
+    expect(verdict(t.repo, t.h, '--apply').code).toBe(1);
+    expect(left()).toEqual([]);
+  });
+
+  it('when the run has no such artifact', () => {
+    const t = opened();
+    const left = privateTmp();
+    const r = verdict(t.repo, t.h, '--json');
+    expect(JSON.parse(r.stdout).why).toMatch(/has no artifact/);
+    expect(left()).toEqual([]);
+  });
+});
+
 // --- the PR body is untrusted: settle stays inside the trial worktree ---------
 
 /**
