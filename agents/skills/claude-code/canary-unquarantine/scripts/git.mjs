@@ -77,6 +77,14 @@ export const writeAt = (root, rel, text) =>
   fs.writeFileSync(at(root, rel), text, 'utf8');
 
 /**
+ * Whether `text`, decoded as UTF-8, came from bytes that are not UTF-8 text. A
+ * decoder turns each invalid sequence into U+FFFD, so writing the text back
+ * would change the file (#1573, #1603). A file that really holds U+FFFD counts
+ * too: refused loudly, never corrupted.
+ */
+export const notUtf8 = (text) => text.includes('\uFFFD');
+
+/**
  * Run `fn(work)` in a new worktree of `repo` at `commit` (`options` go before
  * the path: `-b <branch>`, `--detach`), and always remove the worktree after.
  */
