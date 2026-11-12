@@ -2453,12 +2453,9 @@ describe('verdict --apply refuses a test file it cannot restore byte for byte', 
   // The runner decodes git output as UTF-8, so a non-UTF-8 blob (a git-crypt
   // file, a Latin-1 comment) would come back changed and be pushed (#1573).
   it('a non-UTF-8 file at base is refused: non-zero, named, nothing pushed, no ticket told', () => {
+    // `trial` now refuses such a file (#1603), so the trial opens on UTF-8 text
+    // and the manifest's base is pointed at a later commit that is not.
     const suite = makeSuite();
-    const abs = path.join(suite.repo, REF_FILE);
-    const latin1 = Buffer.from('// caf\xe9 \xff\xfe\n', 'latin1');
-    fs.writeFileSync(abs, Buffer.concat([fs.readFileSync(abs), latin1]));
-    git(suite.repo, 'commit', '-q', '-am', 'a Latin-1 comment');
-    git(suite.repo, 'push', '-q', 'origin', 'main');
     const h = harness({
       results: report({ card: 'flaky', event: 'flaky', v2: 'flaky' }),
     });
@@ -2468,6 +2465,13 @@ describe('verdict --apply refuses a test file it cannot restore byte for byte', 
         { run: h.run, env: JIRA_ENV },
       ).code,
     ).toBe(0);
+    const abs = path.join(suite.repo, REF_FILE);
+    const latin1 = Buffer.from('// caf\xe9 \xff\xfe\n', 'latin1');
+    fs.writeFileSync(abs, Buffer.concat([fs.readFileSync(abs), latin1]));
+    git(suite.repo, 'commit', '-q', '-am', 'a Latin-1 comment');
+    git(suite.repo, 'push', '-q', 'origin', 'main');
+    const base = git(suite.repo, 'rev-parse', 'HEAD');
+    h.state.body = `edited\n\n${embedManifest({ ...readManifest(h.state.body!)!, base })}\n`;
     const head = git(suite.origin, 'rev-parse', 'canary/trial');
     const r = callMain(
       [
@@ -2520,5 +2524,65 @@ describe('verdict --apply refuses a test file it cannot restore byte for byte', 
       spawnSync('git', ['-C', suite.origin, 'show', `${rev}:${REF_FILE}`])
         .stdout as Buffer;
     expect(blob('canary/trial').equals(blob('main'))).toBe(true);
+  });
+});
+
+describe('trial refuses a lifted file it cannot rewrite byte for byte', () => {
+  // #1603: the lift read the file as UTF-8 and wrote it back, so a byte that is
+  // not valid UTF-8 (a Latin-1 comment) came back as U+FFFD and the trial commit
+  // changed more than the marker.
+  const commitTail = (repo: string, tail: Buffer) => {
+    const abs = path.join(repo, REF_FILE);
+    fs.writeFileSync(abs, Buffer.concat([fs.readFileSync(abs), tail]));
+    git(repo, 'commit', '-q', '-am', 'a comment');
+    git(repo, 'push', '-q', 'origin', 'main');
+  };
+  const trialYes = (repo: string, h: ReturnType<typeof harness>) =>
+    callMain(
+      ['trial', '--repo', repo, '--yes', '--branch', 'canary/trial', '--json'],
+      { run: h.run, env: JIRA_ENV },
+    );
+  const trialBlob = (origin: string) =>
+    spawnSync('git', ['-C', origin, 'show', `canary/trial:${REF_FILE}`])
+      .stdout as Buffer;
+
+  it('a non-UTF-8 file is listed as not liftable, and nothing is pushed', () => {
+    const { repo, origin } = makeSuite();
+    commitTail(repo, Buffer.from('// caf\xe9 \xff\xfe\n', 'latin1'));
+    const h = harness();
+    const r = trialYes(repo, h);
+    expect(r.code).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.abstained).toBe(true);
+    expect(doc.lifts).toEqual([]);
+    expect(doc.refused).toHaveLength(3);
+    for (const x of doc.refused) {
+      expect(x.file).toBe(REF_FILE);
+      expect(x.why).toMatch(/not UTF-8 text/);
+    }
+    expect(branches(origin)).toBe('main');
+    expect(h.calls.some((c) => c.args[0] === 'pr')).toBe(false);
+  });
+
+  it('the plain plan names the file and why it is not lifted', () => {
+    const { repo } = makeSuite();
+    commitTail(repo, Buffer.from('// caf\xe9\n', 'latin1'));
+    const r = callMain(['trial', '--repo', repo], {
+      run: harness().run,
+      env: JIRA_ENV,
+    });
+    expect(r.stdout).toContain(REF_FILE);
+    expect(r.stdout).toMatch(/not UTF-8 text/);
+  });
+
+  it('a UTF-8 file with multi-byte text changes only its markers', () => {
+    const plain = makeSuite();
+    expect(trialYes(plain.repo, harness()).code).toBe(0);
+    const tail = Buffer.from('// café \u{1F426} ﻿\n', 'utf8');
+    const multi = makeSuite();
+    commitTail(multi.repo, tail);
+    expect(trialYes(multi.repo, harness()).code).toBe(0);
+    const expected = Buffer.concat([trialBlob(plain.origin), tail]);
+    expect(trialBlob(multi.origin).equals(expected)).toBe(true);
   });
 });
