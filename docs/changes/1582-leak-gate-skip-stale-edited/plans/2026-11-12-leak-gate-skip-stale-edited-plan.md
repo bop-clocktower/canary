@@ -79,3 +79,30 @@ The test also checks that there is no job-level `if:`, that the decide step is
 at index 0 with no `if:` and no `continue-on-error`, and that only the fetch and
 scan steps are gated. `ts/test/leak-gate-workflow.test.ts`, which holds the
 safety invariants, is unchanged and still green.
+
+## Revision 2: live head-commit lookup (review M1, S1, S2)
+
+pr-fleet code review found M1, S1 and S2; the human chose HOLD + fix.
+
+- **M1.** The check run attaches to the head commit, and another open PR can
+  share it (open PR B from red PR A's branch, close B, edit B). The payload's
+  `pull_request.state` alone could therefore paint green onto a head an open PR
+  still needs scanned. Before skipping, `decide` calls
+  `gh api --paginate repos/{repo}/commits/{head_sha}/pulls` and skips only on a
+  readable answer of zero open PRs. Any API error, malformed head SHA or
+  unreadable answer scans.
+- **S1.** A re-run replays the original payload after a reopen. The live lookup
+  covers it.
+- **S2.** A workflow `concurrency` group, keyed per PR number (per commit on
+  push), with `cancel-in-progress: false`, so an older skip run cannot finish
+  after a newer scan of the same head.
+- **Permissions.** Adds `pull-requests: read` for that one lookup. There is no
+  write scope. `ts/test/leak-gate-workflow.test.ts` rule 5 now pins exactly
+  `{contents: read, pull-requests: read}`.
+- **Tests (written first, 9 failed / 25 passed against af448891).** These cover:
+  zero open PRs skips; an open PR sharing the head scans; a non-zero later page
+  scans; an API error scans; empty, null, non-numeric, multi-token or negative
+  answers scan; a missing or malformed SHA scans with no API call; open-PR edits
+  and other events never call the API; the env is exactly six expressions; the
+  token is never echoed; and the concurrency group is keyed per PR and per
+  commit, never cancelling.
