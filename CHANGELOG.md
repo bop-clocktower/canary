@@ -25,7 +25,11 @@ under the project's former name) are documented in the
   tag stops. Rows that match no skipped result are listed in the push output. A
   missing or unreadable ledger makes the push exit 1 with nothing sent, and
   makes the reporter warn. The dashboard has to read the tag before its UI shows
-  the test as quarantined.
+  the test as quarantined. A `quarantine:<issue>` tag follows the `reason:` tag
+  rule: whitespace collapsed, redacted, cut to 100 characters, and a blank issue
+  gets no tag (#1589). In a checkout, katana's ledger reader is loaded from the
+  repo's `agents/skills` before the gitignored `npm/agents` copy a build stages,
+  so a stale build no longer shadows edits to it (#1588).
 - **`canary testtracker push-perf` (#1580).** Pushes a k6 `handleSummary` run to
   TestTracker's `/api/v1/tenants/<client>/perf-reports` with the client's `tt_`
   ingest token: every threshold as an objective (raw sub-metric, raw expression,
@@ -40,8 +44,104 @@ under the project's former name) are documented in the
   requests and 0 iterations abstains (exit 3); more than 2,000 thresholds or a
   body over 2 MiB is refused rather than truncated.
 
+### Security
+
+- **`refresh-arch-baseline.yml` no longer runs registry or PR-head code under a
+  write token (#1463, CWE-250).** The one `refresh` job is now three. `measure`
+  runs the CLI and the refresh script read-only, with no token left in the
+  checkout. `push` holds only `contents: write`, copies the two expected regular
+  files from an artifact, and refuses a stale commit. `consume-label` holds only
+  `pull-requests: write`. A read failure on the branch check now fails the run
+  instead of reading as "branch deleted". Before it copies anything, `push`
+  checks the artifact's bytes: the baseline must be exactly one JSON object
+  whose metric values are finite numbers, with an ISO 8601 UTC `updatedAt` that
+  is a real date and a commit-hash `updatedFrom`, byte for byte as jq renders
+  it, and changing nothing but metric values and those two stamps. The
+  `audit.log` must be an append to the PR's. (This entry was listed under 9.6.0
+  by mistake; it landed after that release, in #1537.)
+
+### Changed
+
+- **The session siren judges marketplace freshness against origin's live HEAD
+  (#1599).** Check 3 used the age of the clone's `FETCH_HEAD`, which the remedy
+  it named (`claude plugin marketplace update`) does not write, so the finding
+  outlived its own fix. It now compares the clone's `HEAD` with
+  `git ls-remote origin HEAD` and names `git -C <clone> pull --ff-only` as the
+  remedy. Check 4b compares the installed plugin's `gitCommitSha` with the same
+  live tip, which replaces the #1495 fetch-age abstention. **Every session start
+  now makes one network call**, killed after `CANARY_SIREN_LS_REMOTE_TIMEOUT`
+  seconds (default 3). An `ls-remote` that fails, times out or returns no HEAD
+  reports one finding that marketplace freshness and installed-plugin staleness
+  are unverifiable, so an offline machine sees that finding at every session
+  start.
+
 ### Fixed
 
+- **The session siren no longer reports a timed-out `ls-remote` as offline
+  (#1609).** The watchdog now writes a marker file before it kills `ls-remote`,
+  and the hook reads that marker. Asking whether the watchdog process was still
+  alive misread a real timeout under load as
+  `failed (offline, or origin unreachable)`.
+- **`canary rewind` says how many requested attempts it did not count (#1584).**
+  An attempt with no readable status (a runner crash, or a timeout that wrote no
+  report) was dropped silently, so `--repeat 5` with one failure and four
+  unreadable attempts printed `reproduced (1 of 1 attempts failed)`. The result
+  line now appends
+  `N of M requested attempts not counted: unreadable, skipped or pending`, and
+  `--json` carries `dropped` beside `attempts` (always present, `0` when every
+  attempt counted). The outcome is still classified from the attempts that ran
+  the test.
+- **The guardian API delta applies path-item-level OpenAPI parameters (#1290).**
+  Each operation is now compared on its effective parameters: the path's
+  `parameters` apply to every operation under it, and an operation parameter
+  with the same `name` and `in` overrides one. Retyping a shared path parameter
+  used to read as no API change. `$ref` parameters are still compared
+  unresolved, and global `security` and the `trace` method are still ignored;
+  #1290 stays open for them.
+- **`canary guardian pr-check --post-comment` with no `GITHUB_TOKEN` degrades
+  instead of sending an empty bearer token (#1445).** The client refuses before
+  any request, and the run prints a `::warning::` naming `GITHUB_TOKEN`, then
+  writes the verdict to the job log and step summary; the exit code is the
+  computed verdict. The briefing comment degrades the same way, with a notice
+  that `GITHUB_TOKEN` is not set instead of an opaque 401.
+- **`canary-unquarantine verdict --apply` refuses a test file that is not UTF-8
+  text at the trial's base (#1573).** It used to restore such a file through a
+  UTF-8 decode and push the changed bytes at exit 0. The whole `--apply` now
+  exits 1 before anything is pushed or any ticket is told. A file that really
+  contains U+FFFD is refused too.
+- **`canary-unquarantine trial` refuses to lift a marker in a test file that is
+  not UTF-8 text (#1603).** The lift rewrote the whole file as UTF-8, so the
+  trial commit changed more than the marker. The row is listed as not liftable
+  with the reason, and trial and settle share one rule, so a trial never opens a
+  PR the settle would refuse.
+- **`canary-unquarantine verdict` no longer leaves an `unquarantine-results-*`
+  directory in the OS temp dir (#1574),** after a read, an `--apply`, or a
+  failed download. Directories already left behind are not removed. The plain
+  report now prints a note that was not posted under its `NOT told` line, as
+  `--json` already did (#1576).
+- **`canary ci-ready` stops scoring a deleted test file's flakiness history
+  (#1500, #1561).** A deleted test kept failing the check, on PRs that never
+  touched it, until it aged out of the 30-run window. Its rows now retire before
+  they are tallied, but only when six guards hold: the file is not in the
+  inventory, its name is one the inventory collects, another file in that
+  directory and suite window is listed, live files there at least match the
+  missing ones, it did not run after the inventory was generated, and it is
+  absent from the working tree under `--root`. The reason line names what
+  retired, and `--json` adds `retirement` (`retired`, `kept` with the guard that
+  kept each file, `title_matches`, `unmatched_rows`). A retired title that still
+  has rows from a live file, such as a renamed file, stays retired with a
+  warning. With no usable inventory or no working tree checked, retirement is
+  not applied and the output says so. A test deleted from a surviving file, rows
+  with no `test_file` and the last file in a directory still score until they
+  age out. Rules: `docs/guides/test-inventory.md`.
+- **The Leak Gate no longer re-scans a PR that is not open when its title or
+  body is edited (#1582).** Such an `edited` run scanned an old head against
+  today's denylist and could go red on a PR nobody can change. It now skips the
+  scan only for an `edited` event on a PR that is not open, and only when the
+  API answers that no open PR contains the head commit; any error or unreadable
+  answer scans. The job still finishes, so the required check is reported. The
+  workflow gains `pull-requests: read` for that lookup and a concurrency group
+  per PR (per commit on `push`) that never cancels a running scan.
 - **`canary doctor` now warns about an overlay that has not been fetched in 7
   days (#1324).** `overlay:<name>:fresh` used to pass any clone that was zero
   commits behind its local tracking ref, even one last fetched weeks ago or
@@ -131,13 +231,6 @@ under the project's former name) are documented in the
 
 ### Security
 
-- **`refresh-arch-baseline.yml` no longer runs registry or PR-head code under a
-  write token (#1463, CWE-250).** The one `refresh` job is now three. `measure`
-  runs the CLI and the refresh script read-only, with no token left in the
-  checkout. `push` holds only `contents: write`, copies the two expected regular
-  files from an artifact, and refuses a stale commit. `consume-label` holds only
-  `pull-requests: write`. A read failure on the branch check now fails the run
-  instead of reading as "branch deleted".
 - **`canary-unquarantine verdict --apply` checks the trial manifest against the
   default branch (#1496).** It tells only a ticket the row names there, lists a
   hand-off leaf for a person with no comment or re-point, and refuses a blocker
@@ -147,9 +240,10 @@ under the project's former name) are documented in the
   **This narrows code execution on your machine and does not end it.** A symlink
   on a trial branch can still run code during `--apply`, so only run it on a
   trial you trust; #1562 tracks refusing such a path and #1560 tracks never
-  checking out the trial tree. `--apply` can also corrupt a non-UTF-8 test file
-  it restores from the trial's base commit (#1573), and some manifest fields are
-  still unchecked (#1549).
+  checking out the trial tree. In this release `--apply` can also corrupt a
+  non-UTF-8 test file it restores from the trial's base commit (#1573; fixed
+  since by #1605, under Unreleased: the settle now refuses such a file), and
+  some manifest fields are still unchecked (#1549).
 
 - **`@hono/node-server` bumped to 2.1.6 (GHSA-rmxm-3fg6-px4f).** The transitive
   dependency (via `@modelcontextprotocol/sdk`) moves in both the `ts/` and
@@ -276,6 +370,8 @@ under the project's former name) are documented in the
 - **Session siren check 4b compares against origin, not an unfetched HEAD
   (#1495).** It now uses the clone's `origin/<branch>` and abstains loudly when
   the clone's last fetch is over a day old or missing, instead of passing.
+  _Superseded by #1604, under Unreleased: check 4b now compares against origin's
+  live HEAD from `git ls-remote`, and the fetch-age abstention is gone._
 
 - **Named-secret redaction no longer garbles its own placeholders (#1400).**
   `buildPayload` redacts every failure field twice, and the second pass replaced

@@ -72,7 +72,12 @@ name from the store (`canary history timeline "<name>"` lists runs of a test).
    - `network`, `database` and `wall-clock` are always `not-restored`. A test
      that touches any of them can pass or fail for reasons the replay cannot
      see.
-4. **State the outcome with its bound.**
+4. **State the outcome with its bound.** Check `dropped` first: the requested
+   attempts the outcome was not built from (an unreadable report, or the test
+   skipped or pending), out of `attempts`. When `dropped > 0`, say how many
+   requested attempts were not counted beside the outcome, and treat the outcome
+   as weaker evidence than one counted over every attempt. A `reproduced` from 1
+   of 1 counted attempts out of 5 requested is one failure, not five.
    - `reproduced`: the failure is real at that commit, within the restored
      dimensions. Point at the nearest green run and its commit range as where to
      look.
