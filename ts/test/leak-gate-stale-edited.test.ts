@@ -184,7 +184,7 @@ describe('a skip still reports the required check as passing (#1582)', () => {
     expect(job().if).toBeUndefined();
   });
 
-  it('the decide step runs first and unconditionally, and cannot be ignored', () => {
+  it('the decide step sits at index 0, is unconditional, and cannot be ignored', () => {
     const d = decideStep();
     expect(steps()[0]?.id).toBe('decide');
     expect(d.if).toBeUndefined();
