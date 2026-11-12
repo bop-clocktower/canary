@@ -92,6 +92,20 @@ describe('postCharter (criteria 6, 10)', () => {
     }
   });
 
+  it('a missing GITHUB_TOKEN degrades naming it, without calling fetch (#1445)', async () => {
+    const spy = vi.fn();
+    vi.stubGlobal('fetch', spy);
+    try {
+      const r = await postCharter(new RestGitHubClient('o/r', 1, ''), 'c');
+      expect(r.kind === 'degraded' ? r.notice : r.kind).toMatch(
+        /^canary briefing: could not post .*GITHUB_TOKEN is not set/,
+      );
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('degrades on any other client error rather than throwing', async () => {
     const broken = new FakeGitHubClient();
     broken.listComments = async () => {
