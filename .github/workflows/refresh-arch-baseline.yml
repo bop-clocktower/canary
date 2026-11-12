@@ -20,7 +20,7 @@ concurrency:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@13'
+  HARNESS_CLI: '@harness-engineering/cli@14'
 
 # #1463 (CWE-250): read-only by default. `measure` runs a floating
 # `@harness-engineering/cli` and a script from the PR's own head, so neither may

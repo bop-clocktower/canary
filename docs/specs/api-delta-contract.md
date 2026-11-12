@@ -65,6 +65,11 @@ created: 2026-07-01
   An operation whose only delta is non-contract (summary/description/tags) has
   an empty `changes[]` but still appears under `changed`.
 
+  `params` compares an operation's **effective** parameters: path-item-level
+  `parameters` apply to every operation on that path, and an operation parameter
+  with the same `name` + `in` overrides the path-level one. So retyping a
+  path-level parameter is a `params` change on each operation under the path.
+
 ## Consumers
 
 The artifact is generic — it names only HTTP methods, paths, and change

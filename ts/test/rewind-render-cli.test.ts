@@ -106,6 +106,29 @@ describe('renderRewind: text result line', () => {
   it('carries no flakiness hand-off on a reproduced result', () => {
     expect(renderRewind(report(), false)).not.toContain('Intermittent:');
   });
+
+  // #1584: one failure plus four unreadable attempts classifies as reproduced
+  // from one attempt; the line must not read as if all five were counted.
+  it('discloses requested attempts that were not counted', () => {
+    const lines = text(report({ attempts: 5, statuses: ['failed'] }));
+    expect(lines).toContain(
+      'Result: reproduced (1 of 1 attempts failed; 4 of 5 requested attempts not counted: unreadable, skipped or pending)',
+    );
+  });
+
+  it('counts a skipped attempt among the ones not counted', () => {
+    const statuses = ['failed', 'skipped'];
+    const lines = text(report({ attempts: 3, statuses }));
+    expect(lines).toContain(
+      'Result: reproduced (1 of 1 attempts failed; 2 of 3 requested attempts not counted: unreadable, skipped or pending)',
+    );
+  });
+
+  it('adds nothing when every requested attempt was counted', () => {
+    expect(text(report())).toContain(
+      'Result: reproduced (3 of 3 attempts failed)',
+    );
+  });
 });
 
 describe('renderRewind: text nearest green', () => {
@@ -148,6 +171,22 @@ describe('renderRewind: text nearest green', () => {
 });
 
 describe('renderRewind: JSON', () => {
+  it.each([
+    [3, ['failed', 'failed', 'failed'], 0],
+    [5, ['failed'], 4],
+    [3, ['failed', 'pending'], 2],
+    [3, [], 3],
+  ])(
+    '%i attempts with statuses %j reports %i dropped (#1584)',
+    (attempts, statuses, dropped) => {
+      const payload = JSON.parse(
+        renderRewind(report({ attempts, statuses }), true),
+      ) as Record<string, unknown>;
+      expect(payload['attempts']).toBe(attempts);
+      expect(payload['dropped']).toBe(dropped);
+    },
+  );
+
   it('reports a null nearest green and null recorded fields when absent', () => {
     const payload = JSON.parse(renderRewind(report(), true)) as unknown;
     expect(payload).toMatchObject({

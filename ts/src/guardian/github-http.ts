@@ -118,6 +118,22 @@ function knownNetworkCode(value: unknown): string | null {
 }
 
 /**
+ * A REST client was built with an empty token (#1445): it refuses to send
+ * `Authorization: Bearer ` and names the missing credential instead of letting
+ * GitHub answer with an opaque 401. `notice` is the sticky upsert's degrade text.
+ */
+export class MissingTokenError extends Error {
+  readonly notice =
+    'guardian: GITHUB_TOKEN is not set — findings not posted as a comment; set GITHUB_TOKEN to post them';
+  constructor() {
+    super(
+      'GITHUB_TOKEN is not set; refusing to call the GitHub API without it',
+    );
+    this.name = 'MissingTokenError';
+  }
+}
+
+/**
  * A request that never got an HTTP answer (#1478). Like a 5xx it says nothing
  * about the diff, so `upsertStickyComment` degrades it to a notice.
  */

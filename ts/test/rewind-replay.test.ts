@@ -412,6 +412,37 @@ describe('runRewind: replay', () => {
     expect(existsSync(dirname(runCalls[0]!.cwd))).toBe(false);
   });
 
+  /** First attempt fails; the rest write no report (a crash or timeout). */
+  function failThenUnreadable(): Harness {
+    const h = harness([failingRun()], ['failed']);
+    const fake = h.deps.exec;
+    let runs = 0;
+    h.deps.exec = async (cmd, args, execOpts) => {
+      if (args[0] === 'ci' || runs++ === 0) return fake(cmd, args, execOpts);
+      return { code: 1, output: 'runner crashed' };
+    };
+    return h;
+  }
+
+  it('#1584: one failure plus unreadable attempts discloses the dropped ones in text', async () => {
+    const h = failThenUnreadable();
+    expect(await runRewind(opts({ repeat: 5 }), h.deps)).toBe(0);
+    expect(h.out.join('\n')).toContain(
+      'Result: reproduced (1 of 1 attempts failed; 4 of 5 requested attempts not counted: unreadable, skipped or pending)',
+    );
+  });
+
+  it('#1584: one failure plus unreadable attempts discloses the dropped ones in JSON', async () => {
+    const h = failThenUnreadable();
+    expect(await runRewind(opts({ repeat: 5, json: true }), h.deps)).toBe(0);
+    expect(JSON.parse(h.out.join('\n'))).toMatchObject({
+      attempts: 5,
+      statuses: ['failed'],
+      dropped: 4,
+      outcome: 'reproduced',
+    });
+  });
+
   it('criterion 8: an intermittent result carries the flakiness hand-off', async () => {
     const h = harness([failingRun()], ['failed', 'passed', 'failed']);
     expect(await runRewind(opts(), h.deps)).toBe(0);
