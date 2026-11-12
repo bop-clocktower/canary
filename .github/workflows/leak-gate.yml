@@ -33,10 +33,24 @@ on:
     branches:
       - main
 
-# contents: read only. Neither script calls the API, and fetching the head
-# commit of this public repo needs no broader scope (#948 security review).
+# Read-only scopes. Neither scan script calls the API, and fetching the head
+# commit of this public repo needs only contents: read (#948 security review).
+# pull-requests: read serves one API read: the decide step's lookup of which
+# PRs contain the head commit (#1582). No write scope, ever.
 permissions:
   contents: read
+  pull-requests: read
+
+# #1582. Runs for one PR queue instead of racing, so an older skip run cannot
+# finish after (and paint over) a newer scan of the same head. Never cancels a
+# running scan. A push is keyed by its own commit, so main's runs never queue
+# behind each other (a pending run in a group is cancelled when another
+# queues).
+concurrency:
+  group: >-
+    leak-gate-${{ github.event_name == 'pull_request_target' && format('pr-{0}',
+    github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   removed-symbols:
@@ -54,10 +68,16 @@ jobs:
       # #1582. `edited` also fires on title/body edits, including edits to a
       # PR that has already merged or closed. Scanning that PR's old head
       # against today's denylist can go red with nothing left to fix. So an
-      # `edited` event skips the scan ONLY when the PR is not open. Every
-      # `edited` event on an open PR still scans, base change or not: a skip
-      # there would record a passing run for a head whose last real scan may
-      # have been red, turning the required check green without a scan.
+      # `edited` event may skip the scan, but ONLY when the PR is not open AND
+      # no open PR contains its head commit:
+      # - Every `edited` event on an open PR scans, base change or not. A skip
+      #   there would record a passing run for a head whose last real scan may
+      #   have been red, turning the required check green without a scan.
+      # - The check run attaches to the head COMMIT, and another open PR can
+      #   share it, so the payload's `pull_request.state` is not enough. A
+      #   re-run also replays the original payload after a reopen. The step
+      #   asks the live API and skips only on a readable answer of zero open
+      #   PRs. Any API error or unreadable answer scans.
       # Gated at STEP level, never with a job-level `if:`: a skipped job
       # reports "skipped", not success, and this job is the required context's
       # only producer. On a skip, checkout and setup-node still run; only the
@@ -69,12 +89,39 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
           PR_STATE: ${{ github.event.pull_request.state }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+          # Read by gh itself. Scoped by the read-only `permissions:` above.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           skip=false
           if [ "$EVENT_NAME" = pull_request_target ] && [ "$EVENT_ACTION" = edited ] && [ "$PR_STATE" != open ]; then
-            skip=true
-            echo "::notice::Leak scan skipped: edit to a PR that is not open (state '$PR_STATE')."
+            if [ "${#HEAD_SHA}" -ne 40 ] || printf '%s' "$HEAD_SHA" | grep -q '[^0-9a-f]'; then
+              echo "::notice::Head SHA is not a full 40-hex SHA; scanning."
+            elif ! counts=$(gh api --paginate "repos/$REPO/commits/$HEAD_SHA/pulls" --jq '[.[] | select(.state == "open")] | length'); then
+              echo "::notice::Could not list the PRs containing the head commit; scanning."
+            else
+              # --paginate prints one count per page. Every line must be a
+              # plain non-negative integer, or the answer is unreadable.
+              open_prs=0
+              readable=false
+              while IFS= read -r n; do
+                case "$n" in
+                  '') continue ;;
+                  *[!0-9]*) readable=false; break ;;
+                  *) readable=true; open_prs=$((open_prs + n)) ;;
+                esac
+              done <<< "$counts"
+              if [ "$readable" != true ]; then
+                echo "::notice::Unreadable answer listing the PRs containing the head commit; scanning."
+              elif [ "$open_prs" -ne 0 ]; then
+                echo "An open PR contains the head commit; scanning."
+              else
+                skip=true
+                echo "::notice::Leak scan skipped: edit to a PR that is not open (state '$PR_STATE'), and no open PR contains its head commit."
+              fi
+            fi
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
