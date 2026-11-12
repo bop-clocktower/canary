@@ -474,7 +474,7 @@ describe('refresh-arch-baseline.yml push job distrusts its input', () => {
     git(work, 'push', '-q', 'origin', `HEAD:refs/heads/${BRANCH}`);
     headSha = git(work, 'rev-parse', 'HEAD');
     real.metrics.complexity!.value += 1;
-    real.updatedAt = new Date().toISOString();
+    real.updatedAt = NEW_AT;
     real.updatedFrom = headSha;
     write(join(src, 'arch/baselines.json'), serialize(real));
     const r = runSteps('push', work);
