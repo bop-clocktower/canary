@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { scratchDir } from './git.mjs';
+import { dropScratch, scratchDir } from './git.mjs';
 
 /** @typedef {{file: string, titlePath: string[], outcome: string}} Case */
 
@@ -208,9 +208,12 @@ export function downloadResults(
     ['run', 'download', String(done.databaseId), '-n', artifact, '-D', dir],
     { cwd: repo },
   );
-  if (dl.status !== 0)
+  if (dl.status !== 0) {
+    dropScratch(dir);
     return {
       why: `run ${done.databaseId} has no artifact "${artifact}": ${(dl.stderr || '').trim()}`,
     };
-  return { dir };
+  }
+  // A copy of CI results: the caller calls `drop` when done, on failure too.
+  return { dir, drop: () => dropScratch(dir) };
 }

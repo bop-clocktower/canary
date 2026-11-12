@@ -173,7 +173,7 @@ function trialCommand(args, run, env) {
 const NO_RESULTS =
   'no results: pass --results PATH or --artifact NAME (a per-test report; the run conclusion alone cannot say which test passed)';
 
-/** Where the trial run's results are: --results, else the CI artifact. */
+/** Where the trial run's results are: --results, else the CI artifact (`drop` removes it). */
 function resultsSource(args, run, trial) {
   if (args.results) return { source: args.results };
   if (!args.artifact) return { why: NO_RESULTS };
@@ -182,7 +182,7 @@ function resultsSource(args, run, trial) {
     ...trial,
     artifact: args.artifact,
   });
-  return dl.why ? dl : { source: dl.dir };
+  return dl.why ? dl : { source: dl.dir, drop: dl.drop };
 }
 
 function verdictAbstained(args, why) {
@@ -203,16 +203,20 @@ function verdictCommand(args, run, env) {
   }
   const trial = loadTrial(run, args.pr, args.repo);
   const where = resultsSource(args, run, trial);
-  const plan = where.why
-    ? { abstain: where.why }
-    : planVerdict(trial, where.source);
-  if (plan.abstain) return verdictAbstained(args, plan.abstain);
-  const comments = args.apply
-    ? applyVerdict(applyInput(args, run, env, trial, plan))
-    : [];
-  const doc = verdictDoc(args, plan, comments);
-  print(args, doc, () => renderVerdict(doc));
-  return verdictExit(args, doc);
+  try {
+    const plan = where.why
+      ? { abstain: where.why }
+      : planVerdict(trial, where.source);
+    if (plan.abstain) return verdictAbstained(args, plan.abstain);
+    const comments = args.apply
+      ? applyVerdict(applyInput(args, run, env, trial, plan))
+      : [];
+    const doc = verdictDoc(args, plan, comments);
+    print(args, doc, () => renderVerdict(doc));
+    return verdictExit(args, doc);
+  } finally {
+    where.drop?.();
+  }
 }
 
 /** What `--apply` acts on; the ledger path is the operator's, never the PR body's. */
