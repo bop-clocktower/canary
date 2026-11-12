@@ -2321,3 +2321,77 @@ describe('verdict --apply refuses a manifest that reaches outside the worktree',
     );
   });
 });
+
+describe('verdict --apply refuses a test file it cannot restore byte for byte', () => {
+  // The runner decodes git output as UTF-8, so a non-UTF-8 blob (a git-crypt
+  // file, a Latin-1 comment) would come back changed and be pushed (#1573).
+  it('a non-UTF-8 file at base is refused: non-zero, named, nothing pushed, no ticket told', () => {
+    const suite = makeSuite();
+    const abs = path.join(suite.repo, REF_FILE);
+    const latin1 = Buffer.from('// caf\xe9 \xff\xfe\n', 'latin1');
+    fs.writeFileSync(abs, Buffer.concat([fs.readFileSync(abs), latin1]));
+    git(suite.repo, 'commit', '-q', '-am', 'a Latin-1 comment');
+    git(suite.repo, 'push', '-q', 'origin', 'main');
+    const h = harness({
+      results: report({ card: 'flaky', event: 'flaky', v2: 'flaky' }),
+    });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    const head = git(suite.origin, 'rev-parse', 'canary/trial');
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        suite.repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/not UTF-8 text.*refusing to settle/);
+    expect(r.stderr).toContain(REF_FILE);
+    expect(git(suite.origin, 'rev-parse', 'canary/trial')).toBe(head);
+    expect(h.calls.some((c) => c.args[0] === 'issue')).toBe(false);
+  });
+
+  it('a UTF-8 file with multi-byte text still restores byte for byte', () => {
+    const suite = makeSuite();
+    const abs = path.join(suite.repo, REF_FILE);
+    fs.appendFileSync(abs, '// café \u{1F426} ﻿\n');
+    git(suite.repo, 'commit', '-q', '-am', 'a UTF-8 comment');
+    git(suite.repo, 'push', '-q', 'origin', 'main');
+    const h = harness({
+      results: report({ card: 'flaky', event: 'flaky', v2: 'flaky' }),
+    });
+    callMain(
+      ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+      { run: h.run, env: JIRA_ENV },
+    );
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        suite.repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    expect(r.stderr).toBe('');
+    const blob = (rev: string) =>
+      spawnSync('git', ['-C', suite.origin, 'show', `${rev}:${REF_FILE}`])
+        .stdout as Buffer;
+    expect(blob('canary/trial').equals(blob('main'))).toBe(true);
+  });
+});

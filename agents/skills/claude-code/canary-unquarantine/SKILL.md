@@ -332,12 +332,11 @@ not, so a trial branch can still run code during the settle that way. Only run
 therefore unsigned and unchecked by your hooks; a person reviews it. With
 filters off, files are rebuilt from their stored blobs, so a pointer file goes
 back unchanged. A ledger stored encrypted, or an encrypted test file on a
-passing lift, can't be read and the settle stops. On a flaky, missing or failing
-lift the test file is restored from `base` without being read, so a binary one
-is corrupted and pushed (#1573); only a failing lift whose ticket is named
-solely in its comment is refused first. The push runs from your own repository,
-so `credential.helper` and `core.sshCommand` work as usual and a relative one
-resolves there.
+passing lift, can't be read and the settle stops. A test file that is not UTF-8
+text at `base` (an encrypted or binary one) is refused whatever its lift's
+outcome, before anything is pushed: it could not be restored byte for byte. The
+push runs from your own repository, so `credential.helper` and `core.sshCommand`
+work as usual and a relative one resolves there.
 
 What this check does not establish:
 
