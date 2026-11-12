@@ -15,7 +15,7 @@
 // The trial's plan travels in the PR body (an HTML comment), so `verdict`
 // needs nothing but the PR number.
 
-import { must, readAt, withWorktree, writeLifts } from './git.mjs';
+import { must, notUtf8, readAt, withWorktree, writeLifts } from './git.mjs';
 import { embedManifest, planLift } from './lift.mjs';
 import { jiraReach } from './refs.mjs';
 
@@ -41,12 +41,19 @@ export function selectRows(result, { includeAbstained = false } = {}) {
   return [...byMarker.values()];
 }
 
+// The lift reads and writes the file as UTF-8, so other bytes would change (#1603).
+const NOT_UTF8 =
+  'not UTF-8 text (encrypted or binary?): lifting its marker would rewrite the rest of the file';
+
 /** Plan every lift against the files at `root`; rows that cannot be lifted are set aside with the reason. */
 export function planTrial(root, rows, tags) {
   const lifts = [];
   const refused = [];
   for (const r of rows) {
-    const plan = planLift(readAt(root, r.file).split('\n'), r, tags);
+    const text = readAt(root, r.file);
+    const plan = notUtf8(text)
+      ? { why: NOT_UTF8 }
+      : planLift(text.split('\n'), r, tags);
     if ('why' in plan)
       refused.push({ test: r.test, file: r.file, why: plan.why });
     else lifts.push({ ...r, edits: plan.edits });

@@ -20,6 +20,7 @@ import {
   fetchBranchTip,
   insideRepo,
   must,
+  notUtf8,
   withWorktree,
   writeAt,
   writeLifts,
@@ -50,11 +51,10 @@ function rewriteLedger(work, file, judged) {
  * Refuse a blob the runner could not decode as UTF-8. The runner reads every
  * command's output as UTF-8, and a byte sequence that is not valid UTF-8 comes
  * back as U+FFFD, so writing it would push a changed file (a git-crypt blob, a
- * Latin-1 comment) at exit 0 (#1573). A file that really holds U+FFFD is
- * refused too: loud, and never a corruption.
+ * Latin-1 comment) at exit 0 (#1573).
  */
 function checkUtf8(text, base, file) {
-  if (text.includes('�'))
+  if (notUtf8(text))
     throw new Error(
       `trial file "${file}" at ${base} is not UTF-8 text (encrypted or binary?) and cannot be restored byte for byte; refusing to settle`,
     );
