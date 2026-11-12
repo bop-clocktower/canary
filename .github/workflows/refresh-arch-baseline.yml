@@ -105,8 +105,9 @@ jobs:
       # `.harness/`, so `push` reads `arch/baselines.json` and `audit.log`. Both
       # are tracked. The CLI may append to audit.log, so it travels with the
       # baseline and `push` decides from the diff whether it changed. A PR that
-      # deleted audit.log changes the layout, and `push` refuses that as a
-      # missing entry rather than guess. `ts/test/workflow-hygiene.test.ts`
+      # deleted audit.log leaves one path, so the artifact is rooted at
+      # `.harness/arch/` and holds a bare `baselines.json`. `push` refuses that
+      # as an unexpected entry rather than guess. `ts/test/workflow-hygiene.test.ts`
       # pins the pairing.
       - name: Upload the refreshed baseline
         uses: actions/upload-artifact@v7
@@ -180,16 +181,56 @@ jobs:
               exit 1
             fi
           done
-          # The artifact's content is as untrusted as its shape. A refresh moves
-          # metric values and its own provenance stamps, so anything else that
-          # differs did not come from the refresh script. This holds the #689
-          # rule (no violation is banked) in the job that can push. It cannot
-          # check that a raised value is the measured one: that is the diff a
-          # reviewer reads on the PR.
+          # The artifact's content is as untrusted as its shape, and `cp` below
+          # copies its raw bytes, so every check here is on those bytes. A
+          # refresh moves metric values and its own provenance stamps, so
+          # anything else that differs did not come from the refresh script.
+          # This holds the #689 rule (no violation is banked) in the job that
+          # can push. It cannot check that a raised value is the measured one:
+          # that is the diff a reviewer reads on the PR.
+          new="$SRC/arch/baselines.json"
+          # Exactly one document. jq runs a filter once per document and `-e`
+          # takes its exit code from the last, so a check without `-s` passes
+          # a file whose valid baseline follows any other JSON value.
+          if ! jq -se 'length == 1 and (.[0] | type == "object")' "$new" > /dev/null 2>&1; then
+            echo "::error::the refreshed baseline is not a single JSON document" >&2
+            exit 1
+          fi
+          # `isfinite` is true for nan, and jq 1.7 reads a bare `nan` as a
+          # number, so both tests are spelled out. JSON.parse reads an
+          # overflowing literal such as 1e1000 as Infinity.
+          if ! jq -e '.metrics | type == "object" and all(.[];
+                 .value | type == "number" and (isnan | not) and (isinfinite | not))' \
+                "$new" > /dev/null; then
+            echo "::error::a refreshed metric value is not a finite number" >&2
+            exit 1
+          fi
+          # The stamps the refresh script writes: `toISOString()` and the
+          # measured commit. A real date, not only its pattern: the round trip
+          # through fromdateiso8601 refuses 2026-02-31.
+          if ! jq -e '.updatedAt | type == "string" and
+                 test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$") and
+                 (sub("[.][0-9]+Z$"; "Z") as $s
+                   | try (($s | fromdateiso8601 | todateiso8601) == $s) catch false)' \
+                "$new" > /dev/null; then
+            echo "::error::the refreshed baseline's updatedAt is not an ISO 8601 UTC date" >&2
+            exit 1
+          fi
+          if ! jq -e '.updatedFrom | type == "string" and test("^([0-9a-f]{40}|[0-9a-f]{64})$")' \
+                "$new" > /dev/null; then
+            echo "::error::the refreshed baseline's updatedFrom is not a commit hash" >&2
+            exit 1
+          fi
+          # The bytes are exactly what jq parsed: the refresh script writes
+          # JSON.stringify(baseline, null, 2) plus a newline, which jq reproduces.
+          # This refuses what jq tolerates and JSON.parse does not, such as a
+          # leading byte-order mark.
+          if ! jq --indent 2 . "$new" | cmp -s - "$new"; then
+            echo "::error::the refreshed baseline is not byte-for-byte the JSON it parses to" >&2
+            exit 1
+          fi
           shape='del(.updatedAt, .updatedFrom) | .metrics |= map_values(del(.value))'
-          if ! jq -e '.metrics | all(.[]; .value | type == "number")' \
-                "$SRC/arch/baselines.json" > /dev/null ||
-             [ "$(jq -S "$shape" "$SRC/arch/baselines.json")" != \
+          if [ "$(jq -S "$shape" "$new")" != \
                "$(jq -S "$shape" .harness/arch/baselines.json)" ]; then
             echo "::error::the refreshed baseline changes more than metric values" >&2
             exit 1
@@ -199,7 +240,7 @@ jobs:
             echo "::error::the refreshed audit.log is not an append to the PR's" >&2
             exit 1
           fi
-          cp -- "$SRC/arch/baselines.json" .harness/arch/baselines.json
+          cp -- "$new" .harness/arch/baselines.json
           cp -- "$SRC/audit.log" .harness/audit.log
 
       - name: Commit & push the refreshed baseline
@@ -209,11 +250,12 @@ jobs:
         run: |
           # No change is a FAILURE, not a success (#634). The label was applied
           # because a refresh was wanted, so a run that changed nothing has not
-          # done what it was asked — and with the opt-in above passed through,
-          # "declined to write" is off the table, leaving either a baseline that
-          # was already current (the label was unnecessary) or a CLI that
-          # refused for a reason worth a human's eyes. Both need reporting; the
-          # old `exit 0` reported neither.
+          # done what it was asked. The refresh script reports its own refusals
+          # in `measure` (exit 1 when nothing needed refreshing, exit 3 when it
+          # abstained), and this job never runs after either. It exits 0 only
+          # after writing a freshly stamped baseline, so an unchanged file here
+          # means the artifact is not what the script wrote. That needs
+          # reporting; the old `exit 0` hid it.
           #
           # The guard names the INTENDED artifact, not any artifact (#749).
           # It previously watched the whole `.harness/arch/` directory, which
@@ -224,12 +266,12 @@ jobs:
           # baseline". Watching baselines.json specifically is what makes the
           # guard able to fail for the reason it exists.
           #
-          # `git status --porcelain` rather than `git diff`, so a file that is
-          # new rather than modified still counts.
+          # The restore step refuses a baseline the checkout lacks, so the file
+          # here is always tracked and this asks only whether it was modified.
           if [ -z "$(git status --porcelain -- .harness/arch/baselines.json)" ]; then
             echo "::error::baselines.json is unchanged, so no refresh happened." \
-              "The refresh step in the measure job exits 0 only after writing the" \
-              "file, so it wrote back what this commit already holds. Read that" \
+              "The refresh step in the measure job exits 0 only after writing a" \
+              "newly stamped file, so the artifact is not what it wrote. Read that" \
               "step's output. The refresh-baseline label is left in place."
             exit 1
           fi
@@ -282,9 +324,11 @@ jobs:
   # that actually refreshed and pushed. On a failed or cancelled run the
   # label stays on the PR as visible evidence that the request is still
   # outstanding, and the operator sees a red job plus an unconsumed label
-  # rather than a green job and a silently-spent opt-in. Re-running the
-  # failed job retries it, unless the branch has moved: a re-run replays the
-  # original event and its SHA, so that case needs the label re-applied.
+  # rather than a green job and a silently-spent opt-in. Re-running only the
+  # failed `push` job retries it within a day: it downloads the artifact
+  # `measure` uploaded, which `retention-days: 1` expires after that. Re-run
+  # all jobs to measure again. Either way a re-run replays the original event
+  # and its SHA, so after the branch has moved the label has to be re-applied.
   #
   # #1463: its own job because it needs a scope `push` does not, and it needs
   # no checkout at all. A failed removal is a warning: the baseline is already

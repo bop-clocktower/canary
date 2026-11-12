@@ -49,16 +49,38 @@ const BRANCH = 'feat/some-pr';
 const BASELINE = '.harness/arch/baselines.json';
 const AUDIT = '.harness/audit.log';
 
-/** A baseline as the refresh script reads it, with one metric at `value`. */
-const baseline = (value: unknown, stamp: string, ids = ['v1']): string =>
-  `${JSON.stringify({
-    version: 1,
-    updatedAt: stamp,
-    updatedFrom: stamp,
-    metrics: { complexity: { value, violationIds: ids } },
-  })}\n`;
-const OLD_BASELINE = baseline(1, 'old');
-const NEW_BASELINE = baseline(2, 'new');
+/** The bytes the refresh script writes: `JSON.stringify(doc, null, 2)` + LF. */
+const serialize = (doc: unknown): string => `${JSON.stringify(doc, null, 2)}\n`;
+
+const OLD_AT = '2026-01-01T00:00:00.000Z';
+const NEW_AT = '2026-11-12T08:30:00.123Z';
+
+/**
+ * A baseline with one metric at `value`, stamped as the refresh script stamps
+ * it: `updatedAt` from `toISOString()`, `updatedFrom` the measured commit.
+ * `from` defaults to `headSha`, so call it after `beforeEach` has set that.
+ * `OLD_BASELINE` carries valid stamps too, so an artifact equal to it reaches
+ * the #634 no-change guard instead of being refused by the content checks.
+ */
+const baselineDoc = (
+  value: unknown,
+  { at = NEW_AT as unknown, from = undefined as unknown, ids = ['v1'] } = {},
+): Record<string, unknown> => ({
+  version: 1,
+  updatedAt: at,
+  updatedFrom: from === undefined ? headSha : from,
+  metrics: { complexity: { value, violationIds: ids } },
+});
+const baseline = (...args: Parameters<typeof baselineDoc>): string =>
+  serialize(baselineDoc(...args));
+const OLD_BASELINE = serialize({
+  version: 1,
+  updatedAt: OLD_AT,
+  updatedFrom: 'a'.repeat(40),
+  metrics: { complexity: { value: 1, violationIds: ['v1'] } },
+});
+/** The default artifact: the refresh raised the one metric from 1 to 2. */
+let NEW_BASELINE: string;
 
 let dir: string;
 let origin: string;
@@ -141,6 +163,7 @@ beforeEach(() => {
   // actions/checkout with `ref: <sha>` leaves a detached HEAD.
   git(work, 'checkout', '-q', '--detach', headSha);
   // The default artifact: the refresh moved the baseline, the CLI left the log.
+  NEW_BASELINE = baseline(2);
   write(join(src, 'arch/baselines.json'), NEW_BASELINE);
   write(join(src, 'audit.log'), 'log\n');
 });
@@ -347,25 +370,118 @@ describe('refresh-arch-baseline.yml push job distrusts its input', () => {
 
   // The artifact comes from a job that ran registry code, so its content has
   // to be checked here, not only in the script that wrote it.
-  it.each([
-    ['banks a violation', baseline(2, 'new', ['v1', 'v2'])],
-    ['drops a violation', baseline(2, 'new', [])],
-    ['sets a non-numeric value', baseline('2', 'new')],
+  //
+  // Each row builds its text lazily, because the stamps name `headSha`.
+  const SINGLE = /not a single JSON document/;
+  const FINITE = /not a finite number/;
+  const STAMP = /updatedAt is not|updatedFrom is not/;
+  const CANON = /not byte-for-byte/;
+  const SHAPE = /more than metric values/;
+  it.each<[string, () => string, RegExp]>([
+    ['banks a violation', () => baseline(2, { ids: ['v1', 'v2'] }), SHAPE],
+    ['drops a violation', () => baseline(2, { ids: [] }), SHAPE],
     [
       'adds a metric',
-      `${JSON.stringify({
-        version: 1,
-        metrics: {
-          complexity: { value: 2, violationIds: ['v1'] },
-          coupling: { value: 9, violationIds: [] },
-        },
-      })}\n`,
+      () => {
+        const doc = baselineDoc(2) as { metrics: Record<string, unknown> };
+        doc.metrics.coupling = { value: 9, violationIds: [] };
+        return serialize(doc);
+      },
+      SHAPE,
     ],
-    ['is not JSON', 'not json\n'],
-  ])('refuses a baseline that %s', (_name, text) => {
-    write(join(src, 'arch/baselines.json'), text);
-    expectRefused(/more than metric values/);
+    ['sets a non-numeric value', () => baseline('2'), FINITE],
+    // jq 1.7 reads a bare `nan` as a number, and `isfinite` is true for it.
+    [
+      'sets a nan value',
+      () => baseline(2).replace('"value": 2', '"value": nan'),
+      FINITE,
+    ],
+    // JSON.parse reads this as Infinity.
+    [
+      'sets an overflowing value',
+      () => baseline(2).replace('"value": 2', '"value": 1e1000'),
+      FINITE,
+    ],
+    // jq answers `-e` from the LAST document only, and `cp` copies them all.
+    ['leads with a number', () => `5\n${baseline(2)}`, SINGLE],
+    [
+      'leads with a string',
+      () => `"arbitrary payload"\n${baseline(2)}`,
+      SINGLE,
+    ],
+    ['leads with an array', () => `[1,2,3]\n${baseline(2)}`, SINGLE],
+    ['leads with an object', () => `{"a":1}\n${baseline(2)}`, SINGLE],
+    ['trails a second baseline', () => `${baseline(2)}${baseline(2)}`, SINGLE],
+    ['is not JSON', () => 'not json\n', SINGLE],
+    ['is empty', () => '', SINGLE],
+    ['is not an object', () => serialize([baselineDoc(2)]), SINGLE],
+    // `updatedAt: "not-a-date"` would put main into `mode=threshold-only`.
+    [
+      'stamps updatedAt with a non-date',
+      () => baseline(2, { at: 'not-a-date' }),
+      STAMP,
+    ],
+    [
+      'stamps updatedAt with an impossible date',
+      () => baseline(2, { at: '2026-02-31T00:00:00.000Z' }),
+      STAMP,
+    ],
+    ['stamps updatedAt with a number', () => baseline(2, { at: 1 }), STAMP],
+    [
+      'drops updatedAt',
+      () => {
+        const doc = baselineDoc(2);
+        delete doc.updatedAt;
+        return serialize(doc);
+      },
+      STAMP,
+    ],
+    [
+      'stamps updatedFrom with a non-hash',
+      () => baseline(2, { from: 'main' }),
+      STAMP,
+    ],
+    [
+      'stamps updatedFrom with a non-string',
+      () => baseline(2, { from: 7 }),
+      STAMP,
+    ],
+    // jq skips a UTF-8 BOM, but JSON.parse fails on it.
+    ['leads with a byte-order mark', () => `﻿${baseline(2)}`, CANON],
+    [
+      'is not formatted as the refresh script writes it',
+      () => `${JSON.stringify(baselineDoc(2))}\n`,
+      CANON,
+    ],
+  ])('refuses a baseline that %s', (_name, text, pattern) => {
+    write(join(src, 'arch/baselines.json'), text());
+    expectRefused(pattern);
     expect(readFileSync(join(work, BASELINE), 'utf8')).toBe(OLD_BASELINE);
+  });
+
+  // The positive control for every row above: the repo's own baseline, raised
+  // the way the refresh script raises it, is accepted byte-for-byte.
+  it('accepts a refresh of the real baseline', () => {
+    const real = JSON.parse(
+      readFileSync(join(REPO_ROOT, BASELINE), 'utf8'),
+    ) as {
+      updatedAt: string;
+      updatedFrom: string;
+      metrics: Record<string, { value: number }>;
+    };
+    write(join(work, BASELINE), serialize(real));
+    git(work, 'commit', '-q', '-am', 'real baseline');
+    git(work, 'push', '-q', 'origin', `HEAD:refs/heads/${BRANCH}`);
+    headSha = git(work, 'rev-parse', 'HEAD');
+    real.metrics.complexity!.value += 1;
+    real.updatedAt = new Date().toISOString();
+    real.updatedFrom = headSha;
+    write(join(src, 'arch/baselines.json'), serialize(real));
+    const r = runSteps('push', work);
+    expect(r.status, r.log).toBe(0);
+    expect(git(origin, 'show', `${BRANCH}:${BASELINE}`)).toBe(
+      serialize(real).trim(),
+    );
   });
 
   it.each([

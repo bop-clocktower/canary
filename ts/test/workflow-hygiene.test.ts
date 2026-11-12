@@ -688,6 +688,18 @@ interface Handoff {
   seed?: Record<string, { tree: string; artifact: string }>;
 }
 
+/** A one-metric baseline, byte-for-byte as the refresh script writes it. */
+const refreshedBaseline = (value: number, updatedAt: string): string =>
+  `${JSON.stringify(
+    {
+      updatedAt,
+      updatedFrom: 'c'.repeat(40),
+      metrics: { m: { value, violationIds: [] } },
+    },
+    null,
+    2,
+  )}\n`;
+
 const HANDOFFS: Handoff[] = [
   {
     file: 'arch-snapshot.yml',
@@ -718,11 +730,12 @@ const HANDOFFS: Handoff[] = [
       'arch/baselines.json': '.harness/arch/baselines.json',
       'audit.log': '.harness/audit.log',
     },
-    // #1463: this restore checks content, so it needs real files on both sides.
+    // #1463: this restore checks content, so it needs real files on both sides,
+    // stamped and formatted as `scripts/refresh-arch-baseline.mjs` writes them.
     seed: {
       'arch/baselines.json': {
-        tree: '{"metrics":{"m":{"value":1,"violationIds":[]}}}\n',
-        artifact: '{"metrics":{"m":{"value":2,"violationIds":[]}}}\n',
+        tree: refreshedBaseline(1, '2026-01-01T00:00:00.000Z'),
+        artifact: refreshedBaseline(2, '2026-11-12T00:00:00.000Z'),
       },
       'audit.log': { tree: 'log\n', artifact: 'log\nmore\n' },
     },
