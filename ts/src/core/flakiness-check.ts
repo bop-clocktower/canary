@@ -23,6 +23,7 @@ import {
   type FlakinessRetirement,
 } from './flake-retirement.js';
 import type { InventoryInput } from './inventory-checks.js';
+import type { WorkingTree } from './working-tree.js';
 import {
   MIN_WINDOW_RUNS,
   NOT_MEASURABLE_NOTE,
@@ -135,10 +136,12 @@ function retiredSuffix(retirement: FlakinessRetirement): string {
 export function scoreFlakyRuns(
   runs: ScoredRun[],
   inventory: InventoryInput,
+  tree: WorkingTree | null,
 ): FlakinessScore {
   const { windows, retirement } = applyRetirement(
     suiteWindows(runs, FLAKY_WINDOW_RUNS),
     inventory,
+    tree,
   );
   // One suite reads exactly as it always has; several name each denominator.
   const check =
@@ -147,10 +150,36 @@ export function scoreFlakyRuns(
   return { check, retirement };
 }
 
+/** Up to {@link MAX_NOTE_FILES} items, then how many more there are. */
+function capped(items: string[], sep: string): string {
+  const more = items.length - MAX_NOTE_FILES;
+  const named = items.slice(0, MAX_NOTE_FILES).join(sep);
+  return more > 0 ? `${named}${sep}and ${more} more` : named;
+}
+
 /**
- * The renderers' lines for what stayed scored or could not be judged. A deleted
- * test that keeps scoring is a false fail, and it should be explainable from
- * the output rather than from this module's docs.
+ * A rename retires the old file's rows while the title lives on (#1561 F2):
+ * the retirement stands by decision, so the output has to say it happened.
+ */
+function titleMatchNote(r: FlakinessRetirement): string[] {
+  if (r.title_matches.length === 0) return [];
+  const named = capped(
+    r.title_matches.map(
+      (m) =>
+        `retired ${m.file} \u{203A} ${m.title}, but the same title exists in ${m.live_files.join(', ')}`,
+    ),
+    '; ',
+  );
+  return [
+    `Flakiness retirement warning: ${r.title_matches.length} retired test(s) share a title with a live file, so a rename may have taken live history with it (${named}).`,
+  ];
+}
+
+/**
+ * The renderers' lines for what stayed scored, could not be judged, or retired
+ * under a title that lives on. A deleted test that keeps scoring is a false
+ * fail, and it should be explainable from the output rather than from this
+ * module's docs.
  */
 export function retirementNotes(r: FlakinessRetirement | null): string[] {
   if (r === null) return [];
@@ -167,19 +196,15 @@ export function retirementNotes(r: FlakinessRetirement | null): string[] {
   }
   if (r.kept.length > 0) {
     // A scoped inventory can leave hundreds here on every run; --json has them all.
-    const named = r.kept
-      .slice(0, MAX_NOTE_FILES)
-      .map((k) => `${k.file}: ${k.why}`)
-      .join(', ');
-    const more =
-      r.kept.length > MAX_NOTE_FILES
-        ? `, and ${r.kept.length - MAX_NOTE_FILES} more`
-        : '';
+    const named = capped(
+      r.kept.map((k) => `${k.file}: ${k.why}`),
+      ', ',
+    );
     notes.push(
-      `Flakiness retirement: ${r.kept.length} file(s) missing from the inventory stayed scored (${named}${more}).`,
+      `Flakiness retirement: ${r.kept.length} file(s) missing from the inventory stayed scored (${named}).`,
     );
   }
-  return notes;
+  return [...notes, ...titleMatchNote(r)];
 }
 
 /** The worst of a set of signals; a tie keeps the first seen. */

@@ -103,14 +103,21 @@ states the window, and when every run in it came from the vitest reader (which
 has no `flaky` status) it adds `retry flakes not measurable` so a structural
 zero is never read as a measured one.
 
-Since #1500 rows from a deleted test file **retire** when the inventory shows
-the file is gone: not listed, a file name the inventory collects, and a live
-sibling in the same directory. The reason line names what retired and `--json`
-carries `retirement.retired`. Retirement is file-level, so a test deleted from a
-surviving file, rows with no `test_file`, and the last file in a directory keep
-scoring until they age out; that is a false fail, not a false green. With no
-usable inventory every row scores as before and the output says retirement was
-not applied. Rules: `docs/guides/test-inventory.md`.
+Since #1500 rows from a deleted test file **retire**. A file retires only when
+all six guards hold: it is not in the inventory (a `skipped` entry counts as
+present); its name is one the inventory collects; another file in the same
+directory and suite window is listed; live files in that directory at least
+match the missing ones; it did not run after the inventory's `generated` time;
+and (#1561) it is also absent from the working tree, so a stale inventory,
+another package's same-named file, a bare stored name or a symlinked test cannot
+retire a test that is on disk. The reason line names what retired, the output
+warns when a retired title still lives in another file (a rename, which does
+take that file's old history with it), and `--json` carries `retirement` with
+`retired`, `kept`, `title_matches` and `unmatched_rows`. Retirement is
+file-level, so a test deleted from a surviving file, rows with no `test_file`,
+and the last file in a directory keep scoring until they age out (a false fail).
+With no usable inventory every row scores as before and the output says
+retirement was not applied. Rules: `docs/guides/test-inventory.md`.
 
 A quarantined test is acceptable only when it has a linked open issue (Jira or
 GitHub). Classify the katana ledger (`.canary/quarantine.json`) with

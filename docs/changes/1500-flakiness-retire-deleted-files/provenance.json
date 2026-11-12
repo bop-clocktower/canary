@@ -1,5 +1,5 @@
 {
-  "issues": [1500],
+  "issues": [1500, 1561],
   "route": "bug",
   "stages": ["debugging"],
   "reproducingTest": "ts/test/ci-ready-retired-files.test.ts",
@@ -19,6 +19,13 @@
     "retired entries also carry suite and axis, beyond the issue's file, title and rate; rate is 0 and axis is null for a retired test that never flaked.",
     "A limit forced a new module: retirement in flake-signals.ts took it to 337 lines and flakiness-check.ts to 322, against the 300-line perf threshold. ts/src/core/flake-retirement.ts is declared in both entryPoints arrays.",
     "No identity change: flake-signals.ts stays keyed by test_name (#1350). No change to the fail threshold, alternation rules or verdict logic (#1523).",
-    "CHANGELOG.md not edited (decision 4a); the entry is in the PR body."
-  ]
+    "CHANGELOG.md not edited (decision 4a); the entry is in the PR body.",
+    "DECIDED (human, #1561 F1): a row retires only if its file is also absent from the working tree when the check runs. Absent means the stored path does not exist as written (absolute, or relative to --root) and no test file on disk under --root, symlinks to files included, joins it by the same whole-segment suffix join the inventory uses. A test-file walk rather than a bare existsSync because stored paths have no known base (testDir-relative, bare names, CI runner paths).",
+    "ADDED: the working tree is a required input of scoreCiReady. Null means nobody looked, and then retirement is not applied, with that reason, rather than trusting the inventory alone. Both callers (canary ci-ready and the manhunter dossier) pass the root's tree, so the two still cannot disagree.",
+    "ADDED: the disk is checked last and walked at most once per check, only when another guard would let a file retire.",
+    "DECIDED (human, #1561 F2): a renamed file stays retired, and a warning names each retired title that still has rows from a live file (listed, or kept because it is on disk) in the same suite window. --json carries it as retirement.title_matches. The warning does not change the verdict.",
+    "Residual, documented: rows recorded in another checkout of a package outside --root can only be matched on this disk by name, so the same-named-package case is cured only when the rows' paths exist on this machine. A symlinked DIRECTORY is not walked (cycle safety); a symlinked file is.",
+    "A limit forced another split: the sixth guard and the title matches took flake-retirement.ts past 300 lines, so the per-window rule moved to ts/src/core/retire-deleted-files.ts and the path join to ts/src/core/stored-paths.ts. Both, and ts/src/core/working-tree.ts, are declared in both entryPoints arrays."
+  ],
+  "followUp": "#1561 (held review of this PR): a sixth guard checks the working tree, so a stale inventory, another package's same-named file, a bare stored name or a symlinked test cannot retire a file that is on disk; each was reproduced with the real CLI reading pass, exit 0, and reads fail, exit 1, after. Reproducing tests: ts/test/ci-ready-retirement-disk.test.ts. Planting the guard out turns 8 of 65 tests red."
 }

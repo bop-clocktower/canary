@@ -41,7 +41,20 @@ const IGNORED_DIRS: ReadonlySet<string> = new Set([
   '.nuxt',
 ]);
 
-function walkFiles(dir: string): string[] {
+/** True when `p` is a symlink that resolves to a regular file. */
+function isLinkToFile(p: string): boolean {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every file under `dir`. A symlink is followed only with `links`, and only to
+ * a file: a linked DIRECTORY is never walked, so a link cycle cannot loop.
+ */
+function walkFiles(dir: string, links = false): string[] {
   const out: string[] = [];
   let entries;
   try {
@@ -52,8 +65,9 @@ function walkFiles(dir: string): string[] {
   for (const e of entries) {
     const full = join(dir, e.name);
     if (e.isDirectory()) {
-      if (!IGNORED_DIRS.has(e.name)) out.push(...walkFiles(full));
+      if (!IGNORED_DIRS.has(e.name)) out.push(...walkFiles(full, links));
     } else if (e.isFile()) out.push(full);
+    else if (links && e.isSymbolicLink() && isLinkToFile(full)) out.push(full);
   }
   return out;
 }
@@ -83,6 +97,17 @@ export function isCollectedTestFile(name: string): boolean {
 /** Recursive test-file glob (union of the test patterns), sorted by path. */
 export function collectTestFiles(dir: string): string[] {
   return walkFiles(dir)
+    .filter((p) => isCollectedTestFile(basename(p)))
+    .sort();
+}
+
+/**
+ * {@link collectTestFiles} plus symlinks to test files. For asking whether a
+ * test still exists (#1561), not for scanning: the inventory does not collect
+ * a linked test, so its absence there says nothing about the disk.
+ */
+export function collectTestFilesAndLinks(dir: string): string[] {
+  return walkFiles(dir, true)
     .filter((p) => isCollectedTestFile(basename(p)))
     .sort();
 }

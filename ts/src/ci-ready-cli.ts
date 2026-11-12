@@ -17,6 +17,7 @@ import { EXIT_ABSTAINED, errnoCode } from './core/gate-result.js';
 import {
   retirementNotes,
   scoreCiReady,
+  workingTreeAt,
   type CiReadyReport,
   type RunsInput,
 } from './core/ci-ready.js';
@@ -124,6 +125,7 @@ export function buildCiReadyCommand(deps: MainDeps): Command {
           'critical-areas.json',
           parseCriticalAreas,
         ),
+        workingTree: workingTreeAt(root),
       });
       if (opts.json === true) {
         // When the checks ran, so a feed can order reports (#1151 phase 2).

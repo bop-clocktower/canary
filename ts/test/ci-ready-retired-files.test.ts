@@ -6,11 +6,13 @@
  * inventory wrongly retired 23% of live rows on canary's own suite, because the
  * inventory cannot see `it.each` or loop-generated titles. A row retires only
  * when ALL hold: its file is not in the inventory, its file name is one the
- * inventory collects, and a sibling in its directory is live.
+ * inventory collects, a sibling in its directory is live, live siblings at
+ * least match the missing ones, and it did not run after the inventory was
+ * written. The sixth guard, the working tree (#1561), and the rename warning
+ * are in `ci-ready-retirement-disk.test.ts`; here nothing is on disk.
  *
- * Every miss here is meant to be a false FAIL (still scored), never a false
- * green, and the cases that stay scored are pinned as carefully as the ones
- * that retire.
+ * A miss is meant to be a false FAIL (still scored), and the cases that stay
+ * scored are pinned as carefully as the ones that retire.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -97,6 +99,9 @@ function score(history: Run[], inventory: InventoryInput) {
     historyPath: 'history-v2.jsonl',
     inventory,
     criticalAreas: parseCriticalAreas(null),
+    // Nothing on disk: every fixture file absent from the inventory is gone.
+    // The working-tree guard (#1561) has its own suite.
+    workingTree: { exists: () => false, testFiles: () => [] },
   });
   const flakiness: CiCheck = report.checks.find((c) => c.name === 'flakiness')!;
   return { report, flakiness, retirement: report.retirement! };
@@ -416,6 +421,7 @@ describe('#1500 flakiness retires deleted test files', () => {
         historyPath: 'h',
         inventory: inventoryOf([LIVE]),
         criticalAreas: parseCriticalAreas(null),
+        workingTree: null,
       });
       expect(report.retirement).toBeNull();
     });

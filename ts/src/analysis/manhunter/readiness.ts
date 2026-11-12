@@ -19,6 +19,7 @@
 import {
   retirementNotes,
   scoreCiReady,
+  workingTreeAt,
   type CiReadyReport,
   type RunsInput,
 } from '../../core/ci-ready.js';
@@ -39,6 +40,8 @@ import {
 } from './types.js';
 
 export interface ReadinessPaths {
+  /** The checkout ci-ready checks a retired file is gone from (#1561). */
+  root: string;
   historyPath: string;
   inventoryPath: string;
   criticalAreasPath: string;
@@ -121,6 +124,7 @@ export function readinessSection(paths: ReadinessPaths): Section {
     historyPath: paths.historyPath,
     inventory: inputOf(inventory, parseInventory),
     criticalAreas: inputOf(critical, parseCriticalAreas),
+    workingTree: workingTreeAt(paths.root),
   });
   if (report.verdict === 'abstained') {
     const why = [...new Set(report.checks.map((c) => c.reason))].join('; ');

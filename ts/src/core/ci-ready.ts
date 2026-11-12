@@ -24,10 +24,12 @@ import {
 } from './inventory-checks.js';
 import type { FlakinessRetirement } from './flake-retirement.js';
 import { scoreFlakyRuns } from './flakiness-check.js';
+import type { WorkingTree } from './working-tree.js';
 
 // Re-exported so both report renderers read one module: a direct import took
 // `manhunter/readiness.ts` over the perf coupling threshold.
 export { retirementNotes } from './flakiness-check.js';
+export { workingTreeAt } from './working-tree.js';
 
 interface ScoredRun {
   /** The flakiness window is per suite, newest first by timestamp (#1506). */
@@ -89,6 +91,12 @@ export interface CiReadyInputs {
   inventory: InventoryInput;
   /** Parsed `.canary/critical-areas.json`, or the reason it is unusable. */
   criticalAreas: CriticalAreasInput;
+  /**
+   * The checkout the inventory describes, so flakiness retirement can confirm
+   * a file is gone from disk and not just from a stale inventory (#1561). Null
+   * means nobody looked, and then nothing retires.
+   */
+  workingTree: WorkingTree | null;
 }
 
 /** The skip for a store that exists but cannot be read, or null. */
@@ -102,7 +110,7 @@ function scoreFlakiness(inputs: CiReadyInputs): {
   retirement: FlakinessRetirement | null;
 } {
   const name = 'flakiness';
-  const { runs, historyPath, inventory } = inputs;
+  const { runs, historyPath, inventory, workingTree } = inputs;
   const unreadable = unreadableSkip(name, runs);
   if (unreadable) return { check: unreadable, retirement: null };
   if (!Array.isArray(runs) || runs.length === 0) {
@@ -112,7 +120,7 @@ function scoreFlakiness(inputs: CiReadyInputs): {
       retirement: null,
     };
   }
-  return scoreFlakyRuns(runs, inventory);
+  return scoreFlakyRuns(runs, inventory, workingTree);
 }
 
 /**
