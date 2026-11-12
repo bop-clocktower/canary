@@ -8,7 +8,7 @@ on:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@13'
+  HARNESS_CLI: '@harness-engineering/cli@14'
 
 jobs:
   validate:
@@ -32,7 +32,7 @@ jobs:
 
       # #744. The ratchets below carry a number produced by this CLI (the docs
       # floor since #1241, entropy and perf an ABSOLUTE count),
-      # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@13`),
+      # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@14`),
       # so the analyzer behind those counts changes with no commit to this repo.
       # It moved three times. The first two caught nobody's eye until days
       # later: 11.1.1 -> 11.2.0 took entropy 281 -> 257 (#694), and 11.2.0 ->

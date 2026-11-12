@@ -71,6 +71,14 @@ A differing environment names each key that differs, for example
 - `not-run`: no attempt ran the test, usually because dependencies failed to
   install. See the `environment` row.
 
+The outcome is classified from the attempts that ran the test. An attempt whose
+report holds no readable status for it (a runner crash, or a timeout that wrote
+no report) or that skipped it isn't counted, and the result says so:
+`--repeat 5` with one failure and four unreadable attempts prints
+`reproduced (1 of 1 attempts failed; 4 of 5 requested attempts not counted: ...)`,
+and `--json` carries `"dropped": 4` beside `"attempts": 5`. Read a `reproduced`
+with dropped attempts as weaker evidence than one counted over every attempt.
+
 A failure outside any test, stored as `<file> (file failed outside any test)`,
 has no row when its file loads cleanly. An attempt counts as passed only if the
 report shows that exact file ran, and any other attempt isn't counted. In

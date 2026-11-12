@@ -29,12 +29,13 @@
  * writes a plist, or spawns a shell.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -44,6 +45,7 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -95,6 +97,8 @@ interface SirenModule {
     staleDays?: number | undefined;
   }) => Status;
 }
+
+const execFileAsync = promisify(execFile);
 
 const SCRIPT_URL = pathToFileURL(
   join(
@@ -631,7 +635,12 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
   };
 
   /** The siren's findings message; it prints JSON only when it has findings. */
-  const findings = (cliVersion: string): string => {
+  // The siren's environment: a stub canary CLI at cliVersion first on PATH,
+  // and every location pointed into the sandbox.
+  const sirenEnv = (
+    cliVersion: string,
+    env: Record<string, string> = {},
+  ): NodeJS.ProcessEnv => {
     const bin = join(dir, 'bin');
     mkdirSync(bin, { recursive: true });
     writeFileSync(
@@ -639,19 +648,26 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
       `#!/bin/sh\necho "canary v${cliVersion}"\n`,
       { mode: 0o755 },
     );
-    const r = runCapture('bash', [SIREN], {
-      env: {
-        ...process.env,
-        PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
-        CANARY_CLAUDE_DIR: dir,
-        CANARY_MARKETPLACE_DIR: mkt,
-        CANARY_SIREN_LOG: join(dir, 'deep.log'),
-      },
-    });
-    expect(r.status).toBe(0);
-    return r.stdout
-      ? (JSON.parse(r.stdout) as { systemMessage: string }).systemMessage
+    return {
+      ...process.env,
+      PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
+      CANARY_CLAUDE_DIR: dir,
+      CANARY_MARKETPLACE_DIR: mkt,
+      CANARY_SIREN_LOG: join(dir, 'deep.log'),
+      ...env,
+    };
+  };
+  const systemMessage = (stdout: string): string =>
+    stdout
+      ? (JSON.parse(stdout) as { systemMessage: string }).systemMessage
       : '';
+  const findings = (
+    cliVersion: string,
+    env: Record<string, string> = {},
+  ): string => {
+    const r = runCapture('bash', [SIREN], { env: sirenEnv(cliVersion, env) });
+    expect(r.status).toBe(0);
+    return systemMessage(r.stdout);
   };
 
   beforeEach(() => {
@@ -694,21 +710,142 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     expect(msg).not.toContain('stale reference');
   });
 
-  it('abstains loudly when the clone has not been fetched in days (#1495)', () => {
-    // The false green: upstream moved, the clone never fetched, so its HEAD
-    // still equals the stale install and check 3 waits 14 days to speak.
+  it('reports drift the clone has not fetched yet, against the live origin (#1495)', () => {
+    // The #1495 false green: upstream moved, the clone never fetched, so its
+    // HEAD and every local ref still equal the stale install. `ls-remote`
+    // reads the origin itself, so no local ref can hide the move.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
-    writeUpstream('9.5.0-next');
+    const tip = writeUpstream('9.5.0-next');
     ageFetch();
     const msg = findings('9.5.0');
-    expect(msg).toContain('compared against a stale reference');
+    expect(msg).toContain('marketplace clone is behind origin');
+    expect(msg).toContain('installed canary plugin is behind the marketplace');
+    expect(msg).toContain(tip.slice(0, 7));
+  });
+
+  it('is silent when the clone HEAD matches origin, however old FETCH_HEAD is (#1599)', () => {
+    // The #1599 repro: `claude plugin marketplace update` leaves FETCH_HEAD
+    // alone, so an mtime check fired every session even though the clone,
+    // origin and the install all sat on the same commit. The end state is
+    // what matters, not when a fetch last happened.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    ageFetch();
+    const aged = findings('9.5.0');
+    rmSync(join(mkt, '.git', 'FETCH_HEAD'));
+    const neverFetched = findings('9.5.0');
+    for (const msg of [aged, neverFetched]) {
+      expect(msg).not.toContain('stale reference');
+      expect(msg).not.toContain('not refreshed');
+      expect(msg).not.toContain('marketplace clone');
+      expect(msg).not.toContain('behind');
+      expect(msg).not.toContain('unverifiable');
+    }
+  });
+
+  it('names a remedy that, run verbatim, clears the clone-behind finding (#1599)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    writeUpstream('9.5.0-next');
+    const before = findings('9.5.0');
+    const line = before
+      .split('\n')
+      .find((l) => l.includes('marketplace clone is behind origin'));
+    expect(line).toBeDefined();
+    const remedy = /run: (.+)$/.exec(line ?? '')?.[1];
+    expect(remedy).toMatch(/^git -C .+ pull --ff-only$/);
+    execFileSync('bash', ['-c', remedy ?? 'false'], { env: GIT_ENV });
+    expect(findings('9.5.0')).not.toContain('marketplace clone is behind');
+  });
+
+  it('reports an unreachable origin as unverifiable, never as fresh (#1599)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    execFileSync(
+      'git',
+      ['remote', 'set-url', 'origin', join(dir, 'no-such-origin')],
+      { cwd: mkt },
+    );
+    const msg = findings('9.5.0');
+    expect(msg).toContain('git ls-remote origin HEAD failed');
     expect(msg).toContain('unverifiable');
   });
 
-  it('abstains loudly when the clone has never been fetched (#1495)', () => {
+  it('reports an origin that answers with no HEAD as unverifiable (#1599)', () => {
+    // An empty origin: ls-remote exits 0 and prints nothing. A zero exit with
+    // no answer is not a pass.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
-    rmSync(join(mkt, '.git', 'FETCH_HEAD'));
-    expect(findings('9.5.0')).toContain('compared against a stale reference');
+    const empty = join(dir, 'empty-origin');
+    execFileSync('git', ['init', '-q', '--bare', empty]);
+    execFileSync('git', ['remote', 'set-url', 'origin', empty], { cwd: mkt });
+    const msg = findings('9.5.0');
+    expect(msg).toContain('git ls-remote origin HEAD returned no HEAD');
+    expect(msg).toContain('unverifiable');
+  });
+
+  // A stub git that hangs on ls-remote only. findings() puts dir/bin first on
+  // PATH, so the stub shadows real git for every other subcommand.
+  const stubHungLsRemote = (): void => {
+    const realGit = execFileSync('sh', ['-c', 'command -v git'], {
+      encoding: 'utf-8',
+    }).trim();
+    mkdirSync(join(dir, 'bin'), { recursive: true });
+    writeFileSync(
+      join(dir, 'bin', 'git'),
+      [
+        '#!/bin/bash',
+        'for a in "$@"; do [ "$a" = ls-remote ] && exec sleep 30; done',
+        `exec ${JSON.stringify(realGit)} "$@"`,
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+  };
+
+  it('bounds a hung ls-remote with a timeout and reports it as unverifiable (#1599)', () => {
+    // SessionStart latency is user-visible: an origin that never answers must
+    // cost the timeout, not the session.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    stubHungLsRemote();
+    const started = performance.now();
+    const msg = findings('9.5.0', {
+      CANARY_SIREN_LS_REMOTE_TIMEOUT: '1',
+    });
+    expect(performance.now() - started).toBeLessThan(15_000);
+    expect(msg).toContain('timed out after 1s');
+    expect(msg).toContain('unverifiable');
+  });
+
+  it('never misreports a fired watchdog as offline, even under load (#1609)', async () => {
+    // The hook once inferred "the watchdog fired" from "the watchdog subshell
+    // is already dead". wait can return while the subshell that just delivered
+    // the kill is still alive, so a real timeout was sometimes reported as
+    // "failed (offline...)". The window is narrow on an idle machine and wide
+    // on a busy one (CI), so the runs go concurrently: that load is what
+    // reproduced it (roughly 1 in 8 runs on the old hook). The private temp
+    // dir checks that the marker is cleaned up.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    stubHungLsRemote();
+    const tmp = join(dir, 'tmp');
+    mkdirSync(tmp);
+    const env = sirenEnv('9.5.0', {
+      CANARY_SIREN_LS_REMOTE_TIMEOUT: '0.2',
+      TMPDIR: tmp,
+    });
+    const runs = 20;
+    const started = performance.now();
+    const reasons = await Promise.all(
+      Array.from({ length: runs }, async () => {
+        const { stdout } = await execFileAsync('bash', [SIREN], { env });
+        const msg = systemMessage(stdout);
+        return (
+          /git ls-remote origin HEAD (.+?) for /.exec(msg)?.[1] ?? '(none)'
+        );
+      }),
+    );
+    expect(performance.now() - started).toBeLessThan(20_000);
+    // A tally, so a failure names how many runs gave which reason.
+    const tally: Record<string, number> = {};
+    for (const r of reasons) tally[r] = (tally[r] ?? 0) + 1;
+    expect(tally).toEqual({ 'timed out after 0.2s': runs });
+    expect(readdirSync(tmp)).toEqual([]);
   });
 
   it('reports an install behind origin when the clone fetched but never merged (#1495)', () => {

@@ -1,7 +1,8 @@
 #!/bin/bash
 # SessionStart siren: yell about canary tooling rot before any work starts.
 #
-# Local-only checks (<1s, no network). Silent when everything is healthy; on
+# Local checks plus ONE bounded network call (`git ls-remote`, capped at
+# $CANARY_SIREN_LS_REMOTE_TIMEOUT seconds). Silent when everything is healthy; on
 # findings, injects a loud warning into session context AND shows the user a
 # systemMessage. Born of the 2026-07 incident where canary ran silently broken
 # for ~7 weeks while every surface reported green.
@@ -20,6 +21,60 @@ DEEP_LABEL="${CANARY_SIREN_LABEL:-io.github.bop-clocktower.canary-deep-siren}"
 # Weekly schedule + a grace day. A gap longer than this means runs are being
 # missed, not merely that today is not the run day.
 DEEP_STALE_DAYS="${CANARY_SIREN_STALE_DAYS:-8}"
+# Ceiling on the one network call (check 3). SessionStart latency is felt on
+# every session, so an origin that never answers costs this, never more.
+LS_REMOTE_TIMEOUT="${CANARY_SIREN_LS_REMOTE_TIMEOUT:-3}"
+
+# Single-quote a value for a copy-pasteable remedy (bash 3.2 has no ${v@Q}).
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# Set ORIGIN_TIP to origin's HEAD sha via `git ls-remote`, killed after
+# LS_REMOTE_TIMEOUT seconds (macOS ships no `timeout`, so a watchdog does it).
+# On failure returns 1 and sets LS_REMOTE_WHY. Called directly, not in $(...),
+# so both globals survive. Never prompts for https credentials, and any other
+# prompt (ssh) is cut off by the timeout rather than hanging the session.
+ORIGIN_TIP="unknown"
+LS_REMOTE_WHY=""
+origin_tip() {
+  local out pid wd rc tip fired=0
+  out=$(mktemp "${TMPDIR:-/tmp}/canary-siren.XXXXXX") || {
+    LS_REMOTE_WHY="could not create a temp file"
+    return 1
+  }
+  # GIT_SSH_COMMAND is deliberately left alone: setting it would override a
+  # user's core.sshCommand and turn a reachable origin into a false finding.
+  GIT_TERMINAL_PROMPT=0 git -C "$MKT" ls-remote origin HEAD >"$out" 2>/dev/null </dev/null &
+  pid=$!
+  # The watchdog's stdio is detached so a lingering sleep cannot hold the
+  # hook's stdout open after it exits. It drops a marker BEFORE the kill, so
+  # by the time ls-remote dies of it the marker is already on disk (#1609).
+  # `;` not `&&` after the marker: a marker that cannot be written must not
+  # cost the timeout bound.
+  (sleep "$LS_REMOTE_TIMEOUT" && { : >"$out.fired"; kill "$pid"; }) >/dev/null 2>&1 </dev/null &
+  wd=$!
+  wait "$pid" 2>/dev/null # no "Terminated" noise on stderr when killed
+  rc=$?
+  # Git's own exit codes overlap signal ones (128 is a plain failure), so the
+  # marker, not rc, says whether the watchdog fired. Never infer it from the
+  # watchdog being dead: wait can return while the subshell that just sent
+  # the kill is still alive, which reported real timeouts as offline (#1609).
+  kill "$wd" 2>/dev/null
+  wait "$wd" 2>/dev/null # reaped, so no marker can appear after the check
+  [ -e "$out.fired" ] && fired=1
+  tip=$(awk '$2 == "HEAD" { print $1; exit }' "$out")
+  rm -f "$out" "$out.fired"
+  if [ "$rc" -ne 0 ] && [ "$fired" = 1 ]; then
+    LS_REMOTE_WHY="timed out after ${LS_REMOTE_TIMEOUT}s"
+  elif [ "$rc" -ne 0 ]; then
+    LS_REMOTE_WHY="failed (offline, or origin unreachable)"
+  elif ! printf '%s' "$tip" | grep -Eq '^[0-9a-f]{40}([0-9a-f]{24})?$'; then
+    LS_REMOTE_WHY="returned no HEAD"
+  else
+    ORIGIN_TIP=$tip
+    return 0
+  fi
+  return 1
+}
 
 FINDINGS=()
 
@@ -40,12 +95,21 @@ if [ "${LEGACY:-0}" -gt 0 ]; then
   FINDINGS+=("$LEGACY legacy flat-file canary agent/command file(s) back in ~/.claude — they shadow the plugin and drift silently; remove them")
 fi
 
-# 3. Marketplace checkout freshness (>14 days without a fetch = drifting).
+# 3. Marketplace clone freshness: the clone's HEAD against origin's HEAD as
+#    origin reports it right now (#1599). This judged freshness by FETCH_HEAD's
+#    mtime, and `claude plugin marketplace update` — the remedy it named —
+#    does not write FETCH_HEAD, so the finding survived its own fix while
+#    clone, origin and install all sat on the same commit. The end state is
+#    the thing to check; when a fetch last happened is not. An origin that
+#    cannot be asked is a loud abstention, never a pass.
 if [ -d "$MKT/.git" ]; then
-  LAST_FETCH="$MKT/.git/FETCH_HEAD"
-  [ -f "$LAST_FETCH" ] || LAST_FETCH="$MKT/.git/HEAD"
-  if [ -n "$(find "$LAST_FETCH" -mtime +14 2>/dev/null)" ]; then
-    FINDINGS+=("bop-clocktower marketplace checkout not refreshed in >14 days (claude plugin marketplace update bop-clocktower)")
+  if origin_tip; then
+    MKT_HEAD=$(git -C "$MKT" rev-parse --verify -q HEAD 2>/dev/null || echo "unknown")
+    if [ "$MKT_HEAD" != "$ORIGIN_TIP" ]; then
+      FINDINGS+=("bop-clocktower marketplace clone is behind origin (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}) — run: git -C $(shq "$MKT") pull --ff-only")
+    fi
+  else
+    FINDINGS+=("git ls-remote origin HEAD $LS_REMOTE_WHY for $MKT — marketplace freshness and installed-plugin staleness unverifiable")
   fi
 else
   FINDINGS+=("bop-clocktower marketplace checkout missing at $MKT")
@@ -81,31 +145,18 @@ else
   FINDINGS+=("canary CLI not on PATH")
 fi
 
-# 4b. Installed plugin vs the marketplace's ORIGIN tip. canary main often
-#     lands without a plugin.json bump, and `claude plugin update` compares
-#     version strings only, so equal versions can still mean stale files. The
-#     commit is the only thing that tells.
+# 4b. Installed plugin vs origin's tip. canary main often lands without a
+#     plugin.json bump, and `claude plugin update` compares version strings
+#     only, so equal versions can still mean stale files. The commit is the
+#     only thing that tells.
 #
-#     The reference is origin/<branch>, not HEAD (#1495): a fetch moves the
-#     remote-tracking ref and leaves HEAD where the stale install is. And no
-#     local ref is better than the last fetch, so a fetch older than a day (or
-#     none at all) is a loud abstention, never a pass — otherwise 4b compares
-#     equal against a reference that cannot show drift, for the 14 days check 3
-#     takes to notice. No network here: the hook stays offline and <1s.
-if [ "$INST_SHA" != "unknown" ] && [ -d "$MKT/.git" ]; then
-  MKT_REF=$(git -C "$MKT" rev-parse --verify -q '@{upstream}' 2>/dev/null ||
-    git -C "$MKT" rev-parse --verify -q refs/remotes/origin/HEAD 2>/dev/null ||
-    echo "unknown")
-  if [ "$MKT_REF" = "unknown" ]; then
-    FINDINGS+=("cannot resolve the marketplace's origin tip at $MKT — installed-plugin staleness unverifiable")
-  elif [ "$MKT_REF" != "$INST_SHA" ]; then
-    FINDINGS+=("installed canary plugin is behind the marketplace (installed $INST_VER @${INST_SHA:0:7}, origin @${MKT_REF:0:7}) — claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower --scope user")
-  fi
-  # -mmin is in both BSD and GNU find; stat's flags are not.
-  FETCHED="$MKT/.git/FETCH_HEAD"
-  if [ ! -f "$FETCHED" ] || [ -n "$(find "$FETCHED" -mmin +1440 2>/dev/null)" ]; then
-    FINDINGS+=("installed-plugin staleness compared against a stale reference, unverifiable — the marketplace clone has not been fetched in >1 day (claude plugin marketplace update bop-clocktower)")
-  fi
+#     The reference is origin's live HEAD from check 3, not any local ref
+#     (#1495, #1599): a local ref is only as fresh as the last fetch, and how
+#     fresh that is cannot be read reliably from disk. When check 3 could not
+#     reach origin it has already reported this check as unverifiable.
+if [ "$INST_SHA" != "unknown" ] && [ "$ORIGIN_TIP" != "unknown" ] &&
+  [ "$ORIGIN_TIP" != "$INST_SHA" ]; then
+  FINDINGS+=("installed canary plugin is behind the marketplace (installed $INST_VER @${INST_SHA:0:7}, origin @${ORIGIN_TIP:0:7}) — once the clone is at origin: claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower --scope user")
 fi
 
 # 5. The deep siren must be REGISTERED and RECENT (#758).

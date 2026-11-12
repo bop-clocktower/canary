@@ -167,8 +167,13 @@ describe('leak gate never executes head code under secrets (ADR 0023)', () => {
     expect(steps.filter((s) => s.run).length).toBeGreaterThan(0);
   });
 
-  it('rule 5: permissions are exactly contents read (no API use needs more)', () => {
-    expect(wf.permissions).toEqual({ contents: 'read' });
+  it('rule 5: permissions are exactly contents + pull-requests read', () => {
+    // pull-requests: read is for one API read only: the decide step's lookup
+    // of which PRs contain the head commit (#1582). No write scope, ever.
+    expect(wf.permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'read',
+    });
     for (const job of jobs) expect(job.permissions).toBeUndefined();
   });
 

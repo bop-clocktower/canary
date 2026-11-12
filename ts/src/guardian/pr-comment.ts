@@ -12,6 +12,7 @@ import {
   GitHubRateLimitError,
   GitHubServerError,
   MAX_ATTEMPTS,
+  MissingTokenError,
   type Sleep,
   fetchWithRetry,
   realSleep,
@@ -151,8 +152,9 @@ function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {
  * A 403 degrades to a `degraded` result instead of crashing the job (OT-4) --
  * on the lookup as well as the write, since the paged read maps 403 the same
  * way (#528). So does a 429 or 5xx that outlived the client's retries (#1467),
- * and a network-level failure (#1478): none of them says anything about the
- * diff. Any other 4xx, and any other thrown error, still throws.
+ * a network-level failure (#1478), and a missing token (#1445): none of them
+ * says anything about the diff. Any other 4xx, and any other thrown error,
+ * still throws.
  */
 export async function upsertStickyComment(
   client: GitHubClient,
@@ -196,6 +198,8 @@ export async function upsertStickyComment(
         notice: `guardian: GitHub API network error (${err.code}) — findings not posted as a comment; the check's result is the computed verdict`,
       };
     }
+    if (err instanceof MissingTokenError)
+      return { action: 'degraded', comment_id: null, notice: err.notice };
     throw err;
   }
 }
@@ -260,6 +264,7 @@ export class RestGitHubClient implements GitHubClient {
     url: string,
     payload?: unknown,
   ): Promise<unknown> {
+    if (!this.token.trim()) throw new MissingTokenError(); // #1445
     const init: RequestInit = { method, headers: this.headers() };
     if (payload !== undefined) {
       init.body = JSON.stringify(payload);
@@ -270,6 +275,7 @@ export class RestGitHubClient implements GitHubClient {
   }
 
   async listComments(): Promise<Comment[]> {
+    if (!this.token.trim()) throw new MissingTokenError(); // #1445
     const url = `${RestGitHubClient.API}/repos/${this.repo}/issues/${this.prNumber}/comments`;
     return (await readAllPages(url, this.read)) as Comment[];
   }
