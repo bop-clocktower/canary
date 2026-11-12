@@ -3,11 +3,12 @@
  *
  * A transient GitHub failure (a 5xx, a 429, or a rate-limited 403) says nothing
  * about the diff, yet a single one used to fail the required `guardian` check.
- * {@link fetchWithRetry} gives each request {@link MAX_ATTEMPTS} tries (a POST
+ * {@link readWithRetry} gives each request {@link MAX_ATTEMPTS} tries (a POST
  * only on a rate limit, never a 5xx); every other status is a real answer and
  * returns on the first try.
  * A network-level rejection (ECONNRESET, DNS, socket timeout) gets the same
- * tries on GET and PATCH, but never a re-sent POST (#1478), and surfaces as a
+ * tries on GET and PATCH, but never a re-sent POST (#1478); one while reading
+ * the body is retried on a GET only (#1503). The final one surfaces as a
  * {@link GitHubNetworkError}.
  * {@link toGitHubError} then types a final failure so the sticky-comment upsert
  * can tell a token problem, a rate limit, and a GitHub outage apart. Split out
@@ -149,50 +150,71 @@ export class GitHubNetworkError extends Error {
 }
 
 /**
- * `fetch` with the bounded retry (#1467): up to {@link MAX_ATTEMPTS} tries on a
- * retryable status (method-aware: see {@link isRetryable}). Returns the last
- * response either way, so the caller's status mapping still decides what a
- * final failure means.
+ * `fetch` plus `consume` (the body read) with the bounded retry (#1467): up to
+ * {@link MAX_ATTEMPTS} tries on a retryable status (method-aware: see
+ * {@link isRetryable}); the last response goes to `consume` either way, so the
+ * caller's status mapping decides what a final failure means.
  *
- * A network rejection (#1478) is retried with the same backoff on GET and
- * PATCH. A POST is never re-sent after one: the request may already have
- * landed, and a second POST would stack a second sticky (SC-9). Either way the
- * final network failure throws a {@link GitHubNetworkError}; any other
- * rejection is rethrown untouched.
+ * A network rejection (#1478) is retried on GET and PATCH but never re-sent on
+ * a POST (it may have landed; a second POST stacks a second sticky, SC-9).
+ * `fetch` resolves once the headers arrive, so a socket reset or body timeout
+ * can surface later, inside `consume` (#1503): that one is retried on a GET
+ * only, since a write already reached GitHub. A final network failure throws
+ * a {@link GitHubNetworkError}; any other error is rethrown as-is.
  */
-export async function fetchWithRetry(
+export async function readWithRetry<T>(
   url: string,
   init: RequestInit,
   sleep: Sleep,
-): Promise<Response> {
+  consume: (resp: Response) => Promise<T>,
+): Promise<T> {
   const method = init.method ?? 'GET';
   for (let attempt = 1; ; attempt += 1) {
     let resp: Response;
     try {
       resp = await fetch(url, init);
     } catch (err) {
-      const code = networkErrorCode(err);
-      if (code === null) throw err;
-      if (method === 'POST' || attempt >= MAX_ATTEMPTS) {
-        throw new GitHubNetworkError(
-          `GitHub API network error (${code}): ${method} ${url}`,
-          code,
-          { cause: err },
-        );
-      }
+      retryOrThrow(err, method !== 'POST', { method, url, attempt });
       await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1));
       continue;
     }
     if (
-      resp.ok ||
-      attempt >= MAX_ATTEMPTS ||
-      !isRetryable(method, resp.status, resp.headers)
+      !resp.ok &&
+      attempt < MAX_ATTEMPTS &&
+      isRetryable(method, resp.status, resp.headers)
     ) {
-      return resp;
+      // Release the discarded body so the connection is reusable.
+      await resp.body?.cancel();
+      await sleep(retryDelayMs(attempt, resp.headers));
+      continue;
     }
-    // Release the discarded body so the connection is reusable.
-    await resp.body?.cancel();
-    await sleep(retryDelayMs(attempt, resp.headers));
+    try {
+      return await consume(resp);
+    } catch (err) {
+      retryOrThrow(err, method === 'GET', { method, url, attempt });
+      await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1));
+    }
+  }
+}
+
+/**
+ * Returns (the caller backs off and retries) only for a `retryable` network
+ * error with attempts left; else throws a {@link GitHubNetworkError}, or `err`
+ * itself when it is not a network error.
+ */
+function retryOrThrow(
+  err: unknown,
+  retryable: boolean,
+  at: { method: string; url: string; attempt: number },
+): void {
+  const code = networkErrorCode(err);
+  if (code === null) throw err;
+  if (!retryable || at.attempt >= MAX_ATTEMPTS) {
+    throw new GitHubNetworkError(
+      `GitHub API network error (${code}): ${at.method} ${at.url}`,
+      code,
+      { cause: err },
+    );
   }
 }
 
