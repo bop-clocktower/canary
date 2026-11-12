@@ -12,8 +12,8 @@
 // outage is "not measured": neither may turn the required `security` check red.
 // Only a crash of this script fails the step.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -22,6 +22,19 @@ const SCHEMA_VERSION = 1;
 const AUDIT_TIMEOUT_MS = 180_000;
 const AUDIT_MAX_BUFFER = 256 * 1024 * 1024;
 const SEVERITIES = ['critical', 'high', 'moderate', 'low', 'info', 'total'];
+// npm reads config from the lockfile's own .npmrc and from npm_config_* env
+// vars, and either can quietly shrink the audit to a false 0 (#1567):
+// offline=true skips the advisory lookup, omit=dev drops devDependencies, and
+// workspace detection audits the workspace root's tree instead of this one.
+// The flags on the command line outrank both.
+const AUDIT_ARGS = [
+  'audit',
+  '--package-lock-only',
+  '--json',
+  '--no-offline',
+  '--include=dev',
+  '--no-workspaces',
+];
 
 const NPM_LOCKFILES = new Set(['package-lock.json', 'npm-shrinkwrap.json']);
 // Named so a tracked one reads "not measured" instead of silently shrinking
@@ -89,8 +102,14 @@ function auditLockfile(path) {
   if (!NPM_LOCKFILES.has(basename(path))) {
     return failed(path, 'no auditor for this lockfile type');
   }
-  const r = spawnSync('npm', ['audit', '--package-lock-only', '--json'], {
-    cwd: resolve(REPO_ROOT, dirname(path)),
+  const cwd = resolve(REPO_ROOT, dirname(path));
+  // Without a package.json beside it, npm walks up to the nearest one and
+  // reports that project's tree under this lockfile's path (#1567).
+  if (!existsSync(join(cwd, 'package.json'))) {
+    return failed(path, 'no package.json beside this lockfile');
+  }
+  const r = spawnSync('npm', AUDIT_ARGS, {
+    cwd,
     encoding: 'utf-8',
     timeout: AUDIT_TIMEOUT_MS,
     maxBuffer: AUDIT_MAX_BUFFER,

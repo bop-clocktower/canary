@@ -389,6 +389,92 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     NPM_TIMEOUT,
   );
 
+  // #1567: npm reads config from the lockfile's own .npmrc and from the
+  // environment. Each case below printed a false measured count before the
+  // audit pinned its flags.
+  it(
+    'a repo .npmrc with offline=true cannot turn a vulnerable pin into 0',
+    async () => {
+      const files = npmProject('ts', '0.0.8');
+      files['ts/.npmrc'] = `registry=${registryUrl}\noffline=true\n`;
+      const dir = makeRepo(files);
+      await runAudit(dir);
+      expect(sidecar(dir).lockfiles[0]).toMatchObject({
+        status: 'measured',
+        vulnerabilities: { total: 1 },
+      });
+    },
+    NPM_TIMEOUT,
+  );
+
+  it(
+    'npm_config_omit=dev cannot drop a vulnerable devDependency',
+    async () => {
+      const files = npmProject('ts', '0.0.8');
+      for (const rel of ['ts/package.json', 'ts/package-lock.json']) {
+        files[rel] = files[rel]!.replaceAll(
+          '"dependencies"',
+          '"devDependencies"',
+        );
+      }
+      const lock = JSON.parse(files['ts/package-lock.json']!);
+      lock.packages['node_modules/minimist'].dev = true;
+      files['ts/package-lock.json'] = JSON.stringify(lock);
+      const dir = makeRepo(files);
+      await runAudit(dir, {
+        npm_config_registry: registryUrl,
+        npm_config_omit: 'dev',
+      });
+      expect(sidecar(dir).lockfiles[0]).toMatchObject({
+        status: 'measured',
+        vulnerabilities: { total: 1 },
+      });
+    },
+    NPM_TIMEOUT,
+  );
+
+  it('pins the flags that npm config could otherwise override', async () => {
+    const dir = makeRepo(npmProject('ts', '0.0.8'));
+    const bin = join(dir, 'argv-bin');
+    const argvFile = join(dir, 'npm-argv');
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, 'npm'),
+      `#!/bin/sh\nprintf '%s\\n' "$@" > "${argvFile}"\necho '{}'\n`,
+    );
+    chmodSync(join(bin, 'npm'), 0o755);
+    await runAudit(dir, {
+      PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
+    });
+    const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+    // --no-workspaces: from inside a workspace member, npm otherwise audits
+    // the workspace root's tree instead of this lockfile's.
+    for (const flag of ['--no-offline', '--include=dev', '--no-workspaces']) {
+      expect(argv).toContain(flag);
+    }
+  });
+
+  it(
+    'a lockfile with no sibling package.json is "not measured"',
+    async () => {
+      // npm walks up to the nearest package.json, so the safe inner pin would
+      // be reported under the vulnerable outer project's counts.
+      const outer = npmProject('outer', '0.0.8');
+      const inner = npmProject('outer/inner', '1.2.8');
+      delete inner['outer/inner/package.json'];
+      const dir = makeRepo({ ...outer, ...inner });
+      await runAudit(dir, { npm_config_registry: registryUrl });
+      const entries = sidecar(dir).lockfiles;
+      expect(entries.map((e) => [e.path, e.status])).toEqual([
+        ['outer/inner/package-lock.json', 'failed'],
+        ['outer/package-lock.json', 'measured'],
+      ]);
+      expect(entries[0]!.vulnerabilities).toBeUndefined();
+      expect(supplyLine(render(dir))).toContain('not measured');
+    },
+    NPM_TIMEOUT,
+  );
+
   it('an npm that cannot be spawned is "not measured", not a crash', async () => {
     const dir = makeRepo(npmProject('ts', '0.0.8'));
     const bin = join(dir, 'git-only-bin');
