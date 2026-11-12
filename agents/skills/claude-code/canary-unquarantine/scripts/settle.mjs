@@ -46,12 +46,27 @@ function rewriteLedger(work, file, judged) {
   writeAt(work, file, `${JSON.stringify(doc, null, 2)}\n`);
 }
 
+/**
+ * Refuse a blob the runner could not decode as UTF-8. The runner reads every
+ * command's output as UTF-8, and a byte sequence that is not valid UTF-8 comes
+ * back as U+FFFD, so writing it would push a changed file (a git-crypt blob, a
+ * Latin-1 comment) at exit 0 (#1573). A file that really holds U+FFFD is
+ * refused too: loud, and never a corruption.
+ */
+function checkUtf8(text, base, file) {
+  if (text.includes('�'))
+    throw new Error(
+      `trial file "${file}" at ${base} is not UTF-8 text (encrypted or binary?) and cannot be restored byte for byte; refusing to settle`,
+    );
+}
+
 /** Every touched file as it was at `base`, plus only the passing lifts. */
 function rebuildFiles(run, work, base, judged) {
   const files = [...new Set(judged.map((j) => j.file))];
   for (const f of files) {
     const shown = run('git', ['-C', work, 'show', `${base}:${f}`]);
     must(shown, `git show ${base}:${f}`);
+    checkUtf8(shown.stdout, base, f);
     writeAt(work, f, shown.stdout); // untrimmed: byte for byte
   }
   writeLifts(
