@@ -41,6 +41,10 @@ const SIDECAR = '.harness/security/supply-chain.json';
 const TIMELINE = '.harness/security/timeline.json';
 const LEDGER = 'docs/SECURITY_LEDGER.md';
 const DEAD_REGISTRY = 'http://127.0.0.1:9/';
+// The audit pins this registry on npm's command line, so no .npmrc or env var
+// can move it (#1567). Fixture copies of the script swap it for a local one.
+const PINNED_REGISTRY_LINE =
+  "const AUDIT_REGISTRY = 'https://registry.npmjs.org/';";
 const NPM_TIMEOUT = 60_000;
 
 interface SidecarLockfile {
@@ -115,8 +119,15 @@ function write(dir: string, rel: string, content: string): void {
   writeFileSync(join(dir, rel), content);
 }
 
-/** A git repo holding the two scripts and the given files, all committed. */
-function makeRepo(files: Record<string, string> = {}): string {
+/**
+ * A git repo holding the two scripts and the given files, all committed. The
+ * audit script's pinned registry is rewritten to `auditRegistry`, which
+ * defaults to the local fake one.
+ */
+function makeRepo(
+  files: Record<string, string> = {},
+  auditRegistry: string = registryUrl,
+): string {
   const dir = mkdtempSync(join(tmpdir(), 'supply-chain-ledger-'));
   dirs.push(dir);
   git(dir, 'init', '--quiet');
@@ -126,6 +137,17 @@ function makeRepo(files: Record<string, string> = {}): string {
     mkdirSync(dirname(join(dir, rel)), { recursive: true });
     cpSync(join(REPO_ROOT, rel), join(dir, rel));
   }
+  const script = readFileSync(join(dir, AUDIT_SCRIPT), 'utf8');
+  // Fail loudly if the constant moves, or every audit below would hit the
+  // public registry.
+  expect(script).toContain(PINNED_REGISTRY_LINE);
+  writeFileSync(
+    join(dir, AUDIT_SCRIPT),
+    script.replace(
+      PINNED_REGISTRY_LINE,
+      `const AUDIT_REGISTRY = '${auditRegistry}';`,
+    ),
+  );
   write(dir, 'README.txt', 'fixture\n');
   for (const [rel, content] of Object.entries(files)) write(dir, rel, content);
   git(dir, 'add', '-A');
@@ -137,7 +159,6 @@ function makeRepo(files: Record<string, string> = {}): string {
 function npmProject(
   prefix: string,
   version: string | null,
-  registryForDir?: string,
 ): Record<string, string> {
   const deps = version ? { minimist: version } : {};
   const packages: Record<string, unknown> = {
@@ -163,8 +184,6 @@ function npmProject(
       packages,
     }),
   };
-  if (registryForDir)
-    files[`${prefix}/.npmrc`] = `registry=${registryForDir}\n`;
   return files;
 }
 
@@ -258,7 +277,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
       const dir = makeRepo(npmProject('nested/pkg', '0.0.8'));
       expect(existsSync(join(dir, 'package-lock.json'))).toBe(false);
 
-      const r = await runAudit(dir, { npm_config_registry: registryUrl });
+      const r = await runAudit(dir);
 
       // A non-zero count is information, not a failure of the required check.
       expect(r.code, r.log).toBe(0);
@@ -276,8 +295,8 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
   );
 
   it('zero tracked lockfiles reads "not measured", never 0', async () => {
-    const dir = makeRepo();
-    const r = await runAudit(dir, { npm_config_registry: DEAD_REGISTRY });
+    const dir = makeRepo({}, DEAD_REGISTRY);
+    const r = await runAudit(dir);
     expect(r.code, r.log).toBe(0);
     expect(sidecar(dir).lockfiles).toEqual([]);
     const line = supplyLine(render(dir));
@@ -289,7 +308,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     const dir = makeRepo();
     for (const [rel, content] of Object.entries(npmProject('loose', '0.0.8')))
       write(dir, rel, content);
-    await runAudit(dir, { npm_config_registry: registryUrl });
+    await runAudit(dir);
     expect(sidecar(dir).lockfiles).toEqual([]);
     expect(supplyLine(render(dir))).toContain('not measured');
   });
@@ -297,10 +316,10 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
   it(
     'a registry failure is "not measured", not a clean audit',
     async () => {
-      const dir = makeRepo(npmProject('ts', '0.0.8'));
+      const dir = makeRepo(npmProject('ts', '0.0.8'), DEAD_REGISTRY);
       // npm exits 1 for this AND for "found vulnerabilities", so the exit code
       // cannot tell them apart. Only the report's shape can.
-      const r = await runAudit(dir, { npm_config_registry: DEAD_REGISTRY });
+      const r = await runAudit(dir);
       expect(r.code, r.log).toBe(0);
       expect(r.log).toContain('::warning');
       const [entry] = sidecar(dir).lockfiles;
@@ -318,7 +337,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     'a clean audit prints a measured 0, distinct from "not measured"',
     async () => {
       const dir = makeRepo(npmProject('ts', '1.2.8'));
-      const r = await runAudit(dir, { npm_config_registry: registryUrl });
+      const r = await runAudit(dir);
       expect(r.code, r.log).toBe(0);
       const line = supplyLine(render(dir));
       expect(line).toMatch(/Supply chain:\*\* 0 \(/);
@@ -332,7 +351,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     'a lockfile with no dependencies is an abstention, not a clean audit',
     async () => {
       const dir = makeRepo(npmProject('empty', null));
-      await runAudit(dir, { npm_config_registry: registryUrl });
+      await runAudit(dir);
       expect(sidecar(dir).lockfiles[0]).toMatchObject({ status: 'failed' });
       expect(supplyLine(render(dir))).toContain('not measured');
     },
@@ -346,7 +365,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
         ...npmProject('a', '0.0.8'),
         ...npmProject('deep/b', '0.0.8'),
       });
-      await runAudit(dir, { npm_config_registry: registryUrl });
+      await runAudit(dir);
       expect(sidecar(dir).lockfiles.map((l) => l.path)).toEqual([
         'a/package-lock.json',
         'deep/b/package-lock.json',
@@ -360,8 +379,9 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     'one failed lockfile makes the whole line "not measured"',
     async () => {
       const dir = makeRepo({
-        ...npmProject('good', '0.0.8', registryUrl),
-        ...npmProject('bad', '0.0.8', DEAD_REGISTRY),
+        ...npmProject('good', '0.0.8'),
+        // Zero dependencies is one way an entry fails.
+        ...npmProject('bad', null),
       });
       const r = await runAudit(dir);
       expect(r.code, r.log).toBe(0);
@@ -381,7 +401,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
         ...npmProject('ts', '0.0.8'),
         'site/yarn.lock': '# yarn lockfile v1\n',
       });
-      await runAudit(dir, { npm_config_registry: registryUrl });
+      await runAudit(dir);
       const line = supplyLine(render(dir));
       expect(line).toContain('not measured');
       expect(line).toContain('site/yarn.lock');
@@ -396,7 +416,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     'a repo .npmrc with offline=true cannot turn a vulnerable pin into 0',
     async () => {
       const files = npmProject('ts', '0.0.8');
-      files['ts/.npmrc'] = `registry=${registryUrl}\noffline=true\n`;
+      files['ts/.npmrc'] = 'offline=true\n';
       const dir = makeRepo(files);
       await runAudit(dir);
       expect(sidecar(dir).lockfiles[0]).toMatchObject({
@@ -407,24 +427,22 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     NPM_TIMEOUT,
   );
 
-  it(
-    'npm_config_omit=dev cannot drop a vulnerable devDependency',
-    async () => {
+  it.each([
+    ['dev', 'devDependencies'],
+    ['optional', 'optionalDependencies'],
+    ['peer', 'peerDependencies'],
+  ] as const)(
+    'npm_config_omit=%s cannot drop a vulnerable %s entry',
+    async (kind, field) => {
       const files = npmProject('ts', '0.0.8');
       for (const rel of ['ts/package.json', 'ts/package-lock.json']) {
-        files[rel] = files[rel]!.replaceAll(
-          '"dependencies"',
-          '"devDependencies"',
-        );
+        files[rel] = files[rel]!.replaceAll('"dependencies"', `"${field}"`);
       }
       const lock = JSON.parse(files['ts/package-lock.json']!);
-      lock.packages['node_modules/minimist'].dev = true;
+      lock.packages['node_modules/minimist'][kind] = true;
       files['ts/package-lock.json'] = JSON.stringify(lock);
       const dir = makeRepo(files);
-      await runAudit(dir, {
-        npm_config_registry: registryUrl,
-        npm_config_omit: 'dev',
-      });
+      await runAudit(dir, { npm_config_omit: kind });
       expect(sidecar(dir).lockfiles[0]).toMatchObject({
         status: 'measured',
         vulnerabilities: { total: 1 },
@@ -433,8 +451,55 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     NPM_TIMEOUT,
   );
 
+  it(
+    'a .npmrc or env registry cannot redirect the audit',
+    async () => {
+      // A registry that is down or answers {} would read "not measured" or 0.
+      const files = npmProject('ts', '0.0.8');
+      files['ts/.npmrc'] = `registry=${DEAD_REGISTRY}\n`;
+      const dir = makeRepo(files);
+      await runAudit(dir, { npm_config_registry: DEAD_REGISTRY });
+      expect(sidecar(dir).lockfiles[0]).toMatchObject({
+        status: 'measured',
+        vulnerabilities: { total: 1 },
+      });
+    },
+    NPM_TIMEOUT,
+  );
+
+  it('an unparseable package.json is "not measured"', async () => {
+    const files = npmProject('ts', '0.0.8');
+    files['ts/package.json'] = '{ not json';
+    const dir = makeRepo(files);
+    await runAudit(dir);
+    expect(sidecar(dir).lockfiles[0]).toMatchObject({
+      status: 'failed',
+      reason: 'package.json beside this lockfile is not valid JSON',
+    });
+  });
+
+  it('a workspace root is "not measured", not undercounted', async () => {
+    // --no-workspaces audits only the root's own dependencies, so the
+    // members' pins would be missing from the count.
+    const files = npmProject('mono', '0.0.8');
+    const manifest = JSON.parse(files['mono/package.json']!);
+    manifest.workspaces = ['packages/*'];
+    files['mono/package.json'] = JSON.stringify(manifest);
+    const dir = makeRepo(files);
+    await runAudit(dir);
+    const [entry] = sidecar(dir).lockfiles;
+    expect(entry).toMatchObject({
+      status: 'failed',
+      reason: 'workspace root not supported',
+    });
+    expect(supplyLine(render(dir))).toContain('not measured');
+  });
+
   it('pins the flags that npm config could otherwise override', async () => {
-    const dir = makeRepo(npmProject('ts', '0.0.8'));
+    const dir = makeRepo(
+      npmProject('ts', '0.0.8'),
+      'https://registry.npmjs.org/',
+    );
     const bin = join(dir, 'argv-bin');
     const argvFile = join(dir, 'npm-argv');
     mkdirSync(bin);
@@ -449,7 +514,14 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
     const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
     // --no-workspaces: from inside a workspace member, npm otherwise audits
     // the workspace root's tree instead of this lockfile's.
-    for (const flag of ['--no-offline', '--include=dev', '--no-workspaces']) {
+    for (const flag of [
+      '--no-offline',
+      '--include=dev',
+      '--include=optional',
+      '--include=peer',
+      '--no-workspaces',
+      '--registry=https://registry.npmjs.org/',
+    ]) {
       expect(argv).toContain(flag);
     }
   });
@@ -463,7 +535,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
       const inner = npmProject('outer/inner', '1.2.8');
       delete inner['outer/inner/package.json'];
       const dir = makeRepo({ ...outer, ...inner });
-      await runAudit(dir, { npm_config_registry: registryUrl });
+      await runAudit(dir);
       const entries = sidecar(dir).lockfiles;
       expect(entries.map((e) => [e.path, e.status])).toEqual([
         ['outer/inner/package-lock.json', 'failed'],
@@ -508,7 +580,7 @@ describe('supply-chain audit: real npm over nested lockfiles (#1436)', () => {
           [join(dir, AUDIT_SCRIPT)],
           {
             cwd: join(dir, 'ts'),
-            env: { ...process.env, npm_config_registry: registryUrl },
+            env: process.env,
           },
           () => done(),
         );

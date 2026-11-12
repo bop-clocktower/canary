@@ -12,7 +12,7 @@
 // outage is "not measured": neither may turn the required `security` check red.
 // Only a crash of this script fails the step.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,16 +24,21 @@ const AUDIT_MAX_BUFFER = 256 * 1024 * 1024;
 const SEVERITIES = ['critical', 'high', 'moderate', 'low', 'info', 'total'];
 // npm reads config from the lockfile's own .npmrc and from npm_config_* env
 // vars, and either can quietly shrink the audit to a false 0 (#1567):
-// offline=true skips the advisory lookup, omit=dev drops devDependencies, and
-// workspace detection audits the workspace root's tree instead of this one.
-// The flags on the command line outrank both.
+// offline=true skips the advisory lookup, omit=dev|optional|peer drops those
+// entries, workspace detection audits the workspace root's tree instead of
+// this one, and registry= sends the advisory request somewhere else. The flags
+// on the command line outrank both. A registry that lies is not caught here.
+const AUDIT_REGISTRY = 'https://registry.npmjs.org/';
 const AUDIT_ARGS = [
   'audit',
   '--package-lock-only',
   '--json',
   '--no-offline',
   '--include=dev',
+  '--include=optional',
+  '--include=peer',
   '--no-workspaces',
+  `--registry=${AUDIT_REGISTRY}`,
 ];
 
 const NPM_LOCKFILES = new Set(['package-lock.json', 'npm-shrinkwrap.json']);
@@ -98,16 +103,42 @@ function classifyReport(path, stdout) {
   return { path, status: 'measured', dependencies, vulnerabilities };
 }
 
+/**
+ * Why the package.json beside a lockfile rules out a measurement, or null.
+ * Without one, npm walks up to the nearest manifest and reports that project's
+ * tree under this lockfile's path. A workspace root under --no-workspaces
+ * audits only its own dependencies, not its members' (#1567).
+ */
+function manifestProblem(cwd) {
+  let text;
+  try {
+    text = readFileSync(join(cwd, 'package.json'), 'utf-8');
+  } catch {
+    return 'no package.json beside this lockfile';
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(text);
+  } catch {
+    return 'package.json beside this lockfile is not valid JSON';
+  }
+  if (
+    manifest !== null &&
+    typeof manifest === 'object' &&
+    'workspaces' in manifest
+  ) {
+    return 'workspace root not supported';
+  }
+  return null;
+}
+
 function auditLockfile(path) {
   if (!NPM_LOCKFILES.has(basename(path))) {
     return failed(path, 'no auditor for this lockfile type');
   }
   const cwd = resolve(REPO_ROOT, dirname(path));
-  // Without a package.json beside it, npm walks up to the nearest one and
-  // reports that project's tree under this lockfile's path (#1567).
-  if (!existsSync(join(cwd, 'package.json'))) {
-    return failed(path, 'no package.json beside this lockfile');
-  }
+  const unsupported = manifestProblem(cwd);
+  if (unsupported) return failed(path, unsupported);
   const r = spawnSync('npm', AUDIT_ARGS, {
     cwd,
     encoding: 'utf-8',
