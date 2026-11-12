@@ -76,6 +76,26 @@ test("clean titles: skipped in one project, run in another, is not published as 
   assert.ok(logs.some((l) => /1 ledger row matched no skipped result/.test(l)), logs.join("\n"));
 });
 
+test("#1589: an over-long issue is cut like a reason: tag", async () => {
+  const issue = `https://example.test/issues/77 ${"x".repeat(300)}`;
+  const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue }]);
+  const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
+  const tags = quarantineTags(byTitle(payload, "tests/a.spec.ts > cart > checkout total"));
+  assert.deepEqual(tags, ["quarantined", `quarantine:${issue.slice(0, 100)}`]);
+});
+
+test("#1589: a blank issue gets no quarantine:<issue> tag", async () => {
+  const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue: " \n " }]);
+  const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
+  assert.deepEqual(quarantineTags(byTitle(payload, "tests/a.spec.ts > cart > checkout total")), ["quarantined"]);
+});
+
+test("#1589: a numeric issue in a hand-edited ledger is still tagged", async () => {
+  const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue: 77 }]);
+  const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
+  assert.deepEqual(quarantineTags(byTitle(payload, "tests/a.spec.ts > cart > checkout total")), ["quarantined", "quarantine:77"]);
+});
+
 test("the catalog carries no quarantine tags: only results do", async () => {
   const file = ledger([{ test: "checkout total", file: "tests/a.spec.ts", kind: "skipped", issue: "#77" }]);
   const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });

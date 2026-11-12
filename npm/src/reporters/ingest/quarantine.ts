@@ -9,7 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import { dedupeByFullTitle, type ResultEntry } from "./payload.js";
+import { dedupeByFullTitle, tagText, type ResultEntry } from "./payload.js";
 import { errText, log, warn } from "./transport.js";
 
 const QUARANTINED_TAG = "quarantined";
@@ -88,7 +88,9 @@ function applyQuarantine(
     if (!hits.length) return r;
     for (const h of hits) used.add(h);
     tagged += 1;
-    const tickets = hits.filter((h) => h.issue).map((h) => `quarantine:${h.issue}`);
+    // Capped like `reason:` (#1589): a pasted URL or paragraph rides every match.
+    // String(): a hand-edited ledger can hold `"issue": 77`, which katana keeps.
+    const tickets = hits.map((h) => tagText(String(h.issue))).filter(Boolean).map((issue) => `quarantine:${issue}`);
     return { ...r, tags: [...new Set([...r.tags, QUARANTINED_TAG, ...tickets])] };
   });
   const left = rows.filter((row) => !used.has(row));
