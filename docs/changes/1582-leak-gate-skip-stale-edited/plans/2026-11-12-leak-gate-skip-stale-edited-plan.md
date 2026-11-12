@@ -1,0 +1,108 @@
+# Plan: leak gate skips stale `edited` events and still reports the required check
+
+Item: bop-clocktower/canary#1582 (cicd-fleet run fc1112, cause `infra-config`) ·
+Pipeline: `harness:cicd-fleet` → `harness-workflow-audit` → TDD · Date:
+2026-11-12 · Base: `origin/main` @ `f94dbec5`
+
+## Root cause
+
+`.github/workflows/leak-gate.yml` runs on `pull_request_target` with
+`types: [opened, synchronize, reopened, edited]`. `edited` is there so that a
+retarget re-runs the gate, but GitHub also sends it for title and body edits,
+including edits to PRs that have already merged or closed. The job then fetched
+that PR's old head and scanned it against the current denylist. If the denylist
+had grown since, the run went red on a PR nobody can change.
+
+## Audit (harness-workflow-audit, scoped to leak-gate.yml)
+
+| Check                 | Result                                                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M1 path filters       | None, on purpose (#542: a required check behind a filter never reports). Clean.                                                                        |
+| M2 permissions        | `contents: read` only. Clean.                                                                                                                          |
+| M3 pinning            | First-party `actions/checkout@v7`, `actions/setup-node@v7` only. Clean.                                                                                |
+| M4 self-trigger       | No push-back. Clean.                                                                                                                                   |
+| M5 secrets            | Secret reaches the scan step via `env:` only. Clean.                                                                                                   |
+| J1 injection          | Event values go via `env:`; no head checkout under `pull_request_target`. Clean.                                                                       |
+| **Trigger semantics** | **WARNING:** `edited` fires on non-code edits and closed PRs, so it scans a stale head and can produce red runs that nobody can act on. This is #1582. |
+
+## Fix (human decision: option b, narrowed after VERIFY)
+
+The first cut (option a) also skipped `edited` on an open PR when the base did
+not change. VERIFY found that this could record a passing run for a head whose
+last real scan was red, so a title or body edit could turn the required check
+green without a scan. The human narrowed the scope: skip only when the PR is not
+open.
+
+- A new first step, `decide` (id `decide`), reads `github.event_name`,
+  `github.event.action` and `github.event.pull_request.state` through `env:`
+  only. It writes `skip=true` only when the event is
+  `pull_request_target`/`edited` and the PR is not `open`. Every other event,
+  including any `edited` event on an open PR, gets `skip=false`. A skip logs a
+  `::notice::` so a green run says why it scanned nothing.
+- The fetch-head and scan steps take
+  `if: ... steps.decide.outputs.skip != 'true'`. Base checkout and setup-node
+  still run.
+- There is NO job-level `if:`. A skipped job reports `skipped`, not `success`,
+  and this job is the only producer of the required context
+  `No removed-symbol or proprietary leaks`. Gating at step level means the job
+  still finishes green, so the context is always reported.
+
+## Assumptions
+
+1. An open PR's `edited` event always scans, so no base-change field is read.
+2. Closed or merged PRs need no scan on `edited`. Their merge already passed the
+   gate, and `push` to `main` re-scans after the merge.
+3. `pull_request_target` uses the workflow from the base branch, so this change
+   cannot take effect on its own PR. Its own leak-gate run uses main's version
+   of the file.
+4. actionlint is not installed locally (no binary, no Docker daemon). The
+   `workflow-lint.yml` actionlint job checks the edited file in CI.
+
+## Tests (written first)
+
+First cut: 9 failed / 1 passed before the fix. Narrowed scope: 3 failed / 7
+passed against the first-cut workflow, then green.
+
+`ts/test/leak-gate-stale-edited.test.ts` runs the decide step's own script under
+bash with stub events:
+
+1. An `edited` event on a closed PR gives `skip=true`, exits 0 and logs the
+   reason. The fetch and scan steps are gated, so the job passes.
+2. An `edited` event on an open PR with no base change gives `skip=false`.
+3. The decision reads no base-change field, so a retarget and a body edit on an
+   open PR both scan.
+4. `opened`, `synchronize`, `reopened` and `push` give `skip=false`.
+5. The decide step's `env:` is exactly the three event expressions. Its `run:`
+   has no `${{ }}` and no secret.
+
+The test also checks that there is no job-level `if:`, that the decide step is
+at index 0 with no `if:` and no `continue-on-error`, and that only the fetch and
+scan steps are gated. `ts/test/leak-gate-workflow.test.ts`, which holds the
+safety invariants, is unchanged and still green.
+
+## Revision 2: live head-commit lookup (review M1, S1, S2)
+
+pr-fleet code review found M1, S1 and S2; the human chose HOLD + fix.
+
+- **M1.** The check run attaches to the head commit, and another open PR can
+  share it (open PR B from red PR A's branch, close B, edit B). The payload's
+  `pull_request.state` alone could therefore paint green onto a head an open PR
+  still needs scanned. Before skipping, `decide` calls
+  `gh api --paginate repos/{repo}/commits/{head_sha}/pulls` and skips only on a
+  readable answer of zero open PRs. Any API error, malformed head SHA or
+  unreadable answer scans.
+- **S1.** A re-run replays the original payload after a reopen. The live lookup
+  covers it.
+- **S2.** A workflow `concurrency` group, keyed per PR number (per commit on
+  push), with `cancel-in-progress: false`, so an older skip run cannot finish
+  after a newer scan of the same head.
+- **Permissions.** Adds `pull-requests: read` for that one lookup. There is no
+  write scope. `ts/test/leak-gate-workflow.test.ts` rule 5 now pins exactly
+  `{contents: read, pull-requests: read}`.
+- **Tests (written first, 9 failed / 25 passed against af448891).** These cover:
+  zero open PRs skips; an open PR sharing the head scans; a non-zero later page
+  scans; an API error scans; empty, null, non-numeric, multi-token or negative
+  answers scan; a missing or malformed SHA scans with no API call; open-PR edits
+  and other events never call the API; the env is exactly six expressions; the
+  token is never echoed; and the concurrency group is keyed per PR and per
+  commit, never cancelling.
