@@ -313,6 +313,7 @@ describe('#1463 refresh-arch-baseline.yml runs no registry or PR-head code under
   const measure = wf.jobs?.measure;
   const push = wf.jobs?.push;
   const consume = wf.jobs?.['consume-label'];
+  const remedy = wf.jobs?.['ci-remedy-comment'];
   const steps = (j?: Job) => j?.steps ?? [];
   const actions = (j?: Job) =>
     steps(j)
@@ -337,7 +338,11 @@ describe('#1463 refresh-arch-baseline.yml runs no registry or PR-head code under
   });
 
   it('runs neither in any job that holds a write scope', () => {
-    expect(writers.map(([id]) => id).sort()).toEqual(['consume-label', 'push']);
+    expect(writers.map(([id]) => id).sort()).toEqual([
+      'ci-remedy-comment',
+      'consume-label',
+      'push',
+    ]);
     expect(
       writers
         .filter(([, j]) => runsRegistryCode(j) || runsCheckoutCode(j))
@@ -370,6 +375,7 @@ describe('#1463 refresh-arch-baseline.yml runs no registry or PR-head code under
     // Not `contents: write`: this job only edits a label. #1426's "contents:
     // write and nothing else" is the same rule, one scope per write.
     expect(consume?.permissions).toEqual({ 'pull-requests': 'write' });
+    expect(remedy?.permissions).toEqual({ 'pull-requests': 'write' });
     expect(measure?.permissions).toBeUndefined();
   });
 
@@ -379,6 +385,7 @@ describe('#1463 refresh-arch-baseline.yml runs no registry or PR-head code under
       'actions/download-artifact',
     ]);
     expect(actions(consume)).toEqual([]);
+    expect(actions(remedy)).toEqual([]);
   });
 
   it('leaves no token in the measuring checkout', () => {
@@ -446,6 +453,58 @@ describe('#1463 refresh-arch-baseline.yml runs no registry or PR-head code under
         .map(() => id),
     );
     expect(inline).toEqual([]);
+  });
+});
+
+/**
+ * #1591. `push` commits with `github.token`, and GitHub starts no `push` or
+ * `pull_request` workflow for a commit pushed with that token. The required
+ * checks never run on the refreshed head, so the PR stays BLOCKED. The
+ * least-privilege token model stays (no App token, no PAT), so the PR is told
+ * what to do instead: a comment from a job that holds `pull-requests: write`,
+ * not from `push`, and only when `push` really pushed. It must not post on the
+ * deleted-branch skip, which exits 0. `refresh-baseline-push-job.test.ts` runs
+ * the script.
+ */
+describe('#1591 refresh-arch-baseline.yml tells the PR how to re-run its required checks', () => {
+  type GatedJob = Job & {
+    needs?: unknown;
+    if?: unknown;
+    outputs?: Record<string, string>;
+  };
+  const wf = workflow('refresh-arch-baseline.yml');
+  const push = wf.jobs?.push as GatedJob | undefined;
+  const remedy = wf.jobs?.['ci-remedy-comment'] as GatedJob | undefined;
+  const script = (remedy?.steps ?? []).map((s) => s.run ?? '').join('\n');
+
+  it('takes a pushed output from the step that runs git push', () => {
+    const ref = /^\$\{\{\s*steps\.([\w-]+)\.outputs\.pushed\s*\}\}$/.exec(
+      push?.outputs?.pushed ?? '',
+    );
+    expect(ref, 'push.outputs.pushed').not.toBeNull();
+    const step = (push?.steps ?? []).find(
+      (s) => (s as { id?: string }).id === ref![1],
+    );
+    expect(step?.run).toMatch(/\bgit push\b/);
+  });
+
+  it('comments from its own job, after push, only when a commit was pushed', () => {
+    expect(remedy?.needs).toBe('push');
+    expect(remedy?.if).toBe("success() && needs.push.outputs.pushed == 'true'");
+  });
+
+  it('does not widen push, and holds only the scope a comment needs', () => {
+    expect(push?.permissions).toEqual({ contents: 'write' });
+    expect(remedy?.permissions).toEqual({ 'pull-requests': 'write' });
+    expect(remedy && runsRegistryCode(remedy)).toBe(false);
+    expect(remedy && runsCheckoutCode(remedy)).toBe(false);
+  });
+
+  it('posts a PR comment that names both remedies', () => {
+    expect(script).toMatch(/\bgh pr comment\b/);
+    expect(script).toContain('git commit --allow-empty');
+    expect(script).toContain('ci: re-run checks after baseline refresh');
+    expect(script).toContain('gh pr update-branch');
   });
 });
 

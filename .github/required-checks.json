@@ -220,6 +220,11 @@
       "reason": "Not a gate. #1463 gave the label removal its own job so that `pull-requests: write` sits apart from the push. It runs only after `push`, on the same label, so requiring it would deadlock every PR that is never labeled."
     },
     {
+      "check": "ci-remedy-comment",
+      "workflow": "refresh-arch-baseline.yml",
+      "reason": "Not a gate. #1591: it comments on the PR that the required checks will not re-run on the bot's refresh commit, and how to start them. It runs only after `push` actually pushed, on the same label, so requiring it would deadlock every PR that is never labeled."
+    },
+    {
       "check": "actionlint",
       "workflow": "workflow-lint.yml",
       "reason": "Precision not yet known (ADR 0010). #1238 added this check after clearing the last 6 findings, so it has one clean run of history. It runs on every PR with no path filter, so it can be promoted with a ruleset edit (ADR 0011) once it has a record. It is pinned to actionlint 1.7.12, so a new upstream release cannot turn it red."
