@@ -46,17 +46,23 @@ origin_tip() {
   GIT_TERMINAL_PROMPT=0 git -C "$MKT" ls-remote origin HEAD >"$out" 2>/dev/null </dev/null &
   pid=$!
   # The watchdog's stdio is detached so a lingering sleep cannot hold the
-  # hook's stdout open after it exits.
-  (sleep "$LS_REMOTE_TIMEOUT" && kill "$pid") >/dev/null 2>&1 </dev/null &
+  # hook's stdout open after it exits. It drops a marker BEFORE the kill, so
+  # by the time ls-remote dies of it the marker is already on disk (#1609).
+  # `;` not `&&` after the marker: a marker that cannot be written must not
+  # cost the timeout bound.
+  (sleep "$LS_REMOTE_TIMEOUT" && { : >"$out.fired"; kill "$pid"; }) >/dev/null 2>&1 </dev/null &
   wd=$!
   wait "$pid" 2>/dev/null # no "Terminated" noise on stderr when killed
   rc=$?
-  # A watchdog still alive to be killed did not fire. Git's own exit codes
-  # overlap signal ones (128 is a plain failure), so ask the watchdog instead.
-  kill "$wd" 2>/dev/null || fired=1
-  wait "$wd" 2>/dev/null
+  # Git's own exit codes overlap signal ones (128 is a plain failure), so the
+  # marker, not rc, says whether the watchdog fired. Never infer it from the
+  # watchdog being dead: wait can return while the subshell that just sent
+  # the kill is still alive, which reported real timeouts as offline (#1609).
+  kill "$wd" 2>/dev/null
+  wait "$wd" 2>/dev/null # reaped, so no marker can appear after the check
+  [ -e "$out.fired" ] && fired=1
   tip=$(awk '$2 == "HEAD" { print $1; exit }' "$out")
-  rm -f "$out"
+  rm -f "$out" "$out.fired"
   if [ "$rc" -ne 0 ] && [ "$fired" = 1 ]; then
     LS_REMOTE_WHY="timed out after ${LS_REMOTE_TIMEOUT}s"
   elif [ "$rc" -ne 0 ]; then
