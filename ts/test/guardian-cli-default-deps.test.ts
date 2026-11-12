@@ -268,23 +268,26 @@ function firstRequest(fetchSpy: ReturnType<typeof vi.fn>): [string, string] {
 }
 
 describe('defaultDeps() GitHub client builders', () => {
-  it('buildCommentClient posts to the PR issue thread with GITHUB_TOKEN', async () => {
-    setEnv('GITHUB_TOKEN', 'tok-from-env');
+  it('buildCommentClient posts to the PR issue thread with the token it was given', async () => {
+    // #1445: the token is passed in, so process.env never leaks into it.
+    setEnv('GITHUB_TOKEN', 'tok-from-process-env');
     const fetchSpy = stubFetch({ id: 1, body: 'hi' });
-    await defaultDeps().buildCommentClient('o/r', 7).createComment('hi');
+    await defaultDeps()
+      .buildCommentClient('o/r', 7, 'tok-arg')
+      .createComment('hi');
     expect(firstRequest(fetchSpy)).toEqual([
       'https://api.github.com/repos/o/r/issues/7/comments',
-      'Bearer tok-from-env',
+      'Bearer tok-arg',
     ]);
   });
 
-  it('buildCommentClient sends an empty bearer when GITHUB_TOKEN is unset', async () => {
-    // Rule 1 (omit the default): no token is not an error at build time --
-    // the request goes out unauthenticated and GitHub's 401 decides.
-    setEnv('GITHUB_TOKEN', undefined);
+  it('buildCommentClient never sends an empty bearer (#1445)', async () => {
+    setEnv('GITHUB_TOKEN', 'tok-from-process-env');
     const fetchSpy = stubFetch({ id: 1, body: 'hi' });
-    await defaultDeps().buildCommentClient('o/r', 7).createComment('hi');
-    expect(firstRequest(fetchSpy)[1]).toBe('Bearer ');
+    await expect(
+      defaultDeps().buildCommentClient('o/r', 7, '').createComment('hi'),
+    ).rejects.toThrow(/GITHUB_TOKEN/);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('buildAdjudicationSource reads PR files with the token it was given', async () => {

@@ -234,7 +234,12 @@ export interface GuardianDeps {
   cwd(): string;
   runGit(args: string[], cwd?: string): GitResult | null;
   runGh(args: string[]): GhResult;
-  buildCommentClient(repo: string, prNumber: number): GitHubClient;
+  // `token` is read from `env` at the call site (#1445), never `process.env`.
+  buildCommentClient(
+    repo: string,
+    prNumber: number,
+    token: string,
+  ): GitHubClient;
   buildAdjudicationSource(repo: string, token: string): AdjudicationSource;
   buildBranchProtectionClient(repo: string, token: string): BranchProtection;
   makeAgentTier(): AgentTier;
@@ -305,8 +310,8 @@ export function defaultDeps(): GuardianDeps {
     cwd: () => process.cwd(),
     runGit: spawnGit,
     runGh: spawnGh,
-    buildCommentClient: (repo, prNumber) =>
-      new RestGitHubClient(repo, prNumber, process.env['GITHUB_TOKEN'] ?? ''),
+    buildCommentClient: (repo, prNumber, token) =>
+      new RestGitHubClient(repo, prNumber, token),
     buildAdjudicationSource: (repo, token) =>
       new GitHubAdjudicationSource(repo, token),
     buildBranchProtectionClient: (repo, token) =>
@@ -1231,7 +1236,10 @@ async function postStickyComment(
     deps.out(body);
     return;
   }
-  const client = deps.buildCommentClient(ctx[0], ctx[1]);
+  // An empty token degrades inside upsertStickyComment with a notice naming
+  // GITHUB_TOKEN (#1445); the client never sends an empty bearer.
+  const token = deps.env['GITHUB_TOKEN'] ?? '';
+  const client = deps.buildCommentClient(ctx[0], ctx[1], token);
   const res = await upsertStickyComment(client, body);
   if (res.action === 'degraded' && res.notice) {
     deps.out(degradationAnnotation(res.notice));

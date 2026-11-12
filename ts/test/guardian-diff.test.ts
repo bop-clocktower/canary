@@ -322,3 +322,104 @@ describe('malformed path items', () => {
     expect(() => extractApiDiff(before, after)).not.toThrow();
   });
 });
+
+describe('path-item level contract', () => {
+  it('a path-level parameter change is a change to every operation under it', () => {
+    // OpenAPI applies pathItem.parameters to each operation on the path, so
+    // retyping one is a params change consumers see on GET /u/{id}.
+    const spec = (type: string): Spec => ({
+      openapi: '3.0.0',
+      paths: {
+        '/u/{id}': {
+          parameters: [{ name: 'id', in: 'path', schema: { type } }],
+          get: { operationId: 'getU' },
+        },
+      },
+    });
+    const diff = extractApiDiff(spec('string'), spec('integer'));
+    expect(diff.changed.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'get /u/{id}',
+    ]);
+  });
+
+  it('classifies a path-level parameter change as params on each operation', () => {
+    const spec = (type: string): Spec => ({
+      openapi: '3.0.0',
+      paths: {
+        '/u/{id}': {
+          parameters: [{ name: 'id', in: 'path', schema: { type } }],
+          get: { operationId: 'getU' },
+          delete: { operationId: 'delU' },
+        },
+      },
+    });
+    const diff = extractApiDiff(spec('string'), spec('integer'));
+    expect(
+      diff.changed.map((c) => [c.method, classifyChanges(c.before, c.after)]),
+    ).toEqual([
+      ['get', ['params']],
+      ['delete', ['params']],
+    ]);
+  });
+
+  it('an operation-level parameter with the same name and in overrides the path-level one', () => {
+    // The operation redeclares `id`, so the path-level retype is shadowed and
+    // consumers of GET /u/{id} see no change.
+    const ownId = { name: 'id', in: 'path', schema: { type: 'string' } };
+    const getU = { operationId: 'getU', parameters: [ownId] };
+    const spec = (type: string): Spec => ({
+      openapi: '3.0.0',
+      paths: {
+        '/u/{id}': {
+          parameters: [{ name: 'id', in: 'path', schema: { type } }],
+          get: getU,
+        },
+      },
+    });
+    expect(extractApiDiff(spec('string'), spec('integer')).isEmpty).toBe(true);
+  });
+
+  it('a parameter moved from the operation up to the path item is not a change', () => {
+    const param = { name: 'q', in: 'query', schema: { type: 'string' } };
+    const before: Spec = {
+      openapi: '3.0.0',
+      paths: { '/s': { get: { operationId: 's', parameters: [param] } } },
+    };
+    const after: Spec = {
+      openapi: '3.0.0',
+      paths: { '/s': { parameters: [param], get: { operationId: 's' } } },
+    };
+    expect(extractApiDiff(before, after).isEmpty).toBe(true);
+  });
+
+  it('a path-level $ref parameter is inherited even when the operation declares parameters', () => {
+    // A `$ref` has no name/in to override by, so it always applies; a null
+    // operation `parameters` contributes nothing.
+    const spec = (ref: string): Spec => ({
+      openapi: '3.0.0',
+      paths: {
+        '/r': {
+          parameters: [{ $ref: ref }, 'malformed'],
+          get: { operationId: 'r', parameters: null },
+          put: { operationId: 'p', parameters: [{ $ref: ref }] },
+        },
+      },
+    });
+    const diff = extractApiDiff(spec('#/c/A'), spec('#/c/B'));
+    expect(diff.changed.map((c) => c.method)).toEqual(['get', 'put']);
+    expect(diff.changed[0]!.after['parameters']).toEqual([
+      { $ref: '#/c/B' },
+      'malformed',
+    ]);
+  });
+
+  it('an added operation reports its effective parameters, path-level included', () => {
+    const param = { name: 'id', in: 'path', schema: { type: 'string' } };
+    const after: Spec = {
+      openapi: '3.0.0',
+      paths: { '/u/{id}': { parameters: [param], get: { operationId: 'g' } } },
+    };
+    const diff = extractApiDiff({ openapi: '3.0.0', paths: {} }, after);
+    expect(diff.added[0]!.after['parameters']).toEqual([param]);
+  });
+});
