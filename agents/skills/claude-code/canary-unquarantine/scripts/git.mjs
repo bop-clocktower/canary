@@ -60,9 +60,13 @@ export function insideRepo(repo, file) {
   return { rel: rel.split(path.sep).join('/'), abs };
 }
 
-/** A fresh temp directory. */
+/** A fresh temp directory. Whoever makes one removes it, on failure too. */
 export const scratchDir = (prefix) =>
   fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+
+/** Remove a `scratchDir` and everything in it; one already gone is fine. */
+export const dropScratch = (dir) =>
+  fs.rmSync(dir, { recursive: true, force: true });
 
 /** `rel` under `root`. */
 export const at = (root, rel) => path.join(root, rel);
@@ -87,7 +91,7 @@ export function withWorktree(run, repo, { options = [], commit }, fn) {
     return fn(work);
   } finally {
     run('git', ['-C', repo, 'worktree', 'remove', '--force', work]);
-    fs.rmSync(tmp, { recursive: true, force: true });
+    dropScratch(tmp);
   }
 }
 

@@ -178,10 +178,12 @@ const ACTION = {
   skipped: 'still skipped in the run: marker restored, nothing else changed',
 };
 
-const noteLine = (n) =>
-  n.commented
-    ? `  told ${n.target}: ${n.test} still fails`
-    : `  NOT told ${n.target ?? '(no ticket)'}: ${n.why}`;
+/** A note not posted is printed whole: a second --apply cannot list it again. */
+const noteLine = (n) => {
+  if (n.commented) return `  told ${n.target}: ${n.test} still fails`;
+  const line = `  NOT told ${n.target ?? '(no ticket)'}: ${n.why}`;
+  return n.body ? `${line}\n      ${n.body}` : line;
+};
 
 /** The verdict: one line per lifted test, the flake hand-off, and what was (not) written. */
 export function renderVerdict(doc) {

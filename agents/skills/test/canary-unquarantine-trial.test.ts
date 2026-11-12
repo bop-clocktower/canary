@@ -29,6 +29,7 @@ import {
 } from '../claude-code/canary-unquarantine/scripts/results.mjs';
 import { commentFailures } from '../claude-code/canary-unquarantine/scripts/notify.mjs';
 import { spawnRunner } from '../claude-code/canary-unquarantine/scripts/exec.mjs';
+import { renderVerdict } from '../claude-code/canary-unquarantine/scripts/report.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(HERE, 'fixtures', 'unquarantine');
@@ -561,6 +562,58 @@ describe('verdict', () => {
     );
   });
 
+  it('--apply prints a listed note in full in plain output, so a person can post it', () => {
+    // #1576: the plain report printed only "NOT told <target>: <why>", and a
+    // second --apply cannot list it again, so the body was lost without --json.
+    const { repo, h } = opened(
+      report({ card: 'expected', event: 'unexpected', v2: 'expected' }),
+    );
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    expect(r.stderr).toBe('');
+    const lines = r.stdout.split('\n');
+    const at = lines.findIndex((l) => l.includes('NOT told CORE-101'));
+    expect(at).toBeGreaterThan(-1);
+    expect(lines[at + 1]).toMatch(/^ {6}canary-unquarantine trial: `/);
+    expect(lines[at + 1]).toMatch(/still fails/);
+    expect(lines[at + 1]).toContain(
+      'https://github.com/acme/orders-suite/pull/77',
+    );
+  });
+
+  it('the plain report prints a body only for a note that was not posted and has one', () => {
+    const doc = {
+      pr: 77,
+      tests: [],
+      cases: 0,
+      documents: 0,
+      flake_hunter: [],
+      abstained: false,
+      applied: true,
+      comments: [
+        { test: 't', target: '#505', commented: true, why: '', body: 'B1' },
+        { test: 't', commented: false, why: 'no blocker to comment on' },
+        { test: 't', target: '#9', commented: false, why: 'HTTP 500' },
+      ],
+    };
+    const out = renderVerdict(doc).split('\n');
+    expect(out).toContain('  told #505: t still fails');
+    expect(out).toContain('  NOT told (no ticket): no blocker to comment on');
+    expect(out).toContain('  NOT told #9: HTTP 500');
+    expect(out.join('\n')).not.toContain('B1');
+  });
+
   it('a lifted test that never appeared in the run is not a pass', () => {
     const { repo, h } = opened(
       report({ card: 'expected', event: 'expected', v2: 'expected' }),
@@ -998,6 +1051,69 @@ describe('results', () => {
     expect(out).toEqual({
       why: expect.stringMatching(/gh run list returned unparseable JSON/),
     });
+  });
+});
+
+describe('verdict leaves nothing behind in the temp directory', () => {
+  // #1574: every `verdict --artifact` left an `unquarantine-results-*` copy of
+  // the CI results in the OS temp dir. The temp dir here is a private one, so
+  // the count is this test's alone and other workers cannot move it.
+  function privateTmp() {
+    const dir = mkTmp();
+    for (const name of ['TMPDIR', 'TMP', 'TEMP']) vi.stubEnv(name, dir);
+    expect(os.tmpdir()).toBe(dir);
+    return () =>
+      fs.readdirSync(dir).filter((n) => n.startsWith('unquarantine'));
+  }
+  const verdict = (
+    repo: string,
+    h: ReturnType<typeof harness>,
+    ...extra: string[]
+  ) =>
+    callMain(
+      [
+        'verdict',
+        '--repo',
+        repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        ...extra,
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+  function opened(results?: object) {
+    const suite = makeSuite();
+    const h = harness({ results });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    return { ...suite, h };
+  }
+
+  it('after a read, an --apply, and an --apply that is refused', () => {
+    const t = opened(report({ card: 'flaky', event: 'expected', v2: 'flaky' }));
+    const left = privateTmp();
+    expect(verdict(t.repo, t.h).code).toBe(0);
+    expect(left()).toEqual([]);
+    expect(verdict(t.repo, t.h, '--apply').stderr).toBe('');
+    expect(left()).toEqual([]);
+    // Refused part-way: the settle throws after the results were downloaded.
+    t.h.state.body = `edited\n\n${embedManifest({ ...readManifest(t.h.state.body!)!, base: 'nope' })}\n`;
+    expect(verdict(t.repo, t.h, '--apply').code).toBe(1);
+    expect(left()).toEqual([]);
+  });
+
+  it('when the run has no such artifact', () => {
+    const t = opened();
+    const left = privateTmp();
+    const r = verdict(t.repo, t.h, '--json');
+    expect(JSON.parse(r.stdout).why).toMatch(/has no artifact/);
+    expect(left()).toEqual([]);
   });
 });
 
@@ -1996,6 +2112,17 @@ describe('verdict --apply acts only on what the default branch vouches for', () 
       expect(added.file).not.toContain('\n');
       expect(added.file.length).toBeLessThanOrEqual(201);
     });
+
+    it('--json rewrites a backtick in a title to an apostrophe, as SKILL.md states', () => {
+      // #1576: a consumer matching titles from --json must match the rewrite.
+      const t = settle(ALL_PASS, {
+        change: (m) => {
+          m.lifts.push({ ...structuredClone(m.lifts[0]), test: 'adds `x`' });
+        },
+      });
+      const doc = JSON.parse(report_(t, '--json').stdout);
+      expect(doc.tests.at(-1).test).toBe("adds 'x'");
+    });
   });
 
   describe('ledgerRows are checked against the trusted ledger', () => {
@@ -2319,5 +2446,79 @@ describe('verdict --apply refuses a manifest that reaches outside the worktree',
       }),
       /not a Jira key/,
     );
+  });
+});
+
+describe('verdict --apply refuses a test file it cannot restore byte for byte', () => {
+  // The runner decodes git output as UTF-8, so a non-UTF-8 blob (a git-crypt
+  // file, a Latin-1 comment) would come back changed and be pushed (#1573).
+  it('a non-UTF-8 file at base is refused: non-zero, named, nothing pushed, no ticket told', () => {
+    const suite = makeSuite();
+    const abs = path.join(suite.repo, REF_FILE);
+    const latin1 = Buffer.from('// caf\xe9 \xff\xfe\n', 'latin1');
+    fs.writeFileSync(abs, Buffer.concat([fs.readFileSync(abs), latin1]));
+    git(suite.repo, 'commit', '-q', '-am', 'a Latin-1 comment');
+    git(suite.repo, 'push', '-q', 'origin', 'main');
+    const h = harness({
+      results: report({ card: 'flaky', event: 'flaky', v2: 'flaky' }),
+    });
+    expect(
+      callMain(
+        ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+        { run: h.run, env: JIRA_ENV },
+      ).code,
+    ).toBe(0);
+    const head = git(suite.origin, 'rev-parse', 'canary/trial');
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        suite.repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/not UTF-8 text.*refusing to settle/);
+    expect(r.stderr).toContain(REF_FILE);
+    expect(git(suite.origin, 'rev-parse', 'canary/trial')).toBe(head);
+    expect(h.calls.some((c) => c.args[0] === 'issue')).toBe(false);
+  });
+
+  it('a UTF-8 file with multi-byte text still restores byte for byte', () => {
+    const suite = makeSuite();
+    const abs = path.join(suite.repo, REF_FILE);
+    fs.appendFileSync(abs, '// café \u{1F426} ﻿\n');
+    git(suite.repo, 'commit', '-q', '-am', 'a UTF-8 comment');
+    git(suite.repo, 'push', '-q', 'origin', 'main');
+    const h = harness({
+      results: report({ card: 'flaky', event: 'flaky', v2: 'flaky' }),
+    });
+    callMain(
+      ['trial', '--repo', suite.repo, '--yes', '--branch', 'canary/trial'],
+      { run: h.run, env: JIRA_ENV },
+    );
+    const r = callMain(
+      [
+        'verdict',
+        '--repo',
+        suite.repo,
+        '--pr',
+        '77',
+        '--artifact',
+        'playwright-json',
+        '--apply',
+      ],
+      { run: h.run, env: JIRA_ENV },
+    );
+    expect(r.stderr).toBe('');
+    const blob = (rev: string) =>
+      spawnSync('git', ['-C', suite.origin, 'show', `${rev}:${REF_FILE}`])
+        .stdout as Buffer;
+    expect(blob('canary/trial').equals(blob('main'))).toBe(true);
   });
 });

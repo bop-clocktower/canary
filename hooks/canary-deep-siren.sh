@@ -1,7 +1,8 @@
 #!/bin/bash
 # Weekly deep canary siren.
 #
-# Does what the fast SessionStart siren cannot: network checks. Findings fire a
+# Does the network checks the fast SessionStart siren cannot afford (that one
+# makes a single time-boxed `git ls-remote`, nothing more). Findings fire a
 # desktop notification and are appended to the log, so rot gets announced even
 # if no Claude session is opened all week.
 #

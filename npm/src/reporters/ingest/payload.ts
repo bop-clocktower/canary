@@ -6,6 +6,7 @@ import { redactCatalog, redactEntry, redactText } from "./redact.js";
 import type { CollectedEntry, ResultEntry } from "./types.js";
 
 export type { CollectedEntry, ResultEntry } from "./types.js";
+export { tagText } from "./describe.js"; // quarantine.ts's cap, over an edge it already has (#1589)
 
 /**
  * The wire contract POSTed to `/api/ingest/runs`. Declared explicitly (rather

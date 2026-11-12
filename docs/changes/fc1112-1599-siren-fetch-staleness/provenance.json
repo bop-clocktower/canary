@@ -1,0 +1,28 @@
+{
+  "issues": [1599],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > is silent when the clone HEAD matches origin, however old FETCH_HEAD is (#1599)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > names a remedy that, run verbatim, clears the clone-behind finding (#1599)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > reports an unreachable origin as unverifiable, never as fresh (#1599)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > reports an origin that answers with no HEAD as unverifiable (#1599)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > bounds a hung ls-remote with a timeout and reports it as unverifiable (#1599)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > reports drift the clone has not fetched yet, against the live origin (#1495)"
+  ],
+  "assumptions": [
+    "Freshness = clone HEAD equals `git ls-remote origin HEAD` (human-settled fork); FETCH_HEAD mtime is no longer read anywhere in the session siren.",
+    "ls-remote is bounded by a bash watchdog (macOS ships no `timeout`); default 3s, overridable via CANARY_SIREN_LS_REMOTE_TIMEOUT. A timeout is told apart from a git failure by whether the watchdog fired, since git's own exit 128 overlaps signal codes.",
+    "Failed, timed-out, or empty (no HEAD) ls-remote yields one explicit 'unverifiable' finding covering both clone freshness and installed-plugin staleness; check 4b then stays quiet rather than duplicating it.",
+    "Clone-behind remedy is `git -C '<clone>' pull --ff-only` (verified by a test that runs it verbatim and re-runs the siren). `claude plugin marketplace update` is no longer named because its effect on the clone cannot be tested here.",
+    "Check 4b now compares the installed gitCommitSha against origin's live HEAD rather than @{upstream}/origin/HEAD; its remedy is prefixed 'once the clone is at origin' because reinstall copies from the clone.",
+    "GIT_SSH_COMMAND is not overridden (would clobber a user's core.sshCommand); GIT_TERMINAL_PROMPT=0 and stdin </dev/null plus the timeout bound any prompt.",
+    "No other copies of the hook exist: scripts/install-siren.mjs symlinks hooks/canary-session-siren.sh; .claude-plugin/hooks.json does not ship it."
+  ],
+  "closingKeywords": {
+    "1599": "Closes"
+  },
+  "run": "fc1112",
+  "fleet": "roadmap-fleet",
+  "baseSha": "f94dbec5"
+}
