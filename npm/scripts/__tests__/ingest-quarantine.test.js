@@ -81,3 +81,43 @@ test("the catalog carries no quarantine tags: only results do", async () => {
   const { payload } = await runReporter({ options: { quarantineLedger: file }, tests: skippedRun() });
   assert.ok(payload.collected.every((c) => quarantineTags(c).length === 0));
 });
+
+// #1588: which katana reader the compiled module loads. The built ingest
+// directory is copied into a temp layout beside a stub `ledger.mjs` whose
+// row's issue names the copy it came from.
+const LEDGER_PARTS = ["agents", "skills", "claude-code", "canary-katana", "scripts", "ledger.mjs"];
+
+function stubReader(root, who) {
+  const file = path.join(root, ...LEDGER_PARTS);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const row = { test: "t", file: "a.spec.ts", kind: "skipped", issue: who };
+  fs.writeFileSync(file, `export function load() { return { entries: [${JSON.stringify(row)}] }; }\n`);
+}
+
+async function readerUsed(pkg) {
+  const ingest = path.join(pkg, "dist", "reporters", "ingest");
+  fs.cpSync(path.join(__dirname, "..", "..", "dist", "reporters", "ingest"), ingest, { recursive: true });
+  const file = path.join(pkg, "quarantine.json");
+  fs.writeFileSync(file, "{}");
+  const { quarantineResults } = require(path.join(ingest, "quarantine.js"));
+  const skip = { full_title: "a.spec.ts > t", test_file: "a.spec.ts", status: "skipped", retries: 0, tags: [] };
+  const { results } = await quarantineResults(file, [skip]);
+  return results[0].tags.find((t) => t.startsWith("quarantine:"));
+}
+
+test("checkout: the repo's agents/skills wins over a stale staged npm/agents copy", async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ingest-checkout-"));
+  fs.mkdirSync(path.join(repo, ".git"));
+  stubReader(repo, "repo");
+  stubReader(path.join(repo, "npm"), "staged");
+  assert.equal(await readerUsed(path.join(repo, "npm")), "quarantine:repo");
+});
+
+test("published package: the bundled <pkg>/agents/skills is used", async () => {
+  const consumer = fs.mkdtempSync(path.join(os.tmpdir(), "ingest-published-"));
+  fs.mkdirSync(path.join(consumer, ".git"));
+  const pkg = path.join(consumer, "node_modules", "canary-test-cli");
+  stubReader(pkg, "bundled");
+  stubReader(path.dirname(pkg), "decoy"); // no `.git` beside it: not a checkout
+  assert.equal(await readerUsed(pkg), "quarantine:bundled");
+});
