@@ -8,6 +8,12 @@ name: Refresh Arch Baseline
 # only the *mechanical* refresh — and only when a maintainer explicitly asks
 # for it by adding the `refresh-baseline` label to a PR. Nothing refreshes
 # silently; the ratchet stays intact.
+#
+# The refresh commit does NOT re-run the PR's required checks (#1591): it is
+# pushed with GITHUB_TOKEN, which starts no workflow. `ci-remedy-comment` says
+# so on the PR. To start them, push a commit yourself, for example
+#   git commit --allow-empty -m "ci: re-run checks after baseline refresh" && git push
+# or run `gh pr update-branch <N>` when the PR is behind main.
 
 on:
   pull_request:
@@ -137,6 +143,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # #1591: `true` only after `git push` succeeded. The deleted-branch skip
+    # exits 0 and sets `false`, so `ci-remedy-comment` says nothing about a
+    # commit that does not exist.
+    outputs:
+      pushed: ${{ steps.commit-push.outputs.pushed }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -244,6 +255,7 @@ jobs:
           cp -- "$SRC/audit.log" .harness/audit.log
 
       - name: Commit & push the refreshed baseline
+        id: commit-push
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -283,6 +295,7 @@ jobs:
           remote="$(git ls-remote --exit-code origin "refs/heads/$BRANCH")" || rc=$?
           if [ "$rc" -eq 2 ]; then
             echo "::warning::PR branch '$BRANCH' no longer exists on origin; skipping push."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$rc" -ne 0 ]; then
@@ -311,6 +324,7 @@ jobs:
           git add .harness/audit.log
           git commit -m "chore(ci): refresh arch baseline via refresh-baseline label"
           git push origin "HEAD:refs/heads/$BRANCH"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
           {
             echo "### Arch baseline refreshed"
             echo
@@ -349,3 +363,49 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --remove-label refresh-baseline \
             || echo "::warning::could not remove the refresh-baseline label from #$PR_NUMBER; remove it by hand."
+
+  # #1591: the commit `push` made does not start the required checks. GitHub
+  # starts no `push` or `pull_request` workflow for a push made with
+  # `github.token`, so under strict required checks the PR stays BLOCKED on the
+  # results of the commit before it. A token that would trigger them (an App
+  # token or a PAT) is exactly what #1463 took out of this workflow, so the PR
+  # is told what to do instead, and a human push starts the checks.
+  #
+  # Its own job for the reason `consume-label` is one: it needs
+  # `pull-requests: write`, which `push` must not hold. It needs no checkout.
+  # `pushed` is `true` only after a real push, so the deleted-branch skip, which
+  # exits 0, posts nothing. A failed comment is a warning: the baseline is
+  # already pushed, and the comment at the top of this file and AGENTS.md give
+  # the same remedy.
+  ci-remedy-comment:
+    needs: push
+    if: success() && needs.push.outputs.pushed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Tell the PR how to re-run its required checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          body="$(mktemp)"
+          {
+            printf '%s\n' "The \`refresh-baseline\` label pushed a refreshed arch baseline to \`$BRANCH\` as \`github-actions[bot]\`."
+            printf '\n'
+            printf '%s\n' "The required checks will **not** re-run on that commit. GitHub starts no workflow for a push made with \`GITHUB_TOKEN\`, so this PR stays blocked on the results of the commit before it until a new commit arrives."
+            printf '\n'
+            printf '%s\n' "To re-run them, push an empty commit to \`$BRANCH\`:"
+            printf '\n'
+            printf '%s\n' '```bash'
+            printf '%s\n' "git pull --ff-only"
+            printf '%s\n' 'git commit --allow-empty -m "ci: re-run checks after baseline refresh" && git push'
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' "If the PR is behind \`main\`, updating the branch also starts them: \`gh pr update-branch $PR_NUMBER\`."
+          } > "$body"
+          gh pr comment "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file "$body" \
+            || echo "::warning::could not post the CI-remedy comment on #$PR_NUMBER; push an empty commit to re-run the required checks."

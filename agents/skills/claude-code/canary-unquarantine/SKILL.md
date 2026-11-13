@@ -282,8 +282,10 @@ reviews and merges it.
 The trial manifest lives in the PR body, so anyone who can edit the PR can
 change it. Before anything is written, every path it names (the lifted files and
 the ledger) must resolve, symlinks included, strictly inside the trial worktree,
-and its `base` must be a commit id. Any escape refuses the whole `--apply`: it
-exits non-zero and writes, pushes and comments nothing.
+must not be or pass through a symlink at all (each segment is `lstat`ed from the
+worktree root down, #1562), and its `base` must be a commit id. Any of these
+refuses the whole `--apply`: it exits non-zero and writes, pushes and comments
+nothing.
 
 `--apply` then checks the manifest against the tip of the default branch's
 `refs/heads` ref on origin, not any local state or a tag of that name. The
@@ -338,16 +340,17 @@ reviews it. That is a list of the programs known to run on this path, not a
 guarantee: a later git can add another. A filter or hook named only by an
 `includeIf` that matches the worktree stays on. A partial clone is refused,
 because it could fetch from inside the tree; use a full clone. A path with a
-segment spelled `.git` is refused too, but a symlink on the trial branch that
-reaches `.git` is not, so a trial branch can still run code during the settle
-that way. Only run `--apply` on a trial you trust until #1560 closes this. With
-filters off, files are rebuilt from their stored blobs, so a pointer file goes
-back unchanged. A ledger stored encrypted, or an encrypted test file on a
-passing lift, can't be read and the settle stops. A test file that is not UTF-8
-text at `base` (an encrypted or binary one) is refused whatever its lift's
-outcome, before anything is pushed: it could not be restored byte for byte. The
-push runs from your own repository, so `credential.helper` and `core.sshCommand`
-work as usual and a relative one resolves there.
+segment spelled `.git` is refused too, and so is a manifest path that is or
+passes through a symlink (#1562). That is a stopgap, not the redesign: the
+settle still writes through the trial tree, so only run `--apply` on a trial you
+trust until #1560 closes this. With filters off, files are rebuilt from their
+stored blobs, so a pointer file goes back unchanged. A ledger stored encrypted,
+or an encrypted test file on a passing lift, can't be read and the settle stops.
+A test file that is not UTF-8 text at `base` (an encrypted or binary one) is
+refused whatever its lift's outcome, before anything is pushed: it could not be
+restored byte for byte. The push runs from your own repository, so
+`credential.helper` and `core.sshCommand` work as usual and a relative one
+resolves there.
 
 What this check does not establish:
 

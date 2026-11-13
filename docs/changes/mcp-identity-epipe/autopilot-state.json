@@ -1,0 +1,52 @@
+{
+  "item": "#1611",
+  "fleet": "cicd-fleet",
+  "option": "F2-A",
+  "scope": [
+    "reproduce the spawnSync EPIPE in mcp-identity.test.ts before any fix",
+    "capture status/signal/stderr on failure with throwaway instrumentation",
+    "deflake by removing the nondeterminism only on a confirmed root cause (no retry/skip/loosened assertion/generic EPIPE tolerance)"
+  ],
+  "evidenceRuns": {
+    "real payload, 6600 stressed spawns": "0 failures",
+    "200KB payload, 2400 stressed spawns, unfixed hook": "715 EPIPE (status 0, EAGAIN in hook)",
+    "async spawn, payload delayed 300ms, unfixed hook": "10/10 silent early exit",
+    "200KB payload, 2400 stressed spawns, fixed hook": "0 failures",
+    "full npm test from ts/, fixed": "6/6 green"
+  },
+  "phase": "VERIFY",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Reproduce under load with instrumentation; correct the issue's hypothesis",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "title": "Write failing test: ts/test/hook-stdin-eof.test.ts (late payload, third-party and trusted)",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "title": "prefer-first-party-mcp.js reads stdin to EOF via process.stdin instead of readFileSync(0)",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "title": "Local gates from ts/ (build, typecheck, format:check, test x6); harness validate/check-deps; perf ratchet; markdownlint",
+      "status": "done"
+    },
+    { "id": 5, "title": "Push, open PR, watch CI", "status": "in_progress" }
+  ],
+  "assumptions": [
+    "the single local occurrence is this mechanism under suite load; the 45-byte payload never reproduced on demand, the same path reproduced deterministically with a late or large payload",
+    "which layer sets O_NONBLOCK on the child stdin socket is unverified and does not affect the fix",
+    "Claude Code always pipes hook stdin, so waiting for EOF cannot hang a real hook call"
+  ],
+  "outOfScope": [
+    "seven other .harness/hooks/*.js and several CLI readers use readFileSync(0) with the same latent shape (filed as a follow-up issue)",
+    "runCapture left unchanged: EPIPE stays a loud failure by design"
+  ],
+  "status": "done",
+  "verdict": "root cause confirmed and deflaked; local gates green; awaiting CI and human review (not merged)"
+}

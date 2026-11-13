@@ -113,12 +113,13 @@ function expand(value: string): string {
     .replace(/\$\{\{\s*github\.token\s*\}\}/, 'not-a-token');
 }
 
-function stepEnv(step: Step, path: string, summary: string) {
+function stepEnv(step: Step, path: string, summary: string, output: string) {
   const env: Record<string, string> = {
     PATH: path,
     HOME: dir,
     GIT_CONFIG_NOSYSTEM: '1',
     GITHUB_STEP_SUMMARY: summary,
+    GITHUB_OUTPUT: output,
     GITHUB_REPOSITORY: 'o/r',
   };
   for (const [k, v] of Object.entries(step.env ?? {})) env[k] = expand(v);
@@ -127,6 +128,7 @@ function stepEnv(step: Step, path: string, summary: string) {
 
 function runSteps(jobId: string, cwd: string, path = process.env.PATH ?? '') {
   const summary = join(dir, 'summary.md');
+  const output = join(dir, 'github-output');
   let last = { status: 0 as number | null, log: '' };
   const scripts = (wf.jobs[jobId]?.steps ?? []).filter((s) => s.run);
   expect(scripts.length, `${jobId} has no run steps`).toBeGreaterThan(0);
@@ -134,13 +136,13 @@ function runSteps(jobId: string, cwd: string, path = process.env.PATH ?? '') {
     const r = spawnSync('bash', ['-e', '-c', step.run!], {
       cwd,
       encoding: 'utf8',
-      env: stepEnv(step, path, summary),
+      env: stepEnv(step, path, summary, output),
     });
     last = { status: r.status, log: `${r.stdout}${r.stderr}` };
     if (r.status !== 0) break;
   }
-  const text = existsSync(summary) ? readFileSync(summary, 'utf8') : '';
-  return { ...last, summary: text };
+  const read = (f: string) => (existsSync(f) ? readFileSync(f, 'utf8') : '');
+  return { ...last, summary: read(summary), outputs: read(output) };
 }
 
 const tip = () =>
@@ -184,6 +186,8 @@ describe('refresh-arch-baseline.yml push job', () => {
       /refresh arch baseline/,
     );
     expect(r.summary).toContain(BRANCH);
+    // #1591: what gates the CI-remedy comment.
+    expect(r.outputs).toContain('pushed=true\n');
   });
 
   it('commits only the baseline when the CLI left audit.log alone', () => {
@@ -207,6 +211,7 @@ describe('refresh-arch-baseline.yml push job', () => {
     expect(r.status).toBe(1);
     expect(r.log).toMatch(/baselines\.json is unchanged/);
     expect(tip()).toBe(headSha);
+    expect(r.outputs).not.toContain('pushed=true');
   });
 
   // #749: the guard names the intended artifact, so a change to anything else
@@ -278,6 +283,9 @@ describe('refresh-arch-baseline.yml push job', () => {
     expect(r.status, r.log).toBe(0);
     expect(r.log).toMatch(/::warning::.*no longer exists/);
     expect(git(origin, 'branch', '--list', BRANCH)).toBe('');
+    // #1591: exit 0 with nothing pushed, so the remedy comment must not post.
+    expect(r.outputs).toContain('pushed=false\n');
+    expect(r.outputs).not.toContain('pushed=true');
   });
 
   // Before #1463 any ls-remote failure read as "branch deleted" and went green.
@@ -295,6 +303,7 @@ describe('refresh-arch-baseline.yml push job', () => {
     const r = runSteps('push', work);
     expect(r.status).not.toBe(0);
     expect(tip()).toBe(headSha);
+    expect(r.outputs).not.toContain('pushed=true');
   });
 });
 
@@ -533,5 +542,58 @@ describe('refresh-arch-baseline.yml consume-label job', () => {
     const r = runSteps('consume-label', dir, path);
     expect(r.status, r.log).toBe(0);
     expect(r.log).toMatch(/::warning::.*label/);
+  });
+});
+
+/**
+ * #1591: a commit pushed with `github.token` starts no workflow, so the
+ * required checks never run on the refreshed head. The comment tells the PR how
+ * to start them. `workflow-hygiene.test.ts` pins the job's gate and scope.
+ */
+describe('refresh-arch-baseline.yml ci-remedy-comment job', () => {
+  /** A PATH whose `gh` records its argv, keeps the body file, and exits `code`. */
+  function stubGh(code: number) {
+    const bin = join(dir, 'bin');
+    const calls = join(dir, 'gh-calls');
+    const body = join(dir, 'gh-body');
+    write(
+      join(bin, 'gh'),
+      [
+        '#!/bin/sh',
+        `printf '%s\\n' "$*" >> "${calls}"`,
+        'while [ $# -gt 0 ]; do',
+        `  if [ "$1" = --body-file ]; then cat "$2" > "${body}"; fi`,
+        '  shift',
+        'done',
+        `exit ${code}`,
+        '',
+      ].join('\n'),
+    );
+    chmodSync(join(bin, 'gh'), 0o755);
+    return { path: `${bin}:${process.env.PATH ?? ''}`, calls, body };
+  }
+
+  it('comments on the PR that was refreshed, with the remedy', () => {
+    const { path, calls, body } = stubGh(0);
+    const r = runSteps('ci-remedy-comment', dir, path);
+    expect(r.status, r.log).toBe(0);
+    expect(readFileSync(calls, 'utf8')).toMatch(
+      /^pr comment 7 --repo o\/r --body-file \S+\n$/,
+    );
+    const text = readFileSync(body, 'utf8');
+    expect(text).toContain(BRANCH);
+    expect(text).toMatch(/will \*\*not\*\* re-run/);
+    expect(text).toContain(
+      'git commit --allow-empty -m "ci: re-run checks after baseline refresh" && git push',
+    );
+    expect(text).toContain('gh pr update-branch 7');
+  });
+
+  // The baseline is already pushed, so red would misreport the run.
+  it('warns, and stays green, when the comment cannot be posted', () => {
+    const { path } = stubGh(1);
+    const r = runSteps('ci-remedy-comment', dir, path);
+    expect(r.status, r.log).toBe(0);
+    expect(r.log).toMatch(/::warning::.*comment/);
   });
 });

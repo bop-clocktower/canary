@@ -256,16 +256,14 @@ function useGitRepo(): void {
   });
 }
 
-function failingRun(commit: string): RunRecord {
+function failingRun(commit: string, file = 'test/a.test.ts'): RunRecord {
   return {
     run_id: 'fail',
     suite: 's',
     commit_sha: commit,
     reporter_format: 'vitest',
     schema_version: 3,
-    tests: [
-      { test_name: 'adds', status: 'failed', test_file: 'test/a.test.ts' },
-    ],
+    tests: [{ test_name: 'adds', status: 'failed', test_file: file }],
   };
 }
 
@@ -276,7 +274,7 @@ interface Ladder {
 }
 
 /** Deps over a real cwd; the runner is a counter that must stay at zero. */
-function ladder(cwd: string, commit: string): Ladder {
+function ladder(cwd: string, commit: string, file?: string): Ladder {
   const out: string[] = [];
   const h: Ladder = {
     out,
@@ -286,7 +284,7 @@ function ladder(cwd: string, commit: string): Ladder {
       err: (s) => out.push(s),
       cwd: () => cwd,
       host: HOST,
-      readRuns: async () => [failingRun(commit)],
+      readRuns: async () => [failingRun(commit, file)],
       exec: async () => {
         h.execs++;
         return { code: 0, output: '' };
@@ -327,6 +325,13 @@ describe('runRewind: abstain ladder', () => {
     const out = await abstainOn(ladder(repo, '--output=x'));
     expect(out).toBe(
       "Abstained: commit '--output=x' is not a hexadecimal commit id",
+    );
+  });
+
+  it('abstains on an option-shaped test file before any runner (#1566)', async () => {
+    const out = await abstainOn(ladder(repo, headSha, '--config=/tmp/x.js'));
+    expect(out).toBe(
+      "Abstained: test_file '--config=/tmp/x.js' has a path segment starting with '-', which the runner would read as an option",
     );
   });
 
