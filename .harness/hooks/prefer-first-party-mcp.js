@@ -16,7 +16,6 @@
 // exits 0 silently. A reminder hook must never break or block a tool call.
 // Exit codes: always 0 (advisory only).
 
-import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
 // First-party trusted MCP prefixes: the harness server (which also serves
@@ -41,10 +40,22 @@ const REMINDER =
   'skill). Use the third-party MCP only when no first-party option covers the ' +
   'task.';
 
-function main() {
+// Read stdin to EOF through the stream API, never `readFileSync(0)` (#1611).
+// The stdin socket a Node parent hands us can be in O_NONBLOCK mode, so a
+// synchronous read that runs before the payload arrives throws EAGAIN rather
+// than waiting. The catch below then exited 0 silently: the reminder was lost,
+// and the parent's pending write hit a closed socket (EPIPE). The stream waits.
+async function readStdin() {
+  let raw = '';
+  process.stdin.setEncoding('utf-8');
+  for await (const chunk of process.stdin) raw += chunk;
+  return raw;
+}
+
+async function main() {
   let input;
   try {
-    input = JSON.parse(readFileSync(0, 'utf-8'));
+    input = JSON.parse(await readStdin());
   } catch {
     process.exit(0); // no/!JSON stdin — nothing to advise on
   }
@@ -62,13 +73,13 @@ function main() {
         hookEventName: 'PreToolUse',
         additionalContext: REMINDER,
       },
-    })
+    }),
   );
   process.exit(0);
 }
 
 try {
-  main();
+  await main();
 } catch {
   process.exit(0); // fail-open — never break a tool call over a reminder
 }

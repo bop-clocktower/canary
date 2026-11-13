@@ -170,6 +170,8 @@ describe('predecessors', () => {
     ['an absolute path', '/abs/x.test.ts', 1],
     ['a path climbing out with ..', '../out/x.test.ts', 1],
     ['a Windows-style .. segment', 'test\\..\\..\\x.test.ts', 1],
+    ['an option-shaped path (#1566)', '--config=/tmp/x.js', 1],
+    ['an option-shaped segment (#1566)', 'pkg/-c', 1],
     ['no recorded file', undefined, 1],
     ['no recorded start index', 'test/x.test.ts', undefined],
   ])('drops a test with %s', (_label, file, start) => {

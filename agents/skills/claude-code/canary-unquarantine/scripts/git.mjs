@@ -60,6 +60,25 @@ export function insideRepo(repo, file) {
   return { rel: rel.split(path.sep).join('/'), abs };
 }
 
+/**
+ * Whether `rel` (repo-relative, POSIX, as `insideRepo` returns it) is, or
+ * passes through, a symlink below `root`. Each segment is `lstat`ed from the
+ * root down -- never `stat`, which follows the link -- because a symlinked
+ * parent reaches the same place a symlinked final segment does (#1562).
+ * `root` itself is not judged: it is the operator's checkout or a throwaway
+ * worktree, not the trial branch's. A stopgap until #1560.
+ */
+export function symlinkOnPath(root, rel) {
+  let cur = root;
+  for (const seg of rel.split('/')) {
+    cur = path.join(cur, seg);
+    const st = fs.lstatSync(cur, { throwIfNoEntry: false });
+    if (!st) return false; // nothing below a missing segment can be a link
+    if (st.isSymbolicLink()) return true;
+  }
+  return false;
+}
+
 /** A fresh temp directory. Whoever makes one removes it, on failure too. */
 export const scratchDir = (prefix) =>
   fs.mkdtempSync(path.join(os.tmpdir(), prefix));

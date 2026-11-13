@@ -322,6 +322,13 @@ A v1 file is normalized on load, so every row comes back carrying the v2 fields
 Stamping the version over un-migrated rows would make it a promise the file does
 not keep.
 
+Normalizing on load only **adds** the v2 fields; it never takes anything away. A
+field outside the schema that you recorded on a row (a `scope` naming the one
+config the row applies to, say) passes through unchanged, in the row's own key
+order, and the file is rewritten with the indentation it already had (2 spaces
+only for a new or single-line file). An append to a v2 file that supersedes no
+row is therefore a diff of the appended rows alone (#1569).
+
 ## Invocation
 
 ```bash
