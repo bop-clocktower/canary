@@ -48,9 +48,9 @@ const OUTCOME_TAGS = new Set([
   'rerunError',
 ]);
 
-// A tag, a CDATA section, or a comment. Quoted attribute values may hold `>`.
+// Tag, CDATA or comment. Linear (#1541): tag text stops at `<`, EOF ends a run.
 const TOKEN_RE =
-  /<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<(\/?)([A-Za-z_][\w.:-]*)((?:"[^"]*"|'[^']*'|[^'">])*?)(\/?)>/g;
+  /<!\[CDATA\[([\s\S]*?)(?:\]\]>|$)|<!--[\s\S]*?(?:-->|$)|<(\/?)([A-Za-z_][\w.:-]*)(?![\w.:-])((?:"[^"]*"|'[^']*'|[^'"<>])*?)(\/?)>/g;
 const ATTR_RE = /([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const ROOT_RE = // (?=(x))\1 is atomic: an item ends at its first terminator
   /^\s*(?:(?=(<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>))\1\s*)*<(testsuites|testsuite)[\s/>]/;
