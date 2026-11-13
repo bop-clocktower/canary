@@ -12,7 +12,6 @@
  * and must never be mistaken for the guardian's verdict comment.
  */
 
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 
@@ -44,6 +43,7 @@ import {
   scopeDiff,
 } from '../guardian/pr-check.js';
 import type { MainDeps } from '../main-deps.js';
+import { readStdinToEof } from '../util/read-stdin.js';
 import { emitCharter } from './deliver.js';
 import { type BriefingSkip, type ScopedUnit, assembleFacts } from './facts.js';
 import { readInventoryIndex, readRankIndex } from './inputs.js';
@@ -73,7 +73,7 @@ function diffDeps(deps: MainDeps): DiffResolutionDeps {
     err: (s) => deps.err(s),
     readStdin: () => {
       try {
-        return readFileSync(0, 'utf-8');
+        return (deps.readStdin ?? readStdinToEof)();
       } catch {
         return '';
       }

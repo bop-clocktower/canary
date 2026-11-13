@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import process from 'node:process';
 import { isUntrustedSource } from './untrusted-source.js';
+import { readHookStdin } from './read-hook-stdin.js';
 
 // Minimal inline patterns for when @harness-engineering/core isn't available.
 // Keep in sync with @harness-engineering/core injection-patterns.ts ALL_PATTERNS.
@@ -64,12 +65,15 @@ function inlineScan(text) {
 }
 
 async function main() {
-  let raw = '';
-  try {
-    raw = readFileSync(0, 'utf-8');
-  } catch {
+  // readHookStdin (harness 14.0.0) retries the EAGAIN a non-blocking stdin
+  // throws when the payload lands late; readFileSync(0) read that as "no
+  // input" and skipped the scan (#1617). A genuine read failure still exits 0:
+  // PostToolUse cannot block anyway (upstream policy).
+  const stdin = readHookStdin();
+  if (!stdin.ok) {
     process.exit(0);
   }
+  const raw = stdin.data;
 
   if (!raw.trim()) {
     process.exit(0);

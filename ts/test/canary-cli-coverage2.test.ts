@@ -68,7 +68,11 @@ describe('defaultMainDeps seams', () => {
     expect(typeof d.pythonExe()).toBe('string');
     expect(typeof d.home()).toBe('string');
     expect(typeof d.cwd()).toBe('string');
-    expect(typeof d.prompt('q', 'def')).toBe('string');
+    // `d.prompt` is not called: it reads fd 0 to EOF (#1617), and the vitest
+    // worker's stdin never closes, so it would wait forever. It used to
+    // return only because the non-blocking read threw EAGAIN. Same exclusion
+    // as main-deps-defaults.test.ts; the reader is pinned by
+    // stdin-late-payload.test.ts.
     d.openBrowser('http://example.test');
     expect(d.makeClassifier()).toBeTruthy();
     expect(d.makeRecommender()).toBeTruthy();

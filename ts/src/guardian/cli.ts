@@ -106,6 +106,7 @@ import {
 } from './hard-gate.js';
 import { CoverageRow, mapImpact } from './impact-mapper.js';
 import { ensureAscii } from '../util/ensure-ascii.js';
+import { readStdinToEof } from '../util/read-stdin.js';
 import { CliExitError } from '../util/exit-error.js';
 import {
   GuardianFinding,
@@ -301,7 +302,7 @@ export function defaultDeps(): GuardianDeps {
     err: (s) => process.stderr.write(`${s}\n`),
     readStdin: () => {
       try {
-        return readFileSync(0, 'utf-8');
+        return readStdinToEof();
       } catch {
         return '';
       }

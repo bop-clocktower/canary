@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
 import { isMain } from '../is-main.mjs';
+import { readStdinToEof } from '../read-stdin.mjs';
 import { createParser, EXIT_USAGE, formatUsageError } from '../parse-args.mjs';
 import { LAYERS, validateDocument, validateText } from './document.mjs';
 
@@ -86,7 +87,7 @@ function printVerdict(res, json) {
  * @returns {number} exit code
  */
 export function main(argv = process.argv.slice(2), io = {}) {
-  const readStdin = io.readStdin ?? (() => readFileSync(0, 'utf8'));
+  const readStdin = io.readStdin ?? readStdinToEof;
   const parsed = parse(argv);
   if (parsed.help) {
     globalThis.console.log(HELP);
