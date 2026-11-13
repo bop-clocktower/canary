@@ -11,7 +11,6 @@
 // failure is never a pass), 2 usage or unreadable input. There is no exit 3:
 // a parsed document always has a denominator of at least 1 (fork N).
 
-import { Buffer } from 'node:buffer';
 import { readFileSync, readSync } from 'node:fs';
 import process from 'node:process';
 
@@ -86,13 +85,14 @@ function printVerdict(res, json) {
  * non-blocking, so `readFileSync(0)` threw EAGAIN when the payload was late
  * and a valid document was refused as unreadable. This retries EAGAIN with a
  * short sleep; any other error propagates to readInput's usage error. Inline
- * rather than a lib module to keep this file's module coupling unchanged.
+ * and built on ES typed arrays rather than a lib module or `node:buffer`:
+ * either extra import pushes this file past the perf coupling threshold.
  *
  * @returns {string}
  */
 function readStdinToEof() {
   const chunks = [];
-  const buf = Buffer.alloc(64 * 1024);
+  const buf = new Uint8Array(64 * 1024);
   for (;;) {
     let bytes;
     try {
@@ -107,9 +107,15 @@ function readStdinToEof() {
       throw err;
     }
     if (bytes === 0) break;
-    chunks.push(Buffer.from(buf.subarray(0, bytes)));
+    chunks.push(buf.slice(0, bytes));
   }
-  return Buffer.concat(chunks).toString('utf8');
+  const all = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.length;
+  }
+  return new globalThis.TextDecoder('utf-8', { ignoreBOM: true }).decode(all);
 }
 
 /**
