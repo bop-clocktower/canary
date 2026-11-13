@@ -11,11 +11,11 @@
 // failure is never a pass), 2 usage or unreadable input. There is no exit 3:
 // a parsed document always has a denominator of at least 1 (fork N).
 
-import { readFileSync } from 'node:fs';
+import { Buffer } from 'node:buffer';
+import { readFileSync, readSync } from 'node:fs';
 import process from 'node:process';
 
 import { isMain } from '../is-main.mjs';
-import { readStdinToEof } from '../read-stdin.mjs';
 import { createParser, EXIT_USAGE, formatUsageError } from '../parse-args.mjs';
 import { LAYERS, validateDocument, validateText } from './document.mjs';
 
@@ -79,6 +79,37 @@ function printVerdict(res, json) {
       globalThis.console.error(`${e.path}: ${e.message}`);
     globalThis.console.error(`refused: ${res.errors.length} error(s)`);
   }
+}
+
+/**
+ * Stdin read to EOF (#1617). Importing `node:process` leaves a piped stdin
+ * non-blocking, so `readFileSync(0)` threw EAGAIN when the payload was late
+ * and a valid document was refused as unreadable. This retries EAGAIN with a
+ * short sleep; any other error propagates to readInput's usage error. Inline
+ * rather than a lib module to keep this file's module coupling unchanged.
+ *
+ * @returns {string}
+ */
+function readStdinToEof() {
+  const chunks = [];
+  const buf = Buffer.alloc(64 * 1024);
+  for (;;) {
+    let bytes;
+    try {
+      bytes = readSync(0, buf, 0, buf.length, null);
+    } catch (err) {
+      const code = /** @type {{ code?: string }} */ (err).code;
+      if (code === 'EAGAIN') {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+        continue;
+      }
+      if (code === 'EOF') break;
+      throw err;
+    }
+    if (bytes === 0) break;
+    chunks.push(Buffer.from(buf.subarray(0, bytes)));
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 /**

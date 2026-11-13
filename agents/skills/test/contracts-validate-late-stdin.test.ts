@@ -14,8 +14,6 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { readStdinToEof } from '../lib/read-stdin.mjs';
-
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, '..', 'lib', 'contracts', 'validate.mjs');
 const RUN = path.join(HERE, 'fixtures', 'contracts', 'run.valid.json');
@@ -45,36 +43,5 @@ describe('validate.mjs with a late stdin payload', () => {
     const r = await runLate(['-'], fs.readFileSync(RUN, 'utf8'));
     expect(r.stderr).not.toMatch(/EAGAIN/);
     expect(r.status).toBe(0);
-  });
-});
-
-describe('readStdinToEof (lib)', () => {
-  const eagain = Object.assign(new Error('not ready'), { code: 'EAGAIN' });
-
-  it('retries EAGAIN and concatenates chunks to EOF', () => {
-    const steps: Array<string | Error> = [eagain, 'ab', eagain, 'c', ''];
-    let waits = 0;
-    const text = readStdinToEof(
-      (_fd: number, buf: Buffer) => {
-        const step = steps.shift() ?? '';
-        if (step instanceof Error) throw step;
-        return buf.write(step);
-      },
-      () => void waits++,
-    );
-    expect(text).toBe('abc');
-    expect(waits).toBe(2);
-  });
-
-  it('rethrows a non-EAGAIN error', () => {
-    const ebadf = Object.assign(new Error('bad fd'), { code: 'EBADF' });
-    expect(() =>
-      readStdinToEof(
-        () => {
-          throw ebadf;
-        },
-        () => undefined,
-      ),
-    ).toThrow('bad fd');
   });
 });

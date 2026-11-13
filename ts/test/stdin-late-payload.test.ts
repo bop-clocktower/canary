@@ -158,7 +158,8 @@ describe('guard hooks block on a late payload instead of failing open', () => {
   it('sentinel-pre still blocks a push in a tainted session', async () => {
     const cwd = mkTmp();
     mkdirSync(join(cwd, '.harness'));
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    // A fixed far-future expiry: the taint must be live whenever this runs.
+    const expiresAt = '2999-01-01T00:00:00.000Z';
     writeFileSync(
       join(cwd, '.harness', 'session-taint-s1.json'),
       JSON.stringify({ sessionId: 's1', expiresAt }),
