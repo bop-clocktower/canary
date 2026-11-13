@@ -85,6 +85,40 @@ export function LedgerEntry(fields) {
   return row;
 }
 
+/**
+ * Normalize a row READ FROM DISK: the canonical fields are guaranteed present,
+ * but everything else about the row is left as it was written (#1569).
+ *
+ * Unlike `LedgerEntry`, which builds a row katana is about to create, this
+ * keeps fields outside the schema (a consumer's `scope`, say) and the row's own
+ * key order. Dropping them would be the silent loss the append-only ledger
+ * exists to prevent, and re-ordering them would turn every append into a
+ * whole-file diff that hides such a loss from review. The one rewrite kept is
+ * the v1 `ticket` -> `issue` migration, which renames a known field.
+ */
+function normalizeLoaded(fields) {
+  const row = { ...fields };
+  for (const f of FIELDS) row[f] = row[f] ?? '';
+  if ('ticket' in row) {
+    if (!row.issue && typeof row.ticket === 'string') row.issue = row.ticket;
+    delete row.ticket;
+  }
+  return row;
+}
+
+const DEFAULT_INDENT = 2;
+
+/**
+ * The indentation an existing ledger is written with, so a rewrite keeps it:
+ * the leading whitespace of the first indented line. A missing, empty, or
+ * single-line file has none to keep, and gets the default.
+ */
+function detectIndent(filePath) {
+  if (!fs.existsSync(filePath)) return DEFAULT_INDENT;
+  const m = /\n([ \t]+)\S/.exec(fs.readFileSync(filePath, 'utf8'));
+  return m ? m[1] : DEFAULT_INDENT;
+}
+
 // The subset that defines a row's IDENTITY for de-duplication.
 //
 // `issue` and `expiry` are excluded, for the reason #781 excluded `ticket`:
@@ -111,8 +145,9 @@ const pair = (row) => `${row.test ?? ''}\u0000${row.file ?? ''}`;
  * Throws on unparseable JSON or a non-object top level -- a corrupt ledger is a
  * hard error the caller must surface, not silently overwrite.
  *
- * Every row is normalized through `LedgerEntry`, so a v1 file read here comes
- * back with the v2 fields present and empty. That is what makes writing
+ * Every row is normalized through `normalizeLoaded`, so a v1 file read here
+ * comes back with the v2 fields present and empty -- and with any field outside
+ * the schema passed through untouched (#1569). That is what makes writing
  * `schema_version: 2` honest: the version claims "these rows have these fields",
  * and after normalization they do. Stamping the version over un-migrated rows
  * would make it a promise the file does not keep.
@@ -136,7 +171,7 @@ export function load(filePath) {
   if (!Array.isArray(data.entries)) {
     throw new Error(`ledger entries must be an array: ${filePath}`);
   }
-  data.entries = data.entries.map((e) => LedgerEntry(e));
+  data.entries = data.entries.map((e) => normalizeLoaded(e));
   return data;
 }
 
@@ -160,6 +195,7 @@ export function load(filePath) {
  * full-field identity and both remain.
  */
 export function appendEntries(filePath, entries) {
+  const indent = detectIndent(filePath);
   const doc = load(filePath);
   const existing = doc.entries;
   const seen = new Set(existing.map(key));
@@ -196,6 +232,6 @@ export function appendEntries(filePath, entries) {
 
   doc.schema_version = SCHEMA_VERSION;
   fs.mkdirSync(path.dirname(path.resolve(filePath)), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(doc, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(filePath, `${JSON.stringify(doc, null, indent)}\n`, 'utf8');
   return doc;
 }

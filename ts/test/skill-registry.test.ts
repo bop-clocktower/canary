@@ -561,6 +561,39 @@ describe('resolveCliPath', () => {
     expect(() => resolveCliPath(skill)).toThrow(/escapes/);
   });
 
+  it('accepts an in-dir cli file whose name starts with ".." (#1473)', () => {
+    const root = makeGitRoot();
+    const skillDir = writeSkill(join(root, '.canary', 'skills'), 'alpha', {
+      cli: '..cli.py',
+    });
+    writeFileSync(join(skillDir, '..cli.py'), '#!/usr/bin/env python3\n');
+    const skill = new SkillRegistry(mkTmp('h-')).find('alpha', root)!;
+    // `..cli.py` is a descendant of the skill dir, not a `..` segment escape.
+    expect(basename(resolveCliPath(skill))).toBe('..cli.py');
+  });
+
+  it('rejects an existing sibling reached by "../" (#1473)', () => {
+    const root = makeGitRoot();
+    writeSkill(join(root, '.canary', 'skills'), 'alpha', {
+      cli: '../beta.py',
+    });
+    writeFileSync(
+      join(root, '.canary', 'skills', 'beta.py'),
+      '#!/usr/bin/env python3\n',
+    );
+    const skill = new SkillRegistry(mkTmp('h-')).find('alpha', root)!;
+    expect(() => resolveCliPath(skill)).toThrow(/escapes/);
+  });
+
+  it('rejects an absolute cli path outside the skill dir (#1473)', () => {
+    const root = makeGitRoot();
+    const outside = join(mkTmp('canary-skreg-out-'), 'cli.py');
+    writeFileSync(outside, '#!/usr/bin/env python3\n');
+    writeSkill(join(root, '.canary', 'skills'), 'alpha', { cli: outside });
+    const skill = new SkillRegistry(mkTmp('h-')).find('alpha', root)!;
+    expect(() => resolveCliPath(skill)).toThrow(/escapes/);
+  });
+
   it('rejects a skill without cli', () => {
     const root = makeGitRoot();
     writeSkill(join(root, '.canary', 'skills'), 'alpha', {

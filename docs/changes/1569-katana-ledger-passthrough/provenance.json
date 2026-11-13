@@ -1,0 +1,16 @@
+{
+  "issues": [1569],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "agents/skills/test/canary-katana-ledger-passthrough.test.ts",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "Both halves of #1569 are fixed in the function the issue names (katana's ledger load/append): unknown fields on existing rows pass through unchanged and the file is re-serialized at its detected indentation, so an append to a v2 ledger diffs only the appended rows. The same 2-space hard-code in canary-unquarantine settle.mjs is a separate writer (out of scope, in-flight PR #1620) and is tracked as a follow-up, not part of #1569.",
+  "assumptions": [
+    "Field order of an existing row is preserved (canonical v2 fields missing from a row are appended at the end of that row), not re-sorted into canonical order.",
+    "The v1 ticket -> issue migration still rewrites a loaded row (ticket is removed once migrated), since it renames a known field rather than dropping an unknown one.",
+    "Indentation is detected from the first indented line of the existing file; a missing, empty, or single-line file falls back to the 2-space default.",
+    "A ledger formatted by a tool whose layout differs from JSON.stringify (e.g. compact one-line rows) is still re-laid-out on append; only indentation width/character is detected, per the human-answered fork."
+  ],
+  "fleet": "roadmap-fleet",
+  "runId": "fc1112b-roadmap-fleet"
+}

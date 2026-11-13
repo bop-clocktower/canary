@@ -266,3 +266,37 @@ describe('findExistingTests path form (#1371)', () => {
     ]);
   });
 });
+
+describe('containment accepts an in-root name that starts with ".." (#1473)', () => {
+  it('writes a root file named "..foo.test.ts"', () => {
+    const root = tmp();
+    const result = writeTestFileImpl('..foo.test.ts', 'x', 'vitest', root);
+    // A leading `..` in a NAME is not a parent-directory segment: the file is
+    // a descendant of root and the write must land there.
+    expect(result).toEqual({
+      written_path: resolve(root, '..foo.test.ts'),
+    });
+    expect(existsSync(join(root, '..foo.test.ts'))).toBe(true);
+  });
+
+  it('still refuses a "../" escape and creates nothing', () => {
+    const parent = tmp();
+    const root = join(parent, 'root');
+    mkdirSync(root);
+    const result = writeTestFileImpl('../x.test.ts', 'x', 'vitest', root);
+    expect(result).toEqual({
+      error: 'path escapes the project root: ../x.test.ts',
+    });
+    expect(existsSync(join(parent, 'x.test.ts'))).toBe(false);
+  });
+
+  it('still refuses an absolute path outside the root', () => {
+    const root = tmp();
+    const outside = join(tmp(), 'x.test.ts');
+    const result = writeTestFileImpl(outside, 'x', 'vitest', root);
+    expect(result).toEqual({
+      error: `path escapes the project root: ${outside}`,
+    });
+    expect(existsSync(outside)).toBe(false);
+  });
+});

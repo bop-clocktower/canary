@@ -1,5 +1,5 @@
 /** The `symbols` a person declared in an existing map, kept through a rewrite. */
-import { readFileSync } from 'node:fs';
+import { readRegularFile } from './regular-file.js';
 
 /**
  * Katana's contract rejects these, and the engine cannot import a skill, so
@@ -8,10 +8,15 @@ import { readFileSync } from 'node:fs';
  */
 const MIN_SYMBOL_CHARS = 3;
 
-/** The existing file's rows, or none when it is absent or malformed (D17). */
+/**
+ * The existing file's rows, or none when it is absent or malformed (D17), or
+ * not a regular file: a tracked link to `/dev/zero` hung the scan (#1575).
+ */
 function existingRows(out: string): { path?: unknown; symbols?: unknown }[] {
   try {
-    const data = JSON.parse(readFileSync(out, 'utf-8')) as { areas?: unknown };
+    const text = readRegularFile(out);
+    if (text === null) return [];
+    const data = JSON.parse(text) as { areas?: unknown };
     return Array.isArray(data?.areas) ? data.areas : [];
   } catch {
     return [];

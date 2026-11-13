@@ -42,6 +42,7 @@ import {
   join,
   relative,
   resolve,
+  sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -692,8 +693,9 @@ export function resolveCliPath(skill: SkillInfo): string {
   // does, so only resolve symlinks when the candidate exists (which is what
   // catches a symlink that escapes the skill dir).
   const candidate = existsSync(joined) ? realpathSync(joined) : joined;
+  // Escape = a leading `..` SEGMENT, not a `..` name prefix (#1473).
   const rel = relative(skillDir, candidate);
-  if (rel.startsWith('..') || isAbsolute(rel)) {
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
     throw new Error(
       `skill '${skill.name}' cli path escapes the skill directory: ` +
         `'${skill.cli}'`,

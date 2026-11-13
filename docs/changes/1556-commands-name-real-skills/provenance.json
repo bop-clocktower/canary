@@ -1,0 +1,17 @@
+{
+  "issues": [1556],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/discovery-tree-integrity.test.ts",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "The PR fixes all four commands the issue names and adds the guard the issue asks for, so nothing in its scope is left open.",
+  "assumptions": [
+    "Fix by editing the command prose (agent -> skill), following #1550's wording for commands/canary-critical-areas.md, not by adding four new agent files.",
+    "Root commands/*.md are hand-written (no 'Generated' header; added in 2e0ca91c), so there is no generator source to fix. The generated agents/commands/{claude-code,gemini-cli}/harness/* copies come from SKILL.md and never made the agent claim.",
+    "The guard lives in the existing ts/test/discovery-tree-integrity.test.ts. That test already claimed this contract but accepted a name of either kind; tightening it beats adding a parallel test.",
+    "The guard checks every 'Use the `X` agent|skill' reference in a command, not just the first. Today every command has exactly one.",
+    "Prettier reflowed the four commands' YAML frontmatter, as it did for canary-critical-areas.md in #1550. The YAML values are unchanged."
+  ],
+  "fleet": "roadmap-fleet",
+  "runId": "fc1112b-roadmap-fleet"
+}
