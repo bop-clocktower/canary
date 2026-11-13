@@ -14,7 +14,7 @@ import {
   MAX_ATTEMPTS,
   MissingTokenError,
   type Sleep,
-  fetchWithRetry,
+  readWithRetry,
   realSleep,
   toGitHubError,
 } from './github-http.js';
@@ -195,7 +195,7 @@ export async function upsertStickyComment(
       return {
         action: 'degraded',
         comment_id: null,
-        notice: `guardian: GitHub API network error (${err.code}) — findings not posted as a comment; the check's result is the computed verdict`,
+        notice: `guardian: GitHub API network error (${err.code}) — findings may not have been posted as a comment; the check's result is the computed verdict`,
       };
     }
     if (err instanceof MissingTokenError)
@@ -213,11 +213,11 @@ export function degradationAnnotation(notice: string): string {
  * Thin real {@link GitHubClient} over the GitHub REST API (`fetch`).
  *
  * Exported (public, like {@link RestBranchProtectionClient}). Network lives
- * ONLY in `request` and in
- * the default {@link restPageReader}. Both go through {@link fetchWithRetry}
- * (#1467), so a 5xx/429/rate-limited 403 is retried on reads and the PATCH,
- * while the comment POST retries only a rate limit (a 5xx may have posted);
- * a network error (#1478) is retried on reads and the PATCH, never the POST;
+ * ONLY in `request` and the default {@link restPageReader}. Both go through
+ * {@link readWithRetry} (#1467), so a 5xx/429/rate-limited 403 is retried on
+ * reads and the PATCH, while the POST retries only a rate limit (a 5xx may
+ * have posted); a network error (#1478) is retried on reads and the PATCH,
+ * never the POST, and one while reading the body (#1503) only on reads;
  * `sleep` is the seam that keeps those retries out of real time in tests, and
  * the paged read path is also covered through the injected `read` seam (#528).
  * A 403 (fork read-only token) surfaces as {@link GitHubPermissionError} so the
@@ -244,8 +244,8 @@ export class RestGitHubClient implements GitHubClient {
     // 5xx behaves identically on a paged read and an unpaged write.
     this.read =
       read ??
-      restPageReader(this.headers(), toGitHubError, (url, init) =>
-        fetchWithRetry(url, init, this.sleep),
+      restPageReader(this.headers(), toGitHubError, (url, init, consume) =>
+        readWithRetry(url, init, this.sleep, consume),
       );
   }
 
@@ -269,9 +269,10 @@ export class RestGitHubClient implements GitHubClient {
     if (payload !== undefined) {
       init.body = JSON.stringify(payload);
     }
-    const resp = await fetchWithRetry(url, init, this.sleep);
-    if (!resp.ok) throw toGitHubError(resp.status, url, resp.headers);
-    return resp.json();
+    return readWithRetry(url, init, this.sleep, async (resp) => {
+      if (!resp.ok) throw toGitHubError(resp.status, url, resp.headers);
+      return resp.json();
+    });
   }
 
   async listComments(): Promise<Comment[]> {
