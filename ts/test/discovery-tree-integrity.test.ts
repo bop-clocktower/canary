@@ -24,8 +24,11 @@ const SKILLS_DIR = join(REPO, 'agents', 'skills', 'claude-code');
 const COMMANDS_DIR = join(REPO, 'commands');
 const AGENT_COMMANDS_DIR = join(REPO, 'agents', 'commands');
 
-// "Use the `canary-foo` agent" / "Use the `canary-foo` skill"
-const COMMAND_REF_RE = /Use the [`"']([a-z0-9-]+)[`"'] (?:agent|skill)/;
+// "Use the `canary-foo` agent" / "Use the `canary-foo` skill". The noun is
+// captured because it decides where the name must resolve: an agent is
+// `agents/<name>.md`, a skill is `agents/skills/claude-code/<name>/`. A name
+// that exists only as the other kind is still a dangling reference (#1556).
+const COMMAND_REF_RE = /Use the [`"']([a-z0-9-]+)[`"'] (agent|skill)\b/g;
 // "@agents/skills/claude-code/foo/SKILL.md"
 const AT_REF_RE = /@(agents\/[\w./-]+)/g;
 
@@ -129,22 +132,27 @@ describe('command references', () => {
     expect(markdownFiles(COMMANDS_DIR).length).toBeGreaterThan(0);
   });
 
-  it('every command references an existing agent or skill', () => {
-    const agents = existingAgents();
-    const skills = existingSkills();
+  it('every agent or skill a command names exists as that kind', () => {
+    const exists = { agent: existingAgents(), skill: existingSkills() };
+    const where = {
+      agent: 'agents/<name>.md',
+      skill: 'agents/skills/claude-code/<name>/',
+    };
     const dangling: string[] = [];
     for (const cmd of markdownFiles(COMMANDS_DIR)) {
       const rel = relative(REPO, cmd);
-      const m = COMMAND_REF_RE.exec(readFileSync(cmd, 'utf-8'));
-      if (!m) {
+      const refs = [...readFileSync(cmd, 'utf-8').matchAll(COMMAND_REF_RE)];
+      if (refs.length === 0) {
         dangling.push(`${rel}: no 'Use the \`X\` agent/skill' reference found`);
         continue;
       }
-      const target = m[1]!;
-      if (!agents.has(target) && !skills.has(target)) {
-        dangling.push(
-          `${rel}: references '${target}' which is neither agent nor skill`,
-        );
+      for (const [, target, kind] of refs) {
+        const k = kind as 'agent' | 'skill';
+        if (!exists[k].has(target!)) {
+          dangling.push(
+            `${rel}: names the ${k} '${target}', but ${where[k].replace('<name>', target!)} does not exist`,
+          );
+        }
       }
     }
     expect(
