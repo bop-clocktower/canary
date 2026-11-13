@@ -9,6 +9,7 @@
 import { readFileSync, mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { readHookStdin } from './read-hook-stdin.js';
 
 function readJsonSafe(filePath) {
   try {
@@ -43,14 +44,21 @@ function findActiveSession(sessionsDir) {
   }
 }
 
-function main() {
-  let raw = '';
-  try {
-    raw = readFileSync(0, 'utf-8');
-  } catch {
+/**
+ * Read and validate stdin as JSON. On any failure, writes the matching
+ * fail-open stderr message and exits 0. Returns the raw string on success.
+ */
+function readValidStdin() {
+  // readHookStdin retries the EAGAIN that fd 0 throws under compound load (v8
+  // coverage on the pre-push gate): the writer races ahead of the read, and a
+  // raw readFileSync(0) would mistake that backpressure for empty stdin and
+  // fail-open, silently skipping the summary write and flaking the suite (#620).
+  const stdin = readHookStdin();
+  if (!stdin.ok) {
     process.stderr.write('[pre-compact-state] Could not read stdin — allowing (fail-open)\n');
     process.exit(0);
   }
+  const raw = stdin.data;
 
   if (!raw.trim()) {
     process.stderr.write('[pre-compact-state] Empty stdin — allowing (fail-open)\n');
@@ -64,39 +72,53 @@ function main() {
     process.exit(0);
   }
 
+  return raw;
+}
+
+/** Map a decision entry to its display string. */
+function decisionToString(d) {
+  return typeof d === 'string' ? d : (d?.decision ?? d?.summary ?? JSON.stringify(d));
+}
+
+/** The active session's current state string, or null when absent. */
+function sessionCurrentState(session) {
+  return session?.state?.currentState ?? null;
+}
+
+/** Last five decisions from harness state, each mapped to a display string. */
+function recentDecisionsFrom(state) {
+  const decisions = state?.decisions ?? [];
+  return decisions.slice(-5).map(decisionToString);
+}
+
+/** Current phase: prefer the live session state, fall back to the persisted position. */
+function currentPhaseFrom(state, session) {
+  return sessionCurrentState(session) ?? state?.position?.phase ?? null;
+}
+
+/** Build the pre-compact summary object from harness state and active session. */
+function buildSummary(state, session) {
+  return {
+    timestamp: new Date().toISOString(),
+    sessionId: session?.dir ?? null,
+    activeStream: sessionCurrentState(session),
+    recentDecisions: recentDecisionsFrom(state),
+    openQuestions: state?.blockers ?? [],
+    currentPhase: currentPhaseFrom(state, session),
+  };
+}
+
+function main() {
+  readValidStdin();
+
   try {
     const cwd = process.cwd();
     const harnessDir = join(cwd, '.harness');
     const stateDir = join(harnessDir, 'state');
 
-    // Read harness state
     const state = readJsonSafe(join(harnessDir, 'state.json'));
-
-    // Find active session
     const session = findActiveSession(join(harnessDir, 'sessions'));
-
-    // Extract recent decisions (last 5)
-    const decisions = state?.decisions ?? [];
-    const recentDecisions = decisions.slice(-5).map((d) =>
-      typeof d === 'string' ? d : (d?.decision ?? d?.summary ?? JSON.stringify(d))
-    );
-
-    // Extract open questions / blockers
-    const openQuestions = state?.blockers ?? [];
-
-    // Determine current phase from session state
-    const currentPhase = session?.state?.currentState
-      ?? (state?.position?.phase ?? null);
-
-    // Build summary
-    const summary = {
-      timestamp: new Date().toISOString(),
-      sessionId: session?.dir ?? null,
-      activeStream: session?.state?.currentState ?? null,
-      recentDecisions,
-      openQuestions,
-      currentPhase,
-    };
+    const summary = buildSummary(state, session);
 
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(

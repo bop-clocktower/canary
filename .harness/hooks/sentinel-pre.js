@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync, mkdirSync, unlinkSync, realpathSync, exist
 import { resolve, dirname, join, sep } from 'node:path';
 import process from 'node:process';
 import { isUntrustedSource } from './untrusted-source.js';
+import { readHookStdin } from './read-hook-stdin.js';
 
 // Bash gating during taint is DENY-BY-DEFAULT. Regex-matching a shell string for
 // "destructive" patterns is not a sound security boundary — bash is not a regular
@@ -150,12 +151,20 @@ function extractText(toolName, toolInput) {
 }
 
 async function main() {
-  let raw = '';
-  try {
-    raw = readFileSync(0, 'utf-8');
-  } catch {
-    process.exit(0);
+  // readHookStdin (harness 14.0.0) retries the EAGAIN a non-blocking stdin
+  // throws when the payload lands late; readFileSync(0) read that as "no
+  // input" and let the call through unchecked (#1617). Same seam and policy as
+  // upstream sentinel-pre, ported onto this canary-local fork.
+  const stdin = readHookStdin();
+  if (!stdin.ok) {
+    // Fail CLOSED: a taint guard that cannot read the call must not vouch for it.
+    process.stderr.write(
+      `BLOCKED by Sentinel: could not read hook input (${stdin.error.code ?? stdin.error.message}); ` +
+        'refusing to allow the tool call unverified during a possibly-tainted session.\n'
+    );
+    process.exit(2);
   }
+  const raw = stdin.data;
 
   if (!raw.trim()) {
     process.exit(0);

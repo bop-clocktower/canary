@@ -19,7 +19,8 @@
  * 3 ABSTENTION: no stable tag in the input, so nothing was ranked.
  */
 
-import { readFileSync } from 'node:fs';
+import { Buffer } from 'node:buffer';
+import { readSync } from 'node:fs';
 
 const STABLE = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
@@ -31,7 +32,7 @@ if (process.argv.length > 2) {
 }
 
 let best;
-for (const raw of readFileSync(0, 'utf8').split('\n')) {
+for (const raw of readStdinToEof().split('\n')) {
   const tag = raw.trim();
   const m = STABLE.exec(tag);
   if (!m) continue;
@@ -46,6 +47,33 @@ if (!best) {
   process.exit(3);
 }
 process.stdout.write(`${best.tag}\n`);
+
+/**
+ * Stdin read to EOF (#1617). `readFileSync(0)` throws EAGAIN instead of
+ * waiting when stdin is a non-blocking socket and the writer is late, so this
+ * retries EAGAIN with a short sleep. Inline rather than a shared lib module:
+ * the script is staged on its own (release-advance-latest.test.ts).
+ */
+function readStdinToEof() {
+  const chunks = [];
+  const buf = Buffer.alloc(64 * 1024);
+  for (;;) {
+    let bytes;
+    try {
+      bytes = readSync(0, buf, 0, buf.length, null);
+    } catch (err) {
+      if (err.code === 'EAGAIN') {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+        continue;
+      }
+      if (err.code === 'EOF') break;
+      throw err;
+    }
+    if (bytes === 0) break;
+    chunks.push(Buffer.from(buf.subarray(0, bytes)));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 function compare(a, b) {
   for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1;

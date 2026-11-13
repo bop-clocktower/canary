@@ -404,10 +404,15 @@ describe('canary briefing', () => {
 
   /** A diff on stdin resolves like the guardian's, and still abstains empty. */
   it('reads a diff from stdin via --diff -', async () => {
-    const res = await invokeCanary(['briefing', '--diff', '-'], { cwd: root });
-    // No stdin is attached under the test runner, so this is the abstention
-    // path rather than a charter — the point is that `-` is accepted and the
-    // empty result is never reported as a clean one.
+    // Empty stdin is injected: the real reader waits for EOF (#1617), and the
+    // runner's own stdin never closes. This used to pass only because that
+    // read threw EAGAIN and was taken as empty. An empty diff is the
+    // abstention path rather than a charter. The point is that `-` is
+    // accepted and the empty result is never reported as a clean one.
+    const res = await invokeCanary(['briefing', '--diff', '-'], {
+      cwd: root,
+      deps: { readStdin: () => '' },
+    });
     expect([0, EXIT_ABSTAINED]).toContain(res.code);
     if (res.code === EXIT_ABSTAINED) {
       expect(res.stdout).toContain('Abstained:');

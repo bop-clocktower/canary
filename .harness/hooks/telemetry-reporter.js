@@ -23,6 +23,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
+import { readHookStdin } from './read-hook-stdin.js';
 
 // PostHog project API key — public, write-only (cannot read data)
 const POSTHOG_API_KEY = process.env.POSTHOG_API_KEY ?? 'phc_wNTdCMcfJXZPgdNeDociZW6vwoGGo4nb7vqEfWThFfsG'; // harness-ignore SEC-SEC-002: public PostHog write-only ingest key
@@ -265,12 +266,14 @@ function showFirstRunNotice(cwd) {
 // --- Main ---
 
 async function main() {
-  let raw = '';
-  try {
-    raw = readFileSync(0, 'utf-8');
-  } catch {
+  // readHookStdin (harness 14.0.0) retries the EAGAIN a non-blocking stdin
+  // throws when the payload lands late; readFileSync(0) read that as "no
+  // input" and skipped the send (#1617). A genuine read failure still exits 0.
+  const stdin = readHookStdin();
+  if (!stdin.ok) {
     process.exit(0);
   }
+  const raw = stdin.data;
 
   if (!raw.trim()) {
     process.exit(0);

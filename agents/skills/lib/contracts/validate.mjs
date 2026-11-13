@@ -11,7 +11,7 @@
 // failure is never a pass), 2 usage or unreadable input. There is no exit 3:
 // a parsed document always has a denominator of at least 1 (fork N).
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readSync } from 'node:fs';
 import process from 'node:process';
 
 import { isMain } from '../is-main.mjs';
@@ -81,12 +81,50 @@ function printVerdict(res, json) {
 }
 
 /**
+ * Stdin read to EOF (#1617). Importing `node:process` leaves a piped stdin
+ * non-blocking, so `readFileSync(0)` threw EAGAIN when the payload was late
+ * and a valid document was refused as unreadable. This retries EAGAIN with a
+ * short sleep; any other error propagates to readInput's usage error. Inline
+ * and built on ES typed arrays rather than a lib module or `node:buffer`:
+ * either extra import pushes this file past the perf coupling threshold.
+ *
+ * @returns {string}
+ */
+function readStdinToEof() {
+  const chunks = [];
+  const buf = new Uint8Array(64 * 1024);
+  for (;;) {
+    let bytes;
+    try {
+      bytes = readSync(0, buf, 0, buf.length, null);
+    } catch (err) {
+      const code = /** @type {{ code?: string }} */ (err).code;
+      if (code === 'EAGAIN') {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+        continue;
+      }
+      if (code === 'EOF') break;
+      throw err;
+    }
+    if (bytes === 0) break;
+    chunks.push(buf.slice(0, bytes));
+  }
+  const all = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.length;
+  }
+  return new globalThis.TextDecoder('utf-8', { ignoreBOM: true }).decode(all);
+}
+
+/**
  * @param {string[]} [argv]
  * @param {{readStdin?: () => string}} [io] injectable for in-process tests
  * @returns {number} exit code
  */
 export function main(argv = process.argv.slice(2), io = {}) {
-  const readStdin = io.readStdin ?? (() => readFileSync(0, 'utf8'));
+  const readStdin = io.readStdin ?? readStdinToEof;
   const parsed = parse(argv);
   if (parsed.help) {
     globalThis.console.log(HELP);

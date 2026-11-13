@@ -13,7 +13,6 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 
 import { TestClassifier } from './core/classifier.js';
@@ -28,6 +27,7 @@ import { SkillRegistry } from './core/skill-registry.js';
 import { StaticLinter } from './core/static-linter.js';
 import { TicketUpdater } from './core/ticket-updater.js';
 import { WorkflowDiscovery } from './core/workflow-discovery.js';
+import { readStdinToEof } from './util/read-stdin.js';
 
 // --- output glyphs (emitted verbatim; see module docstring) -------------------
 export const CHECK_MARK = '\u{2705}'; // white heavy check mark
@@ -98,6 +98,12 @@ export interface MainDeps {
    * `selfCheck`, so this module does not have to import gen-data at all.
    */
   genDataSelfCheck?: typeof import('./core/gen-data/self-check.js').selfCheck;
+  /**
+   * Stdin for `--diff -`, injectable because the real reader waits for EOF
+   * (#1617) and a test runner's stdin never closes. Optional: callers fall
+   * back to {@link readStdinToEof}.
+   */
+  readStdin?(): string;
 }
 
 /** A stdin-backed prompt: reads piped lines once, returns `def` when exhausted. */
@@ -107,7 +113,7 @@ function makeStdinPrompt(): (text: string, def: string) => string {
   return (_text: string, def: string): string => {
     if (lines === null) {
       try {
-        lines = readFileSync(0, 'utf-8').split('\n');
+        lines = readStdinToEof().split('\n');
       } catch {
         lines = [];
       }
