@@ -3,10 +3,10 @@
  * imports.mjs, so the count is approximate: it can miss an aliased or ambiguous
  * import, and it can count a mention in a string.
  */
-import { readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 
 import { isPythonStdlibModule } from '../core/vacuity-scanner.js';
+import { readRegularFile } from './regular-file.js';
 import type { SignalSource } from './scoring.js';
 
 type Lang = 'js' | 'py' | 'php';
@@ -24,8 +24,10 @@ interface Scope {
 }
 
 const JS_FILE = /\.[cm]?[jt]sx?$/;
+// No two adjacent runs may match the same character: `\s*\(?\s*` splits a
+// run of spaces every way before failing, O(n^2) on a hostile line (#1575).
 const JS_SPEC =
-  /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"]([^'"\n]+)['"]/g;
+  /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"]([^'"\n]+)['"]/g;
 const JS_ALIAS = /^[@~#]\//;
 const JS_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
 const JS_MAPPED: Record<string, string[]> = {
@@ -34,9 +36,11 @@ const JS_MAPPED: Record<string, string[]> = {
   '.mjs': ['.mts'],
   '.cjs': ['.cts'],
 };
+// `[\w.]*` is the same language as `\.*[\w.]*`, without splitting a dot run.
 const PY_STMT =
-  /^[ \t]*(?:from[ \t]+(\.*[\w.]*)[ \t]+import|import[ \t]+([\w., \t]+))/gm;
-const PHP_PATH = /\b(?:require|include)(?:_once)?\s*\(?\s*['"]([^'"\n]+)['"]/g;
+  /^[ \t]*(?:from[ \t]+([\w.]*)[ \t]+import|import[ \t]+([\w., \t]+))/gm;
+const PHP_PATH =
+  /\b(?:require|include)(?:_once)?\s*(?:\(\s*)?['"]([^'"\n]+)['"]/g;
 const PHP_USE = /^[ \t]*use[ \t]+\\?([\w\\]+)/gm;
 const COMMENT_LINE: Record<Lang, RegExp> = {
   js: /^\s*(?:\/\/|\/\*|\*)/,
@@ -139,14 +143,6 @@ function phpTargets(text: string, from: string, scope: Scope) {
 
 const TARGETS = { js: jsTargets, py: pyTargets, php: phpTargets };
 
-function readSource(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
 const withoutCommentLines = (text: string, lang: Lang): string =>
   text
     .split('\n')
@@ -188,7 +184,7 @@ export function countImporters(
   let unread = 0;
   for (const from of files) {
     const lang = langOf(from);
-    const text = readSource(join(root, from));
+    const text = readRegularFile(join(root, from));
     if (text === null) unread += 1;
     if (lang === null || text === null) continue;
     const code = withoutCommentLines(text, lang);
