@@ -300,6 +300,32 @@ describe('countImporters', () => {
     });
   });
 
+  // #1575: a scanned tree is untrusted. Two whitespace runs either side of an
+  // optional `(`, or two dot runs, split a long run every possible way, so a
+  // file with no quote after `import` cost O(n^2): 25s at 160k spaces.
+  describe('a hostile line runs in linear time (#1575)', () => {
+    const RUN = 100_000;
+    it.each([
+      ['JS import then spaces', 'm.ts', 'import' + ' '.repeat(RUN)],
+      ['JS dynamic import then spaces', 'm.ts', 'import(' + ' '.repeat(RUN)],
+      ['Python from then dots', 'm.py', 'from ' + '.'.repeat(RUN)],
+      ['PHP require then spaces', 'm.php', 'require' + ' '.repeat(RUN)],
+    ])('%s', (_name, file, body) => {
+      const started = performance.now();
+      const c = counts({ [file]: body });
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(c.get(file)).toBe(0);
+    });
+
+    it.each([
+      ['JS', 'a.ts', 'm.ts', "await import ( './a.js' );\n"],
+      ['JS', 'a.ts', 'm.ts', "require ( './a.js' );\n"],
+      ['PHP', 'a.php', 'm.php', "<?php\nrequire_once ( 'a.php' );\n"],
+    ])('%s still counts spaces around the paren: %s', (_l, a, m, body) => {
+      expect(counts({ [a]: '', [m]: body }).get(a)).toBe(1);
+    });
+  });
+
   it('does not match across languages', () => {
     const c = counts({ 'a.ts': '', 'm.py': 'import a\n' });
     expect(c.get('a.ts')).toBe(0);

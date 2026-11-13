@@ -82,6 +82,18 @@ describe('DomainScanner', () => {
     expect(ctx.components).not.toContain('nope');
   });
 
+  it('keeps a root module whose name starts with ".." (#1473)', () => {
+    const ctx = scan({
+      '..helper.py': 'def f():\n    pass',
+      'pkg/mod.py': 'def g():\n    pass',
+    });
+    // `..helper.py` sits inside the scan root; a `..` name prefix is not a
+    // parent-directory segment, so it must be listed like its sibling.
+    expect(ctx.modules).toEqual(
+      expect.arrayContaining(['..helper', 'pkg/mod']),
+    );
+  });
+
   it('skips files larger than the byte cap', () => {
     const big = 'x'.repeat(40_000);
     const ctx = scan({ 'big.ts': `export class Big {}\n// ${big}` });

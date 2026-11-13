@@ -64,7 +64,11 @@ export function locateFailure(
 /**
  * Why a stored `test_file` cannot name a file at the old commit, or null.
  * A failure outside any file has none (#1411); absolute paths predate #1021; a
- * `..` segment would leave the worktree.
+ * `..` segment would leave the worktree. A segment starting with `-` would
+ * reach the runner's argv as an option (#1566), e.g. vitest `--config` loads
+ * JS. Any segment, not just the first: the path is made package-relative
+ * before it is passed, which can make an inner segment the leading one.
+ * Neither runner keeps a file filter after `--`, so this refusal is the guard.
  */
 export function testFileProblem(file: string | undefined): string | null {
   const f = file ?? '';
@@ -74,7 +78,11 @@ export function testFileProblem(file: string | undefined): string | null {
   if (f.startsWith('/') || /^[A-Za-z]:/.test(f)) {
     return `test_file '${f}' is not repo-relative (recorded before #1021), so it names no file at the old commit`;
   }
-  return f.split(/[\\/]/).includes('..')
+  const segments = f.split(/[\\/]/);
+  if (segments.some((s) => s.startsWith('-'))) {
+    return `test_file '${f}' has a path segment starting with '-', which the runner would read as an option`;
+  }
+  return segments.includes('..')
     ? `test_file '${f}' points outside the repository`
     : null;
 }

@@ -6,7 +6,7 @@
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 const IGNORED_DIRS = new Set([
   'node_modules',
@@ -137,7 +137,9 @@ function deriveModules(root: string, files: string[]): string[] {
   const modules: string[] = [];
   for (const path of files) {
     const rel = relative(root, path);
-    if (rel.startsWith('..')) continue;
+    // Skip only a real escape: a leading `..` SEGMENT or a cross-drive
+    // absolute result, never a root file named `..helper.py` (#1473).
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) continue;
     const parts = rel.split(/[/\\]/);
     parts[parts.length - 1] = parts[parts.length - 1]!.replace(
       /\.(py|tsx?|jsx?)$/,

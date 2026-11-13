@@ -1,0 +1,20 @@
+{
+  "issues": [1473],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/mcp-server-edges.test.ts",
+  "reproducingTests": [
+    "ts/test/mcp-server-edges.test.ts",
+    "ts/test/skill-registry.test.ts",
+    "ts/test/domain-scanner.test.ts"
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "Both guards named in #1473 (resolveInsideRoot, resolveCliPath) are fixed with a refusal-outcome regression test each.",
+  "assumptions": [
+    "A third containment check of the same shape, deriveModules in ts/src/core/domain-scanner.ts (relative() + startsWith('..')), is the same bug and was fixed in the same PR with its own regression test.",
+    "Inlined the segment check in each guard (matching findExistingTests) rather than importing judomaster's isWithin: isWithin treats the root itself as outside (rel === '' refused), which resolveInsideRoot must accept, and importing analysis/judomaster into core/mcp-server would add a cross-layer edge. No new module, so no entropy.entryPoints change.",
+    "mcp-server.ts and skill-registry.ts were already over the 300-LOC per-file threshold; this adds 4 and 2 lines. check-perf identity set is unchanged (197 before and after); growth is magnitude-only and advisory per #869."
+  ],
+  "fleet": "roadmap-fleet",
+  "runId": "fc1112b-roadmap-fleet"
+}

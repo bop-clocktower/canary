@@ -45,10 +45,10 @@ function commentOnGithub(run, repo, target, body) {
     ...(gh[1] ? ['-R', gh[1]] : []),
   ];
   const r = run('gh', args, { cwd: repo });
-  return {
-    commented: r.status === 0,
-    why: r.status === 0 ? '' : (r.stderr || '').trim(),
-  };
+  if (r.status === 0) return { commented: true, why: '' };
+  // An unposted note is listed whole (#1614): a second --apply cannot list it
+  // again, so the report is the only copy a person can post from.
+  return { commented: false, why: (r.stderr || '').trim(), body };
 }
 
 /**

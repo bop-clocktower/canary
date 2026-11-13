@@ -103,18 +103,22 @@ export async function readAllPages(
  * A {@link PageReader} over `fetch`. The ONLY place in this module that touches
  * the network; `onError` lets each client keep its own status mapping (the
  * comment client distinguishes 403 as a permission error, the reactions client
- * does not), and `send` lets a client wrap the call -- the comment client
- * passes its retrying fetch (#1467).
+ * does not), and `send` lets a client wrap the call and the body read -- the
+ * comment client passes its retrying reader (#1467, #1503).
  */
 export function restPageReader(
   headers: Record<string, string>,
   onError: (status: number, url: string, headers: Headers) => Error,
-  send: (url: string, init: RequestInit) => Promise<Response> = (url, init) =>
-    fetch(url, init),
+  send: <T>(
+    url: string,
+    init: RequestInit,
+    consume: (resp: Response) => Promise<T>,
+  ) => Promise<T> = async (url, init, consume) =>
+    consume(await fetch(url, init)),
 ): PageReader {
-  return async (url: string): Promise<PageResponse> => {
-    const resp = await send(url, { method: 'GET', headers });
-    if (!resp.ok) throw onError(resp.status, url, resp.headers);
-    return { body: await resp.json(), linkHeader: resp.headers.get('link') };
-  };
+  return (url: string): Promise<PageResponse> =>
+    send(url, { method: 'GET', headers }, async (resp) => {
+      if (!resp.ok) throw onError(resp.status, url, resp.headers);
+      return { body: await resp.json(), linkHeader: resp.headers.get('link') };
+    });
 }

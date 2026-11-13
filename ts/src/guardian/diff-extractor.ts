@@ -7,7 +7,7 @@
  * Input: parsed objects (from JSON.parse or a YAML loader).
  * Output: an `ApiDiff` with three lists of `EndpointChange`.
  */
-import { withPathParameters } from './path-parameters.js';
+import { effectiveOperation } from './effective-operation.js';
 
 /** How an endpoint differs between the two specs. */
 export enum ChangeType {
@@ -75,6 +75,7 @@ const HTTP_METHODS = [
   'delete',
   'head',
   'options',
+  'trace',
 ] as const;
 
 // Frozen vocabulary for a changed endpoint (see
@@ -227,7 +228,7 @@ function iterOperations(spec: Record<string, unknown>): Map<string, Operation> {
         result.set(opKey(path, method), {
           path,
           method,
-          op: withPathParameters(op as Record<string, unknown>, shared),
+          op: effectiveOperation(op as Record<string, unknown>, shared, spec),
         });
       }
     }
