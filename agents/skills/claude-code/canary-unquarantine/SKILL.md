@@ -318,12 +318,11 @@ characters each, so a longer title reads truncated in `flake_hunter` too. The
 same rewrite turns control and line-break characters into spaces, drops
 invisible format characters, and turns a backtick into `'`, so a consumer of
 `--json` that matches a title must match it rewritten (`` adds `x` `` reads
-`adds 'x'`). A note listed for a person (a hand-off leaf, an unrecognised
-ticket, or a Jira ticket that could not be told) is printed in full under its
-`NOT told` line, in the plain report as well as under `--json`: a second
-`--apply` cannot list it again. A GitHub ticket whose `gh issue comment` failed
-is the exception: its `NOT told` line carries `gh`'s error and no note body, so
-write that note by hand from the test, the ticket and the trial PR.
+`adds 'x'`). Every note that was not posted (a hand-off leaf, an unrecognised
+ticket, a Jira ticket that could not be told, or a GitHub ticket whose
+`gh issue comment` failed) is printed in full under its `NOT told` line, in the
+plain report as well as under `--json`: a second `--apply` cannot list it again.
+A failed `gh` call's `NOT told` line carries `gh`'s error as its reason.
 
 `--apply` also refuses, before anything is written:
 

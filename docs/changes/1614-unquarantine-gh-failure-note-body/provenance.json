@@ -1,0 +1,15 @@
+{
+  "issues": [1614],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "agents/skills/test/canary-unquarantine-gh-failure.test.ts",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "The fix puts the note body on the gh-failure return, the existing renderer prints it, and the SKILL.md wording is restored: the issue's full direction is done.",
+  "assumptions": [
+    "The existing run() injection seam stands in for a failing `gh issue comment` (no fake gh on PATH); it is the same seam the rest of the unquarantine suite uses.",
+    "The caller needed no change: report.mjs noteLine already prints n.body under a NOT told line, and --json already serialises the comments array, so only notify.mjs was wrong.",
+    "A failed gh call's NOT told reason stays gh's raw stderr (no '; comment by hand' suffix appended), to keep the change minimal."
+  ],
+  "fleet": "roadmap-fleet",
+  "runId": "fc1112b-roadmap-fleet"
+}
