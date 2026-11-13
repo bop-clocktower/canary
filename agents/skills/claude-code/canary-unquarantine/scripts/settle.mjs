@@ -21,6 +21,7 @@ import {
   insideRepo,
   must,
   notUtf8,
+  symlinkOnPath,
   withWorktree,
   writeAt,
   writeLifts,
@@ -93,8 +94,8 @@ function checkJiraBlocker(b) {
 /**
  * Refuse a path with a segment spelled .git, including the spellings git itself
  * treats as one on NTFS (trailing dots and spaces, an alternate stream, the short
- * name). This checks the name only: a symlink that reaches .git is not refused
- * (#1560).
+ * name). This checks the name only; a symlink on the path is refused by
+ * `checkPaths` (#1562).
  */
 function checkNoDotGit(p) {
   const isDotGit = (seg) => /^(\.git[. ]*(:.*)?|git~1)$/i.test(seg);
@@ -139,9 +140,16 @@ function checkPaths(root, manifest, judged) {
     seen.add(key);
   }
   for (const p of [manifest.ledger, ...judged.map((j) => j.file)]) {
-    if ('why' in insideRepo(root, p))
+    const inside = insideRepo(root, p);
+    if ('why' in inside)
       throw new Error(
         `trial manifest path "${p}" escapes the trial worktree; refusing to settle`,
+      );
+    // A link that stays inside the tree still picks where a read or a write
+    // lands, and the trial branch decides what is a link (#1562).
+    if (symlinkOnPath(root, inside.rel))
+      throw new Error(
+        `trial manifest path "${p}" is or passes through a symlink; refusing to settle`,
       );
   }
 }

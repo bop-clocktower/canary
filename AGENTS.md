@@ -951,6 +951,20 @@ soon as the gap outgrows the tolerance, so this cannot silently recur.
   config, or would have to invent a value; only **0** means something was
   written.
 
+- **The label's refresh commit does not re-run the required checks (#1591).**
+  The workflow pushes it as `github-actions[bot]` with `GITHUB_TOKEN`, and
+  GitHub starts no workflow for that push. The PR stays BLOCKED on the commit
+  before it. The workflow comments on the PR to say so. To start the checks,
+  push a commit yourself:
+
+  ```bash
+  git pull --ff-only
+  git commit --allow-empty -m "ci: re-run checks after baseline refresh" && git push
+  ```
+
+  If the PR is behind `main`, `gh pr update-branch <N>` starts them too. An
+  agent waiting on CI for the refreshed head waits forever otherwise.
+
 **`baselines.json` is the FLOOR; the highest allowance is the effective CEILING
 (#736).** Nothing in the tooling says this, and not knowing it has now cost two
 separate investigations a full evening each, so it is written here rather than
@@ -1431,10 +1445,11 @@ own scripts against a local bare remote.
 `contents: read` with no token left in the checkout. `push` holds only
 `contents: write`, checks out the commit `measure` read, and pushes to the PR's
 branch only if that branch is still at that commit. `consume-label` holds only
-`pull-requests: write`. All three are advisory in
-`.github/required-checks.json`. The label is what runs this path, so
-`ts/test/refresh-baseline-push-job.test.ts` runs the write jobs' scripts against
-a local bare remote.
+`pull-requests: write`, and so does `ci-remedy-comment` (#1591), which runs only
+when `push` reports `pushed=true` and tells the PR how to re-run its required
+checks. All four are advisory in `.github/required-checks.json`. The label is
+what runs this path, so `ts/test/refresh-baseline-push-job.test.ts` runs the
+write jobs' scripts against a local bare remote.
 
 A force push is last-writer-wins, so every job that force-pushes runs under a
 `concurrency:` group with `cancel-in-progress: false` (#1427). Overlapping runs
