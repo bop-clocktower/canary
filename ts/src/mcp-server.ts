@@ -609,8 +609,12 @@ function resolveInsideRoot(candidate: string, root: string): string | null {
     return null;
   }
 
+  // A leading `..` SEGMENT escapes; a `..` name prefix (`..foo.test.ts`) is a
+  // descendant and must be accepted (#1473).
   const rel = relative(realRoot, resolved);
-  if (rel !== '' && (rel.startsWith('..') || isAbsolute(rel))) return null;
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    return null;
+  }
   return resolved;
 }
 
