@@ -1,0 +1,19 @@
+{
+  "issues": [1290, 1503],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-diff-effective-operation.test.ts; ts/test/guardian-body-read-retry.test.ts",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "#1290: all three remainder items ($ref targets, global security, trace) reproduced red on origin/main 33139d86 and are fixed with planted-positive tests (path-item parameters were fixed in #1607). #1503: S1 (body-read network errors classified; GET retried, writes never re-sent), S2 (AbortError rethrown unchanged test) and S3 ('may not have been posted' wording) all landed.",
+  "assumptions": [
+    "#1290: a $ref is resolved only when it is a local '#/...' JSON pointer; external, unresolvable and cyclic refs are compared as written (a recursive schema terminates).",
+    "#1290: sibling keys next to a resolved $ref are kept and merged over the resolved target (OAS 3.1 allows summary/description siblings).",
+    "#1290: an operation's explicit security (including []) overrides top-level security; moving an identical requirement from global to the operation is not a change.",
+    "#1290: ref resolution is not memoized; a pathological spec with deeply nested repeated refs grows exponentially. Accepted for realistic specs.",
+    "#1503: a body-read network error is retried on GET only (per human fork); PATCH and POST are not re-sent for it but now surface as GitHubNetworkError so the sticky upsert degrades.",
+    "#1503: fetchWithRetry was replaced by readWithRetry(url, init, sleep, consume) rather than kept beside it, so no export is left unused.",
+    "#1503: the shared network-error notice now says 'may not have been posted' for every method (a GET lookup failure is also accurately described by it)."
+  ],
+  "fleet": "roadmap-fleet",
+  "runId": "fc1112b-roadmap-fleet"
+}

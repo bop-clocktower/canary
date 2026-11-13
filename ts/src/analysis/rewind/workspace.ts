@@ -6,9 +6,10 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { dirname, isAbsolute, join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { RunRecord, TestResultRecord } from '../../history/record.js';
+import { testFileProblem } from './plan.js';
 
 export type ExecFn = (
   command: string,
@@ -83,19 +84,23 @@ export async function install(
     : `${command} ${args.join(' ')} exited ${result.code}`;
 }
 
-/** A repo-relative path that stays inside the repository. */
-function inRepo(file: string): boolean {
-  return !isAbsolute(file) && !file.split(/[\\/]/).includes('..');
-}
-
-/** Files that started before the failed test's file in the same run. */
+/**
+ * Files that started before the failed test's file in the same run. Each is a
+ * stored path that reaches the runner's argv, so it passes the same check as
+ * the failed test's own file (#1566).
+ */
 export function predecessors(run: RunRecord, test: TestResultRecord): string[] {
   const own = test.start_index;
   if (own === undefined) return [];
   const earlier = new Map<string, number>();
   for (const t of run.tests ?? []) {
     const i = t.start_index;
-    if (i !== undefined && i < own && t.test_file && inRepo(t.test_file)) {
+    if (
+      i !== undefined &&
+      i < own &&
+      t.test_file &&
+      testFileProblem(t.test_file) === null
+    ) {
       earlier.set(t.test_file, i);
     }
   }

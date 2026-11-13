@@ -12,6 +12,7 @@ import {
   fidelityRows,
   locateFailure,
   nearestGreen,
+  testFileProblem,
 } from '../src/analysis/rewind/plan.js';
 import type { RunRecord } from '../src/history/record.js';
 
@@ -245,4 +246,31 @@ describe('nearestGreen', () => {
   it('returns null when no green run exists', () => {
     expect(nearestGreen([failing], failing, 't', firstParent)).toBeNull();
   });
+});
+
+describe('testFileProblem: option-shaped paths (#1566)', () => {
+  // The path reaches `npx vitest|playwright` as a positional argument. Neither
+  // runner keeps a file filter after `--`, so a segment starting with `-`
+  // (which can become the leading one once the path is made package-relative)
+  // must never get that far: `--config=x.js` would load arbitrary JS.
+  it.each([
+    ['a whole path that is an option', '--config=/tmp/x.js'],
+    ['a short option', '-c'],
+    [
+      'a segment that becomes leading once package-relative',
+      'pkg/--config=x.js',
+    ],
+    ['a Windows-style option segment', 'pkg\\--config=x.js'],
+  ])('refuses %s', (_label, file) => {
+    expect(testFileProblem(file)).toBe(
+      `test_file '${file}' has a path segment starting with '-', which the runner would read as an option`,
+    );
+  });
+
+  it.each(['test/a.test.ts', 'test/a-b.test.ts', 'pkg/test/x--y.spec.ts'])(
+    'still accepts the ordinary path %s',
+    (file) => {
+      expect(testFileProblem(file)).toBeNull();
+    },
+  );
 });

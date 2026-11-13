@@ -117,8 +117,11 @@ content, but a dirty tree can shift counts. Two runs differ only in `generated`
 for one commit and one tree.
 
 A tracked file missing from the working tree, or otherwise unreadable, cannot
-report what it imports, as in a sparse checkout. `signal_sources.importers`
-carries `files_read` and `files_unread`, and its `status` says what that means:
+report what it imports, as in a sparse checkout. Neither can a path that is a
+symlink, is not a regular file (a FIFO or a device), or is larger than 8 MiB: it
+is never opened through a link or read past the cap, so a tree cannot hang the
+scan by pointing a source at `/dev/zero`. `signal_sources.importers` carries
+`files_read` and `files_unread`, and its `status` says what that means:
 
 | `status`   | Files read | `importers` per file                                  |
 | ---------- | ---------- | ----------------------------------------------------- |
@@ -160,7 +163,8 @@ path are dropped, and the command says which. A list katana's contract would
 reject (empty, not strings, or holding a name under 3 letters or digits once
 normalized) is dropped whole, and the command says which paths lost it, because
 katana would refuse to assess that area. A malformed existing file is
-overwritten.
+overwritten, and so is one read the same way as an unreadable source: a symlink,
+not a regular file, or larger than 8 MiB. Its symbols are not kept.
 
 ## `rank_score` and `risk_score`
 
