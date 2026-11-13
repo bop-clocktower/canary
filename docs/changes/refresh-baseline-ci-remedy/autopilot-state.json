@@ -1,0 +1,65 @@
+{
+  "item": "#1591",
+  "fleet": "cicd-fleet",
+  "run": "fc1112b",
+  "option": "F1-A",
+  "scope": [
+    "harness:workflow-audit over .github/workflows/refresh-arch-baseline.yml",
+    "push job: commit-push step id and a pushed job output (true only after git push; false on the deleted-branch skip)",
+    "ci-remedy-comment job: pull-requests: write only, needs push, gated on success() && pushed == 'true'; comments the empty-commit and gh pr update-branch remedies",
+    "classify ci-remedy-comment as advisory in .github/required-checks.json",
+    "document the remedy in AGENTS.md and the workflow header"
+  ],
+  "evidenceRuns": {
+    "issue": "#1591 (PR 1581 in fc1106: bot commit 9e37cf78 started no required check; human empty commit 67b02000 did)"
+  },
+  "phase": "VERIFY",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "harness:workflow-audit over refresh-arch-baseline.yml",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "title": "Failing tests in workflow-hygiene.test.ts and refresh-baseline-push-job.test.ts (10 red)",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "title": "pushed output + ci-remedy-comment job",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "title": "required-checks.json advisory entry",
+      "status": "done"
+    },
+    {
+      "id": 5,
+      "title": "Docs: AGENTS.md + workflow header",
+      "status": "done"
+    },
+    {
+      "id": 6,
+      "title": "Local gates, perf ratchet, markdownlint, actionlint",
+      "status": "done"
+    },
+    {
+      "id": 7,
+      "title": "Push, open PR, file follow-up, watch CI",
+      "status": "in_progress"
+    }
+  ],
+  "assumptions": [
+    "pull-requests: write suffices for gh pr comment with GITHUB_TOKEN",
+    "consume-label gate left at success(); gating it on pushed is #1540 item 1 (out of scope)",
+    "a failed comment is a warning, not red: the baseline is already pushed",
+    "end-to-end proof needs a labeled PR; scripts run locally against a stub gh"
+  ],
+  "outOfScope": [
+    "the trigger fix itself (App token / PAT / workflow_dispatch with PR context): follow-up issue",
+    "#1540 item 2: any label cancels an in-flight refresh"
+  ],
+  "verdict": "local gates green; awaiting CI and human review (not merged)"
+}

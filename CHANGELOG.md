@@ -46,6 +46,15 @@ under the project's former name) are documented in the
 
 ### Security
 
+- **A hostile tree can no longer hang `canary critical-areas` (#1575, CWE-1333,
+  CWE-400, CWE-59).** Three importer patterns took O(n^2) time on one malformed
+  line (25s at `import` plus 160k spaces); they are now linear and match the
+  same imports. Source files and the existing map are read only when they are a
+  regular file of at most 8 MiB, opened without following a symlink, so a
+  tracked link to `/dev/zero` or a FIFO reads as unread instead of hanging the
+  scan. A symlinked source now counts as unread, and a symlinked existing map as
+  no map.
+
 - **`refresh-arch-baseline.yml` no longer runs registry or PR-head code under a
   write token (#1463, CWE-250).** The one `refresh` job is now three. `measure`
   runs the CLI and the refresh script read-only, with no token left in the
