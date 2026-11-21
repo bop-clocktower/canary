@@ -14,6 +14,8 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [9.7.0] - 2026-11-21
+
 ### Added
 
 - **katana `env-gated` ledger cause.** For a test that skips itself on purpose
@@ -5500,7 +5502,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.6.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.7.0...HEAD
+[9.7.0]: https://github.com/bop-clocktower/canary/compare/v9.6.0...v9.7.0
 [9.6.0]: https://github.com/bop-clocktower/canary/compare/v9.5.0...v9.6.0
 [9.5.0]: https://github.com/bop-clocktower/canary/compare/v9.4.0...v9.5.0
 [9.4.0]: https://github.com/bop-clocktower/canary/compare/v9.3.0...v9.4.0
