@@ -7,11 +7,12 @@
   "$instrument": "harnessCli is the EXACT version that measured this file. The workflow pins a floating @12, so the ratchet abstains (exit 3) when CI resolves a different version. Re-measure and update harnessCli in the same PR; do not delete it to silence the abstention.",
   "minCoveragePercent": 18.04,
   "maxHeadroom": 1,
-  "measuredAt": "2026-11-12",
+  "measuredAt": "2026-11-21",
   "measuredDocumented": 87,
-  "measuredScanned": 457,
-  "measuredPercent": 19.04,
-  "harnessCli": "14.0.0",
+  "measuredScanned": 465,
+  "measuredPercent": 18.71,
+  "harnessCli": "14.1.1",
   "$restamp3": "2026-11-12, the @13 -> @14 pin bump (13.0.0 -> 14.0.0): `harness check-docs --json --min-coverage 0` at origin/main 30e21eb7 in a fresh worktree outside the checkout, run side by side under explicitly pinned `@harness-engineering/cli@13.0.0` and `@14.0.0` in the same session: 87/457 documented under both, identical scalar fields and an identical 370-entry undocumented list, so CLI-independent across this major. The measured fields move 79/419 -> 87/457 because the CODE grew since 2026-10-23, not the instrument, and the floor moves 17.86 -> 18.04 because the ratchet's own nudge asked for exactly that restamp under 13.0.0 before this bump (1.18 points above the floor against 1 of allowed headroom). `harnessCli` bumped because a stale stamp abstains a passing gate.",
-  "$restamp2": "2026-10-21, the @12 -> @13 pin bump (12.10.1 -> 13.0.0): CLI-INDEPENDENT. Measured in a fresh worktree of origin/main 5d74d92c under both 12.10.1 and 13.0.0 with every consumed subcommand captured to a file: `harness check-docs --json` reads 75/414 on main under both CLIs; the bump branch reads 76/416. The floor moves up to the value docs-ratchet.mjs itself recommended (coverage sat 1.41 points above it, past maxHeadroom)."
+  "$restamp2": "2026-10-21, the @12 -> @13 pin bump (12.10.1 -> 13.0.0): CLI-INDEPENDENT. Measured in a fresh worktree of origin/main 5d74d92c under both 12.10.1 and 13.0.0 with every consumed subcommand captured to a file: `harness check-docs --json` reads 75/414 on main under both CLIs; the bump branch reads 76/416. The floor moves up to the value docs-ratchet.mjs itself recommended (coverage sat 1.41 points above it, past maxHeadroom).",
+  "$restamp4": "2026-11-21, the floating @14 pin moving 14.0.0 -> 14.1.1 (14.1.0 shipped 2026-11-17; #1639): measured at origin/main d57e6a8f in a fresh worktree outside the checkout (no node_modules installed), run side by side under explicitly pinned `@harness-engineering/cli@14.0.0` and `@14.1.1` in the same session. `harness check-docs --json --min-coverage 0` reports 87/465 documented under BOTH versions, so the instrument did not move; only harnessCli and the measured fields are restamped. 465 scanned (was 457 on 11-12) is new files on main since, not the CLI. The floor stays 18.04: the measured 18.71% is within maxHeadroom of it, and the floor never auto-tightens."
 }

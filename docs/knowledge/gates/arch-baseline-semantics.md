@@ -145,6 +145,31 @@ recorded in `.harness/arch/allowances/chore-harness-cli-14.json` rather than
 banked with the `refresh-baseline` label, so that the instrument change carries
 its own name in the record.
 
+## Harness 14.1 started resolving `.js` imports
+
+Until 14.1, the coupling collector could not resolve an import written with a
+runtime extension (`./x.js`) to the TypeScript source it names (`x.ts`). Canary
+imports by `.js`, so almost no edge resolved and every module's `fanIn` read 0.
+A module with five imports then had five connections in total, and the
+coupling-ratio rule never checks five or fewer, so it was never flagged. 14.1
+added runtime-extension candidates to `resolveImportSource`, which sees the real
+importers.
+
+The `@14` pin is a floating major, so 14.1.0 arrived on 2026-11-17 with no PR in
+this repo, and the next PR to run CI (#1638) failed on code it did not touch
+(#1639). Measured on the same tree under 14.0.0 and 14.1.1: arch `coupling` went
+`52 -> 67`, from 20 newly visible modules at `couplingRatio` 0.71 or 0.83 (none
+changed) minus 5 that real fan-in now clears. `check-perf` moved `197 -> 214`
+for the same reason. Docs coverage and entropy did not move. The 20 are in
+`.harness/arch/allowances/chore-harness-cli-14-1.json`, and every ratchet
+baseline was restamped to `harnessCli: 14.1.1` with its side-by-side
+measurement.
+
+A ratchet that stamps the exact CLI version abstains on any minor bump. That's
+deliberate: a number from another analyzer isn't comparable. With a floating
+major, though, each upstream minor release reds every open PR until someone
+re-measures. Repeat this restamp at each harness minor.
+
 ## Optional markers in inline type literals cost branches
 
 Each `?` optional marker in an **inline** type literal counts as a branch
