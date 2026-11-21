@@ -535,6 +535,35 @@ describe('quarantine section', () => {
       'untracked (tests/t.py): out as pending-feature with no linked issue',
     ]);
   });
+
+  it('does not flag an env-gated row with no issue or expiry', () => {
+    // Nothing is broken and nobody owns a fix: the test runs for real in
+    // another job. Flagging it would re-create the noise the cause removes.
+    const s = ledgerSection(
+      write('q.json', {
+        schema_version: 2,
+        entries: [
+          {
+            test: 'csfle on',
+            file: 'tests/csfle.test.ts',
+            kind: 'skipped',
+            marker: 'describe.skip',
+            commit: 'c',
+            author: 'Ada',
+            date: '2026-11-21',
+            reason: 'r',
+            cause: 'env-gated',
+            issue: '',
+            expiry: '',
+          },
+        ],
+      }),
+      now,
+    );
+    expect(s.status).toBe('fed');
+    expect(s.denominator).toBe('1 ledger row');
+    expect(s.eyes).toEqual([]);
+  });
 });
 
 describe('sweep section', () => {

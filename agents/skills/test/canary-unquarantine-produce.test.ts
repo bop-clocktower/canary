@@ -306,6 +306,15 @@ describe('quarantine', () => {
     expect(ledgerOf(repo).entries[0].marker).toBe('describe.skip');
   });
 
+  it('accepts an env-gated quarantine with no --issue', () => {
+    const repo = plainSuite();
+    const r = callMain(args(repo, '--cause', 'env-gated'));
+    expect(r.stderr).toBe('');
+    expect(r.code).toBe(0);
+    const [row] = ledgerOf(repo).entries;
+    expect(row).toMatchObject({ cause: 'env-gated', issue: '' });
+  });
+
   it('a pytest test gets a skip decorator', () => {
     const repo = mkTmp();
     fs.mkdirSync(path.join(repo, 'tests'));

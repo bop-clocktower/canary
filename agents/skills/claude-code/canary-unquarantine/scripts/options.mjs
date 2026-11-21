@@ -69,7 +69,7 @@ options:
   --file PATH            quarantine: the test file (repo-relative)
   --test TITLE           quarantine: the test's title
   --cause CAUSE          quarantine: flaky, product-defect, blocked-data,
-                         pending-feature or obsolete
+                         pending-feature, obsolete or env-gated
   --issue REF            quarantine: the ticket it waits on (required for
                          product-defect, blocked-data, pending-feature)
   --expiry DATE          quarantine: when the quarantine should be revisited

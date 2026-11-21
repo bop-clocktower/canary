@@ -695,14 +695,27 @@ describe('ledger', () => {
       'blocked-data',
       'pending-feature',
       'obsolete',
+      'env-gated',
     ]);
     // The three where the TEST is correct and someone else owns the fix:
     // a product defect, missing data, or a feature that has not shipped.
+    // `env-gated` is absent on purpose: nothing is broken, nobody owns a fix.
     expect(ledger.CAUSES_REQUIRING_ISSUE).toEqual([
       'product-defect',
       'blocked-data',
       'pending-feature',
     ]);
+  });
+
+  it('an env-gated row with no issue supersedes a causeless row for the same pair', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [entry({ kind: 'skipped' })]);
+    const doc = ledger.appendEntries(p, [
+      entry({ kind: 'skipped', cause: 'env-gated' }),
+    ]);
+    expect(doc.entries).toHaveLength(1);
+    expect(doc.entries[0].cause).toBe('env-gated');
+    expect(doc.entries[0].issue).toBe('');
   });
 
   it('throws when entries is not an array', () => {
