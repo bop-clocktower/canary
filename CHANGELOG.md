@@ -16,6 +16,16 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **katana `env-gated` ledger cause.** For a test that skips itself on purpose
+  in one run, because something it needs is absent (a native library, an opt-in
+  flag), and runs for real somewhere else (a nightly job, a dedicated runner).
+  Before this, a permanent gate either stayed unledgered, so a dashboard
+  escalated the unchanging skip as "coverage switched off", or was filed under a
+  cause whose release trigger never comes. It needs no `issue`, because nothing
+  is broken and nobody owns a fix, so manhunter does not flag an issueless row.
+  `canary-unquarantine quarantine --cause env-gated` accepts it. No schema bump;
+  existing rows are unchanged.
+
 - **The ingest reporter and `canary testtracker push` publish quarantine state
   from the canary-katana ledger (#1321).** Set `--quarantine-ledger <path>`
   (reporter option `quarantineLedger`, env `CANARY_INGEST_QUARANTINE_LEDGER`).

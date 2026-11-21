@@ -259,8 +259,8 @@ abc123" is provenance, not a judgement about why the test is out of the suite.
 
 `reason` and `cause` are deliberately separate. `reason` is **derived** (the
 commit subject). `cause` is **asserted** — one of `flaky`, `product-defect`,
-`blocked-data`, `pending-feature`, `obsolete`. Collapsing them would dress an
-auto-derived string up as a claim someone stands behind.
+`blocked-data`, `pending-feature`, `obsolete`, `env-gated`. Collapsing them
+would dress an auto-derived string up as a claim someone stands behind.
 
 Three causes **require an `issue`**: `product-defect`, `blocked-data` and
 `pending-feature`. In each, the test is correct and someone else owns the fix,
@@ -275,6 +275,17 @@ as the other sends whoever looks for data work to feature work. The release rule
 is the same for every cause: **remove the row when the test passes live**, not
 when the ticket closes. A closed ticket with a still-failing test is exactly
 what the ledger exists to keep visible (#1330).
+
+Use `env-gated` for a test that **skips itself on purpose in this run** because
+something it needs is absent (a native library, an opt-in flag such as
+`RUN_NIGHTLY=1`), and that runs for real somewhere else (a nightly job, a
+dedicated runner). Nothing is broken and nobody owns a fix, so it needs no
+`issue`; a producer may put where the test really runs there instead (a workflow
+path). Without this cause such a skip either stays unledgered, and a dashboard
+escalates the unchanging skip as "coverage switched off", or it is filed under a
+cause whose release trigger never comes. It is not `obsolete`: the test still
+matters and still runs. If it stops running anywhere, the row is wrong. Remove
+it and ledger the test under the cause that is now true.
 
 **One row per `(test, file)` may state a cause, and a caused row wins.** A row
 with a cause supersedes a causeless row for the same pair, and a causeless row

@@ -46,6 +46,15 @@ const FIELDS = [
  * release. Release rule for every cause: remove the row when the test
  * passes live, not when the ticket closes (#1330).
  *
+ * `env-gated` is the one cause where nothing is wrong: the test skips itself
+ * in this run because something it needs is absent (a native library, an
+ * opt-in flag), and it runs for real somewhere else (a nightly job, a
+ * dedicated runner). Nobody owns a fix, so it needs no `issue`; a producer
+ * may still put where the test really runs there (a workflow path). Before
+ * this cause, producers either left such skips unledgered (so dashboards
+ * escalated them as "coverage switched off") or filed them under a cause with
+ * a release trigger that never comes.
+ *
  * manhunter mirrors CAUSES_REQUIRING_ISSUE in
  * ts/src/analysis/manhunter/ledger.ts; the parity test
  * ts/test/manhunter-ledger-cause-parity.test.ts fails if they disagree.
@@ -56,6 +65,7 @@ export const CAUSES = [
   'blocked-data',
   'pending-feature',
   'obsolete',
+  'env-gated',
 ];
 
 /** Causes for which a row without an `issue` is not a real record. */
