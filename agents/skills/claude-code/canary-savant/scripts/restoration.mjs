@@ -272,27 +272,29 @@ export function analyzeRestoration(text, isPhp = false) {
     collectPyRegions(lines, rangesByLine, region);
   }
 
-  const restoresAll = new Set();
-  const restoredKeys = new Map(); // family id -> Set<key>
-  const record = (familyId, key) => {
-    if (key == null) {
-      restoresAll.add(familyId);
-      return;
-    }
-    if (!restoredKeys.has(familyId)) restoredKeys.set(familyId, new Set());
-    restoredKeys.get(familyId).add(key);
-  };
-
-  recordRestores(lines, rangesByLine, region, isPhp, record);
+  const restored = restoreRecorder();
+  recordRestores(lines, rangesByLine, region, isPhp, restored.record);
   // D9: a WP_UnitTestCase base restores hooks and rolls back the DB.
   const wpAuto = isPhp && lines.some((l) => WP_TESTCASE_BASE.test(l));
-
   return {
     restores(familyId, key) {
       const verdict = familyVerdict(familyId, wpAuto);
-      if (verdict !== null) return verdict;
-      if (restoresAll.has(familyId)) return true;
-      return key != null && (restoredKeys.get(familyId)?.has(key) ?? false);
+      return verdict !== null ? verdict : restored.covers(familyId, key);
     },
+  };
+}
+
+/** What a test restores, per family: ALL (`key == null`) or individual keys. */
+function restoreRecorder() {
+  const ALL = Symbol('all');
+  const byFamily = new Map(); // family id -> Set<key | ALL>
+  return {
+    record: (familyId, key) => {
+      if (!byFamily.has(familyId)) byFamily.set(familyId, new Set());
+      byFamily.get(familyId).add(key ?? ALL);
+    },
+    covers: (familyId, key) =>
+      byFamily.get(familyId)?.has(key ?? ALL) ||
+      !!byFamily.get(familyId)?.has(ALL),
   };
 }

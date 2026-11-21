@@ -598,27 +598,7 @@ export function migrateCmd(rawOpts: MigrateOptions, deps: MainDeps): void {
 
   // Both report-only modes exit here; neither ever reaches the writing path.
   migrateReportOnly(opts, migrator, root, overlayPath, deps);
-
-  let ctx;
-  try {
-    ctx = migrator.detect(root);
-  } catch (e) {
-    deps.err(
-      `\n${pc.bold(pc.red('Detection error:'))} ${e instanceof Error ? e.message : String(e)}`,
-    );
-    throw new CliExitError(1);
-  }
-
-  if (!ctx.is_harness_project) {
-    if (ctx.not_test_project_reason) {
-      deps.err(`\n${pc.bold(pc.red(CROSS))} ${ctx.not_test_project_reason}`);
-    } else {
-      deps.err(
-        `\n${pc.bold(pc.red(CROSS))} No harness project detected at ${pc.bold(root)}.\nExpected ${pc.dim('harness.config.json')} and ${pc.dim('.harness/')} directory.`,
-      );
-    }
-    throw new CliExitError(1);
-  }
+  requireHarnessProject(migrator, root, deps);
 
   const dryRun = !opts.apply;
   const modeLabel = dryRun ? pc.dim('(dry run)') : pc.green('(apply)');
@@ -635,13 +615,37 @@ export function migrateCmd(rawOpts: MigrateOptions, deps: MainDeps): void {
       force: opts.force ?? false,
     });
   } catch (e) {
-    deps.err(
-      `\n${pc.bold(pc.red('Error:'))} ${e instanceof Error ? e.message : String(e)}`,
-    );
+    deps.err(`\n${pc.bold(pc.red('Error:'))} ${errText(e)}`);
     throw new CliExitError(1);
   }
 
   emitMigrateReport(report, opts.json ?? false, dryRun, deps);
+}
+
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Exit 1 unless `root` is a harness project migrate can work on. */
+function requireHarnessProject(
+  migrator: ReturnType<MainDeps['makeMigrator']>,
+  root: string,
+  deps: MainDeps,
+): void {
+  let ctx;
+  try {
+    ctx = migrator.detect(root);
+  } catch (e) {
+    deps.err(`\n${pc.bold(pc.red('Detection error:'))} ${errText(e)}`);
+    throw new CliExitError(1);
+  }
+  if (ctx.is_harness_project) return;
+  deps.err(
+    ctx.not_test_project_reason
+      ? `\n${pc.bold(pc.red(CROSS))} ${ctx.not_test_project_reason}`
+      : `\n${pc.bold(pc.red(CROSS))} No harness project detected at ${pc.bold(root)}.\nExpected ${pc.dim('harness.config.json')} and ${pc.dim('.harness/')} directory.`,
+  );
+  throw new CliExitError(1);
 }
 
 /**

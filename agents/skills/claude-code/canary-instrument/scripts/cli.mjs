@@ -113,34 +113,18 @@ export function main(argv = []) {
     trace,
   });
 
-  // A run.json whose requests carry no URL is worse than no run.json. The
-  // artifact's whole purpose is answering "which test hit which endpoint", so a
-  // consumer that reads URL-less requests computes zero endpoints matched and
-  // renders a clean 0% as though it were a measurement. Refuse to write it.
-  //
-  // Note this is NOT the empty-spans case, which is deliberately fine (see the
-  // header): zero spans yields an empty trace and exit 0, and "0 spans, 0
-  // buckets" describes itself honestly. What fails here is the drift signature --
-  // spans WERE captured and correlated, and every one of them lost its URL,
-  // which is what an attribute-name mismatch looks like from the outside.
-  const requests = trace.by_test.flatMap((t) => t.requests ?? []);
-  const withUrl = requests.filter((r) => r.url);
+  const { requests, withUrl } = urlCoverage(trace);
   if (requests.length > 0 && withUrl.length === 0) {
-    console.error(
-      `canary-instrument: correlated ${requests.length} request(s) across ` +
-        `${trace.spans_total} span(s) and NONE carried a URL. Refusing to write ` +
-        `an artifact that would read as "no endpoints exercised".`,
-    );
-    console.error(
-      'This is what an OTel semantic-convention mismatch looks like: the spans ' +
-        'are present and attributed, but the URL attribute this reader expects is ' +
-        'not the one the instrumentation emitted. Check the attribute keys on an ' +
-        'HTTP span in --spans against requestUrl() in span_reader.mjs.',
-    );
+    reportAllUrlsLost(requests.length, trace.spans_total);
     return 1;
   }
 
-  const outputDir = args.output;
+  writeArtifact(args.output, artifact, { requests, withUrl });
+  return 0;
+}
+
+function writeArtifact(outputDir, artifact, { requests, withUrl }) {
+  const { trace } = artifact;
   fs.mkdirSync(outputDir, { recursive: true });
   const outPath = path.join(outputDir, 'run.json');
   fs.writeFileSync(outPath, dumpsIndent2Ascii(artifact), 'utf8');
@@ -158,7 +142,39 @@ export function main(argv = []) {
         'resolvable URL and will not match any endpoint.',
     );
   }
-  return 0;
+}
+
+/** Every correlated request, and the ones that resolved a URL. */
+function urlCoverage(trace) {
+  const requests = trace.by_test.flatMap((t) => t.requests ?? []);
+  return { requests, withUrl: requests.filter((r) => r.url) };
+}
+
+/**
+ * A run.json whose requests carry no URL is worse than no run.json. The
+ * artifact's whole purpose is answering "which test hit which endpoint", so a
+ * consumer that reads URL-less requests computes zero endpoints matched and
+ * renders a clean 0% as though it were a measurement. The caller refuses to
+ * write it.
+ *
+ * Note this is NOT the empty-spans case, which is deliberately fine (see the
+ * header): zero spans yields an empty trace and exit 0, and "0 spans, 0
+ * buckets" describes itself honestly. What fails here is the drift signature --
+ * spans WERE captured and correlated, and every one of them lost its URL,
+ * which is what an attribute-name mismatch looks like from the outside.
+ */
+function reportAllUrlsLost(requestCount, spansTotal) {
+  console.error(
+    `canary-instrument: correlated ${requestCount} request(s) across ` +
+      `${spansTotal} span(s) and NONE carried a URL. Refusing to write ` +
+      `an artifact that would read as "no endpoints exercised".`,
+  );
+  console.error(
+    'This is what an OTel semantic-convention mismatch looks like: the spans ' +
+      'are present and attributed, but the URL attribute this reader expects is ' +
+      'not the one the instrumentation emitted. Check the attribute keys on an ' +
+      'HTTP span in --spans against requestUrl() in span_reader.mjs.',
+  );
 }
 
 function existsButNotDir(p) {

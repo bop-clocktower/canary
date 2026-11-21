@@ -165,6 +165,11 @@ for the same reason. Docs coverage and entropy did not move. The 20 are in
 baseline was restamped to `harnessCli: 14.1.1` with its side-by-side
 measurement.
 
+The perf ceiling could not follow, because the perf ratchet refuses any raise,
+instrument change included (#1257). So the adoption paid for the instrument
+change in real fixes: 16 function-length and complexity splits took the count
+from 214 to 198, under the unchanged 201.
+
 A ratchet that stamps the exact CLI version abstains on any minor bump. That's
 deliberate: a number from another analyzer isn't comparable. With a floating
 major, though, each upstream minor release reds every open PR until someone
