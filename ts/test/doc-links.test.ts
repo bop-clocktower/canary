@@ -469,8 +469,15 @@ describe('check_doc_links', () => {
      * `../../../../docs/knowledge/roadmap/merge-triggered-auto-done.md`, a path
      * in the harness repo, not this one (1 per host). Same upstream class as
      * #838 / harness#2132. A deliberate, explained bump, which is the pin working.
+     *
+     * 32 -> 0 at the harness 14.1.1 regeneration (#1639, 2026-11-21):
+     * `node scripts/check_doc_links.mjs --json` reports 0 dead links across 40
+     * generator-stamped files (denominator 40, so not an abstention). The
+     * generator no longer links the unemitted `references/*.md` or the
+     * harness-repo roadmap path. The pin stays: 0 is the value a regression
+     * would move off.
      */
-    const GENERATED_DEAD_LINKS = 32;
+    const GENERATED_DEAD_LINKS = 0;
 
     it('pins the generator-stamped dead-link count', () => {
       const parsed = parseContract(exec(['--json']).out);
