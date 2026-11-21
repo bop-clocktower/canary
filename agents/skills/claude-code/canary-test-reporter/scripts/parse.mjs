@@ -95,19 +95,23 @@ function classify(rawStatus, testResults, test) {
   return 'failed';
 }
 
+/** Totals over parsed results; an empty list is the all-zero report. */
+function summarize(results) {
+  const count = (status) => results.filter((r) => r.status === status).length;
+  return ReportData({
+    total: results.length,
+    passed: count('passed'),
+    failed: count('failed'),
+    flaky: count('flaky'),
+    skipped: count('skipped'),
+    duration_ms: results.reduce((acc, r) => acc + (r.duration_ms || 0), 0),
+    results,
+  });
+}
+
 /** Parse a Playwright JSON results file into a full ReportData. */
 export function parseResults(resultsPath) {
-  if (!fs.existsSync(resultsPath)) {
-    return ReportData({
-      total: 0,
-      passed: 0,
-      failed: 0,
-      flaky: 0,
-      skipped: 0,
-      duration_ms: 0,
-      results: [],
-    });
-  }
+  if (!fs.existsSync(resultsPath)) return summarize([]);
 
   let text = fs.readFileSync(resultsPath, 'utf8');
   const braceAt = text.indexOf('{');
@@ -138,21 +142,7 @@ export function parseResults(resultsPath) {
     throw exc;
   }
 
-  const passed = results.filter((r) => r.status === 'passed').length;
-  const failed = results.filter((r) => r.status === 'failed').length;
-  const flaky = results.filter((r) => r.status === 'flaky').length;
-  const skipped = results.filter((r) => r.status === 'skipped').length;
-  const totalMs = results.reduce((acc, r) => acc + (r.duration_ms || 0), 0);
-
-  return ReportData({
-    total: results.length,
-    passed,
-    failed,
-    flaky,
-    skipped,
-    duration_ms: totalMs,
-    results,
-  });
+  return summarize(results);
 }
 
 function processSuite(suite, results, parentPath, suiteFile) {

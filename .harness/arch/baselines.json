@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-12T19:35:27.783Z",
-  "updatedFrom": "a999e90395ceea508b13e98c13b896cc5b73021a",
+  "updatedAt": "2026-11-21T18:26:35.901Z",
+  "updatedFrom": "418ebf3a3bb9ef0f8dce520947a467888e2ffe14",
   "metrics": {
     "circular-deps": {
       "value": 0,
@@ -95,7 +95,7 @@
       ]
     },
     "coupling": {
-      "value": 52,
+      "value": 67,
       "violationIds": []
     },
     "forbidden-imports": {

@@ -165,28 +165,11 @@ export function main(argv = []) {
   }
 
   const repo = args.repo;
-  // `!= null`, not a truthiness test: "--ledger was not given" and "--ledger
-  // was given an empty path" are different situations, and only the first one
-  // may fall back to the default. (An empty value is rejected at parse time,
-  // so this branch is now unreachable with '' -- the explicit null check keeps
-  // it that way if the parser ever loosens.)
-  const ledgerPath =
-    args.ledger != null
-      ? args.ledger
-      : path.join(repo, '.canary', 'quarantine.json');
+  const ledgerPath = ledgerPathFor(args);
 
-  let diff;
-  let base;
-  try {
-    ({ text: diff, base } = loadDiff(repo, args.diffFile));
-  } catch (exc) {
-    if (exc.notFound) {
-      console.error(`${PREFIX} ${exc.message}`);
-      return 1;
-    }
-    console.error(`${PREFIX} could not read diff: ${exc.message}`);
-    return 1;
-  }
+  const loaded = readDiff(repo, args.diffFile);
+  if (!loaded) return 1;
+  const { text: diff, base } = loaded;
 
   // Non-blank diff text is the denominator probe: `loadDiff` succeeding does
   // not mean it returned anything to scan.
@@ -213,10 +196,43 @@ export function main(argv = []) {
     console.log(renderText(run));
   }
 
-  // Advisory by default (D3). --strict: 1 on a real alarm, else 3 when the run
-  // abstained (#508, #1242): a 0 would claim coverage nobody could check.
-  if (!args.strict) return 0;
-  if (verdict.findings.length) return 1;
+  return exitCodeFor(run, args.strict);
+}
+
+/**
+ * `!= null`, not a truthiness test: "--ledger was not given" and "--ledger
+ * was given an empty path" are different situations, and only the first one
+ * may fall back to the default. (An empty value is rejected at parse time,
+ * so this branch is now unreachable with '' -- the explicit null check keeps
+ * it that way if the parser ever loosens.)
+ */
+function ledgerPathFor(args) {
+  return args.ledger != null
+    ? args.ledger
+    : path.join(args.repo, '.canary', 'quarantine.json');
+}
+
+/** The diff to scan, or null after printing why it could not be read. */
+function readDiff(repo, diffFile) {
+  try {
+    return loadDiff(repo, diffFile);
+  } catch (exc) {
+    console.error(
+      exc.notFound
+        ? `${PREFIX} ${exc.message}`
+        : `${PREFIX} could not read diff: ${exc.message}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Advisory by default (D3). --strict: 1 on a real alarm, else 3 when the run
+ * abstained (#508, #1242): a 0 would claim coverage nobody could check.
+ */
+function exitCodeFor(run, strict) {
+  if (!strict) return 0;
+  if (run.verdict.findings.length) return 1;
   return abstains(run) ? 3 : 0;
 }
 

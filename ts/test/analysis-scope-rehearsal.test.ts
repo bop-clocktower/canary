@@ -152,7 +152,9 @@ describe.skipIf(!LIVE)(
         out[m.category] = (out[m.category] ?? 0) + m.value;
       }
       const cleanup = harness(dir, ['cleanup', '--findings-json']);
-      const line = /\{"findings":(\d+)[^\n]*"check":"cleanup"\}/.exec(
+      // Anchored on the prefix: since harness 14.1 the contract line carries
+      // an `items` array after `"check":"cleanup"` (#1639).
+      const line = /\{"findings":(\d+),"v":1,"check":"cleanup"/.exec(
         cleanup.out,
       );
       // A missing contract line is an abstention, never a zero.

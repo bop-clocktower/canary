@@ -375,11 +375,41 @@ function check(root) {
   };
 }
 
-function main() {
-  const argv = process.argv.slice(2);
-  const json = argv.includes('--json');
+function parseCli(argv) {
   const rootIdx = argv.indexOf('--root');
-  const root = rootIdx === -1 ? REPO_ROOT : resolve(argv[rootIdx + 1] ?? '');
+  return {
+    json: argv.includes('--json'),
+    root: rootIdx === -1 ? REPO_ROOT : resolve(argv[rootIdx + 1] ?? ''),
+  };
+}
+
+function contractOf(report) {
+  return JSON.stringify({
+    findings: report.findings,
+    generatedFindings: report.generatedFindings,
+    filesScanned: report.filesScanned,
+    generatedFiles: report.generatedFiles,
+    v: 1,
+    check: 'doc-links',
+  });
+}
+
+/** List the gated dead links and exit 1; returns when there are none. */
+function failOnFindings(report, contract, json) {
+  if (report.findings.length === 0) return;
+  for (const f of report.findings) {
+    console.error(`  ${f.file}:${f.line}  ${f.target}  — ${f.detail}`);
+  }
+  console.error(
+    `check_doc_links: ${report.findings.length} dead link(s) across ` +
+      `${report.filesScanned} Markdown file(s).`,
+  );
+  if (json) console.log(contract);
+  process.exit(1);
+}
+
+function main() {
+  const { json, root } = parseCli(process.argv.slice(2));
 
   let report;
   try {
@@ -389,14 +419,7 @@ function main() {
     process.exit(2);
   }
 
-  const contract = JSON.stringify({
-    findings: report.findings,
-    generatedFindings: report.generatedFindings,
-    filesScanned: report.filesScanned,
-    generatedFiles: report.generatedFiles,
-    v: 1,
-    check: 'doc-links',
-  });
+  const contract = contractOf(report);
 
   if (report.filesScanned === 0) {
     if (json) console.log(contract);
@@ -417,17 +440,7 @@ function main() {
     );
   }
 
-  if (report.findings.length > 0) {
-    for (const f of report.findings) {
-      console.error(`  ${f.file}:${f.line}  ${f.target}  — ${f.detail}`);
-    }
-    console.error(
-      `check_doc_links: ${report.findings.length} dead link(s) across ` +
-        `${report.filesScanned} Markdown file(s).`,
-    );
-    if (json) console.log(contract);
-    process.exit(1);
-  }
+  failOnFindings(report, contract, json);
 
   console.log(
     `check_doc_links: ${report.filesScanned} Markdown file(s) scanned, no dead links.`,

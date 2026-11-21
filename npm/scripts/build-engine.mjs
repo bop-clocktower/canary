@@ -60,15 +60,11 @@ function run(cmd, args, cwd) {
   }
 }
 
-function buildEngine() {
-  if (!existsSync(tsRoot)) {
-    throw new Error(
-      `engine source not found at ${tsRoot}; cannot bundle @canary/engine-ts`,
-    );
-  }
-
-  // 1. Install the engine's deps only when missing (keeps repeat local builds
-  //    fast); always recompile so dist/engine is never stale.
+/**
+ * Step 1: install the engine's deps only when missing (keeps repeat local
+ * builds fast); always recompile so dist/engine is never stale.
+ */
+function compileEngine() {
   if (!existsSync(resolve(tsRoot, 'node_modules'))) {
     process.stdout.write('[build-engine] installing engine deps (npm ci)...\n');
     run('npm', ['ci'], tsRoot);
@@ -79,7 +75,10 @@ function buildEngine() {
   if (!existsSync(resolve(tsDist, 'cli.js'))) {
     throw new Error(`engine build produced no cli.js at ${tsDist}`);
   }
+}
 
+/** Steps 2-4: stage the compiled JS as a runnable ESM bundle. */
+function stageEngine() {
   // 2. Stage compiled JS.
   rmSync(engineOut, { recursive: true, force: true });
   mkdirSync(engineOut, { recursive: true });
@@ -104,6 +103,17 @@ function buildEngine() {
   //    and write the executable wrapper as cli.js.
   renameSync(resolve(engineOut, 'cli.js'), resolve(engineOut, 'cli.core.js'));
   writeFileSync(resolve(engineOut, 'cli.js'), RUNNER);
+}
+
+function buildEngine() {
+  if (!existsSync(tsRoot)) {
+    throw new Error(
+      `engine source not found at ${tsRoot}; cannot bundle @canary/engine-ts`,
+    );
+  }
+
+  compileEngine();
+  stageEngine();
 
   // 5. The framework registry (data/frameworks/registry.json) was already
   //    staged in step 2 alongside the compiled .js -- see the header comment.
