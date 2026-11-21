@@ -134,7 +134,7 @@ checks, per skill under `<overlay>/.canary/skills/<name>/SKILL.md`:
 1. **Frontmatter floor** — `name` and a non-empty `description` are present.
 2. **`deploy_to` targets** — every value is a shape canary itself can emit (the
    list in `ts/src/core/test-shapes.ts`: `api`, `e2e_ui`, `frontend_unit`,
-   `load`, `performance`, `mobile`, `accessibility`, `visual`, `contract`,
+   `unit`, `load`, `performance`, `mobile`, `accessibility`, `visual`, `contract`,
    `mutation`, `integration`, `synthetic_data`, and the rest) or the `all`
    sentinel. Any other value is a **warning**, not an error: it is fine when it
    matches a consuming repo's custom `canary_shape`, and a typo otherwise.

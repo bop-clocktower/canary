@@ -32,7 +32,9 @@
     {
       "name": "vitest",
       "category": "frontend_unit",
-      "categories": [],
+      "categories": [
+        "unit"
+      ],
       "languages": [
         "typescript",
         "javascript"
@@ -58,7 +60,9 @@
     {
       "name": "pytest",
       "category": "api",
-      "categories": [],
+      "categories": [
+        "unit"
+      ],
       "languages": [
         "python"
       ],

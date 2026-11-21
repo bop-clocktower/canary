@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { TestClassifier } from '../src/core/classifier.js';
 import { CONFIG_PROBES } from '../src/core/config-probes.js';
 import { probeFramework } from '../src/core/framework-probes.js';
+import { FrameworkRegistry } from '../src/core/framework-registry.js';
 import { TEST_SHAPES } from '../src/core/test-shapes.js';
 
 const SHAPES: ReadonlySet<string> = new Set(TEST_SHAPES);
@@ -51,6 +52,21 @@ describe('TEST_SHAPES', () => {
 
   it('includes mobile, the shape #1206 was filed for', () => {
     expect(SHAPES.has('mobile')).toBe(true);
+  });
+
+  it('includes unit, so a backend unit suite has a shape that is not frontend_unit', () => {
+    expect(SHAPES.has('unit')).toBe(true);
+  });
+
+  it('resolves unit to the runners that do backend unit tests, without changing their primary category', () => {
+    const unit = new FrameworkRegistry()
+      .getByCategory('unit')
+      .map((f) => f.name);
+    expect(unit).toEqual(expect.arrayContaining(['vitest', 'pytest']));
+    const primary = (name: string) =>
+      registry.frameworks.find((f) => f.name === name)?.category;
+    expect(primary('vitest')).toBe('frontend_unit');
+    expect(primary('pytest')).toBe('api');
   });
 
   it('is exactly the set of framework registry categories', () => {
