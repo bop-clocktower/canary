@@ -32,6 +32,15 @@ export function buildDigest(failures) {
     return { text: `${CHECK} 0 failing tests.`, annotations: [], exitCode: 0 };
   }
 
+  return {
+    text: triageText(failures),
+    annotations: failures.map(annotationFor),
+    exitCode: 1,
+  };
+}
+
+/** The failures grouped by category, in FAILURE_CATEGORIES order. */
+function triageText(failures) {
   const n = failures.length;
   const byCat = new Map();
   for (const f of failures) {
@@ -52,18 +61,14 @@ export function buildDigest(failures) {
       lines.push(`    - ${f.title} ${DASH} ${firstLine(f.error)}`);
     }
   }
-  const text = lines.join('\n');
+  return lines.join('\n');
+}
 
-  const annotations = [];
-  for (const f of failures) {
-    const cat = categorizeFailure(f.error);
-    let loc = '';
-    if (f.file) loc += `file=${f.file},`;
-    if (f.line !== null && f.line !== undefined) loc += `line=${f.line},`;
-    annotations.push(
-      `::error ${loc}title=Test failure::${f.title} ${DASH} ${cat}: ${firstLine(f.error)}`,
-    );
-  }
-
-  return { text, annotations, exitCode: 1 };
+/** One GitHub `::error` annotation, with file and line when known. */
+function annotationFor(f) {
+  const cat = categorizeFailure(f.error);
+  let loc = '';
+  if (f.file) loc += `file=${f.file},`;
+  if (f.line !== null && f.line !== undefined) loc += `line=${f.line},`;
+  return `::error ${loc}title=Test failure::${f.title} ${DASH} ${cat}: ${firstLine(f.error)}`;
 }

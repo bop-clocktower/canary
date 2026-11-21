@@ -42,40 +42,32 @@ async function readStdin() {
   return Buffer.concat(chunks).toString('utf-8');
 }
 
+/** Every non-block path fails open the same way: say why, then allow. */
+function allow(why) {
+  process.stderr.write(`[protect-config] ${why} — allowing (fail-open)\n`);
+  process.exit(0);
+}
+
 async function main() {
   let raw;
   try {
     raw = await readStdin();
   } catch {
-    process.stderr.write(
-      '[protect-config] Could not read stdin — allowing (fail-open)\n',
-    );
-    process.exit(0);
+    allow('Could not read stdin');
   }
-  if (!raw.trim()) {
-    process.stderr.write(
-      '[protect-config] Empty stdin — allowing (fail-open)\n',
-    );
-    process.exit(0);
-  }
+  if (!raw.trim()) allow('Empty stdin');
 
   let data;
   try {
     data = JSON.parse(raw);
   } catch {
-    process.stderr.write(
-      '[protect-config] Could not parse stdin JSON — allowing (fail-open)\n',
-    );
-    process.exit(0);
+    allow('Could not parse stdin JSON');
   }
 
   try {
     const filePath = data?.tool_input?.file_path ?? '';
     if (typeof filePath !== 'string' || !filePath) {
-      process.stderr.write(
-        '[protect-config] Missing file_path in tool input — allowing (fail-open)\n',
-      );
-      process.exit(0);
+      allow('Missing file_path in tool input');
     }
 
     if (isProtected(filePath, effectivePatterns())) {
@@ -87,10 +79,7 @@ async function main() {
     }
     process.exit(0);
   } catch {
-    process.stderr.write(
-      '[protect-config] Unexpected error — allowing (fail-open)\n',
-    );
-    process.exit(0);
+    allow('Unexpected error');
   }
 }
 

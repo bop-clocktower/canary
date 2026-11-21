@@ -221,18 +221,38 @@ function fail(message) {
   process.exit(2);
 }
 
-function main() {
-  const opts = parseArgs(process.argv.slice(2));
-
+function loadDocuments(opts) {
   for (const [label, path] of [
     ['roadmap', opts.roadmap],
     ['archive', opts.archive],
   ]) {
     if (!existsSync(path)) fail(`${label} not found: ${path}`);
   }
+  return {
+    roadmap: parseDocument(readFileSync(opts.roadmap, 'utf-8')),
+    archive: parseDocument(readFileSync(opts.archive, 'utf-8')),
+  };
+}
 
-  const roadmap = parseDocument(readFileSync(opts.roadmap, 'utf-8'));
-  const archive = parseDocument(readFileSync(opts.archive, 'utf-8'));
+/** Remove every done row from the roadmap's sections and return them. */
+function takeDoneRows(roadmap) {
+  const moved = [];
+  for (const section of roadmap.sections) {
+    const keep = [];
+    for (const row of section.rows) {
+      if (isDone(row)) moved.push(row);
+      else keep.push(row);
+    }
+    // The heading stays even when it empties: removing it would silently
+    // reparent whatever row is added next.
+    section.rows = keep;
+  }
+  return moved;
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const { roadmap, archive } = loadDocuments(opts);
 
   const examined = roadmap.sections.reduce((n, s) => n + s.rows.length, 0);
   if (examined === 0) {
@@ -249,17 +269,7 @@ function main() {
   if (!shipped)
     fail(`archive has no \`${ARCHIVE_SECTION}\` section to append to`);
 
-  const moved = [];
-  for (const section of roadmap.sections) {
-    const keep = [];
-    for (const row of section.rows) {
-      if (isDone(row)) moved.push(row);
-      else keep.push(row);
-    }
-    // The heading stays even when it empties: removing it would silently
-    // reparent whatever row is added next.
-    section.rows = keep;
-  }
+  const moved = takeDoneRows(roadmap);
 
   console.log(
     `i Examined ${examined} row(s); ${moved.length} row(s) moved to ` +

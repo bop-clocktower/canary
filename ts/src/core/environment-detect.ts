@@ -196,6 +196,22 @@ export class EnvironmentContext {
  *
  * Python: `_parse_dotenv_base_url`.
  */
+/**
+ * One `.env` line as `[key, unquoted value]`, or null for a blank, comment or
+ * `=`-less line. An `export ` prefix is dropped.
+ */
+function parseDotenvLine(raw: string): [string, string] | null {
+  let line = stripWs(raw);
+  if (!line || line.startsWith('#')) return null;
+  if (line.startsWith('export ')) {
+    line = line.slice('export '.length).replace(/^\s+/, '');
+  }
+  const idx = line.indexOf('=');
+  if (idx === -1) return null;
+  const value = stripWs(line.slice(idx + 1));
+  return [stripWs(line.slice(0, idx)), stripChar(stripChar(value, '"'), "'")];
+}
+
 function parseDotenvBaseUrl(root: string): string | null {
   const path = join(root, '.env');
   if (!existsSync(path)) return null;
@@ -209,16 +225,9 @@ function parseDotenvBaseUrl(root: string): string | null {
 
   const found: Record<string, string> = {};
   for (const raw of splitLines(text)) {
-    let line = stripWs(raw);
-    if (!line || line.startsWith('#')) continue;
-    if (line.startsWith('export ')) {
-      line = line.slice('export '.length).replace(/^\s+/, '');
-    }
-    if (!line.includes('=')) continue;
-    const idx = line.indexOf('=');
-    const key = stripWs(line.slice(0, idx));
-    let value = stripWs(line.slice(idx + 1));
-    value = stripChar(stripChar(value, '"'), "'");
+    const pair = parseDotenvLine(raw);
+    if (!pair) continue;
+    const [key, value] = pair;
     if (
       (BASE_URL_KEYS as readonly string[]).includes(key) &&
       value &&

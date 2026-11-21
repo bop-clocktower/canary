@@ -1,0 +1,29 @@
+{
+  "reason": "harness CLI 14.0.0 -> 14.1.x (the floating @14 pin resolved 14.1.0 on 2026-11-17, then 14.1.1): coupling 52 -> 67 is the INSTRUMENT, not the code. Measured with `harness check-arch --json` under explicitly pinned 14.0.0 and 14.1.1 side by side on the same clean worktree of origin/main d57e6a8f: 14.0.0 reports 0 newViolations, 14.1.1 reports exactly these 20, all `coupling`. Cause: 14.1 added runtime-extension resolution to resolveImportSource (a `./x.js` import now resolves to `x.ts`). Canary imports by `.js`, so under 14.0.0 almost no import edge resolved, fanIn was 0, and a module with 5 imports sat at 5 total connections, under the rule floor (connections <= 5 are never checked). 14.1 finds its real importer(s): 6+ connections, ratio 5/6 = 0.83 or 5/7 = 0.71 over the 0.7 threshold. Every one is pre-existing; none of the 20 files changed. The same fix RESOLVES 5 coupling findings elsewhere (files that now show real fanIn). A per-PR allowance, as for the 13 -> 14 bump (chore-harness-cli-14.json), so the instrument change is named rather than banked by a baseline refresh (#1639).",
+  "categories": {
+    "coupling": 15
+  },
+  "createdFrom": "d57e6a8f",
+  "violationIds": [
+    "25e4ef5ebe016d73bfca094f7784c4095a7ae728719924a8ce071eb9a38c5a24",
+    "61ce16f13cc6114cbf3fbd76364c7781af448bbdcd8818c2956dca1d9daecb00",
+    "787c4c7a7046a05b270a2e711070eab5159aa0751ad129be37848a8aeda9fd80",
+    "e50c482c3dcbb833a9722fae9486ae4ddd8428c23085196b750cb5997bb6b595",
+    "f2bcad0663aacd960552341189b2824a8ebf513f15a193dc800c49cb93242a53",
+    "3ee259ad7919b1dfb76abb624bac695d141a7fe65a86b1c51c2b2d0b27f39a63",
+    "2b206d8ccf8457e4f18216f1f65dc3c48e579c984ff2f8c88197782f18362c48",
+    "a0b9856579ed8e87be57887d66955304757ac61a17f7d47cc4c1b006f4bad691",
+    "513141f8f9181726760fb90c0a8ed7499da966b44cb8287313e3f0ce9f68a2bd",
+    "b1b0166f066688f1058059cd6933a847e45337a60c0a7041c456a3ba33fd4984",
+    "fa486c0136327f239fb9c666579dfd1f4497ee9193d44766f9652dc180c17139",
+    "1a86466ac2eb7ebb9f1cc7ad13c43f9344ab9a0455d4cd2fbcb308b04d22a217",
+    "b1ceac306db363bd40a925dfdd7129d510d0d233cd9906ce9eb69611428f29af",
+    "f97eb22ed0691f7b5a83fc3d17636af9306f0d49975425a82f817c214e1594e4",
+    "98b1ac9654b6a3fb27b3cda62b540ad5593ac067c94243df6f4ca9a123159917",
+    "94b698943562f6b85491d75e1338db578e7d10ce9cbabf71e34a29f29a4955ef",
+    "94826696636ab9c0788c699e82ecd98e2b2881a2f8558ee6da878069f1040a1e",
+    "f28ef7e09ee52578946630ef463e1fbb68adb40f1e66735bc5c38802ed6feb20",
+    "24c08581ee84af2f86a76f5a5fea36fda3c4245d6ce58ca248731e67fe0da73b",
+    "9824cd69e2ce100adcde7df697f9f750c6f711f7ed5696c3d4372cba7a6a13a3"
+  ]
+}

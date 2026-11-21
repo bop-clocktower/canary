@@ -68,45 +68,46 @@ export function main(argv = []) {
     return 1;
   }
 
-  // ---- config audit -----------------------------------------------------
-  if (args.config) {
-    let text;
-    try {
-      text = fs.readFileSync(args.config, 'utf8');
-    } catch (exc) {
-      console.error(`${PREFIX} cannot read config: ${exc.message}`);
-      return 1;
-    }
-    const recs = checkConfig(text);
-    if (recs.length) {
-      console.log('Fail-fast config recommendations:');
-      for (const r of recs) console.log(`  - ${r}`);
-    } else {
-      console.log('Fail-fast config OK.');
-    }
-  }
+  if (args.config && auditConfig(args.config) !== 0) return 1;
+  return args.results ? digestFailures(args.results) : 0;
+}
 
-  // ---- failure digest ---------------------------------------------------
-  let exitCode = 0;
-  if (args.results) {
-    if (!fs.existsSync(args.results)) {
-      console.error(`${PREFIX} results file not found: ${args.results}`);
-      return 1;
-    }
-    let failures;
-    try {
-      failures = parseFailures(args.results);
-    } catch (exc) {
-      console.error(`${PREFIX} ${exc.message}`);
-      return 1;
-    }
-    const d = buildDigest(failures);
-    console.log(d.text);
-    for (const ann of d.annotations) console.log(ann);
-    exitCode = d.exitCode;
+/** Config audit: print recommendations. 0, or 1 when the file is unreadable. */
+function auditConfig(configPath) {
+  let text;
+  try {
+    text = fs.readFileSync(configPath, 'utf8');
+  } catch (exc) {
+    console.error(`${PREFIX} cannot read config: ${exc.message}`);
+    return 1;
   }
+  const recs = checkConfig(text);
+  if (recs.length) {
+    console.log('Fail-fast config recommendations:');
+    for (const r of recs) console.log(`  - ${r}`);
+  } else {
+    console.log('Fail-fast config OK.');
+  }
+  return 0;
+}
 
-  return exitCode;
+/** Failure digest: print it and return its exit code (1 on unreadable input). */
+function digestFailures(resultsPath) {
+  if (!fs.existsSync(resultsPath)) {
+    console.error(`${PREFIX} results file not found: ${resultsPath}`);
+    return 1;
+  }
+  let failures;
+  try {
+    failures = parseFailures(resultsPath);
+  } catch (exc) {
+    console.error(`${PREFIX} ${exc.message}`);
+    return 1;
+  }
+  const d = buildDigest(failures);
+  console.log(d.text);
+  for (const ann of d.annotations) console.log(ann);
+  return d.exitCode;
 }
 
 // Direct execution (the skill runner execs this file via its shebang).
