@@ -164,6 +164,50 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#1524
 
+### php audit reports its checked-package count and fails on zero
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** `canary php audit` prints no checked-package count on a pass, so a run that checked zero packages (empty or unread lockfile, wrong cwd) reads green; print the count on a pass, fail on zero naming the lockfile, and pin both cases with a test.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#1637
+
+### blackhawk BH003 stops flagging Number#toLocaleString
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** BH003-local-timezone flags every `.toLocaleString(` call, including numeric literals with a pinned locale that have no time-zone dependence; add a `keep` that drops numeric-literal receivers and calls whose options pin a `timeZone`, while still flagging dates formatted without one.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1636
+
+### siren detects its own stale installed hook copy
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** install-siren copies hooks into ~/.claude/hooks, so merged siren fixes never reach a machine until someone reinstalls; the session siren should report its own divergence from the marketplace copy with a remedy that clears it, `--verify` must not print healthy over DIVERGENT lines, and the fc1112 provenance doc should say copies, not symlinks.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1632
+
+### least-privilege permissions blocks for the remaining workflows
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Four workflows (docs-lint, harness-quality, harness, validate-plugin) still declare no top-level `permissions:` block and rely on the repo's read default; add minimal blocks and generalise the workflow-hygiene test so every workflow must declare one.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#1267
+
 ## Engine and Platform
 
 ## Product Surface Gaps
