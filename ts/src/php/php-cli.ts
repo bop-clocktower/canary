@@ -31,7 +31,7 @@ import {
   type FloorFinding,
   type RuntimeReport,
 } from '../core/php-floor.js';
-import { CROSS, WARN, type MainDeps } from '../main-deps.js';
+import { CHECK, CROSS, WARN, type MainDeps } from '../main-deps.js';
 
 // One round trip reports the version and the CVE-2026-109619 stopgap's state.
 const PROBE_SCRIPT =
@@ -67,6 +67,8 @@ function report<F>(
     strict?: boolean | undefined;
     noun: string;
     extra?: Record<string, unknown>;
+    /** A clean pass prints the failure line's shape, count included (#1637). */
+    countOnPass?: boolean;
   },
   render: (f: F) => string,
   remedy: string,
@@ -80,7 +82,13 @@ function report<F>(
   } else {
     for (const f of result.findings)
       deps.out(`  ${pc.red(CROSS)} ${render(f)}`);
-    deps.out(outcome.summaryLine);
+    const clean =
+      !outcome.abstained && result.findings.length === 0 && skippedCount === 0;
+    deps.out(
+      opts.countOnPass && clean
+        ? `${pc.green(CHECK)} 0 finding(s) across ${result.checked} checked`
+        : outcome.summaryLine,
+    );
     // A partial run passes on what it judged; the skipped ones still need
     // the fix step, or they read as handled.
     if (skippedCount > 0) deps.out(pc.yellow(`${WARN} ${remedy}`));
@@ -154,16 +162,22 @@ interface AuditOpts {
 function auditAction(opts: AuditOpts, deps: MainDeps): void {
   const dir = resolve(opts.dir ?? deps.cwd());
   const count = lockCount(dir);
+  // The skip names the lockfile it read, so a wrong --dir or cwd is visible.
+  const lockPath = resolve(dir, 'composer.lock');
   const result: GateResult<AuditFinding> =
     typeof count === 'string'
-      ? { checked: 0, findings: [], skipped: [{ name: dir, reason: count }] }
+      ? {
+          checked: 0,
+          findings: [],
+          skipped: [{ name: lockPath, reason: count }],
+        }
       : auditResult(
           count,
           deps.runSubprocess(opts.composer, composerAuditArgs(dir)),
         );
   report(
     result,
-    { json: opts.json, noun: 'package check(s)' },
+    { json: opts.json, noun: 'package check(s)', countOnPass: true },
     (f) => `${f.package}${f.id ? ` ${f.id}` : ''}: ${f.detail}`,
     'Fix the skipped step above; an audit that covered no locked package ' +
       'cannot vouch for the dependencies.',
@@ -191,7 +205,7 @@ export function buildPhpCommand(deps: MainDeps): Command {
     .command('audit')
     .description(
       'Fail on advisories or abandoned packages in composer.lock. A missing ' +
-        'lockfile or composer exits 3.',
+        'or 0-package lockfile, or a missing composer, exits 3.',
     )
     .option('--dir <path>', 'project directory (default: cwd)')
     .option('--composer <binary>', 'composer binary', 'composer')
