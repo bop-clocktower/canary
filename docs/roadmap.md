@@ -4,7 +4,7 @@ version: 1
 created: 2026-05-11
 updated: 2026-08-02
 last_synced: 2026-06-29
-last_manual_edit: 2026-08-02T23:25:00.000Z
+last_manual_edit: 2026-11-23T21:18:52.035Z
 ---
 
 # Roadmap
@@ -758,6 +758,17 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Assignee:** —
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#1593
+
+### canary-blackhawk: BH003 timeZone exemption accepts unpinned values and commented-out pins
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** BH003's toLocale* exemption from PR #1657 accepts any timeZone key (undefined, process.env.TZ, resolvedOptions().timeZone, variables) and matches pins inside comments/strings; exempt only string-literal zones on blanked argument text.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1659
 
 ## Engine and Platform
 

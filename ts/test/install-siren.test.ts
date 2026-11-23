@@ -31,6 +31,7 @@
 
 import { execFile, execFileSync } from 'node:child_process';
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -96,6 +97,10 @@ interface SirenModule {
     ageDays?: number | undefined;
     staleDays?: number | undefined;
   }) => Status;
+  verifyReport: (
+    status: Status,
+    hooks: { name: string; path: string; state: string }[],
+  ) => { ok: boolean; report: { ok: boolean }; lines: string[] };
 }
 
 const execFileAsync = promisify(execFile);
@@ -122,6 +127,7 @@ const {
   renderPlist,
   resolveCanary,
   schedulerStatus,
+  verifyReport,
 } = (await import(SCRIPT_URL)) as SirenModule;
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -177,6 +183,50 @@ describe('schedulerStatus — registration is not execution', () => {
     // fires is an alarm nobody reads.
     expect(STALE_DAYS).toBeGreaterThan(7);
     expect(status({ registered: true, ageDays: 7 }).ok).toBe(true);
+  });
+});
+
+describe('--verify report — the headline agrees with the exit code (#1632)', () => {
+  // `--verify` printed `deep siren — healthy: ...` above `DIVERGENT:` lines
+  // and then exited 1. A reader skims the headline; the headline said fine.
+  const healthy = status({ registered: true, ageDays: 1 });
+  const hook = (state: string) => ({
+    name: 'canary-session-siren.sh',
+    path: `/h/.claude/hooks/canary-session-siren.sh`,
+    state,
+  });
+
+  it('never prints "healthy" when a hook copy is divergent', () => {
+    const v = verifyReport(healthy, [hook('divergent')]);
+    expect(v.ok).toBe(false);
+    expect(v.report.ok).toBe(false);
+    expect(v.lines.some((l) => l.includes('DIVERGENT'))).toBe(true);
+    for (const l of v.lines) expect(l).not.toContain('healthy');
+  });
+
+  it('never prints "healthy" when a hook is absent or unreadable', () => {
+    for (const state of ['absent', 'unreadable']) {
+      const v = verifyReport(healthy, [hook(state)]);
+      expect(v.ok).toBe(false);
+      for (const l of v.lines) expect(l).not.toContain('healthy');
+    }
+  });
+
+  it('names the hooks-only remedy on a divergent copy', () => {
+    const v = verifyReport(healthy, [hook('divergent')]);
+    expect(v.lines.join('\n')).toContain('--install-hooks');
+  });
+
+  it('still says healthy when the scheduler and every hook are', () => {
+    const v = verifyReport(healthy, [hook('installed')]);
+    expect(v.ok).toBe(true);
+    expect(v.lines).toEqual([`deep siren — healthy: ${healthy.detail}`]);
+  });
+
+  it('keeps a scheduler failure as the headline state', () => {
+    const v = verifyReport(status({ registered: false }), [hook('installed')]);
+    expect(v.ok).toBe(false);
+    expect(v.lines[0]).toContain('unregistered');
   });
 });
 
@@ -676,6 +726,17 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     mkt = join(dir, 'marketplace');
     mkdirSync(upstream, { recursive: true });
     execFileSync('git', ['init', '--quiet'], { cwd: upstream });
+    // The marketplace is a canary checkout, so it carries the tracked hooks
+    // and the installer the self-check (#1632) compares against and names.
+    for (const f of [
+      'hooks/canary-session-siren.sh',
+      'hooks/canary-deep-siren.sh',
+      'scripts/install-siren.mjs',
+      'scripts/lib/is-main.mjs',
+    ]) {
+      mkdirSync(dirname(join(upstream, f)), { recursive: true });
+      copyFileSync(join(REPO_ROOT, f), join(upstream, f));
+    }
     mktHead = writeUpstream('9.5.0');
     // A real clone, so origin/<branch> and the branch upstream exist, then a
     // fetch so FETCH_HEAD is present and fresh — a healthy marketplace.
@@ -858,6 +919,87 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     expect(msg).toContain('installed canary plugin is behind the marketplace');
     expect(msg).toContain(tip.slice(0, 7));
     expect(msg).not.toContain('stale reference');
+  });
+
+  /**
+   * #1632: `install-siren.mjs` installs the hook as a COPY in
+   * `~/.claude/hooks/`, so a merged siren fix never reaches a machine until
+   * someone reinstalls, and the stale copy keeps firing findings from old
+   * logic. These run the INSTALLED copy, against a marketplace whose hook has
+   * moved on.
+   */
+  const installedHook = (): string => {
+    const home = join(dir, 'home');
+    const hooks = join(home, '.claude', 'hooks');
+    mkdirSync(hooks, { recursive: true });
+    const p = join(hooks, 'canary-session-siren.sh');
+    copyFileSync(SIREN, p);
+    return p;
+  };
+  /** Land a newer session siren on origin and pull it into the clone. */
+  const shipNewerHook = (): void => {
+    const p = join(upstream, 'hooks', 'canary-session-siren.sh');
+    writeFileSync(p, `${readFileSync(p, 'utf-8')}# a later fix\n`);
+    writeUpstream('9.5.0-hookfix');
+    execFileSync('git', ['pull', '-q', '--ff-only'], {
+      cwd: mkt,
+      env: GIT_ENV,
+    });
+  };
+  const runInstalled = (hook: string): string => {
+    const r = runCapture('bash', [hook], {
+      env: sirenEnv('9.5.0', { HOME: join(dir, 'home') }),
+    });
+    expect(r.status).toBe(0);
+    return systemMessage(r.stdout);
+  };
+
+  it('reports an installed hook copy that differs from the marketplace copy (#1632)', () => {
+    // The #1632 repro: clone and origin agree, but the hook in ~/.claude is
+    // the copy from before the fix. Its other findings come from old logic,
+    // so the divergence REPLACES them rather than joining them.
+    writeInstalled({ version: '9.5.0', gitCommitSha: 'b'.repeat(40) });
+    const hook = installedHook();
+    shipNewerHook();
+    const msg = runInstalled(hook);
+    expect(msg).toContain('siren hook is older than the marketplace copy');
+    expect(msg).toContain('1 tooling-rot finding');
+    expect(msg).not.toContain('installed canary plugin is behind');
+  });
+
+  it('names a remedy that, run verbatim, clears the stale-hook finding (#1632)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    shipNewerHook();
+    const line = runInstalled(hook)
+      .split('\n')
+      .find((l) => l.includes('older than the marketplace copy'));
+    expect(line).toBeDefined();
+    const remedy = /run: (.+)$/.exec(line ?? '')?.[1];
+    expect(remedy).toMatch(/^node .+install-siren\.mjs' --install-hooks$/);
+    // HOME is the sandbox: the installer only ever sees the temp home.
+    execFileSync('bash', ['-c', remedy ?? 'false'], {
+      env: { ...GIT_ENV, HOME: join(dir, 'home') },
+    });
+    expect(readFileSync(hook, 'utf-8')).toBe(
+      readFileSync(join(mkt, 'hooks', 'canary-session-siren.sh'), 'utf-8'),
+    );
+    expect(runInstalled(hook)).not.toContain('older than the marketplace');
+  });
+
+  it('is silent about itself when the installed copy matches the marketplace (#1632)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    // Other checks (launchd, say) may still speak in a sandbox; this one
+    // must not.
+    expect(runInstalled(installedHook())).not.toContain('marketplace copy');
+  });
+
+  it('reports a marketplace with no siren to compare against as unverifiable (#1632)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    rmSync(join(mkt, 'hooks', 'canary-session-siren.sh'));
+    expect(runInstalled(installedHook())).toContain(
+      'cannot compare this siren hook with the marketplace copy',
+    );
   });
 
   it('abstains loudly when the installed record has no version or commit', () => {

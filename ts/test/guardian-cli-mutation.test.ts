@@ -240,4 +240,55 @@ describe('bug-fleet A5: malformed stryker file entry', () => {
     );
     expect(outcome).toBe(3);
   });
+
+  // #1568 item 3: these passed the shape check, then `.map` / `for...of`
+  // threw mid-mapping, and an uncaught throw exits 1, which reads as
+  // "survivors" under ADR 0009.
+  const located = (extra: Record<string, unknown>) => ({
+    'src/a.ts': {
+      mutants: [
+        {
+          id: '1',
+          mutatorName: 'BooleanLiteral',
+          status: 'Survived',
+          location: { start: { line: 1, column: 1 } },
+          ...extra,
+        },
+      ],
+    },
+  });
+  it.each([
+    ['a string coveredBy', { files: located({ coveredBy: 't1' }) }],
+    ['an object coveredBy', { files: located({ coveredBy: { t1: true } }) }],
+    // Review of #1568: the new escaping calls string methods on these.
+    ['a missing mutatorName', { files: located({ mutatorName: undefined }) }],
+    ['a numeric replacement', { files: located({ replacement: 7 }) }],
+    [
+      'a numeric test name',
+      {
+        files: located({ coveredBy: ['t1'] }),
+        testFiles: { 'a.test.ts': { tests: [{ id: 't1', name: 7 }] } },
+      },
+    ],
+    [
+      'a testFiles entry without a tests list',
+      { files: located({ coveredBy: ['t1'] }), testFiles: { 'a.test.ts': {} } },
+    ],
+  ])('abstains (exit 3) on %s instead of crashing', async (_label, body) => {
+    const root = mkdtempSync(join(tmpdir(), 'mut-1568-'));
+    const p = join(root, 'r.json');
+    writeFileSync(p, JSON.stringify(body));
+    const outcome = await invokeGuardian([
+      'mutation',
+      '--report',
+      p,
+      '--repo-root',
+      root,
+    ]).then(
+      (r) => ({ code: r.code, out: r.stdout }),
+      (e: unknown) => ({ code: `threw: ${String(e)}`, out: '' }),
+    );
+    expect(outcome.code).toBe(3);
+    expect(outcome.out).toContain('Abstained');
+  });
 });

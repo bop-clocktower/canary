@@ -199,7 +199,7 @@ jobs:
             exit 0
           fi
           if [ "$rc" -eq 1 ]; then
-            echo "::warning title=Surviving mutants::Tests covered these added lines but would not fail on them. Kill each one with an assertion, or record a reason with // canary:allow-mutant <reason>."
+            echo "::warning title=Surviving mutants::Some mutants survived - the tests that ran against them did not fail. The report covers the whole Stryker run, not only lines this PR changed. Kill each one with an assertion, or record a reason with // canary:allow-mutant <reason>."
             exit 0
           fi
           exit "$rc"

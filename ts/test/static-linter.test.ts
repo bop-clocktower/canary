@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   StaticLinter,
   UnsupportedTestFileError,
+  enumerateTests,
   formatFinding,
   frameworkForPath,
   type LintFinding,
 } from '../src/core/static-linter.js';
+import { blankStringContent } from '../src/core/string-literals.js';
 import { makeProject, type TempProject } from './scanner-testkit.js';
 
 let project: TempProject | null = null;
@@ -827,5 +829,81 @@ describe('unittest-style assertions', () => {
     const code =
       'import unittest\n\nclass TestAdd(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(1, 2), 3)\n';
     expect(rules(lint('test_add.py', code))).not.toContain('LINT-006');
+  });
+});
+
+// #1312: a declaration the enumerator does not recognise is not merely left
+// unscanned -- the test above it absorbs its body and borrows its assertions,
+// so an assertion-free test escapes LINT-006 and the VAC rules.
+describe('test declarations the enumerator must not skip', () => {
+  it('a template-literal title still ends the previous test', () => {
+    const code =
+      "it('a', () => {\n  doThing();\n});\nit(`b`, () => {\n  expect(1).toBe(1);\n});\n";
+    expect(
+      lint('tpl.spec.ts', code).filter((f) => f.rule === 'LINT-006'),
+    ).toMatchObject([{ line: 1 }]);
+  });
+
+  it('a .only modifier still ends the previous test', () => {
+    const code =
+      "it('a', () => {\n  doThing();\n});\nit.only('b', () => {\n  expect(1).toBe(1);\n});\n";
+    expect(
+      lint('only.spec.ts', code).filter((f) => f.rule === 'LINT-006'),
+    ).toMatchObject([{ line: 1 }]);
+  });
+
+  it('a .skip modifier still ends the previous test', () => {
+    const code =
+      "test('a', () => {\n  doThing();\n});\ntest.skip('b', () => {\n  expect(1).toBe(1);\n});\n";
+    expect(
+      lint('skip.spec.ts', code).filter((f) => f.rule === 'LINT-006'),
+    ).toMatchObject([{ line: 1 }]);
+  });
+
+  it('a python async def test still ends the previous test', () => {
+    const code =
+      'def test_a():\n    do()\n\nasync def test_b():\n    assert await f()\n';
+    expect(
+      lint('test_async.py', code).filter((f) => f.rule === 'LINT-006'),
+    ).toMatchObject([{ line: 1 }]);
+  });
+
+  it('enumerates every form with its name and line', () => {
+    const js =
+      "it('a', () => {});\nit(`b ${n}`, () => {});\nit.only('c', () => {});\ntest.skip(\"d\", () => {});\n";
+    expect(
+      enumerateTests(blankStringContent(js), js, false).map((t) => [
+        t.name,
+        t.line,
+      ]),
+    ).toEqual([
+      ['a', 1],
+      ['b ${n}', 2],
+      ['c', 3],
+      ['d', 4],
+    ]);
+    const py = 'def test_a():\n    pass\nasync def test_b():\n    pass\n';
+    expect(enumerateTests(py, py, true).map((t) => [t.name, t.line])).toEqual([
+      ['test_a', 1],
+      ['test_b', 3],
+    ]);
+  });
+
+  // A backtick is common in prose comments, so recognising backtick titles
+  // must not turn a comment mentioning "test (`x`)" into a declaration.
+  it('a declaration-shaped comment is not a test', () => {
+    const code =
+      "/**\n * every signal is about the test (`single-test-run`).\n */\nit('a', () => {\n  // see it(`b`) below\n  expect(1).toBe(1);\n});\n";
+    expect(
+      enumerateTests(blankStringContent(code), code, false).map((t) => t.name),
+    ).toEqual(['a']);
+  });
+
+  // A skipped test never runs, so it cannot pass vacuously; before #1312 it was
+  // not enumerated at all, and a parked placeholder must not start flagging.
+  it('an empty .skip placeholder is not LINT-006', () => {
+    const code =
+      "test.skip('parked', async () => {});\ntest('b', () => {\n  expect(1).toBe(1);\n});\n";
+    expect(rules(lint('parked.spec.ts', code))).not.toContain('LINT-006');
   });
 });

@@ -4,7 +4,7 @@
   "stages": ["debugging"],
   "reproducingTest": "ts/test/guardian-mutation.test.ts",
   "baseSha": "16a8ad2e2fa7a8fbf7ffd42bef97395a4fc135b2",
-  "reproFailure": "AssertionError: expected '### Mutation\\n1/2 mutants killed.\\n0 ...' to contain 'ran but did not fail: attribution not recorded' (5 of the 7 new tests failed at base; the other 2 guard against over-disclosure and pass by design until planted)",
+  "reproFailure": "AssertionError: expected '### Mutation\\n1/2 mutants killed.\\n0 ...' to contain 'ran but did not fail: attribution not recorded' (4 of the 7 new tests failed at base, re-measured for #1568/#1577 at 16a8ad2e with #1547's test files: the 2 over-disclosure guards pass by design until planted, and 'stops counting a survivor once the author suppressed it' passes at base too; the original record said 5)",
   "closingKeyword": "Closes",
   "closingKeywordReason": "This PR ships both parts of ADR 0037 F1 disclosure the issue names (survivor wording and the headline count), plus the release note the issue's comment asks for, so it fully resolves #1404.",
   "governingAdr": "0037",

@@ -34,6 +34,7 @@ const SCRIPT = join(REPO_ROOT, 'scripts', 'highest-stable-tag.mjs');
 
 interface Step {
   name?: string;
+  shell?: string;
   env?: Record<string, string>;
   run?: string;
 }
@@ -161,10 +162,13 @@ describe('#1481 release.yml advance-latest: per-tag group, compare-and-swap push
   it('reads the lease from origin before fetching and ranking the tags', () => {
     const run = moveStep().run!;
     const name = leaseVar(run);
-    const read = run.search(
-      new RegExp(`\\b${name}="\\$\\(git ls-remote origin refs/tags/latest\\b`),
-    );
-    expect(read, `${name} is not read with git ls-remote`).toBeGreaterThan(-1);
+    // The lease is read from origin with ls-remote (#1504 splits the read
+    // from its parse, so a failed read stops the step), then assigned.
+    const read = run.search(/git ls-remote origin refs\/tags\/latest\b/);
+    expect(read, 'latest is not read with git ls-remote').toBeGreaterThan(-1);
+    const assigned = run.search(new RegExp(`\\b${name}="\\$\\(`));
+    expect(assigned, `${name} is never assigned`).toBeGreaterThan(read);
+    expect(assigned).toBeLessThan(run.search(/git fetch[^\n]*--tags/));
     // Read before the fetch: a newer release tagged after the fetch could
     // otherwise move latest before the read, and the lease would bless a
     // stale guard.
@@ -244,7 +248,11 @@ describe('release.yml advance-latest, run against a real remote', () => {
     sha: string,
     env: NodeJS.ProcessEnv = {},
   ) {
-    return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', moveStep().run!], {
+    // The flags GitHub Actions uses for this step: `shell: bash` runs
+    // `bash -eo pipefail`, an unset shell `bash -e` (no pipefail).
+    const step = moveStep();
+    const flags = step.shell === 'bash' ? ['-e', '-o', 'pipefail'] : ['-e'];
+    return spawnSync('bash', [...flags, '-c', step.run!], {
       cwd: work,
       encoding: 'utf8',
       env: {
@@ -414,5 +422,89 @@ describe('release.yml advance-latest, run against a real remote', () => {
     expect(r.status).not.toBe(0);
     expect(r.stdout + r.stderr).toMatch(/::error::.*latest/);
     expect(latestAt(origin)).toBe(sha['v0.9.0']);
+  });
+
+  // #1504: a push origin refuses for any reason other than a race (a tag
+  // ruleset, auth, the network) used to read as "latest moved on origin",
+  // retry once, then blame a race that never happened.
+  it('reports a non-race rejection with the push error, not as a race, and does not retry', () => {
+    const { origin, work, sha } = setup(['v1.0.0']);
+    // origin refuses every update to refs/tags/latest, as a ruleset would.
+    const hook = join(origin, 'hooks', 'update');
+    writeFileSync(
+      hook,
+      [
+        '#!/usr/bin/env bash',
+        'if [ "$1" = refs/tags/latest ]; then',
+        '  echo "ruleset says no to latest" >&2',
+        '  exit 1',
+        'fi',
+        '',
+      ].join('\n'),
+    );
+    chmodSync(hook, 0o755);
+    // Count the pushes without changing what they do.
+    const env = racingGit('true', 10);
+    const r = runStep(work, 'v1.0.0', sha['v1.0.0']!, env);
+    const out = r.stdout + r.stderr;
+    expect(r.status, out).not.toBe(0);
+    expect(out).toMatch(/::error::[^\n]*ruleset says no to latest/);
+    expect(out).not.toMatch(/moved on origin|kept moving/);
+    expect(readFileSync(join(dir!, 'race-count'), 'utf8').trim()).toBe('1');
+    expect(latestAt(origin)).toBe('');
+  });
+
+  /** A `git` on PATH whose `ls-remote` fails from its `from`-th call on. */
+  function failingLsRemote(from: number): NodeJS.ProcessEnv {
+    const bin = join(dir!, 'bin-ls');
+    mkdirSync(bin);
+    const real = spawnSync('bash', ['-c', 'command -v git'], {
+      encoding: 'utf8',
+    }).stdout.trim();
+    const count = join(dir!, 'ls-count');
+    writeFileSync(
+      join(bin, 'git'),
+      [
+        '#!/usr/bin/env bash',
+        'if [ "$1" = ls-remote ]; then',
+        `  n=$(( $(cat '${count}' 2>/dev/null || echo 0) + 1 ))`,
+        `  echo "$n" > '${count}'`,
+        `  if [ "$n" -ge ${from} ]; then`,
+        '    echo "fatal: unable to access origin" >&2',
+        '    exit 128',
+        '  fi',
+        'fi',
+        `exec '${real}' "$@"`,
+        '',
+      ].join('\n'),
+    );
+    chmodSync(join(bin, 'git'), 0o755);
+    return { PATH: `${bin}:${process.env.PATH ?? ''}` };
+  }
+
+  it('pins shell: bash, so a failed pipeline stage fails the step', () => {
+    expect(moveStep().shell).toBe('bash');
+  });
+
+  it('stops, not leasing on "latest does not exist", when origin cannot be read', () => {
+    const { origin, work, sha } = setup(['v1.0.0']);
+    const r = runStep(work, 'v1.0.0', sha['v1.0.0']!, failingLsRemote(1));
+    const out = r.stdout + r.stderr;
+    expect(r.status, out).not.toBe(0);
+    expect(out).toMatch(/::error::could not read latest from origin/);
+    expect(out).not.toMatch(/^Moved latest/m);
+    expect(latestAt(origin)).toBe('');
+  });
+
+  it('reports a rejected push it cannot re-check as an error, not a race', () => {
+    const { origin, work, sha } = setup(['v1.0.0']);
+    const hook = join(origin, 'hooks', 'update');
+    writeFileSync(hook, '#!/usr/bin/env bash\necho "refused" >&2\nexit 1\n');
+    chmodSync(hook, 0o755);
+    const r = runStep(work, 'v1.0.0', sha['v1.0.0']!, failingLsRemote(2));
+    const out = r.stdout + r.stderr;
+    expect(r.status, out).not.toBe(0);
+    expect(out).toMatch(/::error::[^\n]*could not be re-read[^\n]*refused/);
+    expect(out).not.toMatch(/moved on origin|kept moving/);
   });
 });

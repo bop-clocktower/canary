@@ -43,7 +43,9 @@
  * The issue rules out every quiet answer (a threshold, a mute, a widened blanket
  * skip) on the grounds that a suppressed inference and a passing check must not
  * look alike, so the fix is to WIDEN WHAT THE INFERENCE CAN SEE and leave the
- * rule's authority untouched.
+ * rule's authority untouched. #1365 extended the same reading to a same-file
+ * declaration whose own body launches a script or imports a relative module
+ * (see `outOfBandHandles`).
  *
  * A skip is PER RULE, not per test: `VAC-001` needs no target and always runs,
  * so a test whose target is unresolvable is still genuinely `checked` and stays
@@ -409,6 +411,67 @@ function reachesOutOfBandTarget(rawBody: string): boolean {
   return JS_BARE_DYNAMIC_IMPORT.test(rawBody);
 }
 
+/**
+ * Same-file declarations whose OWN body reaches first-party code out of band --
+ * each is a handle on the target, exactly as an import binding is (#1365).
+ *
+ * #705 read only the one-line forms, `const cli = '<script literal>'` and
+ * `const x = await import('./y.js')`, and a consumer monorepo writes neither:
+ *
+ * - a subprocess helper Prettier wraps onto a second line, or a `function`
+ *   helper, launching a script written inline at the call;
+ * - `(await import('./y.js')).default` / `.named`, where a `(` precedes the
+ *   `import`, and `({ a } = await import('./y.js'))` assigned in a hook;
+ * - a wrapper, `const importRoute = () => import('../route.js')`. Binding the
+ *   WRAPPER is enough: `const { POST } = await importRoute()` then reaches it
+ *   as an ordinary one-level helper, at module scope or inside the test.
+ *
+ * The evidence is a string literal, so it is read from the ORIGINAL source at
+ * the blanked declaration's offsets (blanking preserves them). It is stricter
+ * than {@link reachesOutOfBandTarget}'s per-test read, because a handle also
+ * makes a file with no import resolvable, and so arms VAC-002 for every OTHER
+ * test in it: the script literal must be an ARGUMENT of the launch, and the
+ * relative specifier an argument of a real `import(` call. A helper
+ * that runs `git ls-files` and then filters on `'.d.ts'` is not a handle
+ * (measured on canary's own `typecheck-denominator.test.ts`), and a bare
+ * command (`spawnSync('git', ...)`) never is.
+ */
+function outOfBandHandles(source: string, decls: LocalDecl[]): Set<string> {
+  const names = new Set<string>();
+  for (const d of decls) {
+    const raw = source.slice(d.start, d.start + d.body.length);
+    const reaches =
+      callArguments(d.body, raw, LAUNCH_CALLS).some((a) =>
+        SCRIPT_PATH_LITERAL.test(a),
+      ) ||
+      callArguments(d.body, raw, DYNAMIC_IMPORT_CALLS).some((a) =>
+        RELATIVE_SPECIFIER_ARG.test(a),
+      );
+    if (reaches) for (const n of d.names) names.add(n);
+  }
+  return names;
+}
+
+const LAUNCH_CALLS = new RegExp(SUBPROCESS_LAUNCH.source, 'g');
+const DYNAMIC_IMPORT_CALLS = /(?<![\w$.])import\s*\(/g;
+const RELATIVE_SPECIFIER_ARG = /^\(\s*['"`]\./;
+
+/**
+ * The raw argument text, `(` included, of every call `re` finds in `code`.
+ *
+ * The call is found in the BLANKED copy, so a call written inside a fixture
+ * string is never seen (review of #1667: `"... await import('./m.js')"` made
+ * its holder a handle); only the argument literal is read from `raw`.
+ */
+function callArguments(code: string, raw: string, re: RegExp): string[] {
+  re.lastIndex = 0;
+  return [...code.matchAll(re)].map((m) => {
+    const open = m.index! + m[0].length - 1;
+    const close = closingParen(code, open);
+    return raw.slice(open, close < 0 ? raw.length : close);
+  });
+}
+
 /** Names imported from first-party (relative) modules. */
 function importedTargets(code: string, python: boolean): Set<string> {
   return python ? pythonImportedTargets(code) : jsImportedTargets(code);
@@ -613,6 +676,8 @@ function unresolvedNames(code: string, decls: LocalDecl[]): Set<string> {
 interface LocalDecl {
   names: string[];
   body: string;
+  /** Offset of `body` in the file, so the unblanked text can be read. */
+  start: number;
 }
 
 function localDecls(code: string, python: boolean): LocalDecl[] {
@@ -627,7 +692,7 @@ function localDecls(code: string, python: boolean): LocalDecl[] {
     if (names.length === 0) continue;
     const start = m.index! + m[0].length;
     const end = declEnd(code, matches, i, depth);
-    decls.push({ names, body: code.slice(start, end) });
+    decls.push({ names, body: code.slice(start, end), start });
   }
   if (!python) decls.push(...destructuredAssignDecls(code));
   return decls;
@@ -644,7 +709,10 @@ function destructuredAssignDecls(code: string): LocalDecl[] {
       .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
     // The RHS alone is the body here: unlike a declaration, an assignment
     // does not own the text that follows it.
-    if (names.length > 0) decls.push({ names, body: m[2] ?? '' });
+    // The RHS is the last thing before the closing `)`.
+    const body = m[2] ?? '';
+    const start = m.index! + m[0].length - 1 - body.length;
+    if (names.length > 0) decls.push({ names, body, start });
   }
   return decls;
 }
@@ -1265,8 +1333,9 @@ function resolveTargets(
   python: boolean,
 ): TargetInference | null {
   const direct = importedTargets(source, python);
-  if (direct.size === 0) return null;
   const decls = localDecls(code, python);
+  if (!python) for (const n of outOfBandHandles(source, decls)) direct.add(n);
+  if (direct.size === 0) return null;
   return {
     direct,
     reaching: closeOverLocals(decls, direct),

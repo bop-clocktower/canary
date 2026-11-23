@@ -18,6 +18,7 @@
  * so both are reproduced byte-for-byte.
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { Command, Option } from 'commander';
@@ -151,8 +152,13 @@ async function migrateCmd(
   }
 
   const store = deps.makeStore(opts.dbUrl);
+  // #1298: an id the store already holds is not written again (pushRun is
+  // idempotent), so it counts as skipped. A backend that cannot list its runs
+  // upserts instead, which does write.
+  const held = (await store.readAll?.()) ?? [];
+  const seen = new Set<string>(held.map((r) => r.run_id));
   let migrated = 0;
-  const skipped = 0;
+  let skipped = 0;
 
   for (const raw of readFileSync(file, 'utf-8').split('\n')) {
     const line = raw.trim();
@@ -166,17 +172,12 @@ async function migrateCmd(
 
     const commit = (entry['commit_short'] as string) ?? 'unknown';
     const tsStr = (entry['timestamp'] as string) ?? '';
-    let ts = 0;
     const parsed = Date.parse(tsStr.replace('Z', '+00:00'));
-    if (!Number.isNaN(parsed)) ts = Math.floor(parsed / 1000);
+    const ts = Number.isNaN(parsed) ? null : Math.floor(parsed / 1000);
 
     const runAgg = (entry['run'] as Record<string, number>) ?? {};
     const run: RunInput = {
-      run_id: makeRunId(
-        opts.suite,
-        commit,
-        ts || Math.floor(Date.now() / 1000),
-      ),
+      run_id: v1RunId(opts.suite, commit, ts, entry),
       suite: opts.suite,
       repo: opts.repo,
       branch: (entry['branch'] as string) ?? 'unknown',
@@ -188,6 +189,14 @@ async function migrateCmd(
       flaky: runAgg['flaky'] ?? 0,
       skipped: runAgg['skipped'] ?? 0,
     };
+
+    // #1298: an id the store holds or this file already produced names the
+    // same run twice, and the store keeps only the first -- so it is skipped.
+    if (seen.has(run.run_id)) {
+      skipped += 1;
+      continue;
+    }
+    seen.add(run.run_id);
 
     if (opts.dryRun) {
       deps.out(`${pc.cyan('dry-run:')} ${run.run_id}`);
@@ -211,6 +220,35 @@ async function migrateCmd(
     return;
   }
   deps.out(`${pc.green('Migrated')} ${migrated} runs, skipped ${skipped}`);
+}
+
+/**
+ * The run_id for one v1 entry (#1298). A timestamped entry keeps the Python
+ * `make_run_id` shape. An untimestamped one used to take the CURRENT second,
+ * so two of them for one commit collided (the store kept one, the command
+ * counted two) and every re-migration minted fresh ids. It now carries a hash
+ * of the entry's canonical content: distinct entries get distinct ids, and the
+ * same entry gets the same id wherever it sits in whichever file, so
+ * re-migrating is a no-op, as `pushRun` intends.
+ */
+function v1RunId(
+  suite: string,
+  commit: string,
+  epoch: number | null,
+  entry: unknown,
+): string {
+  if (epoch !== null) return makeRunId(suite, commit, epoch);
+  const digest = createHash('sha256').update(canonical(entry)).digest('hex');
+  return `${makeRunId(suite, commit, 0)}-${digest.slice(0, 12)}`;
+}
+
+/** JSON with object keys sorted at every depth, so key order cannot matter. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical(obj[k])}`).join(',')}}`;
 }
 
 // --- registration ------------------------------------------------------------
