@@ -67,7 +67,9 @@ jobs:
       - name: Resolve harness CLI version
         id: harness-cli
         run: |
-          resolved="$(npx --yes -p "$HARNESS_CLI" harness --version 2>/dev/null \
+          # #1533: retried as a fetch (it is one), and each failed attempt's
+          # stderr is in its ::warning::, where `2>/dev/null` used to drop it.
+          resolved="$(node scripts/retry-fetch.mjs --expect-semver -- npx --yes -p "$HARNESS_CLI" harness --version \
             | tail -n 1 | tr -d '[:space:]')"
           if ! printf '%s' "$resolved" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
             echo "Could not resolve a version from '$HARNESS_CLI' (got '$resolved')." >&2

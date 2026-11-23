@@ -1,0 +1,11 @@
+{
+  "item": "#1533",
+  "phase": "done",
+  "steps": [
+    "investigate: read attempt-1 logs of runs 45224318526, 45224318662, 45224318784, 45224319230 (PR #1649 @ 572e1f6c): E404 on visitor-keys-8.74.0.tgz in the install and the check-deps npx; got '' in both resolve probes",
+    "audit: harness:workflow-audit over the 5 CLI-fetching workflows; 1 error (fetch and check fused in deps-and-validate), 2 warnings (2>/dev/null drops the resolve cause); M2 gap in harness.yml/harness-quality.yml noted, out of scope",
+    "red: ts/test/harness-cli-fetch-retry.test.ts, 16 of 19 failing before implementation",
+    "green: scripts/retry-fetch.mjs (MAX_ATTEMPTS 3, BACKOFF_SECONDS [10, 30]) wired into the 5 workflows; architecture now resolves + warms the exact version before check-deps/validate",
+    "gates: ts build, typecheck, format:check, full test; actionlint 1.7.12 + shellcheck on all workflows; perf ratchet 198/201 (no new identity after refactor); entropy ratchet 106/116; check-deps and validate pass"
+  ]
+}
