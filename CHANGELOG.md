@@ -27,6 +27,54 @@ under the project's former name) are documented in the
   refreshes only the hook copies. `--verify` no longer prints `healthy` above
   `DIVERGENT` lines; a healthy scheduler with a stale hook copy now reads
   `hooks-not-current`.
+- **The release workflow's `Move latest tag` step names a rejected push instead
+  of blaming a race (#1504).** An auth failure, a network failure or a tag
+  ruleset refusal used to log "latest moved on origin", retry, and fail with
+  "latest kept moving". After a rejected push the step now re-reads origin; only
+  a `latest` that actually moved is a race. Otherwise git's own error goes into
+  `::error::` and the step stops without retrying. The step now pins
+  `shell: bash`, so a failed `git ls-remote` stops it rather than parsing to an
+  empty lease.
+- **The guardian mutation report no longer overclaims or crashes as survivors
+  (#1568).** The survivors warning no longer says tests "covered these added
+  lines". An abstention whose only survivors were suppressed names the
+  suppression instead of claiming nothing was covered. A malformed `coveredBy`
+  or `testFiles` entry abstains (exit 3) instead of throwing (exit 1, which
+  reads as survivors). Paths, mutators, replacements, test names and suppression
+  reasons are escaped in the Markdown, so a backtick, such as a StringLiteral
+  mutant's empty template literal, cannot break out of a code span.
+- **`review-test` and `vacuity-check` see every way of declaring a test
+  (#1312).** `it.only`/`test.skip`, a backtick title (``it(`b`, ...)``) and
+  Python `async def test_*` were not recognised, so the test above absorbed the
+  missed one's body and borrowed its assertions: an assertion-free test escaped
+  LINT-006 and the VAC rules. They are now enumerated (a template title is
+  reported as written, `${...}` included). A declaration on a comment line is no
+  longer read as a test, and a `.skip` test is exempt from LINT-006 since it
+  never runs. The test inventory and `vacuity-check`'s `checked` count include
+  the newly seen tests.
+- **`canary history migrate` no longer drops untimestamped v1 runs (#1298).** An
+  entry with no timestamp took the current second as its run id. Two such
+  entries for one commit collided, the store kept only one, and the command
+  still printed `Migrated 2 runs`. Those ids are now a hash of the entry's
+  content, so they are unique and stay the same on every run. `Migrated N` now
+  counts only the runs actually written. Ids the store already holds, and
+  repeats within the file, are reported as skipped. Untimestamped entries
+  migrated by an earlier version carry clock-based ids, so re-migrating that
+  file adds them again under the new ids.
+- **A test's flake identity is now its file plus its name (#1350).** The `flaky`
+  commands (`queryFlaky`) and ci-ready's flakiness check keyed on the test name
+  alone. A test that always passed in one file and a same-named test that always
+  failed in another were read as one alternating flake. ci-ready adds the file
+  to the name only when two files share a name, so other reasons read as before.
+- **cassandra VAC-002 reads subprocess helpers and every `await import`
+  binding.** A test that runs a repo script through a same-file helper (an arrow
+  wrapped onto two lines, or a `function`) passing the script path to
+  `execFileSync`/`spawnSync`/`fork`, or that loads its target as
+  `(await import(x)).default`, `.named`, a destructured import assigned in a
+  hook, or through a wrapper like `const importRoute = () => import(x)`, is no
+  longer reported as never invoking its target (#1365). A helper that only
+  launches a bare command, or mentions a file name outside the launch arguments,
+  is still not read as a target.
 
 ## [9.7.0] - 2026-11-21
 
@@ -326,10 +374,10 @@ under the project's former name) are documented in the
   recorded" instead of "no covering test", which claimed a coverage gap nobody
   measured, and a line under the headline counts such survivors and points at
   `coverageAnalysis: perTest`. This completes the counting rule that shipped in
-  v9.4.0 (#1302). Consumers upgrading across it should expect those survivors to
-  stay `survived`, so `noCoverage` drops, `survived` can rise, and a run that
-  used to exit 0 can now exit 1. The disclosure itself changes report text only:
-  no verdict, exit code or `mutation-report.json` field moves.
+  v9.4.0 (#1302). Consumers upgrading across v9.4.0 should expect those
+  survivors to stay `survived`, so `noCoverage` drops, `survived` can rise, and
+  a run that used to exit 0 can now exit 1. The disclosure itself changes report
+  text only: no verdict, exit code or `mutation-report.json` field moves.
 - **`canary-ci-ready`'s flakiness check reads the `canary-unquarantine` audit's
   classes (#1459)** instead of judging issue state by hand. Blocked counts as
   verified; candidate, stale and unledgered are flagged; unlinked fails; and

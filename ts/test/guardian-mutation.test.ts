@@ -658,3 +658,114 @@ describe('bug-fleet A5: non-tested stryker statuses', () => {
     expect(text).not.toContain(UNTESTED_LINE);
   });
 });
+
+// #1568 item 2: a survivor proves a test ran against it, so once every
+// survivor is suppressed the abstention must not claim nothing was covered.
+describe('abstain reason when only suppressed survivors remain (#1568)', () => {
+  const SUPPRESSED = {
+    'ts/src/guardian/pr-check.ts': [
+      'const a = 1; // canary:allow-mutant equivalent mutant',
+    ],
+  };
+
+  it('names the suppression, not a coverage gap that did not happen', () => {
+    const mapped = applyMutantSuppressions(
+      mapStrykerReport(
+        report([{ line: 1, status: 'Survived', coveredBy: ['t1'] }]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+      SUPPRESSED,
+    );
+    expect(mapped.verdict).toBe('abstained');
+    expect(mapped.abstainReason).not.toMatch(/covered by any test/);
+    expect(mapped.abstainReason).toMatch(
+      /1 survivor\(s\) .*canary:allow-mutant/,
+    );
+  });
+
+  it('still names the no-coverage mutants beside the suppressed ones', () => {
+    const mapped = applyMutantSuppressions(
+      mapStrykerReport(
+        report([
+          { line: 1, status: 'Survived', coveredBy: ['t1'] },
+          { line: 2, status: 'NoCoverage' },
+        ]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+      SUPPRESSED,
+    );
+    expect(mapped.verdict).toBe('abstained');
+    expect(mapped.abstainReason).toMatch(/canary:allow-mutant/);
+    expect(mapped.abstainReason).toMatch(/1 had no covering test/);
+  });
+});
+
+// #1568 item 4: report text went into Markdown raw. Stryker's StringLiteral
+// mutator turns a template literal into an empty one, so a replacement of
+// two backticks is an ordinary survivor, and it closed the code span early.
+describe('renderMutationReport escapes report text (#1568)', () => {
+  it('keeps backticks in the path, mutator, replacement and test name inert', () => {
+    const r = report(
+      [
+        {
+          line: 10,
+          status: 'Survived',
+          coveredBy: ['t1'],
+          mutator: 'String`Literal',
+          replacement: '``',
+        },
+      ],
+      'ts/src/a`b.ts',
+    );
+    r.testFiles!['ts/test/a.test.ts']!.tests[0]!.name = 'renders `x` safely';
+    const text = renderMutationReport(
+      mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+    );
+    const line = text.split('\n').find((l) => l.startsWith('- '));
+    expect(line).toBe(
+      '- ``ts/src/a`b.ts:10`` String\\`Literal \u{2192} ``` `` ``` ' +
+        '\u{2014} ran but did not fail: renders \\`x\\` safely',
+    );
+  });
+
+  it('keeps an empty or multi-line replacement on one readable line', () => {
+    const text = renderMutationReport(
+      mapStrykerReport(
+        report([
+          { line: 1, status: 'Survived', coveredBy: ['t1'], replacement: '' },
+          {
+            line: 2,
+            status: 'Survived',
+            coveredBy: ['t1'],
+            replacement: '{\n# x\n}',
+          },
+        ]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+    );
+    expect(text).toContain('\u{2192} (empty) \u{2014}');
+    expect(text).toContain('\u{2192} `{ # x }` \u{2014}');
+    expect(text).not.toMatch(/^# x/m);
+  });
+
+  it('escapes the excluded test paths in the disclosure line', () => {
+    const text = renderMutationReport(
+      abstainedReport('why', ['test/a`b.test.ts', 'test/[x](y)\n# z.test.ts']),
+    );
+    expect(text).toContain('``test/a`b.test.ts``, `test/[x](y) # z.test.ts`');
+    expect(text).not.toMatch(/^# z/m);
+  });
+
+  it('escapes the path and reason of a suppressed survivor', () => {
+    const mapped = applyMutantSuppressions(
+      mapStrykerReport(
+        report([{ line: 1, status: 'Survived', coveredBy: ['t1'] }], 'a`b.ts'),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+      { 'a`b.ts': ['x; // canary:allow-mutant `y` is equivalent'] },
+    );
+    expect(renderMutationReport(mapped)).toContain(
+      '- suppressed ``a`b.ts:1``: \\`y\\` is equivalent',
+    );
+  });
+});

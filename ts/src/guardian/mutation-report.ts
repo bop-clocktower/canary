@@ -19,6 +19,7 @@ import {
   SuppressedMutant,
   unattributedSurvivorLines,
 } from './mutation.js';
+import { excludedLine, mdCode, mdText, noKillReason } from './mutation-text.js';
 
 /** The `// canary:allow-mutant <reason>` marker, mirroring allow-untested. */
 const SUPPRESS_MUTANT_RE = /(?:\/\/|#)\s*canary:allow-mutant\s+(.+)/;
@@ -97,7 +98,7 @@ function verdictFor(
         report.timeout > 0
           ? `no mutant was killed and ${report.timeout} timed out, so the ` +
             'run verified nothing'
-          : 'no mutant was covered by any test, so nothing could be killed',
+          : noKillReason(report),
     };
   }
   return { verdict: report.survived > 0 ? 'survivors' : 'all-killed' };
@@ -218,20 +219,8 @@ export function mutationExitCode(report: MutationReport): number {
 function suppressionLines(report: MutationReport): string[] {
   return report.suppressed.map(
     (entry) =>
-      `- suppressed \`${entry.finding.path}:${entry.finding.line}\`: ` +
-      `${entry.reason}`,
-  );
-}
-
-/** The disclosure line every report carries, abstentions included. */
-function excludedLine(report: MutationReport): string {
-  if (report.excludedTests.length === 0) {
-    return 'No test files were excluded from the mutation run.';
-  }
-  return (
-    `${report.excludedTests.length} test file(s) excluded from the mutation ` +
-    `run (they cannot run in Stryker's worker-thread pool), so a mutant only ` +
-    `these would kill reads as survived: ${report.excludedTests.join(', ')}`
+      `- suppressed ${mdCode(`${entry.finding.path}:${entry.finding.line}`)}: ` +
+      mdText(entry.reason),
   );
 }
 
@@ -282,12 +271,13 @@ export function renderMutationReport(report: MutationReport): string {
     )) {
       const covering =
         finding.coveredBy.length > 0
-          ? finding.coveredBy.join('; ')
+          ? finding.coveredBy.map(mdText).join('; ')
           : 'attribution not recorded';
       lines.push(
-        `- \`${finding.path}:${finding.line}\` ${finding.mutator} ` +
-          `${'\u{2192}'} \`${finding.replacement}\` ${'\u{2014}'} ran but did ` +
-          `not fail: ${covering}`,
+        `- ${mdCode(`${finding.path}:${finding.line}`)} ` +
+          `${mdText(finding.mutator)} ${'\u{2192}'} ` +
+          `${mdCode(finding.replacement)} ${'\u{2014}'} ran but did not fail: ` +
+          covering,
       );
     }
   }

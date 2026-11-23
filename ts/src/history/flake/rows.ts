@@ -53,10 +53,7 @@ export type FlakyCounter = Omit<
   'flake_rate_pct' | 'flip_count' | 'flip_rate_pct' | 'observed' | 'alternating'
 > & { statuses: string[] };
 
-export function newFlakyCounter(
-  record: RunRecord,
-  t: TestResultRecord,
-): FlakyCounter {
+function newFlakyCounter(record: RunRecord, t: TestResultRecord): FlakyCounter {
   return {
     statuses: [],
     test_name: t.test_name,
@@ -69,6 +66,33 @@ export function newFlakyCounter(
     total_runs: 0,
     last_seen_run: null,
   };
+}
+
+/**
+ * One accumulator per test across `records`, which arrive in time order. A
+ * test is its FILE plus its name (#1350): vitest's `fullName` carries no file,
+ * so keyed on the name alone a same-named pass in one file and fail in another
+ * merged into one fabricated alternator. Since #1021 `record` stores
+ * `test_file` repo-relative, so the key is stable across machines.
+ */
+export function tallyFlaky(records: RunRecord[]): Iterable<FlakyCounter> {
+  const counts = new Map<string, FlakyCounter>();
+  for (const record of records) {
+    for (const t of def(record.tests, [])) {
+      const key = `${def(t.test_file, '')}\0${t.test_name}`;
+      let c = counts.get(key);
+      if (!c) {
+        c = newFlakyCounter(record, t);
+        counts.set(key, c);
+      }
+      c.total_runs += 1;
+      const status = def(t.status, '');
+      applyStatus(c, status);
+      c.statuses.push(status);
+      c.last_seen_run = record.run_id;
+    }
+  }
+  return counts.values();
 }
 
 /** Finish one accumulator into a row, both axes measured. */
@@ -85,7 +109,7 @@ export function toFlakyRow(c: FlakyCounter, minRate: number): FlakyQueryRow {
   };
 }
 
-export function applyStatus(c: FlakyCounter, status: string): void {
+function applyStatus(c: FlakyCounter, status: string): void {
   if (status === 'flaky') c.flake_count += 1;
   else if (status === 'passed') c.pass_count += 1;
   else if (status === 'failed') c.fail_count += 1;
