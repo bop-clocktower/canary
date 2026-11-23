@@ -16,6 +16,22 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The release workflow's `Move latest tag` step names a rejected push instead
+  of blaming a race (#1504).** An auth failure, a network failure or a tag
+  ruleset refusal used to log "latest moved on origin", retry, and fail with
+  "latest kept moving". After a rejected push the step now re-reads origin; only
+  a `latest` that actually moved is a race. Otherwise git's own error goes into
+  `::error::` and the step stops without retrying. The step now pins
+  `shell: bash`, so a failed `git ls-remote` stops it rather than parsing to an
+  empty lease.
+- **The guardian mutation report no longer overclaims or crashes as survivors
+  (#1568).** The survivors warning no longer says tests "covered these added
+  lines". An abstention whose only survivors were suppressed names the
+  suppression instead of claiming nothing was covered. A malformed `coveredBy`
+  or `testFiles` entry abstains (exit 3) instead of throwing (exit 1, which
+  reads as survivors). Paths, mutators, replacements, test names and suppression
+  reasons are escaped in the Markdown, so a backtick, such as a StringLiteral
+  mutant's empty template literal, cannot break out of a code span.
 - **`review-test` and `vacuity-check` see every way of declaring a test
   (#1312).** `it.only`/`test.skip`, a backtick title (``it(`b`, ...)``) and
   Python `async def test_*` were not recognised, so the test above absorbed the
@@ -347,10 +363,10 @@ under the project's former name) are documented in the
   recorded" instead of "no covering test", which claimed a coverage gap nobody
   measured, and a line under the headline counts such survivors and points at
   `coverageAnalysis: perTest`. This completes the counting rule that shipped in
-  v9.4.0 (#1302). Consumers upgrading across it should expect those survivors to
-  stay `survived`, so `noCoverage` drops, `survived` can rise, and a run that
-  used to exit 0 can now exit 1. The disclosure itself changes report text only:
-  no verdict, exit code or `mutation-report.json` field moves.
+  v9.4.0 (#1302). Consumers upgrading across v9.4.0 should expect those
+  survivors to stay `survived`, so `noCoverage` drops, `survived` can rise, and
+  a run that used to exit 0 can now exit 1. The disclosure itself changes report
+  text only: no verdict, exit code or `mutation-report.json` field moves.
 - **`canary-ci-ready`'s flakiness check reads the `canary-unquarantine` audit's
   classes (#1459)** instead of judging issue state by hand. Blocked counts as
   verified; candidate, stale and unledgered are flagged; unlinked fails; and

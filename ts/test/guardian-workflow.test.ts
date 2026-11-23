@@ -262,4 +262,22 @@ describe('guardian workflow', () => {
     const raw = readFileSync(WORKFLOW, 'utf-8');
     expect(raw).not.toContain('secrets.');
   });
+
+  // #1568 item 1: a survivor proves a test ran and passed against the mutant,
+  // not that the line was "covered", and the report maps the whole Stryker
+  // run, so the lines are not necessarily "added" by this PR.
+  it('the survivors warning claims neither coverage nor diff scope', () => {
+    const block = runBlocks(load()).find((b) =>
+      b.includes('guardian mutation'),
+    );
+    expect(block, 'no step runs guardian mutation').toBeDefined();
+    const warning = block!
+      .split('\n')
+      .find((l) => l.includes('title=Surviving mutants'));
+    expect(warning, 'no rc=1 survivors warning').toBeDefined();
+    expect(warning).not.toMatch(/\bcovered\b/i);
+    expect(warning).not.toMatch(/\badded\b/i);
+    expect(warning).toMatch(/did not fail/);
+    expect(warning).toMatch(/not only (the )?lines this PR/i);
+  });
 });
