@@ -1,0 +1,20 @@
+{
+  "issues": [1636],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "agents/skills/test/canary-blackhawk.test.ts",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "The fix fully covers the issue's suggested fix and its four requested tests, and the human authorized `Closes #<own item>` for this batch (fc1123b).",
+  "assumptions": [
+    "The timeZone exemption applies to all three methods (toLocaleString, toLocaleDateString, toLocaleTimeString): the keep sees the match and its line, so testing the call's own argument text is the same code for each. A Date call with a timeZone option renders identically on every host.",
+    "The numeric-literal exemption applies to toLocaleString only (toLocaleDateString/TimeString do not exist on Number/BigInt). Receivers counted as literals: decimal, fraction, exponent, hex/binary/octal, `_` separators, BigInt `n`, bare (`1e3.`, `5000..`) or in grouping parens with an optional sign (`(5000)`, `(-5n)`). A paren preceded by an identifier, `)` or `]` is a call, so `foo(1).toLocaleString(` stays flagged; so do `Number(x)` and variable receivers (`count.toLocaleString`).",
+    "A pinned locale alone never exempts a call (`new Date(x).toLocaleString('en-US')` and `d.toLocaleString('en-US', { hour12: false })` stay flagged).",
+    "The timeZone pin must sit in THIS call's own argument list, found by a quote-aware balanced-paren scan on the same line. `{ timeZone }` shorthand and a quoted `'timeZone':` key count. The value is not inspected (`timeZone: hostTz` counts as pinned).",
+    "Line-based limitation, recorded rather than redesigning the scanner: an options object that opens a multi-line call (`d.toLocaleString('en-US', {` with `timeZone` on a later line) is not seen, so that call stays flagged (a false positive, never a false negative).",
+    "The scanner hands a rule only the FIRST out-of-string match on a line. The keep therefore re-scans the rest of the line and keeps the finding if ANY later BH003 match is unpinned, so an exempt call first on a line cannot hide a real one. Those later matches are not re-checked against string-literal ranges (the keep does not receive them), so a later `.toLocaleString(` inside a string after an exempt call still flags: a rare false positive, never a false negative.",
+    "PHP BH003 and the Python strftime branch are unchanged.",
+    "No dogfood/scanner baseline moves: the strict blackhawk dogfood step reports 0 findings before and after over ts/test and agents/skills/test, and no baseline file was edited. No CHANGELOG entry (AGENTS.md does not require one per PR)."
+  ],
+  "fleet": "roadmap-fleet",
+  "runId": "fc1123b-roadmap-fleet"
+}
