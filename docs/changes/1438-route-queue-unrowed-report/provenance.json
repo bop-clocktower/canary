@@ -1,0 +1,30 @@
+{
+  "issues": [1438],
+  "fleet": "roadmap-fleet",
+  "run": "fc1123b",
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd",
+    "verification",
+    "review"
+  ],
+  "pipelineProvenance": "degraded: harness:brainstorming and harness:autopilot were invoked via the Skill tool. Brainstorming ran autonomously (fork F6 (a), settled by the human at CONFIRM, plus recommended defaults D1-D8 recorded in the spec stood in for the question and sign-off rounds). Autopilot's plan -> TDD execute -> verify -> review states ran inline in the fleet worker session rather than as separate persona subagents, following the #957 lane's precedent.",
+  "spec": "docs/changes/1438-route-queue-unrowed-report/proposal.md",
+  "planPath": "docs/changes/1438-route-queue-unrowed-report/plans/2026-11-23-route-queue-unrowed-report-plan.md",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "The human authorized `Closes #<own item>` for this batch; #1438 asks for exactly this report and nothing else.",
+  "assumptions": [
+    "Advisory (fork F6 (a)): the new count never changes the exit code.",
+    "The repo slug comes from `gh repo view --json nameWithOwner`, the same repo `gh issue list` reads. The script previously named no repo. A failed lookup abstains (null) instead of exiting 2.",
+    "Zero rows means zero rows for THIS repo; a roadmap whose only rows name another repo abstains too.",
+    "Only `routed` issues with route `roadmap` are checked; a conflicted issue carrying route:roadmap is already reported as conflicted.",
+    "JSON adds two fields beside the partition: `unrowedRoadmap` (number[] | null) and `unrowedRoadmapReason` (string | null).",
+    "ROUTE_QUEUE_ROADMAP overrides the roadmap path for tests; the default resolves from the script's location.",
+    "Brainstorming's roadmap promotion was skipped: adding a #1438 row would collide with PR #1656, which backfills every missing row."
+  ],
+  "liveRun": "2026-11-23 against bop-clocktower/canary on base aac86e35: 59 of 72 open route:roadmap issues have no row; exit 0.",
+  "baseSha": "aac86e35"
+}
