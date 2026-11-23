@@ -1,0 +1,30 @@
+{
+  "issues": [1533],
+  "route": "cicd",
+  "stages": ["workflow-audit", "tdd"],
+  "reproducingTest": "ts/test/harness-cli-fetch-retry.test.ts",
+  "baseSha": "9c15de65",
+  "reproFailure": "Before implementation, 16 of 19 cases failed: no workflow fetch went through a bounded retry, harness-architecture.yml ran check-deps on the floating pin, and scripts/retry-fetch.mjs did not exist.",
+  "recurrence": {
+    "pr": 1649,
+    "headSha": "572e1f6cb993f6d84d3861371972c76723ad847d",
+    "runs": [45224318526, 45224318662, 45224318784, 45224319230],
+    "summary": "4 required checks red on attempt 1, green on attempt 2 of the same SHA; E404 on visitor-keys-8.74.0.tgz and got '' from the resolve probe."
+  },
+  "closingKeyword": "Refs",
+  "closingKeywordReason": "The human closes #1533 after watching runs; a retried pass leaves a ::warning:: annotation so the rate stays measurable.",
+  "assumptions": [
+    "DECIDED (human, fork F1=A): retry only the fetch/resolve, 3 attempts, 10s then 30s, ::warning:: per failed attempt, red after the last; never a check.",
+    "Helper is Node (.mjs) not bash, per the repo's JS/TS-going-forward convention; setup-node runs before every wrapped step.",
+    "Annotations are written to stderr so $(...) capture of stdout stays exact; the Actions runner processes workflow commands from both streams.",
+    "harness-architecture.yml check-deps/validate moved from the floating $HARNESS_CLI to $HARNESS_CLI_EXACT (within-run pin, #1248 pattern); the workflow-level pin is unchanged.",
+    "The architecture resolve step also warms the npx cache for the exact spec, because npx keys its cache by spec and @14 vs @14.x.y would otherwise install twice.",
+    "RETRY_FETCH_BACKOFF_MS shortens the sleep for tests; warnings always name the declared 10s/30s backoff, and the attempt bound is not overridable.",
+    "ts/test/entropy-ratchet.test.ts pinned the literal resolve line; updated to the wrapped form, still requiring the floating pin to be what is probed.",
+    "arch-snapshot.yml (scheduled, not required) also fetches the CLI and is not wrapped; out of the scope the human set.",
+    "No CHANGELOG entry: CI-only change, no shipped surface.",
+    "VERIFY must-fix: refresh-arch-baseline.yml's measure job checks out the PR head, so it retries inline (same contract) instead of calling scripts/retry-fetch.mjs, which a pre-#1533 branch lacks."
+  ],
+  "fleet": "cicd-fleet",
+  "runId": "fc1123-cicd-fleet"
+}
