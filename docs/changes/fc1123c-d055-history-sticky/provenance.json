@@ -1,0 +1,39 @@
+{
+  "issues": [1298, 1350],
+  "parked": [1352],
+  "clump": "clump-d055486c8ae5cbaf",
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/history-migrate-runid.test.ts::history migrate run ids (#1298) > writes one run per v1 entry when entries carry no timestamp",
+    "ts/test/history-migrate-runid.test.ts::history migrate run ids (#1298) > derives the same ids on every run, so a re-migration adds nothing",
+    "ts/test/history-migrate-runid.test.ts::history migrate run ids (#1298) > counts an entry whose id repeats an earlier one in the file as skipped",
+    "ts/test/history-migrate-runid.test.ts::history migrate run ids (#1298) > keys an untimestamped entry on its content, not its line",
+    "ts/test/history-migrate-runid.test.ts::history migrate run ids (#1298) > keeps an epoch-zero timestamp as a timestamp",
+    "ts/test/history-flaky-cross-file.test.ts::NdjsonHistoryStore.queryFlaky across files (#1350) > reports no alternation for a deterministic pass and a deterministic fail in different files",
+    "ts/test/history-flaky-cross-file.test.ts::NdjsonHistoryStore.queryFlaky across files (#1350) > keeps one row per file, each with only its own results",
+    "ts/test/history-flaky-cross-file.test.ts::ci-ready flakeSignals across files (#1350) > finds no flake when each same-named test is deterministic in its own file",
+    "ts/test/history-flaky-cross-file.test.ts::ci-ready flakeSignals across files (#1350) > names the file when a flaking test shares its name with another file"
+  ],
+  "redAtBase": {
+    "1298": "AssertionError: expected [ 'api-aaa-1795470024' ] to have a length of 2 but got 1",
+    "1350": "AssertionError: expected [ { …(14) } ] to deeply equal []"
+  },
+  "assumptions": [
+    "#1298: an untimestamped v1 entry's run_id is `<suite>-<commit>-0-<sha256(canonical entry)[:12]>`. Two byte-identical untimestamped entries for one commit are treated as one run: the second is reported skipped. That matches the existing rule for two timestamped entries in the same second.",
+    "#1298: `Migrated N` counts writes. Ids already in the store are read through the optional AsyncHistoryStore.readAll (local NDJSON). The remote Supabase backend has no readAll and upserts, so a re-push there does write and is counted.",
+    "#1298: readAll now runs before the loop, so a store with corrupt or unsupported content aborts migrate, dry-run included. Before this change, the first pushRun hit the same read and threw anyway.",
+    "#1298: untimestamped entries migrated by an earlier version carry clock-based ids, so re-migrating them adds them again under the new ids. The CHANGELOG notes this.",
+    "#1350: a test's flake identity is (test_file, test_name). Rows written before #1021, or rows with no file, can split one test into two tallies. No path normalisation is applied on read.",
+    "#1350: ci-ready's reason keeps the bare test name and adds ` (<file>)` only when two files in the window share that name.",
+    "#1350: the remote Supabase `canary_flake_summary` view is defined outside this repository and is unchanged.",
+    "#1350 (F2 = a): ndjson-store.ts was paid down from 299 to 277 lines in a separate pure-refactor commit before the fix. No allowance or baseline file was edited.",
+    "#1352 PARKED: the author-stamp design was dropped after review-assist found that a commenter can forge the stamp about themselves (it breaks the #931 trust boundary). The work is kept on the local branch park/fc1123c-d055-1352-sticky-stamp."
+  ],
+  "closingKeyword": "Closes|Refs",
+  "closingKeywords": { "1298": "Closes", "1350": "Refs" },
+  "closingKeywordReason": "#1298 is fully resolved: unique, deterministic ids and an accurate count. #1350 uses Refs because queryFlaky and ci-ready flakeSignals are fixed as the human scoped, but the issue also names the remote `canary_flake_summary` view, which lives outside this repo and is unchanged.",
+  "run": "fc1123c",
+  "fleet": "roadmap-fleet",
+  "base": "caf8984b"
+}

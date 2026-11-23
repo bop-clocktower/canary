@@ -14,6 +14,23 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`canary history migrate` no longer drops untimestamped v1 runs (#1298).** An
+  entry with no timestamp took the current second as its run id. Two such
+  entries for one commit collided, the store kept only one, and the command
+  still printed `Migrated 2 runs`. Those ids are now a hash of the entry's
+  content, so they are unique and stay the same on every run. `Migrated N` now
+  counts only the runs actually written. Ids the store already holds, and
+  repeats within the file, are reported as skipped. Untimestamped entries
+  migrated by an earlier version carry clock-based ids, so re-migrating that
+  file adds them again under the new ids.
+- **A test's flake identity is now its file plus its name (#1350).** The `flaky`
+  commands (`queryFlaky`) and ci-ready's flakiness check keyed on the test name
+  alone. A test that always passed in one file and a same-named test that always
+  failed in another were read as one alternating flake. ci-ready adds the file
+  to the name only when two files share a name, so other reasons read as before.
+
 ## [9.7.0] - 2026-11-21
 
 ### Added
