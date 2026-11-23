@@ -68,15 +68,22 @@ function newFlakyCounter(record: RunRecord, t: TestResultRecord): FlakyCounter {
   };
 }
 
-/** One accumulator per test across `records`, which arrive in time order. */
+/**
+ * One accumulator per test across `records`, which arrive in time order. A
+ * test is its FILE plus its name (#1350): vitest's `fullName` carries no file,
+ * so keyed on the name alone a same-named pass in one file and fail in another
+ * merged into one fabricated alternator. Since #1021 `record` stores
+ * `test_file` repo-relative, so the key is stable across machines.
+ */
 export function tallyFlaky(records: RunRecord[]): Iterable<FlakyCounter> {
   const counts = new Map<string, FlakyCounter>();
   for (const record of records) {
     for (const t of def(record.tests, [])) {
-      let c = counts.get(t.test_name);
+      const key = `${def(t.test_file, '')}\0${t.test_name}`;
+      let c = counts.get(key);
       if (!c) {
         c = newFlakyCounter(record, t);
-        counts.set(t.test_name, c);
+        counts.set(key, c);
       }
       c.total_runs += 1;
       const status = def(t.status, '');
