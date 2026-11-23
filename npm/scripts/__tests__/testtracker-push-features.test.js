@@ -17,7 +17,12 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { PUSH_ENV, fixture, push, row } = require('./testtracker-harness.js');
-const { reporterModule } = require('./ingest-harness.js');
+const {
+  reporterModule,
+  fakeTest,
+  fakeResult,
+  runReporter,
+} = require('./ingest-harness.js');
 
 const MATH_ADDS = 'tests/cart/math.test.ts > math > adds';
 
@@ -171,4 +176,137 @@ test('a title merged across reports covers what either copy said', () => {
   assert.deepEqual(merged.features, ['a', 'b']);
   const [neither] = dedupeByFullTitle([{ ...base }, { ...base }]);
   assert.equal('features' in neither, false);
+});
+
+test('the inline --features-map=<file> form works like the spaced one', async () => {
+  const file = mapFile({ 'tests/cart/**': ['cart'] });
+  const { payload } = await push(
+    [fixture('vitest.xml')],
+    [`--features-map=${file}`],
+  );
+  assert.deepEqual(row(payload, titleOf(payload, /adds/)).features, ['cart']);
+});
+
+test('a --features-map glob with {a,b} syntax warns, as the env map does', async () => {
+  const file = mapFile({ 'tests/{cart,checkout}/**': ['cart'] });
+  const { code, err, logs } = await push(
+    [fixture('vitest.xml')],
+    ['--features-map', file],
+  );
+  assert.equal(code, 0);
+  assert.match(err + logs.join('\n'), /featureMap glob .* unsupported/);
+});
+
+test('a valid --features-map silences a malformed env map\'s "sending no features" warning', async () => {
+  const file = mapFile({ 'tests/cart/**': ['cart'] });
+  const env = { ...PUSH_ENV, CANARY_INGEST_FEATURE_MAP: '{broken' };
+  const { payload, err, logs } = await push(
+    [fixture('vitest.xml')],
+    ['--features-map', file],
+    { env },
+  );
+  assert.deepEqual(row(payload, titleOf(payload, /adds/)).features, ['cart']);
+  assert.doesNotMatch(err + logs.join('\n'), /sending no features/);
+});
+
+// --- one merge rule everywhere: results, JUnit catalog, redaction, Playwright catalog
+
+test('the JUnit catalog unions features across reports that share a title, like results do', () => {
+  const { junitCatalog } = require('../../dist/reporters/ingest/junit-run.js');
+  const base = {
+    full_title: 't',
+    test_file: 'f',
+    status: 'passed',
+    retries: 0,
+    tags: [],
+  };
+  const [merged] = junitCatalog([
+    { ...base, features: ['a'] },
+    { ...base, features: ['b'] },
+  ]);
+  assert.deepEqual(merged.features, ['a', 'b']);
+  const [kept] = junitCatalog([{ ...base }, { ...base, features: [] }]);
+  assert.deepEqual(kept.features, [], '[] on one copy survives as an answer');
+  const [none] = junitCatalog([{ ...base }, { ...base }]);
+  assert.equal('features' in none, false);
+});
+
+test('catalog redaction unions the features of titles that redact alike, as results do', () => {
+  const { redactCatalog } = require('../../dist/reporters/ingest/redact.js');
+  const env = { CANARY_INGEST_TOKEN: 'sekret-token-value' };
+  const entries = [
+    {
+      full_title: 'login sekret-token-value A',
+      test_file: 'f',
+      tags: [],
+      features: ['auth'],
+    },
+    {
+      full_title: 'login sekret-token-value A',
+      test_file: 'f',
+      tags: [],
+      features: ['sso'],
+    },
+  ];
+  // Same raw title is the simplest collision; the merge rule is what is under test.
+  const [one] = redactCatalog(entries, env);
+  assert.deepEqual(one.features, ['auth', 'sso']);
+  const [kept] = redactCatalog(
+    [
+      { full_title: 'x', test_file: 'f', tags: [] },
+      { full_title: 'x', test_file: 'f', tags: [], features: [] },
+    ],
+    env,
+  );
+  assert.deepEqual(kept.features, []);
+});
+
+test('the Playwright reporter sends level on the run and features on results and catalog', async () => {
+  const cart = fakeTest({ title: 'adds', file: 'tests/cart/a.spec.ts' });
+  const tagged = fakeTest({
+    title: 'annotated',
+    file: 'tests/other/b.spec.ts',
+    annotations: [{ type: 'feature', description: 'billing' }],
+  });
+  const loose = fakeTest({ title: 'loose', file: 'misc/c.spec.ts' });
+  const { payload } = await runReporter({
+    options: { featureMap: { 'tests/cart/**': ['cart'] }, level: 'e2e' },
+    collected: [cart, tagged, loose],
+    tests: [
+      [cart, fakeResult('passed')],
+      [tagged, fakeResult('passed')],
+      [loose, fakeResult('passed')],
+    ],
+  });
+  assert.equal(payload.level, 'e2e');
+  const byTitle = (rows) =>
+    Object.fromEntries(rows.map((r) => [r.full_title.split(' > ').at(-1), r]));
+  for (const rows of [payload.results, payload.collected]) {
+    const r = byTitle(rows);
+    assert.deepEqual(r.adds.features, ['cart']);
+    assert.deepEqual(r.annotated.features, ['billing']);
+    assert.equal('features' in r.loose, false);
+  }
+});
+
+test('the Playwright catalog unions features when one title spans projects', async () => {
+  // Clean titles drop the project, so the same test in two projects is one
+  // catalog row. The copies can differ when an annotation is set per project.
+  const a = fakeTest({
+    title: 'adds',
+    project: 'chromium',
+    annotations: [{ type: 'feature', description: 'cart' }],
+  });
+  const b = fakeTest({
+    title: 'adds',
+    project: 'webkit',
+    annotations: [{ type: 'feature', description: 'checkout' }],
+  });
+  const { payload } = await runReporter({
+    options: { titleFormat: 'clean' },
+    collected: [a, b],
+    tests: [[a, fakeResult('passed')]],
+  });
+  assert.equal(payload.collected.length, 1);
+  assert.deepEqual(payload.collected[0].features, ['cart', 'checkout']);
 });

@@ -248,7 +248,7 @@ export function parseFeatureMap(raw: string | undefined, warnings: string[]): Re
 }
 
 /** Only `**`, `*` and `?` are glob syntax here; `{a,b}` and `[ab]` would match as literal text. */
-function checkGlobs<T>(name: string, map: Record<string, T>, warnings: string[]): Record<string, T> {
+export function checkGlobs<T>(name: string, map: Record<string, T>, warnings: string[]): Record<string, T> {
   for (const glob of Object.keys(map)) {
     if (/[{}[\]]/.test(glob)) {
       warnings.push(`${name} glob "${glob}" uses unsupported {a,b} or [ab] syntax and matches only literally; list each path instead.`);

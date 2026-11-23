@@ -1,3 +1,4 @@
+import { mergedFeatures } from "./ingest/features.js";
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from "@playwright/test/reporter";
 import { envVar, resolveConfig, resolveArea, resolveFeatures, shouldPush } from "./ingest/config.js";
 import { runTiming, buildPayload, fitPayload, resolveTestStatus, errorField, MAX_ERROR_MESSAGE, MAX_ERROR_STACK, mapStatus, runStatus, dedupeByFullTitle } from "./ingest/payload.js";
@@ -142,7 +143,16 @@ export default class IngestReporter implements Reporter {
       for (const test of suite.allTests()) {
         const entry = this.describeTest(test, this.cfg);
         const prior = byTitle.get(entry.full_title);
-        byTitle.set(entry.full_title, prior ? { ...prior, tags: [...new Set([...prior.tags, ...entry.tags])] } : entry);
+        byTitle.set(
+          entry.full_title,
+          prior
+            ? {
+                ...prior,
+                tags: [...new Set([...prior.tags, ...entry.tags])],
+                ...mergedFeatures(prior.features, entry.features),
+              }
+            : entry,
+        );
       }
       return [...byTitle.values()];
     } catch (err) {

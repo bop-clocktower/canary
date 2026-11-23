@@ -1,5 +1,6 @@
 // Ingest reporter: JUnit report files -> one run's rows, timing, catalog and
 // the denominator line, for `canary testtracker push` (#1320).
+import { mergedFeatures } from './features.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -82,16 +83,12 @@ export function junitCatalog(rows: ResultEntry[]): CollectedEntry[] {
   const byTitle = new Map<string, CollectedEntry>();
   for (const { full_title, test_file, tags, area, features } of rows) {
     const prior = byTitle.get(full_title);
-    const merged =
-      prior?.features === undefined && features === undefined
-        ? undefined
-        : [...new Set([...(prior?.features ?? []), ...(features ?? [])])];
     byTitle.set(full_title, {
       full_title,
       test_file,
       tags: [...new Set([...(prior?.tags ?? []), ...tags])],
       ...(area ? { area } : {}),
-      ...(merged ? { features: merged } : {}),
+      ...mergedFeatures(prior?.features, features),
     });
   }
   return [...byTitle.values()];

@@ -1,4 +1,5 @@
 // Ingest reporter: the wire payload, statuses, dedupe and size budget.
+import { mergedFeatures } from "./features.js";
 import type { FullResult } from "@playwright/test/reporter";
 import crypto from "node:crypto";
 import type { ResolvedConfig } from "./config.js";
@@ -181,11 +182,6 @@ function mergeEntries(prior: ResultEntry, next: ResultEntry): ResultEntry {
   };
 }
 
-/** A title merged across reports covers what either copy said; absent on both stays absent. */
-function mergedFeatures(a: string[] | undefined, b: string[] | undefined): { features?: string[] } {
-  if (a === undefined && b === undefined) return {};
-  return { features: [...new Set([...(a ?? []), ...(b ?? [])])] };
-}
 
 /**
  * The run's real start and end. Under `merge-reports` the reporter only lives

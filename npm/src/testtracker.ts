@@ -17,6 +17,7 @@ import { EXIT_ABSTAINED } from './gate-result.js';
 import { budgetRefusal, isCi } from './reporters/ingest/budget.js';
 import { readFileSync } from 'node:fs';
 import {
+  checkGlobs,
   envVar,
   parseFeatureMap,
   resolveArea,
@@ -136,7 +137,10 @@ const FLAGS: Record<
  * line was meant to apply, and silently pushing without it would land a run
  * whose tests all say nothing about features.
  */
-function readFeaturesMap(file: string): Record<string, string[]> {
+function readFeaturesMap(
+  file: string,
+  globWarnings: string[],
+): Record<string, string[]> {
   const warnings: string[] = [];
   let raw: string;
   try {
@@ -146,7 +150,7 @@ function readFeaturesMap(file: string): Record<string, string[]> {
   }
   const map = parseFeatureMap(raw, warnings);
   if (warnings.length) throw new Error(`--features-map ${file}: ${warnings[0]}`);
-  return map;
+  return checkGlobs('featureMap', map, globWarnings);
 }
 
 /**
@@ -256,9 +260,21 @@ async function runPush(
     err.write(`canary testtracker: ${errText(e)}\n\n${USAGE}`);
     return 2;
   }
-  for (const w of cfg.configWarnings) warn(w, env);
+  // A --features-map file replaces the env map, so the env map's own warnings
+  // ("sending no features") would be false once the file is read.
+  const envMapWarning = (w: string) =>
+    w.startsWith('the feature map must be') || w.startsWith('featureMap glob');
+  for (const w of cfg.configWarnings)
+    if (!(opts.featuresMap && envMapWarning(w))) warn(w, env);
   try {
-    if (opts.featuresMap) cfg = { ...cfg, featureMap: readFeaturesMap(opts.featuresMap) };
+    if (opts.featuresMap) {
+      const globWarnings: string[] = [];
+      cfg = {
+        ...cfg,
+        featureMap: readFeaturesMap(opts.featuresMap, globWarnings),
+      };
+      for (const w of globWarnings) warn(w, env);
+    }
     reports = opts.junit.map((f) => readJunitReport(f, locator(cfg)));
   } catch (e) {
     err.write(`canary testtracker: ${errText(e)} Nothing was pushed.\n`);
