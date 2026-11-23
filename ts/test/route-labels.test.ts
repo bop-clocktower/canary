@@ -55,6 +55,23 @@ interface RouteLabelsModule {
   DESTINATIONS: string[];
   ROUTE_LABELS: string[];
   partitionByRoute: (issues: StubIssue[]) => Partition;
+  unrowedRoadmapIssues: (input: UnrowedInput) => Unrowed;
+}
+
+interface UnrowedInput {
+  routed: { number: number; route: string }[];
+  roadmapText: string | null;
+  repo: string;
+}
+
+interface Unrowed {
+  unrowed: number[] | null;
+  reason: string | null;
+}
+
+interface ReportJson extends Partition {
+  unrowedRoadmap: number[] | null;
+  unrowedRoadmapReason: string | null;
 }
 
 interface Partition {
@@ -86,11 +103,14 @@ interface StubOptions {
   labels?: string[];
   /** Non-zero makes every stub invocation fail, for the exit-2 case. */
   exitCode?: number;
+  /** What `repo view` reports as `nameWithOwner`; empty means it failed. */
+  repo?: string;
 }
 
 /** Zero-branch defaults for the stub fixture. */
 const STUB_DEFAULTS = {
   exitCode: 0,
+  repo: 'bop-clocktower/canary',
   labels: [] as { name: string }[],
   filtered: [] as StubIssue[],
   unfiltered: [] as StubIssue[],
@@ -112,7 +132,9 @@ function stubSource(fixture: string): string {
     `}`,
     `const is = (a, b) => argv[0] === a && argv[1] === b;`,
     `const issues = argv.includes('--label') ? f.filtered : f.unfiltered;`,
-    `if (is('label', 'list')) process.stdout.write(JSON.stringify(f.labels));`,
+    `if (is('repo', 'view') && !f.repo) process.exit(1);`,
+    `if (is('repo', 'view')) process.stdout.write(JSON.stringify({ nameWithOwner: f.repo }));`,
+    `else if (is('label', 'list')) process.stdout.write(JSON.stringify(f.labels));`,
     `else if (is('issue', 'list')) process.stdout.write(JSON.stringify(issues));`,
     `else process.stdout.write('');`,
   ].join('\n');
@@ -127,6 +149,10 @@ function stubSource(fixture: string): string {
 const VENDORED_ENUM = ['adr', 'roadmap', 'pr', 'cicd', 'test', 'cleanup'];
 
 const lib = (await import(LIB)) as RouteLabelsModule;
+
+/** One roadmap row in the exact shape `docs/roadmap.md` writes it. */
+const row = (n: number, repo = 'bop-clocktower/canary'): string =>
+  `### item ${n}\n\n- **External-ID:** github:${repo}#${n}\n`;
 
 const issue = (n: number, ...labels: string[]): StubIssue => ({
   number: n,
@@ -258,6 +284,67 @@ describe('partitionByRoute', () => {
   });
 });
 
+describe('unrowedRoadmapIssues', () => {
+  const routed = [
+    { number: 5, route: 'roadmap' },
+    { number: 6, route: 'roadmap' },
+    { number: 7, route: 'test' },
+  ];
+  const repo = 'bop-clocktower/canary';
+
+  it('names exactly the route:roadmap issue that has no row', () => {
+    const r = lib.unrowedRoadmapIssues({
+      routed,
+      roadmapText: row(5),
+      repo,
+    });
+    expect(r).toEqual({ unrowed: [6], reason: null });
+  });
+
+  it('only checks route:roadmap, never another destination', () => {
+    // #7 is route:test with no row; it is not this invariant's business.
+    const r = lib.unrowedRoadmapIssues({
+      routed,
+      roadmapText: row(5) + row(6),
+      repo,
+    });
+    expect(r).toEqual({ unrowed: [], reason: null });
+  });
+
+  it('does not count a row for the same number in another repo', () => {
+    const r = lib.unrowedRoadmapIssues({
+      routed,
+      roadmapText: row(5) + row(6, 'someone-else/fork'),
+      repo,
+    });
+    expect(r.unrowed).toEqual([6]);
+  });
+
+  it('abstains on an unreadable roadmap instead of reporting 0', () => {
+    const r = lib.unrowedRoadmapIssues({ routed, roadmapText: null, repo });
+    expect(r.unrowed).toBeNull();
+    expect(r.reason).toMatch(/unreadable/);
+  });
+
+  it('abstains on a roadmap with zero External-ID rows for this repo', () => {
+    for (const roadmapText of ['# Roadmap\n', row(5, 'someone-else/fork')]) {
+      const r = lib.unrowedRoadmapIssues({ routed, roadmapText, repo });
+      expect(r.unrowed).toBeNull();
+      expect(r.reason).toMatch(/zero External-ID rows/);
+    }
+  });
+
+  it('abstains when the repo slug is unknown', () => {
+    const r = lib.unrowedRoadmapIssues({
+      routed,
+      roadmapText: row(5),
+      repo: '',
+    });
+    expect(r.unrowed).toBeNull();
+    expect(r.reason).toMatch(/repo/);
+  });
+});
+
 describe('route-queue.mjs', () => {
   let dir: string;
   let calls: string;
@@ -297,9 +384,17 @@ describe('route-queue.mjs', () => {
     return stub;
   }
 
+  /** Fixture roadmap path; `writeRoadmap` creates it, otherwise it is absent. */
+  const roadmapPath = () => join(dir, 'roadmap.md');
+  const writeRoadmap = (text: string) => writeFileSync(roadmapPath(), text);
+
   function run(stub: string, args: string[]) {
     return runCapture(process.execPath, [SCRIPT, ...args], {
-      env: { ...process.env, ROUTE_QUEUE_GH_STUB: stub },
+      env: {
+        ...process.env,
+        ROUTE_QUEUE_GH_STUB: stub,
+        ROUTE_QUEUE_ROADMAP: roadmapPath(),
+      },
     });
   }
 
@@ -378,6 +473,74 @@ describe('route-queue.mjs', () => {
       expect(r.status).toBe(0);
       expect(r.stdout).toMatch(/2 open issue/);
       expect(r.stdout).toMatch(/1 unroutable/);
+    });
+
+    describe('route:roadmap without a roadmap row (#1438)', () => {
+      const routedIssues = [
+        issue(5, 'route:roadmap'),
+        issue(6, 'route:roadmap'),
+        issue(7, 'route:test'),
+      ];
+
+      it('reports exactly the routed issue the fixture roadmap is missing', () => {
+        writeRoadmap(row(5));
+        const r = run(stubFor({ unfiltered: routedIssues }), [
+          'report',
+          '--json',
+        ]);
+        expect(r.status).toBe(0);
+        const out = JSON.parse(r.stdout) as ReportJson;
+        expect(out.unrowedRoadmap).toEqual([6]);
+        expect(out.unrowedRoadmapReason).toBeNull();
+      });
+
+      it('names the count and the issue in the human-readable report', () => {
+        writeRoadmap(row(5));
+        const r = run(stubFor({ unfiltered: routedIssues }), ['report']);
+        expect(r.status).toBe(0);
+        expect(r.stdout).toMatch(/route:roadmap without roadmap row: 1 \(#6\)/);
+      });
+
+      it('abstains on a roadmap with no rows: null, "could not check", never 0', () => {
+        writeRoadmap('# Roadmap\n\nNo rows yet.\n');
+        const json = run(stubFor({ unfiltered: routedIssues }), [
+          'report',
+          '--json',
+        ]);
+        expect(json.status).toBe(0);
+        expect(
+          (JSON.parse(json.stdout) as ReportJson).unrowedRoadmap,
+        ).toBeNull();
+
+        const text = run(stubFor({ unfiltered: routedIssues }), ['report']);
+        expect(text.status).toBe(0);
+        expect(text.stdout).toMatch(
+          /route:roadmap without roadmap row: could not check/,
+        );
+        expect(text.stdout).not.toMatch(/without roadmap row: 0/);
+      });
+
+      it('abstains when the roadmap path cannot be read', () => {
+        // No writeRoadmap: the path does not exist.
+        const r = run(stubFor({ unfiltered: routedIssues }), [
+          'report',
+          '--json',
+        ]);
+        expect(r.status).toBe(0);
+        const out = JSON.parse(r.stdout) as ReportJson;
+        expect(out.unrowedRoadmap).toBeNull();
+        expect(out.unrowedRoadmapReason).toMatch(/unreadable/);
+      });
+
+      it('abstains, without changing the exit code, when gh cannot name the repo', () => {
+        writeRoadmap(row(5));
+        const r = run(stubFor({ unfiltered: routedIssues, repo: '' }), [
+          'report',
+          '--json',
+        ]);
+        expect(r.status).toBe(0);
+        expect((JSON.parse(r.stdout) as ReportJson).unrowedRoadmap).toBeNull();
+      });
     });
 
     it('exits 2 when gh fails, so a dead tracker is not an empty one', () => {
