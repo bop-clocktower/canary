@@ -218,10 +218,11 @@ with no denominator is not a result.
 - **A VAC-001 finding is never a false positive.** It is a comparison of a value
   with itself. Fix the test.
 - **A large VAC-002 count on first run usually means an unread binding form.**
-  The dynamic-import and subprocess forms above are read; a plain reassignment
+  The dynamic-import and subprocess forms above are read. A plain reassignment
   of a module-scope `let` (`Route = (await import('../route')).default` in a
-  hook) is not. Annotate those, or accept the tier and move on — do not rewrite
-  the suite to satisfy a heuristic.
+  hook) is not, and a test calling such a name abstains on VAC-002 rather than
+  being flagged. Annotate what remains, or accept the tier and move on — do not
+  rewrite the suite to satisfy a heuristic.
 - **An E2E suite that still shows many VAC-002 findings** is not being detected
   as browser-driver context — check that it imports its driver package or uses a
   `page`/`browser`/`driver` fixture, and read the

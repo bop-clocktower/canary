@@ -594,6 +594,19 @@ describe('VAC-002 — subprocess helpers and await-import bindings (#1365)', () 
     expect(rules(r.findings)).not.toContain('VAC-002');
   });
 
+  it('does not read an import written inside a fixture string as a handle', () => {
+    // Review of #1667: the declaration's evidence was read over its whole raw
+    // body, string content included, so a source fixture made `FIX` a target
+    // and silenced the real VAC-002 below it.
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const FIX = "const m = await import('./m.js')";\n` +
+        `it('b', () => { expect(FIX.length).toBe(3); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
   it('does not read a glob passed to a bare command as a script', () => {
     const r = scan(
       'a.test.ts',

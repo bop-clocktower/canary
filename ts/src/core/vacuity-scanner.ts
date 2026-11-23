@@ -430,7 +430,8 @@ function reachesOutOfBandTarget(rawBody: string): boolean {
  * the blanked declaration's offsets (blanking preserves them). It is stricter
  * than {@link reachesOutOfBandTarget}'s per-test read, because a handle also
  * makes a file with no import resolvable, and so arms VAC-002 for every OTHER
- * test in it: the script literal must be an ARGUMENT of the launch. A helper
+ * test in it: the script literal must be an ARGUMENT of the launch, and the
+ * relative specifier an argument of a real `import(` call. A helper
  * that runs `git ls-files` and then filters on `'.d.ts'` is not a handle
  * (measured on canary's own `typecheck-denominator.test.ts`), and a bare
  * command (`spawnSync('git', ...)`) never is.
@@ -439,23 +440,36 @@ function outOfBandHandles(source: string, decls: LocalDecl[]): Set<string> {
   const names = new Set<string>();
   for (const d of decls) {
     const raw = source.slice(d.start, d.start + d.body.length);
-    if (JS_BARE_DYNAMIC_IMPORT.test(raw) || launchesScript(d.body, raw)) {
-      for (const n of d.names) names.add(n);
-    }
+    const reaches =
+      callArguments(d.body, raw, LAUNCH_CALLS).some((a) =>
+        SCRIPT_PATH_LITERAL.test(a),
+      ) ||
+      callArguments(d.body, raw, DYNAMIC_IMPORT_CALLS).some((a) =>
+        RELATIVE_SPECIFIER_ARG.test(a),
+      );
+    if (reaches) for (const n of d.names) names.add(n);
   }
   return names;
 }
 
-/** Does a launch in `code` (blanked) pass a script literal (read in `raw`)? */
-function launchesScript(code: string, raw: string): boolean {
-  const launches = new RegExp(SUBPROCESS_LAUNCH.source, 'g');
-  for (const m of code.matchAll(launches)) {
+const LAUNCH_CALLS = new RegExp(SUBPROCESS_LAUNCH.source, 'g');
+const DYNAMIC_IMPORT_CALLS = /(?<![\w$.])import\s*\(/g;
+const RELATIVE_SPECIFIER_ARG = /^\(\s*['"`]\./;
+
+/**
+ * The raw argument text, `(` included, of every call `re` finds in `code`.
+ *
+ * The call is found in the BLANKED copy, so a call written inside a fixture
+ * string is never seen (review of #1667: `"... await import('./m.js')"` made
+ * its holder a handle); only the argument literal is read from `raw`.
+ */
+function callArguments(code: string, raw: string, re: RegExp): string[] {
+  re.lastIndex = 0;
+  return [...code.matchAll(re)].map((m) => {
     const open = m.index! + m[0].length - 1;
     const close = closingParen(code, open);
-    const args = raw.slice(open, close < 0 ? raw.length : close);
-    if (SCRIPT_PATH_LITERAL.test(args)) return true;
-  }
-  return false;
+    return raw.slice(open, close < 0 ? raw.length : close);
+  });
 }
 
 /** Names imported from first-party (relative) modules. */
@@ -695,9 +709,9 @@ function destructuredAssignDecls(code: string): LocalDecl[] {
       .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
     // The RHS alone is the body here: unlike a declaration, an assignment
     // does not own the text that follows it.
-    // The RHS is the last thing before the closing `)`, hence `lastIndexOf`.
+    // The RHS is the last thing before the closing `)`.
     const body = m[2] ?? '';
-    const start = m.index! + m[0].lastIndexOf(body);
+    const start = m.index! + m[0].length - 1 - body.length;
     if (names.length > 0) decls.push({ names, body, start });
   }
   return decls;
