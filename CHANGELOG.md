@@ -30,6 +30,15 @@ under the project's former name) are documented in the
   alone. A test that always passed in one file and a same-named test that always
   failed in another were read as one alternating flake. ci-ready adds the file
   to the name only when two files share a name, so other reasons read as before.
+- **cassandra VAC-002 reads subprocess helpers and every `await import`
+  binding.** A test that runs a repo script through a same-file helper (an arrow
+  wrapped onto two lines, or a `function`) passing the script path to
+  `execFileSync`/`spawnSync`/`fork`, or that loads its target as
+  `(await import(x)).default`, `.named`, a destructured import assigned in a
+  hook, or through a wrapper like `const importRoute = () => import(x)`, is no
+  longer reported as never invoking its target (#1365). A helper that only
+  launches a bare command, or mentions a file name outside the launch arguments,
+  is still not read as a target.
 
 ## [9.7.0] - 2026-11-21
 
