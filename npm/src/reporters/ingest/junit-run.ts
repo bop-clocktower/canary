@@ -1,6 +1,6 @@
 // Ingest reporter: JUnit report files -> one run's rows, timing, catalog and
 // the denominator line, for `canary testtracker push` (#1320).
-import { mergedFeatures } from './features.js';
+import { mergedFeatures } from './entry/features.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 

@@ -4,7 +4,7 @@
 // echo what a step typed or saw: emails, passwords, bearer tokens. TestTracker
 // is a management dashboard, so none of that may reach it. Redaction is ON by
 // default; `CANARY_INGEST_REDACT=0` (or `false`) turns it off.
-import { mergeCatalogEntry } from './features.js';
+import { mergeCatalogEntry } from './entry/features.js';
 import type { CollectedEntry, ResultEntry } from './types.js';
 
 /**

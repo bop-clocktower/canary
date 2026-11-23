@@ -3,8 +3,8 @@
  * env-map warnings it supersedes.
  */
 import { readFileSync } from 'node:fs';
-import { parseFeatureMap } from './reporters/ingest/features.js';
-import { checkGlobs } from './reporters/ingest/globs.js';
+import { parseFeatureMap } from './reporters/ingest/entry/features.js';
+import { checkGlobs } from './reporters/ingest/entry/globs.js';
 import { errText } from './reporters/ingest/transport.js';
 
 /**

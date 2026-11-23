@@ -2,7 +2,7 @@
 // row (worst status, longest duration, first error, tags and features unioned).
 // A leaf beside features.ts, so payload.ts stays the payload's shape and size.
 import { mergedFeatures } from './features.js';
-import type { ResultEntry } from './types.js';
+import type { ResultEntry } from '../types.js';
 
 /** Worst-first, so a collapsed row can never look healthier than its parts. */
 const STATUS_SEVERITY: Record<string, number> = {

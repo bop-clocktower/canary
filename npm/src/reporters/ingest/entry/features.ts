@@ -5,7 +5,7 @@
 // the first copy while results took the union, so a run could say one thing in
 // `results` and another in `collected`). Imports only leaf modules.
 import { globToRegExp } from './globs.js';
-import type { CollectedEntry } from './types.js';
+import type { CollectedEntry } from '../types.js';
 
 /**
  * The features of a test seen twice (two reports, two projects, or two titles

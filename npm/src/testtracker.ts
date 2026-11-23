@@ -20,7 +20,7 @@ import {
   resolveArea,
   resolveConfig,
 } from './reporters/ingest/config.js';
-import { resolveFeatures } from './reporters/ingest/features.js';
+import { resolveFeatures } from './reporters/ingest/entry/features.js';
 import type { ResolvedConfig } from './reporters/ingest/config.js';
 import { relativeFile } from './reporters/ingest/describe.js';
 import {

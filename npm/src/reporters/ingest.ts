@@ -1,4 +1,4 @@
-import { mergeCatalogEntry, resolveFeatures } from "./ingest/features.js";
+import { mergeCatalogEntry, resolveFeatures } from "./ingest/entry/features.js";
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from "@playwright/test/reporter";
 import { envVar, resolveConfig, resolveArea, shouldPush } from "./ingest/config.js";
 import { runTiming, buildPayload, fitPayload, resolveTestStatus, errorField, MAX_ERROR_MESSAGE, MAX_ERROR_STACK, mapStatus, runStatus, dedupeByFullTitle } from "./ingest/payload.js";

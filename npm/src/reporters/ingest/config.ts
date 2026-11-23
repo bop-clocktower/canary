@@ -1,6 +1,6 @@
 // Ingest reporter: options, env resolution and area mapping.
-import { parseFeatureMap } from "./features.js";
-import { checkGlobs, globToRegExp } from "./globs.js";
+import { parseFeatureMap } from "./entry/features.js";
+import { checkGlobs, globToRegExp } from "./entry/globs.js";
 
 /**
  * Pushes a completed Playwright run to an `/api/ingest` endpoint (a QA

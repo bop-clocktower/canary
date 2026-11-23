@@ -1,5 +1,5 @@
 // Ingest reporter: the wire payload, statuses, dedupe and size budget.
-import { mergeEntries } from "./merge.js";
+import { mergeEntries } from "./entry/merge.js";
 import type { FullResult } from "@playwright/test/reporter";
 import crypto from "node:crypto";
 import type { ResolvedConfig } from "./config.js";
