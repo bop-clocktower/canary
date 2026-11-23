@@ -576,6 +576,37 @@ describe('VAC-002 — subprocess helpers and await-import bindings (#1365)', () 
     expect(rules(r.findings)).toContain('VAC-002');
   });
 
+  it('does not read a file-name literal outside the launch as a script', () => {
+    // From canary's own tree: `git ls-files` piped into a `.d.ts` filter. The
+    // launch and the literal sit in one helper but the literal is not an
+    // ARGUMENT of the launch, so the file has no target and stays abstained.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `function sources() {\n` +
+        `  return execFileSync('git', ['ls-files', root], { encoding: 'utf8' })\n` +
+        `    .split('\\n')\n` +
+        `    .filter((f) => !f.endsWith('.d.ts'));\n` +
+        `}\n` +
+        `it('reads config', () => { expect(cfg().strict).toBe(true); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('does not read a glob passed to a bare command as a script', () => {
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `function tracked() {\n` +
+        `  return execFileSync('git', ['ls-files', '--', 'ts/test/*.ts']);\n` +
+        `}\n` +
+        `it('reads config', () => { expect(cfg().strict).toBe(true); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
   it('binds `(await import(x)).default`', () => {
     const r = scan(
       'a.test.tsx',

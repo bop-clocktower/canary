@@ -1,0 +1,28 @@
+{
+  "issues": [1365],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > reads a Prettier-wrapped execFileSync helper as a handle on its script",
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > reads a spawnSync helper written as a function declaration",
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > checks a subprocess-only file instead of abstaining on it",
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > binds `(await import(x)).default`",
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > binds `(await import(x)).named`",
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > binds a destructured dynamic import assigned in a hook",
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > binds names loaded through a same-file import wrapper",
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > binds a wrapper-loaded name destructured at module scope",
+    "ts/test/vacuity-scanner.test.ts::VAC-002 — subprocess helpers and await-import bindings (#1365) > does not read a file-name literal outside the launch as a script"
+  ],
+  "redAtBase": "Tests  8 failed | 4 passed | 118 skipped (130) -- e.g. 'reads a Prettier-wrapped execFileSync helper as a handle on its script: AssertionError: expected [ 'VAC-002' ] to not include 'VAC-002''. The last listed test went red against the first fix draft (dogfood on ts/test found 5 new VAC-002 in typecheck-denominator.test.ts), not at base.",
+  "assumptions": [
+    "Issue body partly misdiagnosed: a subprocess-only file with NO first-party import does not fire VAC-002 at base; inference is null and VAC-002 abstains (counted skip). The false positive needs some other first-party import in the file. Verified against vacuity-scanner.ts resolveTargets/scanAllBlocks.",
+    "The issue's '[inferred, not confirmed]' claim about (await import(x)).default was confirmed: JS_DYNAMIC_IMPORT requires `= (await)? import(`, so a leading `(` defeated it.",
+    "The one-line `const run = (args) => execFileSync(..., ['scripts/x.mjs'])` form and an inline fork('scripts/x.mjs') were already handled by #705; the misses were the Prettier-wrapped arrow and the function-declaration helper.",
+    "A plain reassignment of a module-scope let (`Route = (await import(x)).default` in a hook, no declarator, no destructuring) is not in the issue's Ask and is still not read; documented in SKILL.md escalation.",
+    "Dogfood (canary vacuity-check over ts/test and agents/skills/test) shows zero net finding/skip change versus origin/main, so no ratchet moves."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "Every shape in the issue's Ask is handled and tested: repo-path argument to execFileSync/spawnSync/fork (inline, const handle, wrapped-arrow helper, function helper), and await import in destructured, .default, .named, and same-file-wrapper forms.",
+  "run": "fc1123c",
+  "base": "caf8984bbc52b0cd6d3844b7446206b6767143c0"
+}
