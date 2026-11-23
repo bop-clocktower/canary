@@ -1,0 +1,26 @@
+{
+  "issues": [1673],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/guardian-mutation.test.ts::renderMutationReport neutralizes autolinks (#1673) > renders a hostile test name as a code span",
+    "ts/test/guardian-mutation.test.ts::renderMutationReport neutralizes autolinks (#1673) > keeps a test name with a backtick inside one code span",
+    "ts/test/guardian-mutation.test.ts::renderMutationReport neutralizes autolinks (#1673) > keeps a multi-line test name on one line, inside the span",
+    "ts/test/guardian-mutation.test.ts::renderMutationReport neutralizes autolinks (#1673) > joins several covering test names as separate code spans",
+    "ts/test/guardian-mutation.test.ts::renderMutationReport neutralizes autolinks (#1673) > renders the abstain reason as one code span, not raw Markdown",
+    "ts/test/guardian-mutation.test.ts::renderMutationReport neutralizes autolinks (#1673) > truncates a long abstain reason to 200 characters with an ellipsis",
+    "ts/test/guardian-mutation.test.ts::renderMutationReport neutralizes autolinks (#1673) > leaves a short abstain reason whole, with no ellipsis",
+    "ts/test/guardian-mutation.test.ts::renderMutationReport neutralizes autolinks (#1673) > keeps a backtick in the abstain reason inert"
+  ],
+  "redAtBase": "npx vitest run test/guardian-mutation.test.ts -t '#1673' -> Tests 8 failed | 50 skipped (58) at base 448969ff (red test committed alone as 9a374c45)",
+  "assumptions": [
+    "Fork F2 = (a), chosen by the human: test names and abstainReason both render through mdCode as code spans.",
+    "abstainReason is collapsed to one line and capped at 200 characters, ellipsis included, counted in code points before fencing.",
+    "renderMutationReport is the only Markdown sink for test names and abstainReason; the --json and --report-out outputs are machine JSON and keep the raw values on purpose.",
+    "The 'no reason given' fallback is our own fixed text and stays plain."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "Both gaps the issue names (autolinking test names, raw abstainReason) are fixed and pinned by tests in this PR.",
+  "run": "fc1123d",
+  "base": "448969ff"
+}

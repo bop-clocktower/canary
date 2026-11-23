@@ -433,7 +433,7 @@ describe('unattributed survivor disclosure (ADR 0037 F1)', () => {
     expect(disclosure).toBeLessThan(lines.indexOf('3 survived:'));
     // The attributed survivor beside them still names its test.
     expect(lines.join('\n')).toContain(
-      'ran but did not fail: suppression strips the reason',
+      'ran but did not fail: `suppression strips the reason`',
     );
   });
 
@@ -724,7 +724,7 @@ describe('renderMutationReport escapes report text (#1568)', () => {
     const line = text.split('\n').find((l) => l.startsWith('- '));
     expect(line).toBe(
       '- ``ts/src/a`b.ts:10`` String\\`Literal \u{2192} ``` `` ``` ' +
-        '\u{2014} ran but did not fail: renders \\`x\\` safely',
+        '\u{2014} ran but did not fail: ``renders `x` safely``',
     );
   });
 

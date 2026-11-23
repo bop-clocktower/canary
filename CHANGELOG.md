@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The guardian mutation report no longer turns test names into links or
+  mentions, and no longer posts its abstain reason raw (#1673).** A covering
+  test name is now an inert code span, like the excluded test paths already
+  were, so a `#123`, an `@user` or a URL inside a name stays text in the PR
+  comment instead of linking an issue or notifying a stranger. The abstain
+  reason, which can carry a report path and a parse error verbatim, is now one
+  code span too, collapsed to a single line and cut to at most 200 characters
+  with an ellipsis.
+
 - **The session siren now reports when its own installed copy is stale
   (#1632).** `install-siren.mjs` installs the hooks into `~/.claude/hooks/` as
   copies, and updating the marketplace or the plugin does not refresh them, so a
