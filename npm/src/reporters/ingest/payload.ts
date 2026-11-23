@@ -1,5 +1,5 @@
 // Ingest reporter: the wire payload, statuses, dedupe and size budget.
-import { mergedFeatures } from "./features.js";
+import { mergeEntries } from "./merge.js";
 import type { FullResult } from "@playwright/test/reporter";
 import crypto from "node:crypto";
 import type { ResolvedConfig } from "./config.js";
@@ -21,8 +21,7 @@ export interface IngestPayload {
   commit_sha?: string;
   workflow: string;
   environment?: string;
-  /** The suite's test level, when configured (`level` / `CANARY_INGEST_LEVEL` / `--level`). */
-  level?: string;
+  level?: string; // the suite's test level, when configured
   status: "passed" | "failed" | "flaky" | "cancelled";
   started_at: string;
   finished_at: string;
@@ -124,15 +123,6 @@ export function runStatus(
   return "passed";
 }
 
-/** Worst-first, so a collapsed row can never look healthier than its parts. */
-const STATUS_SEVERITY: Record<string, number> = {
-  failed: 3,
-  timed_out: 3,
-  flaky: 2,
-  passed: 1,
-  skipped: 0,
-};
-
 /**
  * Collapse results that share a `full_title` into one row.
  *
@@ -156,30 +146,6 @@ export function dedupeByFullTitle(results: ResultEntry[]): ResultEntry[] {
     merged.set(r.full_title, prior ? mergeEntries(prior, r) : { ...r, tags: [...r.tags] });
   }
   return [...merged.values()];
-}
-
-function worstOf(a: string, b: string): string {
-  return (STATUS_SEVERITY[b] ?? 0) > (STATUS_SEVERITY[a] ?? 0) ? b : a;
-}
-
-/** `Math.max` treats a missing duration as 0; absent-on-both must stay absent. */
-function longerOf(a: number | undefined, b: number | undefined): number | undefined {
-  if (a === undefined) return b;
-  if (b === undefined) return a;
-  return Math.max(a, b);
-}
-
-function mergeEntries(prior: ResultEntry, next: ResultEntry): ResultEntry {
-  return {
-    ...prior,
-    status: worstOf(prior.status, next.status),
-    error_message: prior.error_message ?? next.error_message,
-    error_stack: prior.error_stack ?? next.error_stack,
-    duration_ms: longerOf(prior.duration_ms, next.duration_ms),
-    retries: Math.max(prior.retries, next.retries),
-    tags: [...new Set([...prior.tags, ...next.tags])],
-    ...mergedFeatures(prior.features, next.features),
-  };
 }
 
 
@@ -239,7 +205,6 @@ export function buildPayload(
 }
 
 /** The subset of the ingest API's `POST /runs` response the reporter reads. */
-
 
 /** The ingest body limit is 5 MB (and ~4.5 MB behind some proxies); stay under both. */
 const MAX_BODY_BYTES = 4_000_000;

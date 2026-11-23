@@ -1,4 +1,6 @@
 // Ingest reporter: options, env resolution and area mapping.
+import { parseFeatureMap } from "./features.js";
+import { checkGlobs, globToRegExp } from "./globs.js";
 
 /**
  * Pushes a completed Playwright run to an `/api/ingest` endpoint (a QA
@@ -220,54 +222,12 @@ function parseAreaMap(raw: string | undefined, warnings: string[]): Record<strin
   return {};
 }
 
-/**
- * A feature map as JSON: glob → slug or slugs. A bare string is one slug.
- * Anything else falls back to no map with a warning, never a thrown error, so
- * a typo cannot turn pushing off (the same stance as `parseAreaMap`).
- */
-export function parseFeatureMap(raw: string | undefined, warnings: string[]): Record<string, string[]> {
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const map: Record<string, string[]> = {};
-      for (const [glob, v] of Object.entries(parsed)) {
-        if (typeof v === "string") map[glob] = [v];
-        else if (Array.isArray(v) && v.every((x) => typeof x === "string")) map[glob] = v;
-        else throw new Error("bad value");
-      }
-      return map;
-    }
-  } catch {
-    /* fall through to the warning below */
-  }
-  warnings.push(
-    'the feature map must be a JSON object of glob → slug or [slugs], e.g. {"src/billing/**":["billing"]}; sending no features.',
-  );
-  return {};
-}
 
-/** Only `**`, `*` and `?` are glob syntax here; `{a,b}` and `[ab]` would match as literal text. */
-export function checkGlobs<T>(name: string, map: Record<string, T>, warnings: string[]): Record<string, T> {
-  for (const glob of Object.keys(map)) {
-    if (/[{}[\]]/.test(glob)) {
-      warnings.push(`${name} glob "${glob}" uses unsupported {a,b} or [ab] syntax and matches only literally; list each path instead.`);
-    }
-  }
-  return map;
-}
 
 function checkAreaMap(map: Record<string, string>, warnings: string[]): Record<string, string> {
   return checkGlobs("areaMap", map, warnings);
 }
 
-/** `**` crosses directories, `*` and `?` stay within one path segment. */
-const GLOB_TOKENS: Record<string, string> = { "**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]" };
-
-function globToRegExp(glob: string): RegExp {
-  const re = glob.replace(/\*\*\/|\*\*|\*|\?|[.+^${}()|[\]\\]/g, (t) => GLOB_TOKENS[t] ?? `\\${t}`);
-  return new RegExp(`^${re}$`);
-}
 
 /**
  * A test's product area: an `area` annotation, else the first `areaMap` glob
@@ -286,24 +246,6 @@ export function resolveArea(
   return undefined;
 }
 
-/**
- * A test's feature slugs: its `feature` annotations, else the first
- * `featureMap` glob matching its repo-relative file, else `undefined` (send no
- * key). Unlike `resolveArea` a glob may map to `[]`, which is sent: "covers no
- * feature" is an answer, where an absent key is none.
- */
-export function resolveFeatures(
-  annotations: ReadonlyArray<{ type: string; description?: string }>,
-  testFile: string,
-  featureMap: Record<string, string[]>,
-): string[] | undefined {
-  const annotated = annotations.filter((a) => a.type === "feature" && a.description).map((a) => a.description as string);
-  if (annotated.length) return [...new Set(annotated)];
-  for (const [glob, features] of Object.entries(featureMap)) {
-    if (globToRegExp(glob).test(testFile)) return [...new Set(features)];
-  }
-  return undefined;
-}
 
 export function shouldPush(
   cfg: Pick<ResolvedConfig, "url" | "token">,
