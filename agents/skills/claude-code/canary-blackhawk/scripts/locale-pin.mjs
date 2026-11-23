@@ -40,6 +40,10 @@ function numericReceiver(prefix) {
 // `process.env.TZ`, `resolvedOptions().timeZone`, a variable, the `{ timeZone
 // }` shorthand, an expression -- is, or may be, the host zone.
 const ZONE_LITERAL_PROP = /^\s*(['"]?)timeZone\1\s*:\s*(['"`])\s*\2\s*$/;
+// #1659 F1a: an object part that may set `timeZone`: a spread, a computed
+// key, or a `timeZone` key (any value, or the shorthand). The last one wins,
+// so only a literal that is the LAST such part pins the call.
+const ZONE_SOURCE = /^\s*(?:\.\.\.|\[|(['"]?)timeZone\1\s*(?::|$))/;
 
 /** Same-length stand-in for a comment or literal token (#1659). */
 function blankToken(token, isComment) {
@@ -101,9 +105,12 @@ function topLevelParts(text) {
 }
 
 /**
- * True when one of the call's own arguments is an object literal with a
- * top-level `timeZone: '<literal>'` property. A pin nested in another call,
- * a ternary branch or an inner object does not count.
+ * True when one of the call's own arguments is an object literal whose last
+ * top-level zone source is a `timeZone: '<literal>'` property. A pin nested
+ * in another call, a ternary branch or an inner object does not count, and
+ * neither does one a later spread, computed key or `timeZone` key can
+ * override (`{ timeZone: 'UTC', ...opts }`); `{ ...opts, timeZone: 'UTC' }`
+ * still pins, because the literal is applied last.
  */
 function pinsLiteralZone(args) {
   return topLevelParts(args).some((arg) => {
@@ -112,7 +119,8 @@ function pinsLiteralZone(args) {
     const body = object.slice(1, -1);
     // `{ a } || { b }` starts and ends with braces but is not one object.
     if (closesUnopened(body)) return false;
-    return topLevelParts(body).some((p) => ZONE_LITERAL_PROP.test(p));
+    const last = topLevelParts(body).findLast((p) => ZONE_SOURCE.test(p));
+    return last !== undefined && ZONE_LITERAL_PROP.test(last);
   });
 }
 

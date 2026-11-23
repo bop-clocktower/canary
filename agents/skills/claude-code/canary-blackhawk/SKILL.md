@@ -85,8 +85,12 @@ Two deliberate choices inside that:
   call: `{ timeZone: tz }`, the `{ timeZone }` shorthand, `undefined`,
   `process.env.TZ` and `resolvedOptions().timeZone` may all be the host zone, so
   they stay flagged, and so does a pin inside a comment, a string, a nested call
-  or one branch of a ternary. The exemption is line-based: a call whose
-  arguments continue onto a later line is not seen, so it stays flagged.
+  or one branch of a ternary. The literal must also be the last thing in the
+  object that can set the zone: `{ ...opts, timeZone: 'UTC' }` is exempt, but
+  `{ timeZone: 'UTC', ...opts }`, a later `timeZone` key, or a later computed
+  key (`[key]: tz`) can override it, so the call stays flagged. The exemption is
+  line-based: a call whose arguments continue onto a later line is not seen, so
+  it stays flagged.
 
 ## Inline suppression (per-line escape hatch)
 
