@@ -1,0 +1,55 @@
+{
+  "item": "bop-clocktower/canary#1645",
+  "fleet": "cicd-fleet",
+  "runId": "fc1123",
+  "option": "F2-A",
+  "skill": "harness-debugging",
+  "debugSession": {
+    "status": "resolved",
+    "phases": ["investigate", "analyze", "hypothesize", "fix"],
+    "rootCause": "The top-level beforeEach of ts/test/refresh-baseline-push-job.test.ts spawned 8 git processes per test (51 tests); ~100-150 ms idle, past vitest's 10 s hookTimeout under full-suite load.",
+    "hypothesis": "Per-test spawn cost, not a defect in refresh-arch-baseline.yml; a beforeEach that starts no process passes the lowered-budget reproduction.",
+    "reproduction": "npx vitest run test/refresh-baseline-push-job.test.ts --hookTimeout=100 (base 9c15de65: 51/51 fail; branch: 53/53 pass)",
+    "regressionTest": "ts/test/refresh-baseline-push-job.test.ts > gives each test its fixture without starting a process (#1645)"
+  },
+  "phase": "VERIFY",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "INVESTIGATE: entropy scan, read error, reproduce with lowered hookTimeout, bracket hook cost",
+      "status": "done"
+    },
+    {
+      "id": 2,
+      "title": "ANALYZE: read #1261 git-fixture-testkit and branch-prune usage; identify the absolute remote URL difference",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "title": "HYPOTHESIZE: verify a relative origin URL survives a cp -R copy and isolates pushes",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "title": "Guard red: count spawns in the top-level beforeEach (expected 8 to be +0)",
+      "status": "done"
+    },
+    {
+      "id": 5,
+      "title": "Fix: buildGitTemplate in beforeAll, copyGitTemplate in beforeEach; isolation test + mutation check",
+      "status": "done"
+    },
+    {
+      "id": 6,
+      "title": "Gates from ts/ + perf/entropy ratchets vs base + check-deps + validate",
+      "status": "done"
+    },
+    {
+      "id": 7,
+      "title": "Proof: 5 consecutive full npm test runs; 20 stressed repeats before and after",
+      "status": "done"
+    },
+    { "id": 8, "title": "Push, open PR, watch CI", "status": "in_progress" }
+  ],
+  "verdict": "local gates green; awaiting CI and human review (not merged)"
+}
