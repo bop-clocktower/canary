@@ -23,12 +23,12 @@ any other skill.
 
 ## Rules
 
-| Rule                           | Severity | Fires on                                                                                                                                                                                                                            |
-| ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BH001-wall-clock`             | high     | `Date.now()`, bare `new Date()`, `moment()`, `datetime.now()` / `.today()` / `.utcnow()`, `date.today()`, `time.time()`, `pd.Timestamp.now()`                                                                                       |
-| `BH002-real-delay`             | medium   | `time.sleep(n)` and `setTimeout(fn, n)` with a literal `n > 0`                                                                                                                                                                      |
-| `BH003-local-timezone`         | medium   | `toLocaleString` / `toLocaleDateString` / `toLocaleTimeString` with no `timeZone` option in the call, `strftime('…%Z…')` or `%z`. A numeric-literal receiver (`(5000).toLocaleString('en-US')`, `5000n.toLocaleString()`) is exempt |
-| `BH004-naive-datetime-compare` | low      | a comparison against `datetime(2024, …)` or `strptime(…)` with no `tzinfo` / `timezone.utc` / `ZoneInfo` / `pytz` on the line                                                                                                       |
+| Rule                           | Severity | Fires on                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BH001-wall-clock`             | high     | `Date.now()`, bare `new Date()`, `moment()`, `datetime.now()` / `.today()` / `.utcnow()`, `date.today()`, `time.time()`, `pd.Timestamp.now()`                                                                                                                                                  |
+| `BH002-real-delay`             | medium   | `time.sleep(n)` and `setTimeout(fn, n)` with a literal `n > 0`                                                                                                                                                                                                                                 |
+| `BH003-local-timezone`         | medium   | `toLocaleString` / `toLocaleDateString` / `toLocaleTimeString` unless an options object in the call pins `timeZone` to a string literal (`{ timeZone: 'UTC' }`), `strftime('…%Z…')` or `%z`. A numeric-literal receiver (`(5000).toLocaleString('en-US')`, `5000n.toLocaleString()`) is exempt |
+| `BH004-naive-datetime-compare` | low      | a comparison against `datetime(2024, …)` or `strptime(…)` with no `tzinfo` / `timezone.utc` / `ZoneInfo` / `pytz` on the line                                                                                                                                                                  |
 
 ### PHP (core + WordPress)
 
@@ -81,9 +81,12 @@ Two deliberate choices inside that:
 - **`BH003` cannot see types.** `count.toLocaleString('en-US')` stays flagged
   even when `count` is a number, because the receiver may be a `Date`; only a
   numeric literal is exempt. A pinned locale alone never exempts a call, since a
-  date still renders in the host zone. The `timeZone` exemption is line-based:
-  an options object that starts on a later line is not seen, so that call stays
-  flagged.
+  date still renders in the host zone. Only a string-literal zone exempts a
+  call: `{ timeZone: tz }`, the `{ timeZone }` shorthand, `undefined`,
+  `process.env.TZ` and `resolvedOptions().timeZone` may all be the host zone, so
+  they stay flagged, and so does a pin inside a comment, a string, a nested call
+  or one branch of a ternary. The exemption is line-based: a call whose
+  arguments continue onto a later line is not seen, so it stays flagged.
 
 ## Inline suppression (per-line escape hatch)
 

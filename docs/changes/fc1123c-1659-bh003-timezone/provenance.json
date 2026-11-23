@@ -1,0 +1,33 @@
+{
+  "issues": [1659],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags d.toLocaleString('en-US', { timeZone: undefined });",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags d.toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags d.toLocaleString('en-US', { timeZone: process.env.TZ });",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags d.toLocaleString('en-US', cond ? { timeZone: 'UTC' } : {});",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags d.toLocaleString('en-US', { timeZone: tz });",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags d.toLocaleString('en-US', { /* timeZone: 'UTC' */ });",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags d.toLocaleString('timeZone: x');",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags d.toLocaleString(s.replace(/'/g, ''), f({ timeZone: 'UTC' }));",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags expect(foo?.(1).toLocaleString()).toBe(s);",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags expect(make<Date>(0).toLocaleString()).toBe(s);",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags expect(fn!(0).toLocaleString()).toBe(s);",
+    "agents/skills/test/canary-blackhawk.test.ts::BH003 local-timezone > still flags expect(new Date (0).toLocaleString()).toBe(s);"
+  ],
+  "redAtBase": "Tests  17 failed | 62 passed | 190 skipped (269) -- e.g. FAIL test/canary-blackhawk.test.ts > BH003 local-timezone > still flags d.toLocaleString('en-US', { timeZone: undefined }); (red commit 0cec8d4c on base caf8984b)",
+  "assumptions": [
+    "Human fork F1 = (a): only a string-literal zone exempts a call ('...', \"...\", or a template literal with no ${}). The value is tested on argument text lexed by the shared lib/js-literals.mjs lexer, with comments and regex literals blanked and string contents blanked (a quoted 'timeZone' key keeps its text).",
+    "The `{ timeZone }` shorthand is a bare identifier, so under F1 (a) it is now FLAGGED; the #1657 test row asserting it was exempt moved to the still-flags list. This is the one intended behavior reversal of #1657.",
+    "The pin must be a top-level property of an object literal that is itself a direct argument of this call. A pin in a ternary branch, a nested object, a nested call's arguments, or behind an operator (`{ a } || { b }`) does not count.",
+    "The issue's 'remaining false negatives' (foo?.(1), make<Date>(0), fn!(0), new Date (0)) are in scope: the issue says they are cheap to fold into the same fix. A parenthesised literal is a grouping paren only when the text before it is not an identifier (other than a keyword such as return/typeof/await), `)`, `]`, `.`, `!`, or a non-arrow `>`. Accepted false positives (never negatives): `a > (5).toLocaleString()` and `!(5).toLocaleString()` now flag.",
+    "Numeric-literal exemption from #1657 is otherwise unchanged; every #1657 'does not flag' numeric row still passes.",
+    "No CHANGELOG entry: AGENTS.md does not require one per skill fix, and #1657 (the change this corrects, also unreleased) added none.",
+    "No ratchet/baseline file touched."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "Every row in the issue (both false-negative classes, the four numeric-receiver shapes, and the SKILL.md rewording) has a test and is fixed.",
+  "run": "fc1123c",
+  "base": "caf8984bbc52b0cd6d3844b7446206b6767143c0"
+}
