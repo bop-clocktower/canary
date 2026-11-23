@@ -767,7 +767,7 @@ last_manual_edit: 2026-11-23T21:18:52.035Z
 - **Blockers:** —
 - **Plan:** —
 - **Assignee:** —
-- **Priority:** —
+- **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#1659
 
 ## Engine and Platform
