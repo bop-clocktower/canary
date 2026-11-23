@@ -1409,14 +1409,45 @@ function installedVersion(repoRoot: string, pkg: string): string | null {
 
 /**
  * A `files` entry `mapStrykerReport` can walk: a `mutants` array whose every
- * mutant carries `location.start`. Anything else would throw mid-mapping, and
+ * mutant carries `location.start` and a string `mutatorName`, plus, if any, a
+ * string `replacement` and a string-array `coveredBy` (#1568). Anything else would throw mid-mapping, and
  * an uncaught throw exits 1 -- which ADR 0009 reads as "survivors".
  */
 function isMappableStrykerFile(file: unknown): boolean {
   const mutants = isRecord(file) ? file['mutants'] : undefined;
   return (
     Array.isArray(mutants) &&
-    mutants.every((m) => isRecord(m) && hasStart(m['location']))
+    mutants.every(
+      (m) =>
+        isRecord(m) &&
+        hasStart(m['location']) &&
+        typeof m['mutatorName'] === 'string' &&
+        ['undefined', 'string'].includes(typeof m['replacement']) &&
+        (m['coveredBy'] === undefined || isStringArray(m['coveredBy'])),
+    )
+  );
+}
+
+const isStringArray = (v: unknown): boolean =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+/** `testFiles` is optional, but each entry it has must list its tests. */
+function hasMappableTestFiles(report: Record<string, unknown>): boolean {
+  const testFiles = report['testFiles'];
+  if (testFiles === undefined) return true;
+  return (
+    isRecord(testFiles) &&
+    Object.values(testFiles).every(
+      (f) =>
+        isRecord(f) &&
+        Array.isArray(f['tests']) &&
+        f['tests'].every(
+          (t) =>
+            isRecord(t) &&
+            typeof t['id'] === 'string' &&
+            typeof t['name'] === 'string',
+        ),
+    )
   );
 }
 
@@ -1455,7 +1486,14 @@ function mappedStrykerReport(
   if (!Object.values(parsed['files']).every(isMappableStrykerFile)) {
     return abstainedReport(
       `the stryker report at ${path} has a file entry without a "mutants" ` +
-        'list of located mutants',
+        'list of located, named mutants with string fields',
+      excluded,
+    );
+  }
+  if (!hasMappableTestFiles(parsed)) {
+    return abstainedReport(
+      `the stryker report at ${path} has a "testFiles" entry without a ` +
+        '"tests" list of string ids and names',
       excluded,
     );
   }

@@ -312,10 +312,10 @@ under the project's former name) are documented in the
   recorded" instead of "no covering test", which claimed a coverage gap nobody
   measured, and a line under the headline counts such survivors and points at
   `coverageAnalysis: perTest`. This completes the counting rule that shipped in
-  v9.4.0 (#1302). Consumers upgrading across it should expect those survivors to
-  stay `survived`, so `noCoverage` drops, `survived` can rise, and a run that
-  used to exit 0 can now exit 1. The disclosure itself changes report text only:
-  no verdict, exit code or `mutation-report.json` field moves.
+  v9.4.0 (#1302). Consumers upgrading across v9.4.0 should expect those
+  survivors to stay `survived`, so `noCoverage` drops, `survived` can rise, and
+  a run that used to exit 0 can now exit 1. The disclosure itself changes report
+  text only: no verdict, exit code or `mutation-report.json` field moves.
 - **`canary-ci-ready`'s flakiness check reads the `canary-unquarantine` audit's
   classes (#1459)** instead of judging issue state by hand. Blocked counts as
   verified; candidate, stale and unledgered are flagged; unlinked fails; and

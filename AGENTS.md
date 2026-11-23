@@ -551,8 +551,8 @@ narrowed to the diff, so it is not described as diff-scoped.
   the field only under `coverageAnalysis: perTest`, so its absence means
   attribution was not recorded. The survivor counts in `survived` and drives
   exit 1, its line says so, and one line under the headline counts such
-  survivors and points at `perTest`. Only an explicit `coveredBy: []` is
-  `no-coverage`.
+  survivors and points at `perTest`. Only Stryker's `NoCoverage` status, or a
+  `Survived` mutant with an explicit `coveredBy: []`, is `no-coverage`.
 - **Author obligation.** For each survivor, either strengthen a test until it
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,
