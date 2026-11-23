@@ -20,6 +20,8 @@ export interface IngestPayload {
   commit_sha?: string;
   workflow: string;
   environment?: string;
+  /** The suite's test level, when configured (`level` / `CANARY_INGEST_LEVEL` / `--level`). */
+  level?: string;
   status: "passed" | "failed" | "flaky" | "cancelled";
   started_at: string;
   finished_at: string;
@@ -175,7 +177,14 @@ function mergeEntries(prior: ResultEntry, next: ResultEntry): ResultEntry {
     duration_ms: longerOf(prior.duration_ms, next.duration_ms),
     retries: Math.max(prior.retries, next.retries),
     tags: [...new Set([...prior.tags, ...next.tags])],
+    ...mergedFeatures(prior.features, next.features),
   };
+}
+
+/** A title merged across reports covers what either copy said; absent on both stays absent. */
+function mergedFeatures(a: string[] | undefined, b: string[] | undefined): { features?: string[] } {
+  if (a === undefined && b === undefined) return {};
+  return { features: [...new Set([...(a ?? []), ...(b ?? [])])] };
 }
 
 /**
@@ -222,6 +231,7 @@ export function buildPayload(
     commit_sha: env.GITHUB_SHA,
     workflow: cfg.workflow,
     environment: cfg.environment,
+    ...(cfg.level ? { level: cfg.level } : {}),
     status: runStatus({ failed, flaky }, fullResultStatus),
     started_at: timing.startedAt,
     finished_at: timing.finishedAt,

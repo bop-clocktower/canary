@@ -1,5 +1,5 @@
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from "@playwright/test/reporter";
-import { envVar, resolveConfig, resolveArea, shouldPush } from "./ingest/config.js";
+import { envVar, resolveConfig, resolveArea, resolveFeatures, shouldPush } from "./ingest/config.js";
 import { runTiming, buildPayload, fitPayload, resolveTestStatus, errorField, MAX_ERROR_MESSAGE, MAX_ERROR_STACK, mapStatus, runStatus, dedupeByFullTitle } from "./ingest/payload.js";
 import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile, countTests } from "./ingest/describe.js";
 import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push, ingestOutcome, retryWaitMs } from "./ingest/transport.js";
@@ -17,7 +17,7 @@ try {
 }
 
 /** The public surface consumers import from `canary-test-cli/reporter`. */
-export { redactText, redactTitle, resolveConfig, resolveArea, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs, toRunRecord, runFilePath };
+export { redactText, redactTitle, resolveConfig, resolveArea, resolveFeatures, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs, toRunRecord, runFilePath };
 export type { IngestReporterOptions, TitleFormat, TestTrackerReporterOptions, ResolvedConfig } from "./ingest/config.js";
 export type { ResultEntry, CollectedEntry, IngestPayload, Shard } from "./ingest/payload.js";
 export type { IngestResponse } from "./ingest/transport.js";
@@ -113,12 +113,14 @@ export default class IngestReporter implements Reporter {
       ]),
     ];
     const area = resolveArea(annotations, testFile, cfg.areaMap);
+    const features = resolveFeatures(annotations, testFile, cfg.featureMap);
     return {
       full_title:
         cfg.titleFormat === "clean" ? cleanTitle(test) : test.titlePath().filter(Boolean).join(" > "),
       test_file: testFile,
       tags,
       ...(area ? { area } : {}),
+      ...(features ? { features } : {}),
     };
   }
 

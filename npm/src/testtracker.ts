@@ -15,10 +15,13 @@
  */
 import { EXIT_ABSTAINED } from './gate-result.js';
 import { budgetRefusal, isCi } from './reporters/ingest/budget.js';
+import { readFileSync } from 'node:fs';
 import {
   envVar,
+  parseFeatureMap,
   resolveArea,
   resolveConfig,
+  resolveFeatures,
 } from './reporters/ingest/config.js';
 import type { ResolvedConfig } from './reporters/ingest/config.js';
 import { relativeFile } from './reporters/ingest/describe.js';
@@ -61,6 +64,13 @@ same payload, retry and size budget as the Playwright reporter.
   --workflow <label> workflow label (else CANARY_INGEST_WORKFLOW, default "junit")
   --no-collected     do not send the catalog; use when the reports are a
                      subset of the suite (a shard, a name filter)
+  --level <level>    the suite's test level, sent as the run's level, e.g.
+                     unit, integration, contract, e2e (else CANARY_INGEST_LEVEL)
+  --features-map <file>
+                     JSON object of glob → feature slug(s) for each test's
+                     file, first match wins (else CANARY_INGEST_FEATURE_MAP);
+                     an unmatched test sends no features; a missing or
+                     unreadable file exits 1 with nothing pushed
   --strict-budget    refuse to push (exit 1, nothing sent) when fitting the
                      payload under the 4 MB budget would drop the catalog or
                      still leave it over budget; on by default when CI is set
@@ -75,7 +85,8 @@ same payload, retry and size budget as the Playwright reporter.
   -h, --help         show this help
 
 Environment: CANARY_INGEST_URL and CANARY_INGEST_TOKEN (required to push),
-CANARY_INGEST_ENVIRONMENT, CANARY_INGEST_AREA_MAP, CANARY_INGEST_TEST_FILE_PREFIX.
+CANARY_INGEST_ENVIRONMENT, CANARY_INGEST_AREA_MAP, CANARY_INGEST_FEATURE_MAP,
+CANARY_INGEST_LEVEL, CANARY_INGEST_TEST_FILE_PREFIX.
 
 Producing a report:
   vitest     vitest run --reporter=junit --outputFile=junit.xml
@@ -97,6 +108,8 @@ interface PushArgs {
   /** Unset = the CI default (`isCi`); a flag always wins. */
   strictBudget?: boolean;
   quarantineLedger?: string;
+  level?: string;
+  featuresMap?: string;
 }
 
 class UsageError extends Error {}
@@ -113,7 +126,28 @@ const FLAGS: Record<
   '--strict-budget': { takes: false, set: (p) => (p.strictBudget = true) },
   '--no-strict-budget': { takes: false, set: (p) => (p.strictBudget = false) },
   '--quarantine-ledger': { takes: true, set: (p, v) => (p.quarantineLedger = v) },
+  '--level': { takes: true, set: (p, v) => (p.level = v) },
+  '--features-map': { takes: true, set: (p, v) => (p.featuresMap = v) },
 };
+
+/**
+ * The `--features-map` file, parsed. Unreadable or malformed is an error (exit
+ * 1, nothing pushed), like `--quarantine-ledger`: a file named on the command
+ * line was meant to apply, and silently pushing without it would land a run
+ * whose tests all say nothing about features.
+ */
+function readFeaturesMap(file: string): Record<string, string[]> {
+  const warnings: string[] = [];
+  let raw: string;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch (e) {
+    throw new Error(`could not read --features-map ${file}: ${errText(e)}.`);
+  }
+  const map = parseFeatureMap(raw, warnings);
+  if (warnings.length) throw new Error(`--features-map ${file}: ${warnings[0]}`);
+  return map;
+}
 
 /**
  * `--junit=a.xml` is one file; `--junit a.xml b.xml` takes every following
@@ -177,6 +211,7 @@ function configure(
       workflow: opts.workflow ?? envVar(env, 'workflow') ?? 'junit',
       collected: opts.collected && envVar(env, 'collected') !== 'false',
       quarantineLedger: opts.quarantineLedger,
+      ...(opts.level ? { level: opts.level } : {}),
       ...(deps.retryDelaysMs ? { retryDelaysMs: deps.retryDelaysMs } : {}),
     },
     env,
@@ -196,7 +231,12 @@ function locator(cfg: ResolvedConfig): Locate {
       ? relativeFile(testFile, cfg.testFilePrefix)
       : reportPath;
     const area = resolveArea([], test_file, cfg.areaMap);
-    return { test_file, ...(area ? { area } : {}) };
+    const features = resolveFeatures([], test_file, cfg.featureMap);
+    return {
+      test_file,
+      ...(area ? { area } : {}),
+      ...(features ? { features } : {}),
+    };
   };
 }
 
@@ -218,6 +258,7 @@ async function runPush(
   }
   for (const w of cfg.configWarnings) warn(w, env);
   try {
+    if (opts.featuresMap) cfg = { ...cfg, featureMap: readFeaturesMap(opts.featuresMap) };
     reports = opts.junit.map((f) => readJunitReport(f, locator(cfg)));
   } catch (e) {
     err.write(`canary testtracker: ${errText(e)} Nothing was pushed.\n`);
