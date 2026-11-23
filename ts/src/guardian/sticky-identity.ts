@@ -48,7 +48,43 @@ export function findSticky(
 }
 
 function isSticky(c: Comment, marker: string, id: GuardianIdentity): boolean {
-  return isAuthoredBy(c, id) && (c.body ?? '').trimStart().startsWith(marker);
+  const body = (c.body ?? '').trimStart();
+  if (!body.startsWith(marker)) return false;
+  return isAuthoredBy(c, id) || isSelfStamped(c, body.slice(marker.length));
+}
+
+/**
+ * The hidden author stamp (#1352). Nothing on the production path can tell
+ * guardian who its token posts as -- an App installation token or a PAT is
+ * not `github-actions[bot]`, and neither can call an API that says so -- so
+ * guardian learns it from its own write: GitHub stamps a created comment with
+ * its author, and guardian records that login right after the marker. Only
+ * the stamp's NAMED author qualifies, so a human who pastes a stamped sticky
+ * is still never overwritten (#931): the paste is authored by them, not by
+ * the login the stamp names.
+ */
+const AUTHOR_STAMP = /^<!-- sticky-author: (\S+) -->/;
+
+function isSelfStamped(c: Comment, afterMarker: string): boolean {
+  const login = AUTHOR_STAMP.exec(afterMarker)?.[1];
+  return login !== undefined && login === c.user?.login;
+}
+
+/**
+ * `body` as guardian should write it over `comment` (one it created or found):
+ * stamped with the comment's real author when that author is not `identity`,
+ * unchanged otherwise -- so the default Actions token writes exactly as before.
+ */
+export function stampedFor(
+  body: string,
+  marker: string,
+  comment: Comment,
+  identity: GuardianIdentity = DEFAULT_IDENTITY,
+): string {
+  const login = comment.user?.login;
+  if (!login || isAuthoredBy(comment, identity) || !body.startsWith(marker))
+    return body;
+  return `${marker}<!-- sticky-author: ${login} -->${body.slice(marker.length)}`;
 }
 
 function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {

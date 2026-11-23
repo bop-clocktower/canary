@@ -22,6 +22,7 @@ import {
   DEFAULT_IDENTITY,
   STICKY_MARKER,
   findSticky,
+  stampedFor,
   type Comment,
 } from './sticky-identity.js';
 
@@ -127,10 +128,15 @@ export async function upsertStickyComment(
   try {
     const existing = findSticky(await client.listComments(), marker);
     if (existing !== null) {
-      const updated = await client.updateComment(existing.id, body);
+      const own = stampedFor(body, marker, existing);
+      const updated = await client.updateComment(existing.id, own);
       return { action: 'updated', comment_id: updated.id, notice: null };
     }
     const created = await client.createComment(body);
+    // #1352: posted as someone other than the default identity, so stamp the
+    // author GitHub reported, or the next run will not recognise it and stack.
+    const own = stampedFor(body, marker, created);
+    if (own !== body) await client.updateComment(created.id, own);
     return { action: 'created', comment_id: created.id, notice: null };
   } catch (err) {
     if (err instanceof GitHubPermissionError) {
