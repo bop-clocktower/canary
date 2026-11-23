@@ -643,6 +643,18 @@ than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
 silent CI break with nothing to roll back to.
 
+**Fetch retry (#1533).** Because the pin floats, CI is among the first to pull a
+just-published release, and the registry can 404 that release's new transitive
+tarballs for a short while. Every step that only _fetches_ the CLI (the
+`npm install -g`, and each `Resolve harness CLI version` probe) runs through
+`scripts/retry-fetch.mjs`: 3 attempts, 10 s then 30 s apart, a `::warning::` for
+every failed attempt, and red after the last. A check is never retried.
+`harness-architecture.yml` resolves the version and warms the exact version
+first, so `check-deps` and `validate` each run once. The one exception is
+`refresh-arch-baseline.yml`, which retries inline with the same contract: its
+tree is the PR head, and a branch older than #1533 has no helper.
+`ts/test/harness-cli-fetch-retry.test.ts` enforces all of it.
+
 Bumping the major is a **three-step sequence**, in this order (#545, #547):
 
 1. **Reconcile `harness.config.json` against the new major's schema first.** Zod
@@ -1205,7 +1217,7 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 14 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 73 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place, then 27 shipped rows archived by the
   2026-09-14 `roadmap-groom --check-issues` reconciliation, then 11 more
@@ -1213,11 +1225,14 @@ Two related facts worth not rediscovering:
   `canary-batwoman` linked to #749 and 5 shipped rows archived on 2026-09-29,
   then the canary QA site row linked to #1151 on 2026-10-05, then the
   canary-huntress row (#617, closed `NOT_PLANNED` by ADR 0021) archived on
-  2026-10-16, then the canary-blackalice row linked to #1524 on 2026-10-28,
-  then the TestTracker quarantine-ledger row linked to #1321 on 2026-11-06. The
-  count is of LINKED rows, and every row in the roadmap is linked, so
-  `--check-issues` abstains on none of them — and `Priority`, serialized in that
-  same extended group, is populated on every one of them.
+  2026-10-16, then the canary-blackalice row linked to #1524 on 2026-10-28, then
+  the TestTracker quarantine-ledger row linked to #1321 on 2026-11-06, then four
+  Intake rows linked to #1637/#1636/#1632/#1267 by issue-fleet on 2026-11-23
+  (ADR 0043), then 55 Intake rows backfilled on 2026-11-23 for every open
+  `route:roadmap` issue that had none (#1437, ADR 0043). The count is of LINKED
+  rows, and every row in the roadmap is linked, so `--check-issues` abstains on
+  none of them — and `Priority`, serialized in that same extended group, is
+  populated on every one of them.
 - **The `route:*` label vocabulary is canary's half of the `issue-fleet`
   contract (#1071, ADR 0034).** `issue-fleet` computes a route per triaged issue
   and has nowhere to put it; the skill is vendored under
@@ -1233,15 +1248,20 @@ Two related facts worth not rediscovering:
   the vocabulary (it only ever CREATES);
   `node scripts/route-queue.mjs report [--json]` prints the denominator — routed
   / unroutable / untriaged / conflicted, which sum to the examined count — and
-  exits **3** on a zero denominator. **The report never passes `--label` to
-  `gh issue list`**: that filter lags writes and under-reports (seen twice
-  during the #1071 triage run), so the denominator is read off each issue's own
-  labels. `ts/test/route-labels.test.ts` asserts the flag's absence from
-  recorded `gh` argv, not just that the count looked right. Two route labels on
-  one issue is reported as `conflicted` and never auto-resolved.
+  exits **3** on a zero denominator. It also lists the `route:roadmap` issues
+  with no `**External-ID:** github:<owner>/<repo>#N` row in `docs/roadmap.md`
+  (ADR 0043, #1438; JSON `unrowedRoadmap`). That count is advisory and never
+  changes the exit code; an unreadable roadmap, an unknown repo, or zero rows
+  for this repo prints `could not check` (JSON `null`), never 0. **The report
+  never passes `--label` to `gh issue list`**: that filter lags writes and
+  under-reports (seen twice during the #1071 triage run), so the denominator is
+  read off each issue's own labels. `ts/test/route-labels.test.ts` asserts the
+  flag's absence from recorded `gh` argv, not just that the count looked right.
+  Two route labels on one issue is reported as `conflicted` and never
+  auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 14 rows
+  effectively blind gate that reported a real number nobody read. All 73 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless
@@ -1751,11 +1771,12 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
   before they reach CI.
 - Re-runs `node scripts/security_ledger.mjs` and restages its outputs only when
   the commit stages a ledger input (`.harness/security/timeline.json`,
-  `.harness/security/supply-chain.json`, `docs/SECURITY_LEDGER.md`, or the script
-  itself). Unrelated commits leave the ledger alone; CI (`harness-security.yml`)
-  is its canonical writer (#1446). The ledger's supply-chain line comes from the
-  sidecar `scripts/supply_chain_audit.mjs` writes, and reads "not measured" when
-  nothing was audited (#1436). It informs and gates nothing.
+  `.harness/security/supply-chain.json`, `docs/SECURITY_LEDGER.md`, or the
+  script itself). Unrelated commits leave the ledger alone; CI
+  (`harness-security.yml`) is its canonical writer (#1446). The ledger's
+  supply-chain line comes from the sidecar `scripts/supply_chain_audit.mjs`
+  writes, and reads "not measured" when nothing was audited (#1436). It informs
+  and gates nothing.
 
 Then install the Python test dependency (pytest) into the `python3` on your
 `PATH` — the same interpreter the tests spawn:

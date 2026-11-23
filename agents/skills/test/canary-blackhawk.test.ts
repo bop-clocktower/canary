@@ -110,6 +110,48 @@ describe('BH003 local-timezone', () => {
       ids("assert d.strftime('%Y-%m-%d') == '2024-01-01'", 'test_a.py'),
     ).not.toContain('BH003-local-timezone');
   });
+
+  // #1636: Number/BigInt#toLocaleString never reads the host time zone, and a
+  // call that pins `timeZone` no longer depends on it either.
+  it.each([
+    "expect(submit).toHaveTextContent((5000).toLocaleString('en-US'));",
+    "expect(x).toBe((100001).toLocaleString('en-US'));",
+    "expect(x).toBe(5000..toLocaleString('en-US'));",
+    "expect(x).toBe(1e3.toLocaleString('en-US'));",
+    "expect(x).toBe(1.5.toLocaleString('de-DE'));",
+    'expect(x).toBe(0xff.toLocaleString());',
+    "expect(x).toBe(5_000..toLocaleString('en-US'));",
+    "expect(x).toBe(5000n.toLocaleString('en-US'));",
+    "expect(x).toBe((5000n).toLocaleString('en-US'));",
+    "expect(x).toBe((-5000).toLocaleString('en-US'));",
+    "expect(new Date(x).toLocaleString('en-US', { timeZone: 'UTC' })).toBe(s);",
+    "expect(d.toLocaleDateString('en-US', { timeZone: 'UTC' })).toBe(s);",
+    "expect(d.toLocaleTimeString('en-US', { 'timeZone': 'UTC' })).toBe(s);",
+    "expect(d.toLocaleString('en-US', { hour12: false, timeZone })).toBe(s);",
+    "f(d.toLocaleString('it\\')', { timeZone: 'UTC' }), (1).toLocaleString());",
+  ])('does not flag %s', (line) => {
+    expect(ids(line)).not.toContain('BH003-local-timezone');
+  });
+
+  it.each([
+    "expect(new Date(x).toLocaleString('en-US')).toBe(s);",
+    "expect(d.toLocaleString('en-US', { hour12: false })).toBe(s);",
+    "expect(d.toLocaleDateString()).toBe('1/1/2024');",
+    // The scanner has no types: a variable may hold a Date.
+    "expect(count.toLocaleString('en-US')).toBe('5,000');",
+    "expect(v1.toLocaleString('en-US')).toBe(s);",
+    "expect(Number(x).toLocaleString('en-US')).toBe(s);",
+    // An exempt call first on the line must not hide a later real one.
+    'expect(`${(5).toLocaleString()} ${d.toLocaleString()}`).toBe(s);',
+    "f(d.toLocaleString('en-US', { timeZone: 'UTC' }), e.toLocaleTimeString());",
+    // The pin has to be inside THIS call's arguments, not a later one.
+    "f(d.toLocaleString('en-US'), { timeZone: 'UTC' });",
+    // Line-based: an options object that opens a multi-line call is unseen.
+    "expect(d.toLocaleString('en-US', {",
+    "expect(foo(1).toLocaleString('en-US')).toBe(s);",
+  ])('still flags %s', (line) => {
+    expect(ids(line)).toContain('BH003-local-timezone');
+  });
 });
 
 // --- BH004 naive datetime compare ------------------------------------------

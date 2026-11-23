@@ -23,12 +23,12 @@ any other skill.
 
 ## Rules
 
-| Rule                           | Severity | Fires on                                                                                                                                      |
-| ------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BH001-wall-clock`             | high     | `Date.now()`, bare `new Date()`, `moment()`, `datetime.now()` / `.today()` / `.utcnow()`, `date.today()`, `time.time()`, `pd.Timestamp.now()` |
-| `BH002-real-delay`             | medium   | `time.sleep(n)` and `setTimeout(fn, n)` with a literal `n > 0`                                                                                |
-| `BH003-local-timezone`         | medium   | `toLocaleString` / `toLocaleDateString` / `toLocaleTimeString`, `strftime('…%Z…')` or `%z`                                                    |
-| `BH004-naive-datetime-compare` | low      | a comparison against `datetime(2024, …)` or `strptime(…)` with no `tzinfo` / `timezone.utc` / `ZoneInfo` / `pytz` on the line                 |
+| Rule                           | Severity | Fires on                                                                                                                                                                                                                            |
+| ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BH001-wall-clock`             | high     | `Date.now()`, bare `new Date()`, `moment()`, `datetime.now()` / `.today()` / `.utcnow()`, `date.today()`, `time.time()`, `pd.Timestamp.now()`                                                                                       |
+| `BH002-real-delay`             | medium   | `time.sleep(n)` and `setTimeout(fn, n)` with a literal `n > 0`                                                                                                                                                                      |
+| `BH003-local-timezone`         | medium   | `toLocaleString` / `toLocaleDateString` / `toLocaleTimeString` with no `timeZone` option in the call, `strftime('…%Z…')` or `%z`. A numeric-literal receiver (`(5000).toLocaleString('en-US')`, `5000n.toLocaleString()`) is exempt |
+| `BH004-naive-datetime-compare` | low      | a comparison against `datetime(2024, …)` or `strptime(…)` with no `tzinfo` / `timezone.utc` / `ZoneInfo` / `pytz` on the line                                                                                                       |
 
 ### PHP (core + WordPress)
 
@@ -78,6 +78,12 @@ Two deliberate choices inside that:
 - **`BH003` is never suppressed.** Freezing the clock pins _when_ a test runs,
   never _where_. A frozen clock does not stop `toLocaleString()` from returning
   a different string on a developer laptop than on a UTC runner.
+- **`BH003` cannot see types.** `count.toLocaleString('en-US')` stays flagged
+  even when `count` is a number, because the receiver may be a `Date`; only a
+  numeric literal is exempt. A pinned locale alone never exempts a call, since a
+  date still renders in the host zone. The `timeZone` exemption is line-based:
+  an options object that starts on a later line is not seen, so that call stays
+  flagged.
 
 ## Inline suppression (per-line escape hatch)
 

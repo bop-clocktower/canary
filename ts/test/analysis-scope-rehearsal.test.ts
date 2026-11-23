@@ -27,7 +27,7 @@
  * loud rather than passing on nothing; the offline half still runs there.
  */
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
   copyFileSync,
   mkdirSync,
@@ -66,14 +66,38 @@ interface Harness {
   out: string;
 }
 
-function harness(cwd: string, args: string[]): Harness {
-  const r = spawnSync(HARNESS, args, { cwd, encoding: 'utf-8' });
-  if (r.error) throw r.error;
-  return {
-    status: r.status ?? 1,
-    stdout: r.stdout,
-    out: `${r.stdout}${r.stderr}`,
-  };
+/** Every analyzer run this file starts goes through `harness`, so it can be counted. */
+let harnessSpawns = 0;
+
+/**
+ * One analyzer run. Asynchronous so independent runs overlap instead of
+ * queuing: under full-suite load each run takes seconds, and #1651 was two
+ * of them back to back.
+ */
+function harness(cwd: string, args: string[]): Promise<Harness> {
+  harnessSpawns += 1;
+  return new Promise((resolve, reject) => {
+    const child = spawn(HARNESS, args, { cwd });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf-8').on('data', (d: string) => (stdout += d));
+    child.stderr.setEncoding('utf-8').on('data', (d: string) => (stderr += d));
+    child.on('error', reject);
+    child.on('close', (code) =>
+      resolve({ status: code ?? 1, stdout, out: `${stdout}${stderr}` }),
+    );
+  });
+}
+
+/**
+ * Runs `f` at most once, on first call. The analyzer measurements live here
+ * rather than in `beforeAll` (#1651): a hook gets vitest's 10 s default and
+ * a test gets 30 s, so a hook must not carry seconds of analyzer work. Any
+ * test can be first; whichever one is pays for the shared run.
+ */
+function once<T>(f: () => Promise<T>): () => Promise<T> {
+  let p: Promise<T> | undefined;
+  return () => (p ??= f());
 }
 
 const REAL_CONFIG = JSON.parse(
@@ -142,8 +166,12 @@ describe.skipIf(!LIVE)(
     ];
 
     /** Every arch category value plus the entropy finding count. */
-    function counts(dir: string): Record<string, number> {
-      const arch = harness(dir, ['check-arch', '--json']);
+    async function counts(dir: string): Promise<Record<string, number>> {
+      // Independent reads of one tree, so they run side by side.
+      const [arch, cleanup] = await Promise.all([
+        harness(dir, ['check-arch', '--json']),
+        harness(dir, ['cleanup', '--findings-json']),
+      ]);
       const report = JSON.parse(arch.stdout) as {
         measurements: Array<{ category: string; value: number }>;
       };
@@ -151,7 +179,6 @@ describe.skipIf(!LIVE)(
       for (const m of report.measurements) {
         out[m.category] = (out[m.category] ?? 0) + m.value;
       }
-      const cleanup = harness(dir, ['cleanup', '--findings-json']);
       // Anchored on the prefix: since harness 14.1 the contract line carries
       // an `items` array after `"check":"cleanup"` (#1639).
       const line = /\{"findings":(\d+),"v":1,"check":"cleanup"/.exec(
@@ -163,30 +190,48 @@ describe.skipIf(!LIVE)(
       return out;
     }
 
-    // Measured in beforeAll, not at collection: a skipped suite's body still
-    // runs to register its tests, and must not spawn a CLI that is not there.
-    let base: Record<string, number> = {};
+    // The project is built in beforeAll, not at collection: a skipped
+    // suite's body still runs to register its tests. It is only files and a
+    // `git init`; the analyzer runs on first use, inside a test (#1651).
+    let baseDir = '';
+    let hookSpawns = -1;
     beforeAll(() => {
-      base = counts(project(config, SOURCE));
+      const before = harnessSpawns;
+      baseDir = project(config, SOURCE);
+      hookSpawns = harnessSpawns - before;
+    });
+    const base = once(() => counts(baseDir));
+
+    // #1651: two analyzer runs in this hook ran past vitest's 10 s
+    // hookTimeout under full-suite load.
+    it('builds its projects without running the analyzer in a hook (#1651)', () => {
+      expect(hookSpawns).toBe(0);
     });
 
-    it('measures a non-empty base (the instrument read the source)', () => {
-      expect(base['module-size']).toBeGreaterThan(0);
+    it('measures a non-empty base (the instrument read the source)', async () => {
+      expect((await base())['module-size']).toBeGreaterThan(0);
     });
 
-    it('a broken module under ts/src moves the counts (positive control)', () => {
-      const planted = counts(
-        project(config, { ...SOURCE, ...brokenModule('ts/src/planted') }),
-      );
-      expect(planted['circular-deps']).toBeGreaterThan(base['circular-deps']!);
-      expect(planted.entropy).toBeGreaterThan(base.entropy!);
-      expect(planted['module-size']).toBeGreaterThan(base['module-size']!);
+    it('a broken module under ts/src moves the counts (positive control)', async () => {
+      const [b, planted] = await Promise.all([
+        base(),
+        counts(
+          project(config, { ...SOURCE, ...brokenModule('ts/src/planted') }),
+        ),
+      ]);
+      expect(planted['circular-deps']).toBeGreaterThan(b['circular-deps']!);
+      expect(planted.entropy).toBeGreaterThan(b.entropy!);
+      expect(planted['module-size']).toBeGreaterThan(b['module-size']!);
     });
 
-    it('the same breakage planted as fixtures, dot-dirs included, moves nothing', () => {
+    it('the same breakage planted as fixtures, dot-dirs included, moves nothing', async () => {
       const files: Record<string, string> = { ...SOURCE };
       for (const at of FIXTURE_PLANTS) Object.assign(files, brokenModule(at));
-      expect(counts(project(config, files))).toEqual(base);
+      const [b, planted] = await Promise.all([
+        base(),
+        counts(project(config, files)),
+      ]);
+      expect(planted).toEqual(b);
       reportVerified(
         'analysis-scope',
         `${FIXTURE_PLANTS.length} broken fixture dirs planted, counts unchanged`,
@@ -232,13 +277,25 @@ describe.skipIf(!LIVE)('check-deps reads npm/src (#1443)', () => {
     return Number(m![1]);
   }
 
-  let baseCount = 0;
+  // One run of the unplanted tree serves both as the delta base for the
+  // plants and as the real-tree check: they were the same command on the
+  // same files, run twice.
+  let baseDir = '';
+  let hookSpawns = -1;
   beforeAll(() => {
-    baseCount = analysed(harness(npmProject(), ['check-deps']).out);
+    const before = harnessSpawns;
+    baseDir = npmProject();
+    hookSpawns = harnessSpawns - before;
+  });
+  const baseRun = once(() => harness(baseDir, ['check-deps']));
+
+  // #1651: same shape as the arch/entropy hook above.
+  it('builds its projects without running the analyzer in a hook (#1651)', () => {
+    expect(hookSpawns).toBe(0);
   });
 
-  it('analyses every npm/src module and passes on the real tree', () => {
-    const r = harness(npmProject(), ['check-deps']);
+  it('analyses every npm/src module and passes on the real tree', async () => {
+    const r = await baseRun();
     expect(analysed(r.out)).toBeGreaterThanOrEqual(npmFiles.length);
     expect(r.status, r.out).toBe(0);
   });
@@ -269,8 +326,12 @@ describe.skipIf(!LIVE)('check-deps reads npm/src (#1443)', () => {
           "import { flavorOn } from '../voice.js';\nexport const x = flavorOn;\n",
       },
     },
-  ])('fails on $shape planted in npm/src', ({ files }) => {
-    const r = harness(npmProject(files), ['check-deps']);
+  ])('fails on $shape planted in npm/src', async ({ files }) => {
+    const [base, r] = await Promise.all([
+      baseRun(),
+      harness(npmProject(files), ['check-deps']),
+    ]);
+    const baseCount = analysed(base.out);
     expect(r.status, r.out).not.toBe(0);
     // A non-zero exit alone also covers "analysed 0 modules, refusing to
     // report clean" — the abstention this issue is about. The failure must
