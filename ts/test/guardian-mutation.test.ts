@@ -786,11 +786,8 @@ describe('renderMutationReport neutralizes autolinks (#1673)', () => {
   };
 
   it('renders a hostile test name as a code span', () => {
-    expect(survivorLine(HOSTILE)).toMatch(
-      new RegExp(
-        `ran but did not fail: \`${HOSTILE.replace(/[.]/g, '\\.')}\`$`,
-      ),
-    );
+    const line = survivorLine(HOSTILE);
+    expect(line.endsWith(`ran but did not fail: \`${HOSTILE}\``)).toBe(true);
   });
 
   it('keeps a test name with a backtick inside one code span', () => {
