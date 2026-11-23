@@ -20,13 +20,7 @@ import { def } from '../util/coalesce.js';
 import { round1 } from '../util/round.js';
 import { SUPPORTED_SCHEMA_VERSIONS, resolveSchemaVersion } from './record.js';
 import type { RunRecord, TestResultRecord, TimelineEntry } from './record.js';
-import {
-  newFlakyCounter,
-  applyStatus,
-  toFlakyRow,
-  type FlakyCounter,
-  type FlakyQueryRow,
-} from './flake/rows.js';
+import { tallyFlaky, toFlakyRow, type FlakyQueryRow } from './flake/rows.js';
 import { serializeLocalRecord } from './schema.js';
 import type { RunInput, TestResultInput } from './schema.js';
 
@@ -183,24 +177,8 @@ export class NdjsonHistoryStore implements HistoryStore {
     );
     records = records.slice(-window);
 
-    const counts = new Map<string, FlakyCounter>();
-    for (const record of records) {
-      for (const t of def(record.tests, [])) {
-        let c = counts.get(t.test_name);
-        if (!c) {
-          c = newFlakyCounter(record, t);
-          counts.set(t.test_name, c);
-        }
-        c.total_runs += 1;
-        const status = def(t.status, '');
-        applyStatus(c, status);
-        c.statuses.push(status);
-        c.last_seen_run = record.run_id;
-      }
-    }
-
     const results: FlakyQueryRow[] = [];
-    for (const c of counts.values()) {
+    for (const c of tallyFlaky(records)) {
       if (c.total_runs === 0) continue;
       const row = toFlakyRow(c, minRate);
       // A row earns its place on EITHER axis: the flake rate it always did,

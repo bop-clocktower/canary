@@ -49,30 +49,52 @@ export interface FlakeSignal {
  * change stays `detectRegressions`' business.
  */
 export function flakeSignals(runs: SignalRun[]): Map<string, FlakeSignal> {
+  const tallies = tallyTests(runs);
+  const files = new Map<string, number>();
+  for (const t of tallies.values())
+    files.set(t.name, (files.get(t.name) ?? 0) + 1);
   const signals = new Map<string, FlakeSignal>();
-  for (const [name, tally] of tallyTests(runs)) {
+  for (const tally of tallies.values()) {
     const signal = worstAxis(tally);
-    if (signal) signals.set(name, signal);
+    // The bare name unless another file has a test of that name too.
+    const label =
+      files.get(tally.name)! > 1 ? `${tally.name} (${tally.file})` : tally.name;
+    if (signal) signals.set(label, signal);
   }
   return signals;
 }
 
 /** Per-test appearances, retry flakes, and the ordered status sequence. */
 interface TestTally {
+  name: string;
+  file: string;
   present: number;
   flaky: number;
   statuses: string[];
 }
 
+/**
+ * One tally per test, where a test is its FILE plus its name (#1350) -- the
+ * identity `history/flake/rows.tallyFlaky` uses. Keyed on the name alone, a
+ * same-named pass in one file and fail in another read as one alternator.
+ */
 function tallyTests(runs: SignalRun[]): Map<string, TestTally> {
   const seen = new Map<string, TestTally>();
   for (const run of runs) {
     for (const t of run.tests ?? []) {
-      const s = seen.get(t.test_name) ?? { present: 0, flaky: 0, statuses: [] };
+      const file = t.test_file ?? '';
+      const key = `${file}\0${t.test_name}`;
+      const s = seen.get(key) ?? {
+        name: t.test_name,
+        file,
+        present: 0,
+        flaky: 0,
+        statuses: [],
+      };
       s.present += 1;
       if (t.status === 'flaky') s.flaky += 1;
       s.statuses.push(t.status);
-      seen.set(t.test_name, s);
+      seen.set(key, s);
     }
   }
   return seen;
@@ -126,8 +148,8 @@ const NO_SUITE = '(no suite)';
  * sorted by label, so the result
  * does not depend on file order either.
  *
- * Within a suite, tests are still keyed by `test_name` alone -- the identity
- * `queryFlaky` uses (see #1350); this does not change it.
+ * Within a suite, a test is keyed by its file plus its name -- the identity
+ * `queryFlaky` uses (#1350); this does not change it.
  *
  * The one place a window is chosen. Which rows in it still count is
  * `retireDeletedFiles`' question (#1500), asked of each window this
