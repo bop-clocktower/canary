@@ -17,6 +17,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -50,6 +51,7 @@ import {
   listFrameworksTool,
   migrateImpl,
   migrateTool,
+  resolveServedRoot,
   runStdio,
   runTestsImpl,
   runTestsTool,
@@ -64,6 +66,13 @@ import {
  * containment (that is mcp-tool-containment.test.ts), so they serve tmpdir.
  */
 const TMP_ROOT = tmpdir();
+
+/**
+ * The server's own containment root (its `WORKING_DIR`), derived from the same
+ * inputs it read at import time -- not `process.cwd()` at call time, which a
+ * test (or the runner) may have changed since (#1449).
+ */
+const SERVED_ROOT = resolveServedRoot(process.env, process.cwd());
 
 const roots: string[] = [];
 function mkroot(): string {
@@ -888,18 +897,37 @@ describe('tool wrappers delegate to their impls', () => {
     expect(parsed.error).toContain('file not found');
   });
 
-  it('write wrapper forwards all three args', () => {
+  function writeViaWrapper(): unknown {
     // The wrapper uses the server's own WORKING_DIR as the containment root,
     // so the target has to be inside it.
-    const root = mkdtempSync(join(process.cwd(), 'canary-wrapper-'));
+    const root = mkdtempSync(join(SERVED_ROOT, 'canary-wrapper-'));
     roots.push(root);
     const out = writeTestFileTool({
       file_path: join(root, 'x'),
       content: 'body',
       framework: 'pytest',
     });
-    const parsed = JSON.parse(out.content[0]!.text);
-    expect(String(parsed.written_path).endsWith('.py')).toBe(true);
+    return JSON.parse(out.content[0]!.text).written_path;
+  }
+
+  it('write wrapper forwards all three args', () => {
+    expect(String(writeViaWrapper()).endsWith('.py')).toBe(true);
+  });
+
+  // #1449: the fixture must not depend on where vitest was started. Run it
+  // from an unrelated directory: it still passes and leaves nothing there.
+  it('write wrapper test is independent of the cwd it runs from', () => {
+    const away = mkroot();
+    const home = process.cwd();
+    let written: unknown;
+    try {
+      process.chdir(away);
+      written = writeViaWrapper();
+    } finally {
+      process.chdir(home);
+    }
+    expect(String(written).endsWith('.py')).toBe(true);
+    expect(readdirSync(away)).toEqual([]);
   });
 
   it('run wrapper wraps the impl result', () => {
@@ -909,7 +937,7 @@ describe('tool wrappers delegate to their impls', () => {
       '',
     ]);
     const parsed = JSON.parse(
-      runTestsTool({ test_file: join(process.cwd(), 't', 'x.py') }).content[0]!
+      runTestsTool({ test_file: join(SERVED_ROOT, 't', 'x.py') }).content[0]!
         .text,
     );
     expect(parsed.exit_code).toBe(0);

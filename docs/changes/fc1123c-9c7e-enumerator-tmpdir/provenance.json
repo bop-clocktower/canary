@@ -1,0 +1,30 @@
+{
+  "issues": [1312, 1449],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/static-linter.test.ts::test declarations the enumerator must not skip > a template-literal title still ends the previous test",
+    "ts/test/static-linter.test.ts::test declarations the enumerator must not skip > a .only modifier still ends the previous test",
+    "ts/test/static-linter.test.ts::test declarations the enumerator must not skip > a .skip modifier still ends the previous test",
+    "ts/test/static-linter.test.ts::test declarations the enumerator must not skip > a python async def test still ends the previous test",
+    "ts/test/static-linter.test.ts::test declarations the enumerator must not skip > enumerates every form with its name and line",
+    "ts/test/static-linter.test.ts::test declarations the enumerator must not skip > a declaration-shaped comment is not a test",
+    "ts/test/static-linter.test.ts::test declarations the enumerator must not skip > an empty .skip placeholder is not LINT-006",
+    "ts/test/mcp-server.test.ts::tool wrappers delegate to their impls > write wrapper test is independent of the cwd it runs from"
+  ],
+  "redAtBase": "#1312 at caf8984b: 'AssertionError: expected [] to match object [ { line: 1 } ]' (x4, template/.only/.skip/async def) and 'expected [ [ 'a', 1 ] ] to deeply equal [ [ 'a', 1 ], [ 'b ${n}', 2 ], ...(2) ]'. Guards added after widening, red before their fix: 'expected [ 'single-test-run', 'a', 'b' ] to deeply equal [ 'a' ]' and 'expected [ 'LINT-006' ] to not include 'LINT-006''. #1449 at caf8984b: 'write wrapper test is independent of the cwd it runs from: AssertionError: expected false to be true'.",
+  "assumptions": [
+    "#1312: a template-literal title is reported verbatim from source, `${...}` included (`b ${n}`), not evaluated; a title whose interpolation itself contains a backtick ends at that inner backtick (recognised as a declaration, name truncated).",
+    "#1312: `.skip` tests are enumerated (they bound the previous body and count in inventory and vacuity `checked`) but marked `skipped` and exempt from LINT-006: they never run, so they cannot pass vacuously, and before this change they were not enumerated at all. No skip entry is recorded for them: skip entries in vacuity-check mean the SCAN abstained, and a `.skip` test is scanned.",
+    "#1312: only `.only`/`.skip` were added (as the issue names); `xit`/`fit`/`it.each`/`test.concurrent`/`it.todo` remain unrecognised.",
+    "#1312: a JS declaration on a comment line (`//` earlier on the line, or a line opening `/*` or `*`) is not a test. Line-based, like the existing `isComment`; a declaration inside a block comment whose line has no leading `*` is still read as code.",
+    "#1312: vacuity-scanner.ts untouched (#1365 serialization). Its `jsDeclarationStart` still looks only for `it(`/`test(` with a quote, so for a backtick or `.only`/`.skip` declaration with its title wrapped to the next line, the coverage-pragma walk starts at the title line; and VAC rules do not consult `skipped` (one VAC-001 now reports an `expect(1).toBe(1)` inside a `.skip` fixture test). Filed as a follow-up.",
+    "#1312 dogfood (advisory) delta at head vs caf8984b: review-test unchanged (ts/test 50, agents/skills/test 13); vacuity-check ts/test 205->211 findings (checked 5487->5520), agents/skills/test 75->78 (checked 1725->1747). Every new finding is on a newly enumerated template-titled or .skip test, the same rules that already fire on quote-titled tests of the same shape.",
+    "#1449: the fixture is anchored on `resolveServedRoot(process.env, process.cwd())` evaluated at test-module load, i.e. the same inputs the server read for its WORKING_DIR at import. The wrapper's containment root is fixed at import, so the fixture still has to live under it (cleaned by afterEach via `roots`); a read-only served root would still fail, which is the wrapper's contract, not the test's.",
+    "No ratchet/baseline/allowance files touched."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "#1312: all three declaration forms the issue names are enumerated, with its three repro tests (plus .skip) green; the remaining vacuity-scanner refinements are filed separately. #1449: both process.cwd() uses replaced, cleanup via the existing roots array, and the requested chdir guard added.",
+  "run": "fc1123c",
+  "base": "caf8984b"
+}

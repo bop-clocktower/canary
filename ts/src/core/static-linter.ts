@@ -55,12 +55,21 @@ const BARE_PLAYWRIGHT_CALL =
 // reported line landed above the test, and the inflated indent made the
 // "next def at the same indent" body boundary un-matchable, so the body ran to
 // end-of-file and could borrow a later test's assert (#633).
-const TEST_FN_PY = /^([ \t]*)def (test_\w+)\s*\(/gm;
+// `async def test_*` (pytest-asyncio, anyio) is a test too: missing it let the
+// test above run on through its body and borrow its `assert` (#1312).
+const TEST_FN_PY = /^([ \t]*)(?:async[ \t]+)?def (test_\w+)\s*\(/gm;
 // `d` (hasIndices) so the NAME can be read back out of the ORIGINAL source.
 // The scanner matches against string-blanked source, where the name itself has
 // been blanked away; blanking is length-preserving precisely so these offsets
 // still address the untouched text (#590).
-const TEST_FN_JS = /(?:^|\s)(?:it|test)\s*\(\s*['"]([^'"]*)['"]/dgm;
+//
+// #1312: a `.only`/`.skip` modifier and a backtick title are declarations as
+// well. An unmatched one is worse than unscanned -- the test above absorbs its
+// body and borrows its assertions. The title is group 2, closed by the SAME
+// quote that opened it (group 1). A template's `${...}` survives blanking as
+// code, so its title is recovered verbatim (`b ${n}`) rather than evaluated.
+const TEST_FN_JS =
+  /(?:^|\s)(?:it|test)(?:\.(?:only|skip))?\s*\(\s*(['"`])((?:(?!\1)[\s\S])*)\1/dgm;
 export const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // What makes a Python test NON-vacuous for LINT-006: `assert`/`pytest.raises`,
 // plus unittest's `self.assertEqual(...)` family -- `\bassert\b` has no word
@@ -684,6 +693,20 @@ export interface TestBlock {
   body: string;
   /** Byte offset of `body` in the source it was sliced from. */
   bodyStart: number;
+  /** Declared with `.skip`: it never runs, so it cannot pass vacuously. */
+  skipped?: boolean;
+}
+
+/**
+ * Is the JS declaration whose keyword sits at `kw` inside a comment? Line-based,
+ * like `isComment`: a `//` earlier on the line, or a line opening `/*` or `*`
+ * (a JSDoc body). Strings are already blanked, so a `//` in one is gone. Needed
+ * once backtick titles counted (#1312): prose such as "the test (`x`)" is
+ * common in comments, and a phantom declaration truncates the real body above.
+ */
+function inLineComment(code: string, kw: number): boolean {
+  const prefix = code.slice(code.lastIndexOf('\n', kw - 1) + 1, kw);
+  return prefix.includes('//') || /^\s*(?:\/\*|\*)/.test(prefix);
 }
 
 /**
@@ -716,7 +739,7 @@ export function enumerateTests(
       // indent. An exact-indent match let a method test run on past its class
       // into a later module-level test and borrow that test's assertion.
       const nextFn = rest.match(
-        new RegExp(`^[ \\t]{0,${indent}}(?:def|class)\\b`, 'm'),
+        new RegExp(`^[ \\t]{0,${indent}}(?:async[ \\t]+def|def|class)\\b`, 'm'),
       );
       out.push({
         name: m[2]!,
@@ -727,7 +750,9 @@ export function enumerateTests(
     }
     return out;
   }
-  const decls = [...code.matchAll(TEST_FN_JS)];
+  const decls = [...code.matchAll(TEST_FN_JS)].filter(
+    (m) => !inLineComment(code, m.index! + (/^\s/.test(m[0]) ? 1 : 0)),
+  );
   for (let i = 0; i < decls.length; i += 1) {
     const m = decls[i]!;
     const start = m.index!;
@@ -736,14 +761,15 @@ export function enumerateTests(
     // The coordinate comes from the NAME's offset, not the match's: TEST_FN_JS
     // opens with `(?:^|\s)`, which CONSUMES the character before `it`/`test` --
     // for any test not on line 1 that is the previous line's newline (#633).
-    const nameStart = m.indices?.[1]?.[0] ?? start;
+    const nameStart = m.indices?.[2]?.[0] ?? start;
     out.push({
-      name: m.indices?.[1]
-        ? source.slice(m.indices[1][0], m.indices[1][1])
-        : m[1]!,
+      name: m.indices?.[2]
+        ? source.slice(m.indices[2][0], m.indices[2][1])
+        : m[2]!,
       line: lineOf(code, nameStart),
       body: code.slice(bodyStart, bodyEnd),
       bodyStart,
+      ...(/^\s*\w+\.skip\b/.test(m[0]) ? { skipped: true } : {}),
     });
   }
   return out;
@@ -777,7 +803,7 @@ function scanAssertionFreeJs(
   // Bodies are bounded by the NEXT declaration -- see `enumerateTests`, which
   // now owns that logic and its bug history (#590, #633) for both languages.
   for (const t of enumerateTests(code, source, false)) {
-    if (!ASSERT_JS.test(t.body)) {
+    if (!t.skipped && !ASSERT_JS.test(t.body)) {
       out.push(
         mk(
           file,

@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`review-test` and `vacuity-check` see every way of declaring a test
+  (#1312).** `it.only`/`test.skip`, a backtick title (``it(`b`, ...)``) and
+  Python `async def test_*` were not recognised, so the test above absorbed the
+  missed one's body and borrowed its assertions: an assertion-free test escaped
+  LINT-006 and the VAC rules. They are now enumerated (a template title is
+  reported as written, `${...}` included). A declaration on a comment line is no
+  longer read as a test, and a `.skip` test is exempt from LINT-006 since it
+  never runs. The test inventory and `vacuity-check`'s `checked` count include
+  the newly seen tests.
 - **`canary history migrate` no longer drops untimestamped v1 runs (#1298).** An
   entry with no timestamp took the current second as its run id. Two such
   entries for one commit collided, the store kept only one, and the command
