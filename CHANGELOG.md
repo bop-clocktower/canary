@@ -14,6 +14,25 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **The release workflow's `Move latest tag` step names a rejected push instead
+  of blaming a race (#1504).** An auth failure, a network failure or a tag
+  ruleset refusal used to log "latest moved on origin", retry, and fail with
+  "latest kept moving". After a rejected push the step now re-reads origin; only
+  a `latest` that actually moved is a race. Otherwise git's own error goes into
+  `::error::` and the step stops without retrying. The step now pins
+  `shell: bash`, so a failed `git ls-remote` stops it rather than parsing to an
+  empty lease.
+- **The guardian mutation report no longer overclaims or crashes as survivors
+  (#1568).** The survivors warning no longer says tests "covered these added
+  lines". An abstention whose only survivors were suppressed names the
+  suppression instead of claiming nothing was covered. A malformed `coveredBy`
+  or `testFiles` entry abstains (exit 3) instead of throwing (exit 1, which
+  reads as survivors). Paths, mutators, replacements, test names and suppression
+  reasons are escaped in the Markdown, so a backtick, such as a StringLiteral
+  mutant's empty template literal, cannot break out of a code span.
+
 ## [9.7.0] - 2026-11-21
 
 ### Added
