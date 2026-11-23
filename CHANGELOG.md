@@ -32,6 +32,38 @@ under the project's former name) are documented in the
   reads as survivors). Paths, mutators, replacements, test names and suppression
   reasons are escaped in the Markdown, so a backtick, such as a StringLiteral
   mutant's empty template literal, cannot break out of a code span.
+- **`review-test` and `vacuity-check` see every way of declaring a test
+  (#1312).** `it.only`/`test.skip`, a backtick title (``it(`b`, ...)``) and
+  Python `async def test_*` were not recognised, so the test above absorbed the
+  missed one's body and borrowed its assertions: an assertion-free test escaped
+  LINT-006 and the VAC rules. They are now enumerated (a template title is
+  reported as written, `${...}` included). A declaration on a comment line is no
+  longer read as a test, and a `.skip` test is exempt from LINT-006 since it
+  never runs. The test inventory and `vacuity-check`'s `checked` count include
+  the newly seen tests.
+- **`canary history migrate` no longer drops untimestamped v1 runs (#1298).** An
+  entry with no timestamp took the current second as its run id. Two such
+  entries for one commit collided, the store kept only one, and the command
+  still printed `Migrated 2 runs`. Those ids are now a hash of the entry's
+  content, so they are unique and stay the same on every run. `Migrated N` now
+  counts only the runs actually written. Ids the store already holds, and
+  repeats within the file, are reported as skipped. Untimestamped entries
+  migrated by an earlier version carry clock-based ids, so re-migrating that
+  file adds them again under the new ids.
+- **A test's flake identity is now its file plus its name (#1350).** The `flaky`
+  commands (`queryFlaky`) and ci-ready's flakiness check keyed on the test name
+  alone. A test that always passed in one file and a same-named test that always
+  failed in another were read as one alternating flake. ci-ready adds the file
+  to the name only when two files share a name, so other reasons read as before.
+- **cassandra VAC-002 reads subprocess helpers and every `await import`
+  binding.** A test that runs a repo script through a same-file helper (an arrow
+  wrapped onto two lines, or a `function`) passing the script path to
+  `execFileSync`/`spawnSync`/`fork`, or that loads its target as
+  `(await import(x)).default`, `.named`, a destructured import assigned in a
+  hook, or through a wrapper like `const importRoute = () => import(x)`, is no
+  longer reported as never invoking its target (#1365). A helper that only
+  launches a bare command, or mentions a file name outside the launch arguments,
+  is still not read as a target.
 
 ## [9.7.0] - 2026-11-21
 
