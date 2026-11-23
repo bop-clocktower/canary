@@ -482,6 +482,216 @@ describe('VAC-002 — targets the import inference could not see (#705)', () => 
   });
 });
 
+// #1365. #705's subprocess and dynamic-import readers still missed the shapes a
+// consumer monorepo writes, and mutation proved every flagged test live. The
+// common cause: the target is reached through a same-file DECLARATION whose own
+// body launches a first-party script or imports a relative module, and only the
+// one-line `const x = '<script literal>'` and `const x = await import(...)`
+// forms were read. A first-party testkit import keeps the target set non-empty
+// in most fixtures here, because an empty set makes VAC-002 abstain rather than
+// fire -- the false positive needs a resolvable set that misses the real target.
+describe('VAC-002 — subprocess helpers and await-import bindings (#1365)', () => {
+  const KIT = `import { it, expect } from 'vitest';\nimport { tmpDir } from './testkit.js';\n`;
+
+  it('reads a Prettier-wrapped execFileSync helper as a handle on its script', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `const run = (args) =>\n` +
+        `  execFileSync(process.execPath, ['scripts/check-foo.mjs', ...args], {\n` +
+        `    encoding: 'utf8',\n` +
+        `  });\n` +
+        `it('exits 1 when the workflows directory is empty', () => {\n` +
+        `  expect(() => run(['--dir', 'x'])).toThrow();\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('reads a spawnSync helper written as a function declaration', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `function run(args) {\n` +
+        `  return spawnSync(process.execPath, ['scripts/check-foo.mjs', ...args]);\n` +
+        `}\n` +
+        `it('exits 0', () => { expect(run([]).status).toBe(0); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('reads a fork helper', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { fork } from 'node:child_process';\n` +
+        `const start = () => fork('scripts/worker.mjs', ['--once']);\n` +
+        `it('forks', () => { expect(start().connected).toBe(true); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('checks a subprocess-only file instead of abstaining on it', () => {
+    // No first-party import at all: the helper IS the target, so the file
+    // is no longer "target unresolvable" and VAC-002 actually runs.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `function run(args) {\n` +
+        `  return execFileSync(process.execPath, ['scripts/check-foo.mjs', ...args]);\n` +
+        `}\n` +
+        `it('runs', () => { expect(run([])).toBe(''); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+    expect(r.skipped ?? []).toEqual([]);
+  });
+
+  it('still flags a test that never calls the subprocess helper', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `function run(args) {\n` +
+        `  return spawnSync(process.execPath, ['scripts/check-foo.mjs', ...args]);\n` +
+        `}\n` +
+        `it('adds', () => { expect(1 + 1).toBe(2); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('does not treat a helper that spawns a bare command as a handle', () => {
+    // The #705 discriminator holds: `git` is not a repo path.
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `function tag() {\n` +
+        `  return spawnSync('git', ['tag']);\n` +
+        `}\n` +
+        `it('tags', () => { expect(tag().status).toBe(0); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('does not read a file-name literal outside the launch as a script', () => {
+    // From canary's own tree: `git ls-files` piped into a `.d.ts` filter. The
+    // launch and the literal sit in one helper but the literal is not an
+    // ARGUMENT of the launch, so the file has no target and stays abstained.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `function sources() {\n` +
+        `  return execFileSync('git', ['ls-files', root], { encoding: 'utf8' })\n` +
+        `    .split('\\n')\n` +
+        `    .filter((f) => !f.endsWith('.d.ts'));\n` +
+        `}\n` +
+        `it('reads config', () => { expect(cfg().strict).toBe(true); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('does not read an import written inside a fixture string as a handle', () => {
+    // Review of #1667: the declaration's evidence was read over its whole raw
+    // body, string content included, so a source fixture made `FIX` a target
+    // and silenced the real VAC-002 below it.
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const FIX = "const m = await import('./m.js')";\n` +
+        `it('b', () => { expect(FIX.length).toBe(3); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('does not read a glob passed to a bare command as a script', () => {
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `function tracked() {\n` +
+        `  return execFileSync('git', ['ls-files', '--', 'ts/test/*.ts']);\n` +
+        `}\n` +
+        `it('reads config', () => { expect(cfg().strict).toBe(true); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds `(await import(x)).default`', () => {
+    const r = scan(
+      'a.test.tsx',
+      `import { it, expect } from 'vitest';\n` +
+        `const Route = (await import('../health-tracker')).default;\n` +
+        `const { formatSyncTime } = await import('../health-tracker');\n` +
+        `it('heads the section', () => {\n` +
+        `  render(<Route />);\n` +
+        `  expect(screen.getByText('THIS PHONE')).toBeTruthy();\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds `(await import(x)).named`', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const save = (await import('./store.js')).save;\n` +
+        `it('saves', () => { expect(save(1)).toBe(1); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds a destructured dynamic import assigned in a hook', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `let save;\n` +
+        `beforeAll(async () => {\n` +
+        `  ({ save } = await import('./store.js'));\n` +
+        `});\n` +
+        `it('saves', () => { expect(save(1)).toBe(1); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds names loaded through a same-file import wrapper', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const importRoute = () => import('../route.js');\n` +
+        `it('posts', async () => {\n` +
+        `  const { POST } = await importRoute();\n` +
+        `  expect((await POST(req)).status).toBe(200);\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds a wrapper-loaded name destructured at module scope', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const importRoute = () => import('../route.js');\n` +
+        `const { POST } = await importRoute();\n` +
+        `it('posts', async () => { expect((await POST(req)).status).toBe(200); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('still flags a test that ignores the dynamically imported target', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const Route = (await import('../health-tracker')).default;\n` +
+        `it('adds', () => { expect(1 + 1).toBe(2); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+});
+
 describe('VAC-003 — every assertion asserts absence', () => {
   // The canary-katana case from #486: `expect(existsSync(ledger)).toBe(false)`
   // was free, because the buggy code exited before the write. An all-absence

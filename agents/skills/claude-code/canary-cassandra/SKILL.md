@@ -133,6 +133,14 @@ reaching its target — but `VAC-003` stays dark for it and says so in the skip
 list, because "did an assertion observe the target" needs a symbol that a
 subprocess boundary does not provide (#705).
 
+The same evidence makes a **same-file declaration** a handle when its own body
+carries it (#1365): a subprocess helper — arrow or `function`, wrapped across
+lines or not — that launches a script written inline, a binding such as
+`const Route = (await import('../route')).default` (`.default`, `.named`, or a
+destructured `({ save } = await import('./store.js'))` in a hook), and an import
+wrapper, `const importRoute = () => import('../route.js')`, so that
+`const { POST } = await importRoute()` reaches the target one helper level deep.
+
 **Same-file helpers count one level deep** (#1170). A test that calls a helper
 defined in the same file — an arrow, a `function` declaration, or a
 `const`-bound function expression, wrapped across lines or not — invokes the
@@ -209,10 +217,12 @@ with no denominator is not a result.
 
 - **A VAC-001 finding is never a false positive.** It is a comparison of a value
   with itself. Fix the test.
-- **A large VAC-002 count on first run usually means dynamic imports.** Tests
-  that `await import(...)` their target have no static import for the inference
-  to read. Annotate them, or accept the tier and move on — do not rewrite the
-  suite to satisfy a heuristic.
+- **A large VAC-002 count on first run usually means an unread binding form.**
+  The dynamic-import and subprocess forms above are read. A plain reassignment
+  of a module-scope `let` (`Route = (await import('../route')).default` in a
+  hook) is not, and a test calling such a name abstains on VAC-002 rather than
+  being flagged. Annotate what remains, or accept the tier and move on — do not
+  rewrite the suite to satisfy a heuristic.
 - **An E2E suite that still shows many VAC-002 findings** is not being detected
   as browser-driver context — check that it imports its driver package or uses a
   `page`/`browser`/`driver` fixture, and read the
