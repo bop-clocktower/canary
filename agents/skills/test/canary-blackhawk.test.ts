@@ -132,6 +132,11 @@ describe('BH003 local-timezone', () => {
     'expect(d.toLocaleString("en-US", { "timeZone": "America/New_York" })).toBe(s);',
     "expect(d.toLocaleString('en-US', { hour12: false, timeZone: 'UTC', })).toBe(s);",
     'expect(d.toLocaleString(`en-US`, { timeZone: `UTC` })).toBe(s);',
+    // #1659 F1a: a spread BEFORE the literal cannot override it -- the
+    // literal is the last zone source, so it wins.
+    "d.toLocaleString('en-US', { ...opts, timeZone: 'UTC' });",
+    "d.toLocaleString('en-US', { hour12: false, ...opts, 'timeZone': 'UTC' });",
+    "d.toLocaleString('en-US', { timeZone: tz, timeZone: 'UTC' });",
     // A keyword or an arrow before the paren makes it a grouping paren.
     "return (5).toLocaleString('en-US');",
     "const f = () => (5).toLocaleString('en-US');",
@@ -172,6 +177,14 @@ describe('BH003 local-timezone', () => {
     "d.toLocaleString('en-US', { /* timeZone: 'UTC' */ });",
     "d.toLocaleString('timeZone: x');",
     "d.toLocaleString(s.replace(/'/g, ''), f({ timeZone: 'UTC' }));",
+    // #1659 F1a: the literal must be the LAST zone source in the object; a
+    // later spread, computed key or `timeZone` key can override it.
+    "d.toLocaleString('en-US', { timeZone: 'UTC', ...opts });",
+    "d.toLocaleString('en-US', { 'timeZone': 'UTC', hour12: false, ...opts });",
+    "d.toLocaleString('en-US', { timeZone: 'UTC', timeZone: tz });",
+    "d.toLocaleString('en-US', { timeZone: 'UTC', \"timeZone\": tz });",
+    "d.toLocaleString('en-US', { timeZone: 'UTC', timeZone });",
+    "d.toLocaleString('en-US', { timeZone: 'UTC', [key]: tz });",
     // #1659: rarer call shapes before a numeric literal are calls, not
     // grouping parens.
     'expect(foo?.(1).toLocaleString()).toBe(s);',
