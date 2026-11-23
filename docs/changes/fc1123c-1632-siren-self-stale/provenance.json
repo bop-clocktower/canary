@@ -1,0 +1,24 @@
+{
+  "issues": [1632],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > reports an installed hook copy that differs from the marketplace copy (#1632)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > names a remedy that, run verbatim, clears the stale-hook finding (#1632)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > reports a marketplace with no siren to compare against as unverifiable (#1632)",
+    "ts/test/install-siren.test.ts::--verify report — the headline agrees with the exit code (#1632) > never prints \"healthy\" when a hook copy is divergent"
+  ],
+  "redAtBase": "AssertionError: expected 'CANARY SIREN — 3 tooling-rot finding(…' to contain 'siren hook is older than the marketpl…' (and TypeError: verifyReport is not a function for the --verify headline tests; Tests 8 failed | 48 passed, red commit 8d686e34)",
+  "assumptions": [
+    "The remedy the session siren names is `node <clone>/scripts/install-siren.mjs --install-hooks`, a new hooks-only mode, not the issue's suggested `--install`. `--install` refuses off macOS, needs an interactive login shell and `canary` on PATH, and bootstraps the real LaunchAgent label into the user's launchd domain, so it cannot be run verbatim in a test (CI is ubuntu) without touching the real machine. The hooks-only mode copies the clone's hooks/ into $HOME/.claude/hooks/ via the existing installHooks(), which is exactly what clears this finding.",
+    "Only the session siren self-checks; the deep siren is run by launchd from the checkout path baked into the plist, not from the ~/.claude/hooks copy, so the issue scopes item 1 to the session siren.",
+    "A differing copy is reported as 'older' (the issue's wording) even though a byte compare cannot tell older from locally edited; either way the remedy restores the tracked copy and installHooks keeps the displaced file as a .bak- sibling.",
+    "When the marketplace clone exists but has no hooks/<own name>, or the hook cannot read its own path, the siren adds a 'cannot compare ... unverifiable' finding and runs the remaining checks (cannot-verify is a finding, not a pass). An absent clone stays check 3's finding.",
+    "--verify keeps the scheduler's state as the headline when the scheduler itself is unhealthy; when the scheduler is healthy but a hook copy is divergent/unreadable/absent the headline state is `hooks-not-current`. The --json report's top-level ok/state/detail now carry the whole verdict; the scheduler-only verdict moved to `scheduler`.",
+    "The fc1112 provenance edit corrects a factual claim in a historical record (symlinks -> copies), as the issue asks."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "All three Proposal items (self-divergence check, --verify headline, provenance doc drift) and both Acceptance bullets are delivered in this PR.",
+  "run": "fc1123c",
+  "base": "caf8984b"
+}
