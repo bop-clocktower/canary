@@ -15,6 +15,10 @@
 export const TEST_SHAPES = [
   'e2e_ui',
   'frontend_unit',
+  // A unit test with no frontend in it: a backend service, a dataflow, a shared
+  // library. `frontend_unit` was the only unit shape, so these suites had no
+  // honest shape to declare (TestTracker's area × level matrix needed one).
+  'unit',
   'api',
   'performance',
   'load',
