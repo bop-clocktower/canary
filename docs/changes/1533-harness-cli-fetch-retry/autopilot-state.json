@@ -6,6 +6,7 @@
     "audit: harness:workflow-audit over the 5 CLI-fetching workflows; 1 error (fetch and check fused in deps-and-validate), 2 warnings (2>/dev/null drops the resolve cause); M2 gap in harness.yml/harness-quality.yml noted, out of scope",
     "red: ts/test/harness-cli-fetch-retry.test.ts, 16 of 19 failing before implementation",
     "green: scripts/retry-fetch.mjs (MAX_ATTEMPTS 3, BACKOFF_SECONDS [10, 30]) wired into the 5 workflows; architecture now resolves + warms the exact version before check-deps/validate",
-    "gates: ts build, typecheck, format:check, full test; actionlint 1.7.12 + shellcheck on all workflows; perf ratchet 198/201 (no new identity after refactor); entropy ratchet 106/116; check-deps and validate pass"
+    "gates: ts build, typecheck, format:check, full test; actionlint 1.7.12 + shellcheck on all workflows; perf ratchet 198/201 (no new identity after refactor); entropy ratchet 106/116; check-deps and validate pass",
+    "verify-fix: refresh-arch-baseline.yml install retries inline (head checkout lacks the helper on pre-#1533 branches); red 6/24 -> green 24/24"
   ]
 }

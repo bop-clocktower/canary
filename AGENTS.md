@@ -651,7 +651,9 @@ tarballs for a short while. Every step that only _fetches_ the CLI (the
 every failed attempt, and red after the last. A check is never retried.
 `harness-architecture.yml` resolves the version and warms the exact version
 first, so `check-deps` and `validate` each run once.
-`ts/test/harness-cli-fetch-retry.test.ts` enforces both halves.
+The one exception is `refresh-arch-baseline.yml`, which retries inline with the
+same contract: its tree is the PR head, and a branch older than #1533 has no
+helper. `ts/test/harness-cli-fetch-retry.test.ts` enforces all of it.
 
 Bumping the major is a **three-step sequence**, in this order (#545, #547):
 

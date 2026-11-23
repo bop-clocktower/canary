@@ -126,3 +126,25 @@ copy-pasted bash. `HARNESS_CLI` pins unchanged.
 Issue #1533 stays open (`Refs`, not a closing keyword). The human closes it
 after watching a few weeks of runs. A retried pass shows up as a `::warning::`
 annotation on the run, so the rate of retries stays measurable.
+
+## 7. VERIFY must-fix (round 2)
+
+`refresh-arch-baseline.yml` runs on `pull_request: [labeled]`, and its `measure`
+job checks out `pull_request.head.sha`. That means the workflow file comes from
+the merge ref but the working tree is the PR head. Once this merges, a PR whose
+branch predates #1533 has no `scripts/retry-fetch.mjs` at its head. The step
+would then fail with MODULE_NOT_FOUND on exactly the stale PRs the label exists
+to fix. PR CI never runs the labelled path, so it could not catch this.
+
+The fix is an inline bash loop in that one step (`id: install-harness-cli`),
+with the helper's contract: 3 attempts, 10 s then 30 s apart, a `::warning::`
+per failed attempt carrying the `%0A`-escaped tail of npm's output, and an
+`::error::` plus exit 1 after the last. The test was written first and run red
+(6 of 24 failing):
+
+- the shape check flags any job that checks out `pull_request.head.*` and calls
+  the helper, and it also flags the inline loop being removed;
+- the step's real script runs under bash with `npm` and `sleep` stubbed, from a
+  directory outside the repo, so the helper is not on hand.
+
+The other four workflows check out the merge ref, so they keep the helper.

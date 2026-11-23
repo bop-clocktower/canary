@@ -41,7 +41,13 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 const HELPER = join(REPO_ROOT, 'scripts', 'retry-fetch.mjs');
 
-type Step = { name?: string; id?: string; run?: string };
+type Step = {
+  name?: string;
+  id?: string;
+  run?: string;
+  uses?: string;
+  with?: Record<string, unknown>;
+};
 type Workflow = { jobs: Record<string, { steps?: Step[] }> };
 
 /** The workflows that fetch the harness CLI, and how many fetches each has. */
@@ -51,8 +57,28 @@ const FETCHES: Record<string, number> = {
   'harness-security.yml': 1,
   // resolve the float, then warm the npx cache for the exact version.
   'harness-architecture.yml': 2,
-  'refresh-arch-baseline.yml': 1,
+  // checks out the PR HEAD, so it retries inline instead (see below).
+  'refresh-arch-baseline.yml': 0,
 };
+
+/**
+ * A bounded retry written inline in the step: 3 attempts, a warning each,
+ * red after the last. Required where the job checks out the PR HEAD, because
+ * a branch older than #1533 has no `scripts/retry-fetch.mjs` (MODULE_NOT_FOUND
+ * on exactly the stale PRs `refresh-baseline` exists to fix).
+ */
+const INLINE_RETRY = (run: string): boolean =>
+  /for attempt in 1 2 3; do/.test(run) &&
+  /::warning title=[^\n]*attempt \$attempt\/3/.test(run) &&
+  /\bexit 1\b/.test(run);
+
+/** A job whose working tree is the PR head, not the merge ref. */
+const checksOutHead = (steps: Step[]): boolean =>
+  steps.some(
+    (s) =>
+      (s.uses ?? '').startsWith('actions/checkout') &&
+      /pull_request\.head\./.test(String(s.with?.ref ?? '')),
+  );
 
 const WRAPPED = /node scripts\/retry-fetch\.mjs\b/;
 /** A fetch and nothing else: an install, or a `--version` probe. */
@@ -67,7 +93,9 @@ const read = (file: string): string =>
   readFileSync(join(WORKFLOW_DIR, file), 'utf8');
 
 /** Each `run:` line with `\` continuations joined, tagged with where it is. */
-function lines(wf: Workflow): Array<{ where: string; line: string }> {
+type Line = { where: string; line: string; inline: boolean; head: boolean };
+
+function lines(wf: Workflow): Line[] {
   return Object.entries(wf.jobs).flatMap(([job, { steps = [] }]) =>
     steps.flatMap((s, i) =>
       (s.run ?? '')
@@ -75,7 +103,12 @@ function lines(wf: Workflow): Array<{ where: string; line: string }> {
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line && !line.startsWith('#'))
-        .map((line) => ({ where: `${job} / ${s.name ?? `#${i}`}`, line })),
+        .map((line) => ({
+          where: `${job} / ${s.name ?? `#${i}`}`,
+          line,
+          inline: INLINE_RETRY(s.run ?? ''),
+          head: checksOutHead(steps),
+        })),
     ),
   );
 }
@@ -89,23 +122,28 @@ function wrappedCommand(line: string): string | undefined {
   return m?.[1]?.trim();
 }
 
+/** The violation on one helper-wrapped line, if any. */
+function wrappedProblem({ where, line, head }: Line): string | undefined {
+  if (head) return `${where}: checks out the PR head but runs ${line}`;
+  const cmd = wrappedCommand(line);
+  if (cmd && FETCH_ONLY.test(cmd)) return undefined;
+  return `${where}: retry wraps more than a fetch: ${line}`;
+}
+
+/** The violation on one line no helper wraps, if any. */
+function bareProblem({ where, line, inline }: Line): string | undefined {
+  // In an inline retry: the install itself and the annotations naming it.
+  if (inline && /^(?:if out=|echo ")/.test(line)) return undefined;
+  const fetches = /npm install -g/.test(line) || /"\$HARNESS_CLI"/.test(line);
+  if (!fetches) return undefined;
+  return `${where}: fetches the CLI with no bounded retry: ${line}`;
+}
+
 /** Violations of the #1533 shape; empty means the workflow is correct. */
 function violations(wf: Workflow): string[] {
-  const out: string[] = [];
-  for (const { where, line } of lines(wf)) {
-    const wrapped = WRAPPED.test(line);
-    if (wrapped) {
-      const cmd = wrappedCommand(line);
-      if (!cmd || !FETCH_ONLY.test(cmd)) {
-        out.push(`${where}: retry wraps more than a fetch: ${line}`);
-      }
-      continue;
-    }
-    if (/npm install -g/.test(line) || /"\$HARNESS_CLI"/.test(line)) {
-      out.push(`${where}: fetches the CLI with no bounded retry: ${line}`);
-    }
-  }
-  return out;
+  return lines(wf)
+    .map((l) => (WRAPPED.test(l.line) ? wrappedProblem(l) : bareProblem(l)))
+    .filter((v): v is string => v !== undefined);
 }
 
 function fetchCount(wf: Workflow): number {
@@ -321,5 +359,105 @@ describe('the architecture resolve step, run for real with a stub npx', () => {
     expect(r.attempts).toBe(3);
     expect(r.env).toBe('');
     expect(warnings(r.stderr).every((w) => /E404/.test(w))).toBe(true);
+  });
+});
+
+/**
+ * VERIFY must-fix on #1650. `refresh-arch-baseline.yml` runs on
+ * `pull_request: [labeled]` and its `measure` job checks out
+ * `pull_request.head.sha`, so the workflow file is the merge ref's but the
+ * tree is the PR head's. A branch that predates #1533 has no
+ * `scripts/retry-fetch.mjs`, so calling it there fails MODULE_NOT_FOUND on
+ * exactly the stale PRs the label exists to fix, and PR CI never runs this
+ * labelled path. The install retries inline instead, with the same contract.
+ */
+describe('a job that checks out the PR head retries inline, not via the helper', () => {
+  const FILE = 'refresh-arch-baseline.yml';
+  const measure = () => load(read(FILE)).jobs.measure!.steps!;
+  const install = () => measure().find((s) => s.id === 'install-harness-cli')!;
+
+  it('finds the head-checkout job (denominator)', () => {
+    expect(checksOutHead(measure())).toBe(true);
+    expect(install()).toBeDefined();
+    expect(INLINE_RETRY(install().run!)).toBe(true);
+  });
+
+  it('catches the helper planted back into the head-checkout job', () => {
+    const wf = load(read(FILE));
+    wf.jobs.measure!.steps!.find((s) => s.id === 'install-harness-cli')!.run =
+      'node scripts/retry-fetch.mjs -- npm install -g "$HARNESS_CLI"';
+    expect(violations(wf)).toEqual([
+      expect.stringMatching(/checks out the PR head but runs node scripts/),
+    ]);
+  });
+
+  it('catches the loop removed (a bare install)', () => {
+    const wf = load(read(FILE));
+    wf.jobs.measure!.steps!.find((s) => s.id === 'install-harness-cli')!.run =
+      'npm install -g "$HARNESS_CLI"';
+    expect(violations(wf)).toEqual([expect.stringMatching(/no bounded retry/)]);
+  });
+
+  /** Run the step's real script with `npm` and `sleep` stubbed on PATH. */
+  function runInstall(failures: number) {
+    dir = mkdtempSync(join(tmpdir(), 'inline-install-'));
+    const counter = join(dir, 'n');
+    writeFileSync(counter, '0');
+    writeFileSync(
+      join(dir, 'npm'),
+      `#!/bin/bash\nn=$(( $(cat "${counter}") + 1 ))\necho $n > "${counter}"\n` +
+        `if [ $n -le ${failures} ]; then echo "npm error code E404"; echo "npm error 404 visitor-keys-8.74.0.tgz"; exit 1; fi\n` +
+        `echo "added 1 package"\n`,
+    );
+    writeFileSync(
+      join(dir, 'sleep'),
+      `#!/bin/bash\necho "$1" >> "${dir}/slept"\n`,
+    );
+    chmodSync(join(dir, 'npm'), 0o755);
+    chmodSync(join(dir, 'sleep'), 0o755);
+    const r = spawnSync('bash', ['-e', '-c', install().run!], {
+      cwd: dir, // NOT the repo: the helper must not be needed
+      encoding: 'utf8',
+      env: {
+        PATH: `${dir}:${process.env.PATH}`,
+        HARNESS_CLI: '@harness-engineering/cli@14',
+      },
+    });
+    let slept = '';
+    try {
+      slept = readFileSync(join(dir, 'slept'), 'utf8');
+    } catch {
+      // never slept
+    }
+    return { ...r, attempts: attempts(), slept, log: `${r.stdout}${r.stderr}` };
+  }
+
+  const warnLines = (log: string): string[] =>
+    log.split('\n').filter((l) => l.startsWith('::warning'));
+
+  it('succeeds on attempt 2 after one warning and a 10s backoff', () => {
+    const r = runInstall(1);
+    expect(r.status).toBe(0);
+    expect(r.attempts).toBe(2);
+    expect(r.slept).toBe('10\n');
+    const w = warnLines(r.log);
+    expect(w).toHaveLength(1);
+    expect(w[0]).toMatch(/attempt 1\/3/);
+    expect(w[0]).toMatch(/E404%0Anpm error 404/);
+  });
+
+  it('stays red after 3 attempts, warning on each, backing off 10s then 30s', () => {
+    const r = runInstall(99);
+    expect(r.status).toBe(1);
+    expect(r.attempts).toBe(3);
+    expect(r.slept).toBe('10\n30\n');
+    const w = warnLines(r.log);
+    expect(w.map((l) => /attempt (\d)\/3/.exec(l)?.[1])).toEqual([
+      '1',
+      '2',
+      '3',
+    ]);
+    expect(w[2]).toMatch(/giving up/);
+    expect(r.log).toMatch(/^::error[^\n]*after 3 attempts/m);
   });
 });

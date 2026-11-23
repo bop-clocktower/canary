@@ -22,7 +22,8 @@
     "RETRY_FETCH_BACKOFF_MS shortens the sleep for tests; warnings always name the declared 10s/30s backoff, and the attempt bound is not overridable.",
     "ts/test/entropy-ratchet.test.ts pinned the literal resolve line; updated to the wrapped form, still requiring the floating pin to be what is probed.",
     "arch-snapshot.yml (scheduled, not required) also fetches the CLI and is not wrapped; out of the scope the human set.",
-    "No CHANGELOG entry: CI-only change, no shipped surface."
+    "No CHANGELOG entry: CI-only change, no shipped surface.",
+    "VERIFY must-fix: refresh-arch-baseline.yml's measure job checks out the PR head, so it retries inline (same contract) instead of calling scripts/retry-fetch.mjs, which a pre-#1533 branch lacks."
   ],
   "fleet": "cicd-fleet",
   "runId": "fc1123-cicd-fleet"
