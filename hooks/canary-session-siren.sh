@@ -125,7 +125,8 @@ FINDINGS=()
 #    them. So a merged siren fix never reaches the machine until someone
 #    reinstalls, and meanwhile the stale copy keeps firing findings from the
 #    logic the fix replaced, with remedies that cannot clear them (#1599
-#    outlived its own merge this way). Local and offline: a byte compare.
+#    outlived its own merge this way). The compare itself is a local byte
+#    compare; only a differing copy goes on to ask origin (below).
 #    When the copies differ, every check below may be other logic too, so
 #    this finding REPLACES them rather than joining them.
 #
