@@ -44,16 +44,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P1
 - **External-ID:** github:bop-clocktower/canary#603
 
-### TestTracker quarantine state from the katana ledger
-
-- **Status:** planned
-- **Spec:** docs/changes/fc1106-1321-quarantine-ledger/proposal.md
-- **Summary:** `--quarantine-ledger <path>` on the ingest reporter and `canary testtracker push`: a skipped result matching a katana ledger row by `(file, test)` is tagged `quarantined` + `quarantine:<issue>` within the existing ingest contract; unmatched rows are reported; release is implicit. The dashboard must read the tag before it means "quarantined" in its UI.
-- **Blockers:** —
-- **Plan:** docs/changes/fc1106-1321-quarantine-ledger/plans/
-- **Priority:** P2
-- **External-ID:** github:bop-clocktower/canary#1321
-
 ### Mutation-testing signal via Stryker
 
 - **Status:** backlog
@@ -163,28 +153,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Plan:** —
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#1524
-
-### php audit reports its checked-package count and fails on zero
-
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** `canary php audit` prints no checked-package count on a pass, so a run that checked zero packages (empty or unread lockfile, wrong cwd) reads green; print the count on a pass, fail on zero naming the lockfile, and pin both cases with a test.
-- **Blockers:** —
-- **Plan:** —
-- **Assignee:** —
-- **Priority:** P1
-- **External-ID:** github:bop-clocktower/canary#1637
-
-### blackhawk BH003 stops flagging Number#toLocaleString
-
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** BH003-local-timezone flags every `.toLocaleString(` call, including numeric literals with a pinned locale that have no time-zone dependence; add a `keep` that drops numeric-literal receivers and calls whose options pin a `timeZone`, while still flagging dates formatted without one.
-- **Blockers:** —
-- **Plan:** —
-- **Assignee:** —
-- **Priority:** P2
-- **External-ID:** github:bop-clocktower/canary#1636
 
 ### siren detects its own stale installed hook copy
 
@@ -570,28 +538,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Assignee:** —
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#1418
-
-### backfill roadmap rows for route:roadmap issues
-
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Give every open `route:roadmap` issue that predates ADR 0043 a roadmap row linked by External-ID, so roadmap-pilot's scorer can rank the whole build queue.
-- **Blockers:** —
-- **Plan:** —
-- **Assignee:** —
-- **Priority:** P3
-- **External-ID:** github:bop-clocktower/canary#1437
-
-### route-queue reports routed issues with no roadmap row
-
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** `scripts/route-queue.mjs report` counts routed and unroutable issues but not `route:roadmap` issues with no External-ID row; report that count so ADR 0043 stays held.
-- **Blockers:** —
-- **Plan:** —
-- **Assignee:** —
-- **Priority:** P3
-- **External-ID:** github:bop-clocktower/canary#1438
 
 ### canary-unquarantine release step in the engine
 
