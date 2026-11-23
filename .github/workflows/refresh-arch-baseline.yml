@@ -59,7 +59,36 @@ jobs:
         with:
           node-version-file: .nvmrc
 
-      - run: npm install -g "$HARNESS_CLI"
+      # #1533: the install is a network fetch, so it retries a registry blip
+      # (3 attempts, 10s/30s backoff, a ::warning:: per failed attempt, red
+      # after the last). Only the fetch: no check below is ever retried.
+      #
+      # INLINE, not `scripts/retry-fetch.mjs` like the other workflows: this
+      # job's tree is the PR HEAD (checkout above), and a branch older than
+      # #1533 has no helper, so calling it would fail MODULE_NOT_FOUND on the
+      # stale PRs this label exists to fix. Same contract as the helper;
+      # `ts/test/harness-cli-fetch-retry.test.ts` runs this script.
+      - name: Install harness CLI
+        id: install-harness-cli
+        run: |
+          delays=(10 30)
+          for attempt in 1 2 3; do
+            if out="$(npm install -g "$HARNESS_CLI" 2>&1)"; then
+              printf '%s\n' "$out"
+              exit 0
+            fi
+            printf '%s\n' "$out" >&2
+            if [ "$attempt" -lt 3 ]; then
+              next="retrying in ${delays[attempt - 1]}s"
+            else
+              next="giving up"
+            fi
+            cause="$(printf '%s\n' "$out" | tail -n 6 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            echo "::warning title=harness CLI install attempt $attempt/3 failed::npm install -g $HARNESS_CLI failed; $next.%0A$cause"
+            if [ "$attempt" -lt 3 ]; then sleep "${delays[attempt - 1]}"; fi
+          done
+          echo "::error title=harness CLI install failed::npm install -g $HARNESS_CLI failed after 3 attempts"
+          exit 1
 
       # The CLI cannot do this (#749). `check-arch --update-baseline` — with or
       # without `--allow-regress --reason`, which #634 correctly made mandatory

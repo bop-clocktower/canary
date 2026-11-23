@@ -1,0 +1,23 @@
+{
+  "issues": [1645],
+  "related": [1243, 1245, 1261],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/refresh-baseline-push-job.test.ts > 'gives each test its fixture without starting a process (#1645)': red on base 9c15de65 (expected 8 to be +0, the top-level beforeEach spawned 8 git processes per test), green on this branch. Deterministic load stand-in: cd ts && npx vitest run test/refresh-baseline-push-job.test.ts --hookTimeout=100 (base: 51 of 51 fail 'Hook timed out in 100ms'; this branch: 53 of 53 pass).",
+  "plan": "docs/changes/1645-refresh-baseline-fixture-once/plans/2026-11-23-refresh-baseline-fixture-once-plan.md",
+  "closingKeyword": "Refs",
+  "closingKeywordReason": "Lane brief: Refs only; the release condition (repeated full-suite passes under load) is for the human to confirm after merge.",
+  "assumptions": [
+    "Root cause is per-test fixture cost, not a defect in refresh-arch-baseline.yml: the hook spawned 8 git processes per test (~100-150 ms idle, bracketed with --hookTimeout 150/250), and under full-suite load that one term crossed 10 s.",
+    "Human-approved fork F2=A: template built once in beforeAll via the #1261 helper (git-fixture-testkit.ts), cpSync copy per test, no hookTimeout or testTimeout change.",
+    "The work clone's origin URL is set to the relative path '../origin.git' once, in the template build, instead of a per-test `git remote set-url` (branch-prune's approach). Git resolves a relative local URL against the work tree root, so every copy pushes to its own copied origin with zero per-test spawns. Verified by a new test that pushes and asserts the template's origin is unchanged, and by mutation: deleting the set-url line turns that test and every push test red.",
+    "The regression guard is a runtime count, not a static scan: every process the file starts goes through one local spawn() wrapper, the top-level beforeEach records how many it started, and a test asserts zero. It cannot see a process started through a different API; the file imports only spawnSync, so that is the whole surface today.",
+    "The beforeAll keeps GIT_TEMPLATE_BUILD_TIMEOUT_MS (60 s), as #1261 did: it does the same spawns one old beforeEach did, once per file.",
+    "check-perf does not scan *.test.ts, so the file's length (599 -> 655 lines) changes no perf finding; perf 198 vs 198 at base, entropy 106 vs 106.",
+    "Deferrable, not fixed here (scope): ts/test/critical-areas-consumers.test.ts has one describe-level beforeEach that runs `git init` + a commit + a canary invocation per test. Same class, smaller (a few spawns); not observed failing.",
+    "Stress method: --sequence.concurrent (the brief's example) fails 20/20 on BOTH base and branch because the file's tests share module-level fixture state (dir, work, headSha); the repo never runs a file's tests concurrently, so the 20-repeat proof uses 4 parallel vitest processes with --sequence.shuffle plus 8 CPU burners instead: base 20/20 pass at 26.8-30.5 s, branch 20/20 pass at 9.7-10.6 s.",
+    "Full-suite proof: 5 consecutive `npm test` runs, this file passed in all 5; run 4 exited 1 on an unrelated beforeAll hook timeout in ts/test/analysis-scope-rehearsal.test.ts at load 52, filed as #1651."
+  ],
+  "fleet": "cicd-fleet",
+  "runId": "fc1123-cicd-fleet"
+}

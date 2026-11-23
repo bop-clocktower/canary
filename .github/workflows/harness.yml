@@ -24,7 +24,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - run: npm install -g "$HARNESS_CLI"
+      # #1533: the install is a network fetch, so it retries a registry blip
+      # (3 attempts, 10s/30s backoff, a ::warning:: per failed attempt, red
+      # after the last). Only the fetch: no check below is ever retried.
+      - run: node scripts/retry-fetch.mjs -- npm install -g "$HARNESS_CLI"
 
       # The `traceability` check inside `harness ci check` is a pure function of
       # `.harness/graph/graph.json`. That path is gitignored (`.harness/.gitignore`

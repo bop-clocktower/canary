@@ -643,6 +643,18 @@ than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
 silent CI break with nothing to roll back to.
 
+**Fetch retry (#1533).** Because the pin floats, CI is among the first to pull a
+just-published release, and the registry can 404 that release's new transitive
+tarballs for a short while. Every step that only _fetches_ the CLI (the
+`npm install -g`, and each `Resolve harness CLI version` probe) runs through
+`scripts/retry-fetch.mjs`: 3 attempts, 10 s then 30 s apart, a `::warning::` for
+every failed attempt, and red after the last. A check is never retried.
+`harness-architecture.yml` resolves the version and warms the exact version
+first, so `check-deps` and `validate` each run once.
+The one exception is `refresh-arch-baseline.yml`, which retries inline with the
+same contract: its tree is the PR head, and a branch older than #1533 has no
+helper. `ts/test/harness-cli-fetch-retry.test.ts` enforces all of it.
+
 Bumping the major is a **three-step sequence**, in this order (#545, #547):
 
 1. **Reconcile `harness.config.json` against the new major's schema first.** Zod
