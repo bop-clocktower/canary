@@ -118,7 +118,8 @@ copy-pasted bash. `HARNESS_CLI` pins unchanged.
 - The quality and security scans re-fetch `$HARNESS_CLI_EXACT` through `npx`,
   mostly from the warm npm cache. They were not seen failing, so they are not
   wrapped.
-- No top-level `permissions:` in `harness.yml` or `harness-quality.yml` (M2).
+- No top-level `permissions:` in `harness.yml` or `harness-quality.yml` (M2),
+  already tracked by #1267.
 
 ## 6. Exit
 
