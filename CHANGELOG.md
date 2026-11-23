@@ -16,6 +16,16 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The session siren no longer calls a differing hook copy "older", and never
+  refreshes the hooks from a stale clone (#1670).** Check 0 compares the
+  installed hook with the marketplace clone's copy byte for byte, which shows
+  only that they differ, so the finding now says "differs from". When the copies
+  differ it also asks origin (the same capped `ls-remote` check 3 makes): if the
+  clone is behind origin, it reports that with a "pull the clone first" remedy
+  and no longer offers `install-siren.mjs --install-hooks`, which would have
+  overwritten a newer installed copy with the stale one. An unreachable origin
+  keeps the install remedy and claims nothing about the clone.
+
 - **The session siren now reports when its own installed copy is stale
   (#1632).** `install-siren.mjs` installs the hooks into `~/.claude/hooks/` as
   copies, and updating the marketplace or the plugin does not refresh them, so a

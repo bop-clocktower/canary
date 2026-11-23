@@ -994,7 +994,7 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     shipNewerHook();
     const msg = runInstalled(hook);
     expect(msg).toContain('differs from the marketplace copy');
-    expect(msg).not.toMatch(/older|newer/);
+    expect(msg).not.toMatch(/\b(older|newer)\b/); // "folders" is in the temp path
   });
 
   it('never offers a stale clone as the source of a hook refresh (#1670)', () => {

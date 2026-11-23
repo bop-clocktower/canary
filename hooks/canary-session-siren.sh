@@ -126,15 +126,33 @@ FINDINGS=()
 #    reinstalls, and meanwhile the stale copy keeps firing findings from the
 #    logic the fix replaced, with remedies that cannot clear them (#1599
 #    outlived its own merge this way). Local and offline: a byte compare.
-#    When the copies differ, every check below is old logic too, so this
-#    finding REPLACES them rather than joining them.
+#    When the copies differ, every check below may be other logic too, so
+#    this finding REPLACES them rather than joining them.
+#
+#    A byte compare says the copies DIFFER, not which is newer (#1670). The
+#    hooks may have come from a dev checkout ahead of a clone that is itself
+#    behind origin, and then `--install-hooks` from that clone would overwrite
+#    the newer copy with a stale one. So check 3's clone-freshness call runs
+#    here too (same capped ls-remote, no extra call: the hook exits after),
+#    and a behind clone is reported with "pull the clone first" in place of
+#    the install remedy. An origin that cannot be asked keeps the install
+#    remedy and claims nothing about the clone.
 SELF="${BASH_SOURCE[0]:-}"
 MKT_SELF="$MKT/hooks/$(basename "${SELF:-canary-session-siren.sh}")"
 if [ -d "$MKT" ]; then # an absent clone is check 3's finding
   if [ -z "$SELF" ] || [ ! -r "$SELF" ] || [ ! -r "$MKT_SELF" ]; then
     FINDINGS+=("cannot compare this siren hook with the marketplace copy (${SELF:-unknown path} vs $MKT_SELF) — whether it is current is unverifiable")
   elif ! cmp -s "$SELF" "$MKT_SELF"; then
-    FINDINGS=("siren hook is older than the marketplace copy ($SELF differs from $MKT_SELF), so its other checks are old logic and were skipped — run: node $(shq "$MKT/scripts/install-siren.mjs") --install-hooks")
+    DIFFERS="siren hook differs from the marketplace copy ($SELF vs $MKT_SELF), so its other checks may not match the marketplace's and were skipped"
+    MKT_HEAD=$(git -C "$MKT" rev-parse --verify -q HEAD 2>/dev/null || echo "unknown")
+    if [ -d "$MKT/.git" ] && origin_tip && [ "$MKT_HEAD" != "$ORIGIN_TIP" ]; then
+      FINDINGS=(
+        "bop-clocktower marketplace clone is behind origin (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}), so it is not a safe source for the siren hooks — pull the clone first, run: git -C $(shq "$MKT") pull --ff-only"
+        "$DIFFERS — once the clone is at origin, the next session compares again"
+      )
+    else
+      FINDINGS=("$DIFFERS — run: node $(shq "$MKT/scripts/install-siren.mjs") --install-hooks")
+    fi
     emit_and_exit
   fi
 fi
