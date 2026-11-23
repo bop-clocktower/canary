@@ -12,21 +12,33 @@
  * `gh` for the label job.
  */
 
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { load as loadYaml } from 'js-yaml';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import {
+  GIT_TEMPLATE_BUILD_TIMEOUT_MS,
+  buildGitTemplate,
+  copyGitTemplate,
+  removeGitFixture,
+} from './git-fixture-testkit.js';
 import { REPO_ROOT } from './required-checks-testkit.js';
 
 interface Step {
@@ -82,17 +94,29 @@ const OLD_BASELINE = serialize({
 /** The default artifact: the refresh raised the one metric from 1 to 2. */
 let NEW_BASELINE: string;
 
+let template: string;
+/** The seed commit, as the template recorded it. Tests may move `headSha`. */
+let seedSha: string;
 let dir: string;
 let origin: string;
 let work: string;
 let src: string;
 let headSha: string;
 
+/** Every process this file starts goes through here, so it can be counted. */
+let spawns = 0;
+function spawn(cmd: string, args: string[], opts: SpawnSyncOptions) {
+  spawns += 1;
+  return spawnSync(cmd, args, { ...opts, encoding: 'utf8' });
+}
+/** Processes the top-level `beforeEach` started for the current test (#1645). */
+let hookSpawns = -1;
+
 function git(cwd: string, ...args: string[]): string {
-  const r = spawnSync(
+  const r = spawn(
     'git',
     ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args],
-    { cwd, encoding: 'utf8' },
+    { cwd },
   );
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
   return r.stdout.trim();
@@ -133,9 +157,8 @@ function runSteps(jobId: string, cwd: string, path = process.env.PATH ?? '') {
   const scripts = (wf.jobs[jobId]?.steps ?? []).filter((s) => s.run);
   expect(scripts.length, `${jobId} has no run steps`).toBeGreaterThan(0);
   for (const step of scripts) {
-    const r = spawnSync('bash', ['-e', '-c', step.run!], {
+    const r = spawn('bash', ['-e', '-c', step.run!], {
       cwd,
-      encoding: 'utf8',
       env: stepEnv(step, path, summary, output),
     });
     last = { status: r.status, log: `${r.stdout}${r.stderr}` };
@@ -148,30 +171,63 @@ function runSteps(jobId: string, cwd: string, path = process.env.PATH ?? '') {
 const tip = () =>
   git(origin, 'rev-parse', `refs/heads/${BRANCH}`).split('\n')[0]!;
 
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'refresh-push-'));
+/** Point the fixture paths at the per-test root `d`. */
+function useRoot(d: string): void {
+  dir = d;
   origin = join(dir, 'origin.git');
   work = join(dir, 'work');
   src = join(dir, 'runner-temp', 'refreshed-arch-baseline');
-  git(dir, 'init', '-q', '--bare', '-b', 'main', origin);
-  git(dir, 'clone', '-q', origin, work);
-  git(work, 'checkout', '-q', '-b', BRANCH);
-  write(join(work, BASELINE), OLD_BASELINE);
-  write(join(work, AUDIT), 'log\n');
-  git(work, 'add', '.');
-  git(work, 'commit', '-q', '-m', 'seed');
-  git(work, 'push', '-q', 'origin', BRANCH);
-  headSha = git(work, 'rev-parse', 'HEAD');
-  // actions/checkout with `ref: <sha>` leaves a detached HEAD.
-  git(work, 'checkout', '-q', '--detach', headSha);
+}
+
+// #1645: built once, because 8 git spawns per test ran past the 10 s
+// hookTimeout under full-suite load. Each test gets a file copy (#1261).
+beforeAll(() => {
+  template = buildGitTemplate('refresh-push-tpl-', (d) => {
+    useRoot(d);
+    git(dir, 'init', '-q', '--bare', '-b', 'main', origin);
+    git(dir, 'clone', '-q', origin, work);
+    // Relative, so every copy pushes to its OWN origin, not the template's.
+    git(work, 'remote', 'set-url', 'origin', '../origin.git');
+    git(work, 'checkout', '-q', '-b', BRANCH);
+    write(join(work, BASELINE), OLD_BASELINE);
+    write(join(work, AUDIT), 'log\n');
+    git(work, 'add', '.');
+    git(work, 'commit', '-q', '-m', 'seed');
+    git(work, 'push', '-q', 'origin', BRANCH);
+    seedSha = git(work, 'rev-parse', 'HEAD');
+    // actions/checkout with `ref: <sha>` leaves a detached HEAD.
+    git(work, 'checkout', '-q', '--detach', seedSha);
+  });
+}, GIT_TEMPLATE_BUILD_TIMEOUT_MS);
+
+afterAll(() => removeGitFixture(template));
+
+beforeEach(() => {
+  const before = spawns;
+  useRoot(copyGitTemplate(template, 'refresh-push-'));
+  headSha = seedSha;
   // The default artifact: the refresh moved the baseline, the CLI left the log.
   NEW_BASELINE = baseline(2);
   write(join(src, 'arch/baselines.json'), NEW_BASELINE);
   write(join(src, 'audit.log'), 'log\n');
+  hookSpawns = spawns - before;
 });
 
-afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
+afterEach(() => removeGitFixture(dir));
+
+// #1645: the hook ran 8 git spawns per test, and under full-suite load the
+// spawns alone ran past vitest's 10 s hookTimeout.
+it('gives each test its fixture without starting a process (#1645)', () => {
+  expect(hookSpawns).toBe(0);
+});
+
+// The copies share nothing: a push lands in this test's origin, not the
+// template's, so a test that moves or deletes the branch cannot leak.
+it('pushes to the copy of origin, never to the template', () => {
+  expect(runSteps('push', work).status).toBe(0);
+  expect(tip()).not.toBe(seedSha);
+  const tpl = join(template, 'origin.git');
+  expect(git(tpl, 'rev-parse', `refs/heads/${BRANCH}`)).toBe(seedSha);
 });
 
 describe('refresh-arch-baseline.yml push job', () => {
