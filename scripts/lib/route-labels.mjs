@@ -113,3 +113,40 @@ export function partitionByRoute(issues) {
 
   return partition;
 }
+
+/**
+ * A `docs/roadmap.md` row linked to a GitHub issue (ADR 0043). The same
+ * pattern as `ts/test/agents-roadmap-counts.test.ts`, with the slug captured,
+ * so the two counts agree on what a row is.
+ */
+const ROADMAP_ROW = /\*\*External-ID:\*\*\s*github:(\S+?)#(\d+)/g;
+
+const abstain = (reason) => ({ unrowed: null, reason });
+
+/**
+ * The `route:roadmap` issues with no `External-ID` row for `repo` (#1438).
+ *
+ * Returns `unrowed: null` with a reason, never `[]`, when the check cannot be
+ * made: an unreadable roadmap, an unknown repo, or zero rows for this repo. A
+ * row-less roadmap would otherwise say "every issue is missing", and a failed
+ * read would say "none is", and neither would be a measurement.
+ *
+ * Only `routed` issues are checked. A conflicted issue carrying
+ * `route:roadmap` is already reported as conflicted.
+ */
+export function unrowedRoadmapIssues({ routed, roadmapText, repo }) {
+  if (roadmapText === null) return abstain('roadmap unreadable');
+  if (!repo) return abstain('repo unknown');
+
+  const rowed = new Set();
+  for (const [, slug, n] of roadmapText.matchAll(ROADMAP_ROW)) {
+    if (slug === repo) rowed.add(Number(n));
+  }
+  if (rowed.size === 0) return abstain(`zero External-ID rows for ${repo}`);
+
+  const unrowed = routed
+    .filter((r) => r.route === 'roadmap' && !rowed.has(r.number))
+    .map((r) => r.number)
+    .sort((a, b) => a - b);
+  return { unrowed, reason: null };
+}

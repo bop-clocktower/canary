@@ -62,7 +62,8 @@ describe('canary php audit', () => {
     const composer = fakeComposer(CLEAN);
     const r = await audit(composer.runSubprocess);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('All 2 run package check(s) passed');
+    // #1637: a pass shows its denominator in the failure line's shape.
+    expect(r.stdout).toContain('\u2713 0 finding(s) across 2 checked');
     expect(composer.calls).toEqual([
       [
         'composer',
@@ -234,6 +235,29 @@ describe('canary php audit abstains instead of passing', () => {
     const r = await audit(fakeComposer(CLEAN).runSubprocess);
     expect(r.code).toBe(EXIT_ABSTAINED);
     expect(r.stdout).toContain('0 packages');
+  });
+
+  // #1637: the abstention names the lockfile it read, not just the dir.
+  it('zero packages names the lockfile path it read', async () => {
+    lockfile([]);
+    const composer = fakeComposer(CLEAN);
+    const r = await audit(composer.runSubprocess);
+    expect(r.code).toBe(EXIT_ABSTAINED);
+    expect(r.stdout).toContain(
+      `${join(dir, 'composer.lock')} [composer.lock locks 0 packages]`,
+    );
+    expect(r.stdout).not.toContain('finding(s) across');
+    expect(composer.calls).toEqual([]);
+  });
+
+  it('a missing lockfile names the path it tried to read', async () => {
+    const r = await audit(fakeComposer(CLEAN).runSubprocess, ['--json']);
+    expect(r.code).toBe(EXIT_ABSTAINED);
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      checked: 0,
+      abstained: true,
+      skipped: [{ name: join(dir, 'composer.lock') }],
+    });
   });
 
   it('a lockfile that is not JSON: exit 3', async () => {

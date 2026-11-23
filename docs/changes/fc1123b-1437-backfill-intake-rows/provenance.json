@@ -1,0 +1,23 @@
+{
+  "issues": [1437],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "planPath": "docs/changes/fc1123b-1437-backfill-intake-rows/plans/2026-11-23-backfill-intake-rows-plan.md",
+  "specPath": "docs/changes/fc1123b-1437-backfill-intake-rows/proposal.md",
+  "assumptions": [
+    "Forks F1-F3 were answered by the human at CONFIRM: Intake section, Status backlog, Priority by label (any bug label gives P2, otherwise P3), holds named in Blockers for the craft-backend, knowledge-pipeline and unquarantine rows, recount before push.",
+    "#1437 is itself open and route:roadmap, so it gets a row; the done-criterion counts it, and the row's issue closes with this PR.",
+    "manage_roadmap add has no priority parameter and writes Priority as a dash; each new row's Priority line was set by the label rule afterwards, matching the shape of the PR 1654 rows.",
+    "Blockers text for the three held rows was passed through manage_roadmap's blocked_by, which writes it verbatim.",
+    "Rows are ordered by ascending issue number after the existing Intake rows.",
+    "The pre-existing #1321 row links an issue that is now closed; it predates this change and is left alone (out of scope; roadmap-groom owns archiving).",
+    "Autonomous fleet lane: brainstorming's question, approach and sign-off pauses were resolved by the human's pre-answered forks; autopilot ran as a single low-complexity phase without dispatching persona subagents, with the four gates, the count test and the perf ratchet as VERIFY. advise_skills/SKILLS.md was skipped for a data-only change.",
+    "The stale AGENTS.md count (18) failing ts/test/agents-roadmap-counts.test.ts was the red step; restating it as 73 turned it green."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "The human authorized Closes for the lane's own item; the PR completes the issue's done-criterion (0 open route:roadmap issues without a row). Every other issue number appears with no keyword.",
+  "run": "fc1123b",
+  "fleet": "roadmap-fleet",
+  "baseSha": "aac86e35",
+  "stackedOn": "PR 1654 (docs/fc1123b-intake-rows, 3811a21d)"
+}
