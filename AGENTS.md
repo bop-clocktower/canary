@@ -1248,12 +1248,17 @@ Two related facts worth not rediscovering:
   the vocabulary (it only ever CREATES);
   `node scripts/route-queue.mjs report [--json]` prints the denominator — routed
   / unroutable / untriaged / conflicted, which sum to the examined count — and
-  exits **3** on a zero denominator. **The report never passes `--label` to
-  `gh issue list`**: that filter lags writes and under-reports (seen twice
-  during the #1071 triage run), so the denominator is read off each issue's own
-  labels. `ts/test/route-labels.test.ts` asserts the flag's absence from
-  recorded `gh` argv, not just that the count looked right. Two route labels on
-  one issue is reported as `conflicted` and never auto-resolved.
+  exits **3** on a zero denominator. It also lists the `route:roadmap` issues
+  with no `**External-ID:** github:<owner>/<repo>#N` row in `docs/roadmap.md`
+  (ADR 0043, #1438; JSON `unrowedRoadmap`). That count is advisory and never
+  changes the exit code; an unreadable roadmap, an unknown repo, or zero rows
+  for this repo prints `could not check` (JSON `null`), never 0. **The report
+  never passes `--label` to `gh issue list`**: that filter lags writes and
+  under-reports (seen twice during the #1071 triage run), so the denominator is
+  read off each issue's own labels. `ts/test/route-labels.test.ts` asserts the
+  flag's absence from recorded `gh` argv, not just that the count looked right.
+  Two route labels on one issue is reported as `conflicted` and never
+  auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
   effectively blind gate that reported a real number nobody read. All 73 rows

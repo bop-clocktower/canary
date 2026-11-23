@@ -18,17 +18,32 @@
 // close. `ts/test/route-labels.test.ts` asserts the absence of that flag from
 // the recorded argv, not merely that the number came out right.
 //
+// `report` also counts `route:roadmap` issues with no `External-ID:` row in
+// docs/roadmap.md (ADR 0043, #1438). That count is ADVISORY: it never changes
+// the exit code. When the roadmap cannot be read, or holds zero rows for this
+// repo, it prints "could not check" (JSON: null) and never 0.
+//
 // Exit codes (repo gate convention, #508):
 //   0 = verified — examined >= 1 open issue and reported it
 //   2 = usage or gh error
 //   3 = ABSTENTION — examined zero open issues, or the tracker was unreadable
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import {
   ROUTE_LABELS,
   UNROUTABLE,
   partitionByRoute,
+  unrowedRoadmapIssues,
 } from './lib/route-labels.mjs';
+
+// ROUTE_QUEUE_ROADMAP points tests at a fixture roadmap. The default is
+// resolved from this file, not the cwd, so the report reads the same roadmap
+// wherever it is run from.
+const ROADMAP_PATH =
+  process.env.ROUTE_QUEUE_ROADMAP ??
+  fileURLToPath(new URL('../docs/roadmap.md', import.meta.url));
 
 function fail(code, msg) {
   process.stderr.write(`route-queue: ${msg}\n`);
@@ -37,10 +52,14 @@ function fail(code, msg) {
 
 // ROUTE_QUEUE_GH_STUB lets tests record gh argv without reaching GitHub,
 // mirroring BACKFILL_GH_STUB in backfill-type-labels.mjs.
-function gh(args) {
+function ghRun(args) {
   const stub = process.env.ROUTE_QUEUE_GH_STUB;
   const [cmd, argv] = stub ? [process.execPath, [stub, ...args]] : ['gh', args];
-  const r = spawnSync(cmd, argv, { encoding: 'utf8', timeout: 60_000 });
+  return spawnSync(cmd, argv, { encoding: 'utf8', timeout: 60_000 });
+}
+
+function gh(args) {
+  const r = ghRun(args);
   if (r.status !== 0) {
     // Exit 2, never 3: a tracker that could not be READ is an error, and
     // reporting it as an empty tracker would turn "could not look" into
@@ -64,6 +83,30 @@ function openIssues() {
       'number,title,labels',
     ]),
   );
+}
+
+/**
+ * The repo `gh issue list` read, so roadmap rows are matched against the
+ * tracker the issues came from. Non-fatal on purpose: the roadmap-row count is
+ * advisory, so a failed lookup makes that one field abstain rather than
+ * turning a good report into exit 2.
+ */
+function currentRepo() {
+  const r = ghRun(['repo', 'view', '--json', 'nameWithOwner']);
+  if (r.status !== 0) return '';
+  try {
+    return JSON.parse(r.stdout).nameWithOwner ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function readRoadmap() {
+  try {
+    return readFileSync(ROADMAP_PATH, 'utf8');
+  } catch {
+    return null;
+  }
 }
 
 function existingRouteLabels() {
@@ -121,8 +164,19 @@ function report(opts) {
     fail(3, 'ABSTENTION: examined zero open issues; this is not a pass.');
   }
 
+  const rows = unrowedRoadmapIssues({
+    routed: p.routed,
+    roadmapText: readRoadmap(),
+    repo: currentRepo(),
+  });
+
   if (opts.json) {
-    process.stdout.write(JSON.stringify(p, null, 2) + '\n');
+    const out = {
+      ...p,
+      unrowedRoadmap: rows.unrowed,
+      unrowedRoadmapReason: rows.reason,
+    };
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
     return;
   }
 
@@ -138,6 +192,12 @@ function report(opts) {
   console.log(`  unroutable: ${list(p.unroutable)}`);
   console.log(`  untriaged:  ${list(p.untriaged)}`);
   console.log(`  conflicted: ${list(p.conflicted)}`);
+  console.log(
+    '  route:roadmap without roadmap row: ' +
+      (rows.unrowed === null
+        ? `could not check (${rows.reason})`
+        : `${rows.unrowed.length} (${list(rows.unrowed.map((number) => ({ number })))})`),
+  );
 }
 
 const [subcommand, ...rest] = process.argv.slice(2);
