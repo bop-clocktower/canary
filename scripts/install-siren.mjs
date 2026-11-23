@@ -18,6 +18,7 @@
 //      on it rather than letting it pass unremarked.
 //
 //   node scripts/install-siren.mjs --install
+//   node scripts/install-siren.mjs --install-hooks   (hook copies only, #1632)
 //   node scripts/install-siren.mjs --verify   [--json]
 //   node scripts/install-siren.mjs --uninstall
 import { spawnSync } from 'node:child_process';
@@ -497,47 +498,94 @@ function uninstall(home) {
   console.log(`removed ${target}`);
 }
 
+/**
+ * The `--verify` verdict, its JSON report and its printed lines, kept pure so
+ * the headline is testable without launchd.
+ *
+ * The headline names the WHOLE verdict, not just the scheduler's (#1632): it
+ * used to print `deep siren — healthy: ...` above `DIVERGENT:` lines while
+ * exiting 1, and a reader who skims the headline reads "fine". A healthy
+ * scheduler with a bad hook copy gets its own state, `hooks-not-current`.
+ */
+export function verifyReport(status, hooks) {
+  const diverged = hooks.filter(
+    (h) => h.state === 'divergent' || h.state === 'unreadable',
+  );
+  const absent = hooks.filter((h) => h.state === 'absent');
+  // Absent fails as loudly as divergent. A scheduler can be perfectly healthy
+  // while the hook that monitors it does not exist, which is #758 one level up.
+  const hooksOk = diverged.length === 0 && absent.length === 0;
+  const ok = status.ok && hooksOk;
+  const state = status.ok && !hooksOk ? 'hooks-not-current' : status.state;
+  const detail =
+    status.ok && !hooksOk
+      ? `${diverged.length + absent.length} installed siren hook(s) do not match hooks/ (scheduler: ${status.detail})`
+      : status.detail;
+  const lines = [`deep siren — ${state}: ${detail}`];
+  for (const h of diverged) {
+    lines.push(
+      `  ${h.state.toUpperCase()}: ${h.path} — run --install-hooks to replace it with the tracked copy`,
+    );
+  }
+  for (const h of absent) {
+    lines.push(
+      `  ABSENT: ${h.path} — not installed; run --install (the SessionStart siren carries the deep-siren self-check)`,
+    );
+  }
+  const report = {
+    ...status,
+    ok,
+    state,
+    detail,
+    scheduler: status,
+    hooks,
+    divergentCopies: diverged.map((h) => h.path),
+    absentHooks: absent.map((h) => h.path),
+  };
+  return { ok, report, lines };
+}
+
 function verify(home, asJson) {
   const status = schedulerStatus({
     registered: isRegistered(),
     ageDays: logAgeDays(home),
   });
-  const hooks = hookStates(home);
-  const diverged = hooks.filter(
-    (h) => h.state === 'divergent' || h.state === 'unreadable',
-  );
-  const absent = hooks.filter((h) => h.state === 'absent');
-  const report = {
-    ...status,
-    hooks,
-    divergentCopies: diverged.map((h) => h.path),
-    absentHooks: absent.map((h) => h.path),
-  };
+  const { ok, report, lines } = verifyReport(status, hookStates(home));
   if (asJson) console.log(JSON.stringify(report));
-  else {
-    console.log(`deep siren — ${status.state}: ${status.detail}`);
-    for (const h of diverged)
-      console.log(`  ${h.state.toUpperCase()}: ${h.path}`);
-    for (const h of absent) {
-      console.log(
-        `  ABSENT: ${h.path} — not installed; run --install (the SessionStart siren carries the deep-siren self-check)`,
-      );
-    }
+  else for (const l of lines) console.log(l);
+  process.exit(ok ? 0 : 1);
+}
+
+/**
+ * Refresh only the `~/.claude/hooks/` copies (#1632) — the remedy the session
+ * siren names when its installed copy is stale. Unlike `--install` it needs no
+ * launchd, no login shell and no `canary` on PATH, so it works, and is tested,
+ * on any machine; `--install` also rewrites and reloads the LaunchAgent, which
+ * a stale hook copy does not call for.
+ */
+function installHooksOnly(home) {
+  for (const a of installHooks(home)) {
+    if (a.action === 'backed-up') console.log(`  backed up -> ${a.backup}`);
+    else if (a.action === 'installed')
+      console.log(`  installed ${a.name} from hooks/`);
+    else console.log(`  ${a.name} already current`);
   }
-  // Absent fails as loudly as divergent. A scheduler can be perfectly healthy
-  // while the hook that monitors it does not exist, which is #758 one level up.
-  process.exit(
-    status.ok && diverged.length === 0 && absent.length === 0 ? 0 : 1,
-  );
+  // No hooks dir means nothing was reconciled; that is not a success.
+  const missing = absentHooks(home);
+  const stragglers = divergentCopies(home);
+  for (const p of stragglers) console.log(`  still divergent: ${p}`);
+  for (const p of missing) console.log(`  not installed: ${p}`);
+  process.exit(stragglers.length === 0 && missing.length === 0 ? 0 : 1);
 }
 
 function main(argv) {
   const home = homedir();
+  if (argv.includes('--install-hooks')) return installHooksOnly(home);
   if (argv.includes('--install')) return install(home);
   if (argv.includes('--uninstall')) return uninstall(home);
   if (argv.includes('--verify')) return verify(home, argv.includes('--json'));
   console.error(
-    'usage: install-siren.mjs --install | --verify [--json] | --uninstall',
+    'usage: install-siren.mjs --install | --install-hooks | --verify [--json] | --uninstall',
   );
   process.exit(2);
 }

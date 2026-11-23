@@ -16,6 +16,17 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The session siren now reports when its own installed copy is stale
+  (#1632).** `install-siren.mjs` installs the hooks into `~/.claude/hooks/` as
+  copies, and updating the marketplace or the plugin does not refresh them, so a
+  merged siren fix never reached the machine and the old copy kept firing
+  findings whose remedies could not clear them. The hook now compares itself
+  with the marketplace clone's `hooks/` copy. When they differ, it reports one
+  finding in place of the old logic's findings, with a remedy that clears it:
+  `node <clone>/scripts/install-siren.mjs --install-hooks`, a new mode that
+  refreshes only the hook copies. `--verify` no longer prints `healthy` above
+  `DIVERGENT` lines; a healthy scheduler with a stale hook copy now reads
+  `hooks-not-current`.
 - **The release workflow's `Move latest tag` step names a rejected push instead
   of blaming a race (#1504).** An auth failure, a network failure or a tag
   ruleset refusal used to log "latest moved on origin", retry, and fail with

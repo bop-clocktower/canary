@@ -76,7 +76,68 @@ origin_tip() {
   return 1
 }
 
+# Healthy: stay silent. Findings: yell into both the UI and model context.
+# Always exits, so check 0 can stop the hook before the later checks run.
+emit_and_exit() {
+  if [ "${#FINDINGS[@]}" -eq 0 ]; then
+    exit 0
+  fi
+
+  # The one place this hook can actually speak. If python3 is missing or the
+  # heredoc fails, every finding computed above is discarded and the hook
+  # exits 0 — which Claude Code reads as "healthy". A siren that cannot sound
+  # is worse than no siren, so the emit is checked and there is a plain-text
+  # fallback.
+  if ! python3 - "${FINDINGS[@]}" <<'EOF'
+import json, sys
+findings = sys.argv[1:]
+lines = "\n".join(f"  - {f}" for f in findings)
+msg = f"CANARY SIREN — {len(findings)} tooling-rot finding(s):\n{lines}"
+print(json.dumps({
+    "systemMessage": msg,
+    "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": (
+            "HEADLINE ALERT (canary session siren): the canary toolchain on this machine is degraded. "
+            "Per the 'distrust green until vetted' rule, surface this to the user in your FIRST message "
+            "and treat fixing it as outranking new work.\n" + msg
+        ),
+    },
+}))
+EOF
+  then
+    # No JSON channel. Say it on stderr rather than vanishing.
+    {
+      echo "CANARY SIREN — ${#FINDINGS[@]} finding(s), and python3 was unavailable to"
+      echo "emit them as hook JSON, so this session was NOT told:"
+      for f in "${FINDINGS[@]}"; do echo "  - $f"; done
+    } >&2
+    exit 1
+  fi
+  exit 0
+}
+
 FINDINGS=()
+
+# 0. This hook against the marketplace's copy of itself (#1632).
+#    install-siren.mjs installs hooks into ~/.claude/hooks/ as COPIES, and
+#    neither `claude plugin marketplace update` nor a plugin reinstall touches
+#    them. So a merged siren fix never reaches the machine until someone
+#    reinstalls, and meanwhile the stale copy keeps firing findings from the
+#    logic the fix replaced, with remedies that cannot clear them (#1599
+#    outlived its own merge this way). Local and offline: a byte compare.
+#    When the copies differ, every check below is old logic too, so this
+#    finding REPLACES them rather than joining them.
+SELF="${BASH_SOURCE[0]:-}"
+MKT_SELF="$MKT/hooks/$(basename "${SELF:-canary-session-siren.sh}")"
+if [ -d "$MKT" ]; then # an absent clone is check 3's finding
+  if [ -z "$SELF" ] || [ ! -r "$SELF" ] || [ ! -r "$MKT_SELF" ]; then
+    FINDINGS+=("cannot compare this siren hook with the marketplace copy (${SELF:-unknown path} vs $MKT_SELF) — whether it is current is unverifiable")
+  elif ! cmp -s "$SELF" "$MKT_SELF"; then
+    FINDINGS=("siren hook is older than the marketplace copy ($SELF differs from $MKT_SELF), so its other checks are old logic and were skipped — run: node $(shq "$MKT/scripts/install-siren.mjs") --install-hooks")
+    emit_and_exit
+  fi
+fi
 
 # 1. Plugin must be installed AND enabled (the June failure: flat files
 #    bypassed the plugin system entirely, so nothing tracked versions).
@@ -189,39 +250,4 @@ else
   fi
 fi
 
-# Healthy: stay silent. Findings: yell into both the UI and model context.
-if [ "${#FINDINGS[@]}" -eq 0 ]; then
-  exit 0
-fi
-
-# The one place this hook can actually speak. If python3 is missing or the
-# heredoc fails, every finding computed above is discarded and the hook exits
-# 0 — which Claude Code reads as "healthy". A siren that cannot sound is worse
-# than no siren, so the emit is checked and there is a plain-text fallback.
-if ! python3 - "${FINDINGS[@]}" <<'EOF'
-import json, sys
-findings = sys.argv[1:]
-lines = "\n".join(f"  - {f}" for f in findings)
-msg = f"CANARY SIREN — {len(findings)} tooling-rot finding(s):\n{lines}"
-print(json.dumps({
-    "systemMessage": msg,
-    "hookSpecificOutput": {
-        "hookEventName": "SessionStart",
-        "additionalContext": (
-            "HEADLINE ALERT (canary session siren): the canary toolchain on this machine is degraded. "
-            "Per the 'distrust green until vetted' rule, surface this to the user in your FIRST message "
-            "and treat fixing it as outranking new work.\n" + msg
-        ),
-    },
-}))
-EOF
-then
-  # No JSON channel. Say it on stderr rather than vanishing.
-  {
-    echo "CANARY SIREN — ${#FINDINGS[@]} finding(s), and python3 was unavailable to"
-    echo "emit them as hook JSON, so this session was NOT told:"
-    for f in "${FINDINGS[@]}"; do echo "  - $f"; done
-  } >&2
-  exit 1
-fi
-exit 0
+emit_and_exit
