@@ -197,10 +197,12 @@ itself, so:
   `vac002_abstained` in the `--json` summary (always present, `0` included) and
   an `N test(s) abstained on VAC-002` line in text output.
 
-- **A `.skip` test** → not scanned and not counted in `checked`, but listed as a
-  skip (`declared .skip: it never runs, so it cannot pass vacuously`) (#1669).
-  It never runs, so it cannot pass vacuously, and `LINT-006` exempts it too.
-  Un-skipping it puts it back in the scan. A file whose only tests are `.skip`
+- **A skipped test** → not scanned and not counted in `checked`, but listed as a
+  skip (`declared skipped (...): it never runs, so it cannot pass vacuously`)
+  (#1669, #1686). The exempt forms are a test's own `.skip` (and `.skip.each`),
+  `xit`/`xtest`, and every test inside a `describe.skip`/`xdescribe` block. It
+  never runs, so it cannot pass vacuously, and `LINT-006` exempts it too.
+  Un-skipping it puts it back in the scan. A file whose only tests are skipped
   checks zero tests and abstains. `.only` tests run, so they are scanned.
 
 `checked` in the JSON payload is the number of **tests** read, not files. Always
@@ -241,9 +243,9 @@ with no denominator is not a result.
   `mod = (await import('../x')).default`, `mod = require('../x')`, or a
   right-hand side that names an imported binding (`store = makeStore()`). A
   reassignment that reaches nothing the scanner can read leaves the name
-  unresolved, and a test calling it abstains on VAC-002 rather than being
-  flagged. Annotate what remains, or accept the tier and move on — do not
-  rewrite the suite to satisfy a heuristic.
+  unresolved: a direct call of it abstains on VAC-002 rather than being flagged;
+  a method call on it is still judged. Annotate what remains, or accept the tier
+  and move on — do not rewrite the suite to satisfy a heuristic.
 - **An E2E suite that still shows many VAC-002 findings** is not being detected
   as browser-driver context — check that it imports its driver package or uses a
   `page`/`browser`/`driver` fixture, and read the

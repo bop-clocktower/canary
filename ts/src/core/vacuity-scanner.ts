@@ -1525,8 +1525,9 @@ function annotationFor(
 }
 
 const TITLE_QUOTES = ["'", '"', '`'];
-/** The keyword opening a wrapped declaration, `.only`/`.skip` too (#1666). */
-const DECLARATION_KEYWORD = /\b(?:it|test)(?:\.(?:only|skip))?\s*\(\s*$/;
+/** The keyword opening a wrapped declaration: `.only`/`.skip` (#1666), `xit`/`xtest` (#1686). */
+const DECLARATION_KEYWORD =
+  /\b(?:x?(?:it|test)|(?:it|test)\.(?:only|skip))\s*\(\s*$/;
 
 /**
  * Offset of the `it`/`test` keyword opening a JS declaration, or of the body
@@ -1558,12 +1559,13 @@ function attachesToDeclaration(line: string, python: boolean): boolean {
 }
 
 const SKIP_REASON =
-  'declared .skip: it never runs, so it cannot pass vacuously (LINT-006 exempts it too)';
+  'declared skipped (.skip, xit/xtest, or inside describe.skip/xdescribe): it never runs, so it cannot pass vacuously (LINT-006 exempts it too)';
 
 /**
- * All but `.skip` blocks (#1669): those never run, so they cannot pass
- * vacuously, but they are not checked clean either -- each is recorded in
- * `skipped`, so a file of only `.skip` tests abstains instead of passing.
+ * All but skipped blocks (#1669; every skip form since #1686): those never
+ * run, so they cannot pass vacuously, but they are not checked clean either --
+ * each is recorded in `skipped`, so a file of only skipped tests abstains
+ * instead of passing.
  */
 function runnableBlocks(
   blocks: TestBlock[],

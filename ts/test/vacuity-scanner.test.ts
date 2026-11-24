@@ -1655,6 +1655,72 @@ describe('a .skip test is exempt, and disclosed, not checked (#1669)', () => {
   });
 });
 
+// #1686. Only a declaration's OWN `.skip` marked a test skipped, so a vacuous
+// `it` inside `describe.skip`/`xdescribe` -- which never runs -- drew VAC
+// findings and counted as checked. And `xit`, `xtest` and `.skip.each` were not
+// declarations at all, so their body ran on into the real test above and its
+// VAC-001 landed on that test's name.
+describe('every skip form is exempt, and disclosed (#1686)', () => {
+  const REAL = `it('real', () => { expect(save(1)).toBe(1); });\n`;
+  const skippedNames = (r: ReturnType<typeof scan>) =>
+    (r.skipped ?? []).map((s) => s.name);
+
+  it.each([
+    ['describe.skip', 'describe.skip'],
+    ['xdescribe', 'xdescribe'],
+  ])('skips every test inside a %s block', (_l, kw) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        REAL +
+        `${kw}('parked suite', () => {\n` +
+        `  it('parked', () => { expect(1).toBe(1); });\n` +
+        `  it('parked too', () => { expect(true).toBe(true); });\n` +
+        `});\n`,
+    );
+    expect(r.findings).toEqual([]);
+    expect(r.checked).toBe(1);
+    expect(skippedNames(r).filter((n) => n.includes('(parked'))).toHaveLength(
+      2,
+    );
+  });
+
+  it('still scans a test after the skipped block closes', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `describe.skip('parked suite', () => {\n` +
+        `  it('parked', () => { expect(save(1)).toBe(1); });\n` +
+        `});\n` +
+        `it('after', () => { expect(1).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(1);
+    expect(r.findings.map((f) => [f.rule, f.test])).toContainEqual([
+      'VAC-001',
+      'after',
+    ]);
+  });
+
+  it.each([
+    ['xit', `xit('parked', () => { expect(1).toBe(1); });\n`],
+    ['xtest', `xtest('parked', () => { expect(1).toBe(1); });\n`],
+    [
+      'it.skip.each',
+      `it.skip.each([[1], [2]])('parked %s', () => { expect(1).toBe(1); });\n`,
+    ],
+    [
+      'test.skip.each',
+      `test.skip.each([[1]])('parked %s', () => { expect(1).toBe(1); });\n`,
+    ],
+  ])('recognises %s as a skipped declaration', (_l, decl) => {
+    const r = scan('a.test.ts', IMPORTS + REAL + decl);
+    // Before #1686 the parked body ran into `real`, and VAC-001 landed there.
+    expect(r.findings).toEqual([]);
+    expect(r.checked).toBe(1);
+    expect(skippedNames(r).some((n) => n.includes('(parked'))).toBe(true);
+  });
+});
+
 describe('a file that starts with a blank line', () => {
   it('scans to a result instead of hanging', () => {
     const real = String.prototype.lastIndexOf;

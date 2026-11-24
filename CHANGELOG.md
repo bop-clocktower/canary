@@ -63,6 +63,17 @@ under the project's former name) are documented in the
   unchanged at 215; two tests whose body ran into a `/** ... */` opener naming
   the target now abstain (577 to 579 skipped).
 
+- **Cassandra exempts every skip form, not just a test's own `.skip` (#1686).**
+  A vacuous test inside `describe.skip(...)` or `xdescribe(...)` never runs, yet
+  it drew VAC-001/VAC-002 and counted as checked; it is now a skip like any
+  `.skip` test. `xit`, `xtest`, `it.skip.each` and `test.skip.each` were not
+  read as declarations at all, so a parked body ran on into the real test above
+  it and its VAC-001 landed on that test's name; they are now declarations, and
+  skipped. The test enumerator is shared, so `LINT-006` exempts the same forms
+  and the test inventory lists `xit`/`xtest`/`.skip.each` tests. The skip reason
+  now reads
+  `declared skipped (.skip, xit/xtest, or inside describe.skip/xdescribe): ...`.
+
 - **The session siren no longer calls an ahead or diverged marketplace clone
   "behind origin", and says when it could not check the clone at all (#1682).**
   Checks 0 and 3 read any difference between the clone's HEAD and origin's tip
@@ -86,9 +97,12 @@ under the project's former name) are documented in the
   on the same grounds. The choice was (a), exempt, over (b), keep scanning
   because the test is still vacuous once un-skipped: a finding nobody can act on
   until the test is un-skipped is noise, and the un-skip puts it back in the
-  scan. The exemption keeps the denominator honest: each `.skip` test leaves
-  `checked` and is listed as a skip (`declared .skip: it never runs ...`), so a
-  file whose only tests are `.skip` abstains instead of passing.
+  scan. The exemption keeps the denominator honest: each skipped test leaves
+  `checked` and is listed as a skip
+  (`declared skipped (...): it never runs ...`), so a file whose only tests are
+  skipped abstains instead of passing. The exempt forms are a test's own `.skip`
+  (and `.skip.each`), `xit`/`xtest`, and every test inside a
+  `describe.skip`/`xdescribe` block (#1686).
 
 - **The mission-briefing charter comment no longer stacks a new copy on every
   run when the token is not `github-actions[bot]` (#1678).**
@@ -164,8 +178,8 @@ under the project's former name) are documented in the
   file (a hook is the common case, not a requirement) now binds the name when it
   reaches the target: a relative `import(` or `require(` (also `.default`) makes
   it a handle, and a right-hand side that names an imported binding makes it a
-  one-level helper. Any other assignment leaves the name unresolved, so the
-  #1170 abstention still applies to it.
+  one-level helper. Any other assignment leaves the name unresolved: a direct
+  call of it abstains (#1170); a method call on it is still judged.
 - **The release workflow's `Move latest tag` step names a rejected push instead
   of blaming a race (#1504).** An auth failure, a network failure or a tag
   ruleset refusal used to log "latest moved on origin", retry, and fail with

@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 
+import { commentEnd, literalEnd } from './js-literals.js';
 import { isJsxPath, maskJsxText } from './jsx-text.js';
 import { blankStringContent } from './string-literals.js';
 
@@ -68,8 +69,18 @@ const TEST_FN_PY = /^([ \t]*)(?:async[ \t]+)?def (test_\w+)\s*\(/gm;
 // body and borrows its assertions. The title is group 2, closed by the SAME
 // quote that opened it (group 1). A template's `${...}` survives blanking as
 // code, so its title is recovered verbatim (`b ${n}`) rather than evaluated.
+//
+// #1686: `xit`/`xtest` and `it.skip.each(table)('title', ...)` are declarations
+// too, for the same reason -- unmatched, a parked body ran on into the real test
+// above and its VAC-001 landed on that test's name. The `.each` table is matched
+// lazily, bounded, and never across a `;`, so a title-less table cannot reach a
+// later statement's `)('...`.
 const TEST_FN_JS =
-  /(?:^|\s)(?:it|test)(?:\.(?:only|skip))?\s*\(\s*(['"`])((?:(?!\1)[\s\S])*)\1/dgm;
+  /(?:^|\s)(?:x(?:it|test)|(?:it|test)(?:\.(?:only|skip))?|(?:it|test)\.skip\.each\s*\([^;]{0,2000}?\))\s*\(\s*(['"`])((?:(?!\1)[\s\S])*)\1/dgm;
+/** A declaration that is itself skipped: `xit`/`xtest`, or a `.skip` form. */
+const SKIPPED_DECL = /^\s*(?:x|\w+\.skip\b)/;
+/** A suite whose every test is skipped (#1686): its call's `(` ends the match. */
+const SKIPPED_SUITE = /(?<![\w.$])(?:describe\.skip|xdescribe)\s*\(/g;
 export const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // What makes a Python test NON-vacuous for LINT-006: `assert`/`pytest.raises`,
 // plus unittest's `self.assertEqual(...)` family -- `\bassert\b` has no word
@@ -693,7 +704,10 @@ export interface TestBlock {
   body: string;
   /** Byte offset of `body` in the source it was sliced from. */
   bodyStart: number;
-  /** Declared with `.skip`: it never runs, so it cannot pass vacuously. */
+  /**
+   * Never runs, so it cannot pass vacuously: its own `.skip` (or `.skip.each`),
+   * `xit`/`xtest`, or inside a `describe.skip`/`xdescribe` block (#1686).
+   */
   skipped?: boolean;
 }
 
@@ -750,6 +764,7 @@ export function enumerateTests(
     }
     return out;
   }
+  const suites = skippedSuiteSpans(code);
   const decls = [...code.matchAll(TEST_FN_JS)].filter(
     (m) => !inLineComment(code, m.index! + (/^\s/.test(m[0]) ? 1 : 0)),
   );
@@ -769,10 +784,60 @@ export function enumerateTests(
       line: lineOf(code, nameStart),
       body: code.slice(bodyStart, bodyEnd),
       bodyStart,
-      ...(/^\s*\w+\.skip\b/.test(m[0]) ? { skipped: true } : {}),
+      ...(isSkippedDecl(m[0], start, suites) ? { skipped: true } : {}),
     });
   }
   return out;
+}
+
+/**
+ * Skipped by its own form, or declared inside a `describe.skip`/`xdescribe`
+ * call (#1686): either way it never runs, so it cannot pass vacuously.
+ */
+function isSkippedDecl(
+  decl: string,
+  at: number,
+  suites: Array<[number, number]>,
+): boolean {
+  return SKIPPED_DECL.test(decl) || suites.some(([o, c]) => at > o && at < c);
+}
+
+/**
+ * The `(`..`)` span of every `describe.skip(...)`/`xdescribe(...)` call. A call
+ * whose `)` cannot be found contributes nothing: its tests stay scanned, as
+ * before #1686, rather than everything after it silently leaving the scan.
+ */
+function skippedSuiteSpans(code: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  for (const m of code.matchAll(SKIPPED_SUITE)) {
+    if (inLineComment(code, m.index)) continue;
+    const open = m.index + m[0].length - 1;
+    const close = closingParenOf(code, open);
+    if (close >= 0) spans.push([open, close]);
+  }
+  return spans;
+}
+
+/**
+ * The `)` balancing the `(` at `open` in string-blanked code, or -1. Comments
+ * and string, template and regex literals are stepped over, so a paren in one
+ * (`/\(/`, `// (`) cannot unbalance the count.
+ */
+function closingParenOf(code: string, open: number): number {
+  let depth = 0;
+  let last = -1;
+  for (let i = open; i < code.length; i += 1) {
+    const end = commentEnd(code, i) ?? literalEnd(code, i, last);
+    if (end !== null) {
+      i = end - 1;
+      continue;
+    }
+    const c = code[i]!;
+    if (c === '(') depth += 1;
+    else if (c === ')' && (depth -= 1) === 0) return i;
+    if (!/\s/.test(c)) last = i;
+  }
+  return -1;
 }
 
 function scanAssertionFreePy(code: string, file: string): LintFinding[] {
