@@ -16,6 +16,17 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Cassandra no longer reports VAC findings on `.skip` tests, and no longer
+  counts them as checked (#1669).** Since #1665 the test enumerator reads
+  `.skip` declarations, so `vacuity-check` began scanning bodies it had never
+  seen: `expect(1).toBe(1)` in a parked `test.skip` drew a VAC-001. A skipped
+  test never runs, so it cannot pass vacuously, and LINT-006 already exempts it
+  on the same grounds. The choice was (a), exempt, over (b), keep scanning
+  because the test is still vacuous once un-skipped: a finding nobody can act on
+  until the test is un-skipped is noise, and the un-skip puts it back in the
+  scan. The exemption keeps the denominator honest: each `.skip` test leaves
+  `checked` and is listed as a skip (`declared .skip: it never runs ...`), so a
+  file whose only tests are `.skip` abstains instead of passing.
 - **The session siren now reports when its own installed copy is stale
   (#1632).** `install-siren.mjs` installs the hooks into `~/.claude/hooks/` as
   copies, and updating the marketplace or the plugin does not refresh them, so a

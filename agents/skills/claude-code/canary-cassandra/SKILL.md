@@ -186,6 +186,12 @@ itself, so:
   `vac002_abstained` in the `--json` summary (always present, `0` included) and
   an `N test(s) abstained on VAC-002` line in text output.
 
+- **A `.skip` test** → not scanned and not counted in `checked`, but listed as a
+  skip (`declared .skip: it never runs, so it cannot pass vacuously`) (#1669).
+  It never runs, so it cannot pass vacuously, and `LINT-006` exempts it too.
+  Un-skipping it puts it back in the scan. A file whose only tests are `.skip`
+  checks zero tests and abstains. `.only` tests run, so they are scanned.
+
 `checked` in the JSON payload is the number of **tests** read, not files. Always
 read it before believing a zero.
 

@@ -1442,6 +1442,26 @@ function attachesToDeclaration(line: string, python: boolean): boolean {
   return python && s.startsWith('@');
 }
 
+const SKIP_REASON =
+  'declared .skip: it never runs, so it cannot pass vacuously (LINT-006 exempts it too)';
+
+/**
+ * All but `.skip` blocks (#1669): those never run, so they cannot pass
+ * vacuously, but they are not checked clean either -- each is recorded in
+ * `skipped`, so a file of only `.skip` tests abstains instead of passing.
+ */
+function runnableBlocks(
+  blocks: TestBlock[],
+  path: string,
+  skipped: SkipEntry[],
+): TestBlock[] {
+  for (const b of blocks) {
+    if (b.skipped)
+      skipped.push({ name: skipLabel('VAC', path, b), reason: SKIP_REASON });
+  }
+  return blocks.filter((b) => !b.skipped);
+}
+
 /**
  * Scan one test file for vacuous tests.
  *
@@ -1480,11 +1500,12 @@ export function scanVacuity(path: string): VacuityResult {
     sourceLines: source.split('\n'),
     helperAbstentions: [],
   };
-  const findings = scanAllBlocks(ctx, blocks, skipped);
+  const runnable = runnableBlocks(blocks, path, skipped);
+  const findings = scanAllBlocks(ctx, runnable, skipped);
   skipped.push(...ctx.helperAbstentions);
 
   const result: VacuityResult = {
-    checked: blocks.length,
+    checked: runnable.length,
     findings,
   };
   if (skipped.length > 0) result.skipped = skipped;
