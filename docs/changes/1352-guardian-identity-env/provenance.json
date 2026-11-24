@@ -1,0 +1,26 @@
+{
+  "issues": [1352],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/guardian-sticky-app-identity.test.ts::sticky upsert under a non-default token identity (#1352) > a second run updates the sticky the first run created (no stacking)",
+    "ts/test/guardian-sticky-app-identity.test.ts::sticky upsert under a non-default token identity (#1352) > CANARY_GUARDIAN_LOGIN names a PAT author, so its sticky is reused",
+    "ts/test/guardian-sticky-app-identity.test.ts::sticky upsert under a non-default token identity (#1352) > CANARY_GUARDIAN_LOGIN replaces the github-actions[bot] default",
+    "ts/test/guardian-sticky-app-identity.test.ts::sticky upsert under a non-default token identity (#1352) > upsertStickyComment takes the identity as a parameter",
+    "ts/test/guardian-sticky-app-identity.test.ts::precision reads the sticky under the configured identity (#1352) > the CLI passes the env identity to the adjudication source",
+    "ts/test/guardian-sticky-app-identity.test.ts::precision reads the sticky under the configured identity (#1352) > GitHubAdjudicationSource finds an App-authored sticky"
+  ],
+  "redAtBase": "npx vitest run test/guardian-sticky-app-identity.test.ts -> Tests 6 failed | 4 passed (10) at base 448969ff (red test committed alone as d9989d53); first failure: AssertionError: expected [ Array(2) ] to have a length of 1 but got 2",
+  "assumptions": [
+    "Identity source is env config (human decision option (a), fork F3 = (a)): CANARY_GUARDIAN_LOGIN replaces the github-actions[bot] default; CANARY_GUARDIAN_APP_SLUG adds the App-bot match.",
+    "Empty or whitespace-only values count as unset; values are trimmed.",
+    "The env is read only at the CLI edge (identityFromEnv in ts/src/guardian/cli.ts) and passed down as a parameter; pr-comment.ts and adjudication-github.ts stay env-free.",
+    "GitHubAdjudicationSource (the precision command) also takes the identity, because the recorded human decision on the issue names it alongside upsertStickyComment.",
+    "The issue's repro test as written calls upsertStickyComment with no identity, which cannot pass under the decided design (no auto-detection); it is reproduced through the production CLI path with the env set, plus a unit case that passes the identity explicitly.",
+    "The mission-briefing comment (ts/src/briefing/comment.ts) also upserts by author with the default identity; it is out of scope here and left unchanged."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "The PR configures guardian's posting identity on every production path that looks up the sticky (pr-check --post-comment and precision), which is the whole of #1352.",
+  "run": "fc1123d",
+  "base": "448969ff"
+}

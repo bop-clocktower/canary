@@ -150,7 +150,9 @@ import {
 import { buildWeakTestFindings } from './weak-test.js';
 import {
   GitHubClient,
+  GuardianIdentity,
   RestGitHubClient,
+  STICKY_MARKER,
   degradationAnnotation,
   upsertStickyComment,
 } from './pr-comment.js';
@@ -241,7 +243,11 @@ export interface GuardianDeps {
     prNumber: number,
     token: string,
   ): GitHubClient;
-  buildAdjudicationSource(repo: string, token: string): AdjudicationSource;
+  buildAdjudicationSource(
+    repo: string,
+    token: string,
+    identity: GuardianIdentity,
+  ): AdjudicationSource;
   buildBranchProtectionClient(repo: string, token: string): BranchProtection;
   makeAgentTier(): AgentTier;
   sleep(secs: number): Promise<void>;
@@ -313,8 +319,8 @@ export function defaultDeps(): GuardianDeps {
     runGh: spawnGh,
     buildCommentClient: (repo, prNumber, token) =>
       new RestGitHubClient(repo, prNumber, token),
-    buildAdjudicationSource: (repo, token) =>
-      new GitHubAdjudicationSource(repo, token),
+    buildAdjudicationSource: (repo, token, identity) =>
+      new GitHubAdjudicationSource(repo, token, {}, identity),
     buildBranchProtectionClient: (repo, token) =>
       new RestBranchProtectionClient(repo, token),
     makeAgentTier: () => new InSessionAgentTier(),
@@ -430,6 +436,19 @@ export function isForkContext(env: NodeJS.ProcessEnv): boolean {
   const raw = env['CANARY_GUARDIAN_IS_FORK'];
   if (raw === undefined) return false;
   return raw.trim() !== '0';
+}
+
+/**
+ * Who guardian's sticky comment is authored by (#1352), read at the CLI edge
+ * so the core stays pure. `CANARY_GUARDIAN_LOGIN` replaces the
+ * `github-actions[bot]` default (a PAT, or an App's `<slug>[bot]`);
+ * `CANARY_GUARDIAN_APP_SLUG` adds the App-bot match. Blank means unset.
+ */
+function identityFromEnv(env: NodeJS.ProcessEnv): GuardianIdentity {
+  // Blank is unset: '' must never become a login that matches a ghost author.
+  const login = env['CANARY_GUARDIAN_LOGIN']?.trim();
+  const appSlug = env['CANARY_GUARDIAN_APP_SLUG']?.trim();
+  return { ...(login ? { login } : {}), ...(appSlug ? { appSlug } : {}) };
 }
 
 /** Append `notice` to the `$GITHUB_STEP_SUMMARY` file when set (no-op else). */
@@ -1200,7 +1219,11 @@ async function precisionCmd(
   const since = new Date(Date.now() - opts.days * 86_400_000)
     .toISOString()
     .slice(0, 10);
-  const source = deps.buildAdjudicationSource(opts.repo, token);
+  const source = deps.buildAdjudicationSource(
+    opts.repo,
+    token,
+    identityFromEnv(deps.env),
+  );
   const { evidence, scanned } = await collectEvidence(source, since);
   const report = deriveReport(evidence, scanned);
   deps.out(
@@ -1241,7 +1264,12 @@ async function postStickyComment(
   // GITHUB_TOKEN (#1445); the client never sends an empty bearer.
   const token = deps.env['GITHUB_TOKEN'] ?? '';
   const client = deps.buildCommentClient(ctx[0], ctx[1], token);
-  const res = await upsertStickyComment(client, body);
+  const res = await upsertStickyComment(
+    client,
+    body,
+    STICKY_MARKER,
+    identityFromEnv(deps.env),
+  );
   if (res.action === 'degraded' && res.notice) {
     deps.out(degradationAnnotation(res.notice));
     appendStepSummary(deps.env, res.notice);

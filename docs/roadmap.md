@@ -825,6 +825,50 @@ last_manual_edit: 2026-11-23T23:33:08.505Z
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#1672
 
+### siren: check 0 infers 'behind origin' from inequality and drops the cannot-verify reason
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** hooks/canary-session-siren.sh check 0 (and check 3's wording) reads any head mismatch as 'behind origin', so an ahead or diverged clone gets a pull remedy that can never clear it, and a failed git ls-remote is silently dropped; check ancestry, state the cannot-verify reason, add red-first cases to ts/test/install-siren.test.ts.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1682
+
+### guardian: allow-mutant reason and mutator name still render through mdText (autolinks survive)
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** ts/src/guardian/mutation-report.ts renders the author-written allow-mutant reason (:229) and the mutator name (:287) with mdText, which leaves GitHub autolinks (@user, #N, URLs) live in the sticky comment; render both with mdCode, red-first with a hostile reason.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1680
+
+### cassandra: VAC-002 counts a comment mention of a one-level name as invoking the target
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** helperVerdict in ts/src/core/vacuity-scanner.ts reads the raw block body, comments included, so a comment word matching a one-level helper name satisfies VAC-002; pass the comment-stripped body, require member access or a call for value bindings, and reconcile the 'in a hook' wording.
+- **Blockers:** Serialize behind PR #1679 (same file, ts/src/core/vacuity-scanner.ts).
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1681
+
+### briefing: mission-briefing sticky stacks under a non-default token identity
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** postCharter in ts/src/briefing/comment.ts upserts its sticky with no identity, so under an App token or PAT it posts a new comment every run (same class as #1352); pass the identity from the CANARY_GUARDIAN_LOGIN / CANARY_GUARDIAN_APP_SLUG variables that PR #1677 adds, read at the briefing CLI edge.
+- **Blockers:** Serialize behind PR #1677 (adds the identity parameter to upsertStickyComment).
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#1678
+
 ## Engine and Platform
 
 ## Product Surface Gaps

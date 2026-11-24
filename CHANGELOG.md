@@ -28,6 +28,19 @@ under the project's former name) are documented in the
   `checked` and is listed as a skip (`declared .skip: it never runs ...`), so a
   file whose only tests are `.skip` abstains instead of passing.
 
+- **Guardian's sticky comment no longer stacks a new copy on every run when the
+  token is not `github-actions[bot]` (#1352).** Guardian finds its own sticky by
+  author (#931), and only `github-actions[bot]` could match, so a job posting
+  with a GitHub App installation token or a PAT never found the comment it wrote
+  and posted another one. Two optional environment variables now name the
+  author: `CANARY_GUARDIAN_LOGIN` replaces the `github-actions[bot]` default,
+  and `CANARY_GUARDIAN_APP_SLUG` adds a match for a `Bot` acting through that
+  GitHub App. `pr-check --post-comment` and `precision` both read them. An empty
+  or whitespace-only value counts as unset. A comment is adopted only when its
+  author matches the configured login, or is a `Bot` acting through the
+  configured App; any other comment carrying the marker is never adopted. With
+  both unset nothing changes.
+
 - **The guardian mutation report no longer turns test names into links or
   mentions, and no longer posts its abstain reason raw (#1673).** A covering
   test name is now an inert code span, like the excluded test paths already

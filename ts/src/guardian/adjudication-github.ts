@@ -12,7 +12,7 @@
 
 import { PrEvidence, PrFile } from './adjudication.js';
 import { PageReader, readAllPages, restPageReader } from './github-paging.js';
-import { Comment, findSticky } from './pr-comment.js';
+import { Comment, GuardianIdentity, findSticky } from './pr-comment.js';
 
 const API = 'https://api.github.com';
 
@@ -133,6 +133,8 @@ export class GitHubAdjudicationSource implements AdjudicationSource {
     private readonly repo: string,
     token: string,
     seams: { read?: PageReader; graphql?: GraphqlPost } = {},
+    // #1352: who posted the sticky; undefined keeps findSticky's default.
+    private readonly identity?: GuardianIdentity,
   ) {
     this.read =
       seams.read ??
@@ -170,7 +172,7 @@ export class GitHubAdjudicationSource implements AdjudicationSource {
   async stickyHistory(pr: number): Promise<StickyHistory | null> {
     const url = `${API}/repos/${this.repo}/issues/${pr}/comments`;
     const comments = (await readAllPages(url, this.read)) as Comment[];
-    const sticky = findSticky(comments) as
+    const sticky = findSticky(comments, undefined, this.identity) as
       (Comment & { node_id?: string }) | null;
     if (sticky === null) return null;
     const data = await this.graphql(EDITS_QUERY, { id: sticky.node_id });
