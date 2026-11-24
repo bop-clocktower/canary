@@ -1,0 +1,19 @@
+{
+  "issues": [1693],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": {
+    "file": "ts/test/install-siren.test.ts",
+    "name": "canary-session-siren.sh skew check — executed, not read > check 0 states freshness as unverifiable for a clone with no readable HEAD (#1693); check 3 states freshness as unverifiable for a clone with no readable HEAD (#1693)"
+  },
+  "redBeforeFix": "The tests are green against the shipped hook. Deleting check 0's `*)` arm (hook lines 206-211) leaves the hook syntax-valid and turns the check 0 test red (1 failed | 1 passed). Deleting check 3's `*)` arm (lines 256-258) turns the check 3 test red (1 failed | 1 passed). Restoring each arm (cmp-verified) brings install-siren.test.ts back to 70/70.",
+  "assumptions": [
+    "Human answer: tests only, in ts/test/install-siren.test.ts, one per check (0 and 3), each asserting the 'no readable HEAD … freshness unverifiable' finding, and each proven red by temporarily deleting its `*)` branch.",
+    "Fixture: .git/HEAD rewritten to 'ref: refs/heads/no-such-branch'. A fully corrupt HEAD makes git stop treating the dir as a repo, so ls-remote fails first and a different branch fires. The unborn ref keeps origin reachable with HEAD unreadable, which is the only state that reaches `*)`.",
+    "Stacked on the #1692 branch (fix/1692-siren-mkt-not-a-clone), as the lane brief directs.",
+    "No CHANGELOG entry: test-only change, no user-visible behaviour."
+  ],
+  "closingKeyword": "Closes",
+  "fleet": "roadmap-fleet",
+  "runId": "fc1124c-w4"
+}

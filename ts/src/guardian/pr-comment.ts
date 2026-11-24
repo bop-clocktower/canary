@@ -18,10 +18,17 @@ import {
   realSleep,
   toGitHubError,
 } from './github-http.js';
+import {
+  DEFAULT_LOGIN,
+  type GuardianIdentity,
+  isAuthoredBy,
+  misidentifiedNotice,
+} from './identity.js';
 
 // Re-exported: hard-gate, briefing, and the tests catch it from here (#1467
 // moved the HTTP error mapping next to the retry it classifies).
 export { GitHubPermissionError };
+export type { GuardianIdentity };
 
 // `renderFindings` writes this literal on a comment body's first line.
 export const STICKY_MARKER = '<!-- canary-pr-guardian -->';
@@ -34,17 +41,6 @@ export interface Comment {
   performed_via_github_app?: { slug: string } | null;
   created_at?: string;
 }
-
-/**
- * Who guardian posts as (configured: the Actions token can't `GET /user`).
- * `login` unset = `github-actions[bot]`; `appSlug` admits that App's `Bot`.
- */
-export interface GuardianIdentity {
-  login?: string;
-  appSlug?: string;
-}
-
-const DEFAULT_LOGIN = 'github-actions[bot]';
 
 /** The comment-poster seam. Every consumer depends on this, not on HTTP. */
 export interface GitHubClient {
@@ -110,8 +106,9 @@ export class FakeGitHubClient implements GitHubClient {
  * Outcome of an {@link upsertStickyComment} call.
  *
  * `action` is `"created"` | `"updated"` | `"degraded"`. `comment_id` is the
- * affected comment id (`null` when degraded). `notice` carries the degradation
- * message and is set **only** when `action === "degraded"`.
+ * affected comment id: `null` when degraded before posting, set when the post
+ * landed under an author the identity would not adopt (#1685). `notice` is
+ * set **only** when `action === "degraded"`.
  */
 export interface UpsertResult {
   action: string;
@@ -140,12 +137,6 @@ function isSticky(c: Comment, marker: string, id: GuardianIdentity): boolean {
   return isAuthoredBy(c, id) && (c.body ?? '').trimStart().startsWith(marker);
 }
 
-function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {
-  if (c.user?.login === (identity.login ?? DEFAULT_LOGIN)) return true;
-  const slug = c.performed_via_github_app?.slug;
-  return c.user?.type === 'Bot' && !!slug && slug === identity.appSlug;
-}
-
 /**
  * Update guardian's own sticky in place, else create one (SC-9: never stacks).
  * A 403 degrades to a `degraded` result instead of crashing the job (OT-4) --
@@ -168,6 +159,9 @@ export async function upsertStickyComment(
       return { action: 'updated', comment_id: updated.id, notice: null };
     }
     const created = await client.createComment(body);
+    // #1685: posted, but under an author the next run will not adopt.
+    const notice = misidentifiedNotice(created, identity);
+    if (notice) return { action: 'degraded', comment_id: created.id, notice };
     return { action: 'created', comment_id: created.id, notice: null };
   } catch (err) {
     if (err instanceof GitHubPermissionError) {

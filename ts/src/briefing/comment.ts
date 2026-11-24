@@ -36,7 +36,12 @@ export function commentClientFor(
 }
 
 type PostResult =
-  | { kind: 'posted'; action: string; commentId: number | null }
+  | {
+      kind: 'posted';
+      action: string;
+      commentId: number | null;
+      notice?: string;
+    }
   | { kind: 'degraded'; notice: string };
 
 const FORBIDDEN_NOTICE =
@@ -59,6 +64,19 @@ export async function postCharter(
       BRIEFING_MARKER,
       identity,
     );
+    // #1685: posted, but under an author the next run will not adopt.
+    if (r.action === 'degraded' && r.comment_id !== null) {
+      const notice = (r.notice ?? '').replace(
+        /^guardian: /,
+        'canary briefing: ',
+      );
+      return {
+        kind: 'posted',
+        action: 'created',
+        commentId: r.comment_id,
+        notice,
+      };
+    }
     if (r.action === 'degraded')
       return { kind: 'degraded', notice: degraded(r.notice) };
     return { kind: 'posted', action: r.action, commentId: r.comment_id };

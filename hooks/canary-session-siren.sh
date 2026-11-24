@@ -261,6 +261,9 @@ if [ -d "$MKT/.git" ]; then
   else
     FINDINGS+=("git ls-remote origin HEAD $LS_REMOTE_WHY for $MKT — marketplace freshness and installed-plugin staleness unverifiable")
   fi
+elif [ -d "$MKT" ]; then
+  # Present but not a clone (#1692): naming it missing points at the wrong fix.
+  FINDINGS+=("bop-clocktower marketplace directory at $MKT is present but not a git clone — remove the stale directory or re-clone")
 else
   FINDINGS+=("bop-clocktower marketplace checkout missing at $MKT")
 fi
