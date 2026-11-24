@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **canary-cassandra no longer reads a `//` or `/*` inside a regex literal as a
+  comment.** This is a regression from #1697. The JS comment tokenizer had no
+  regex arm, so a line such as
+  `expect('a/b'.replace(/[//]/g, '') + makeStore()).toBe(1)` lost everything
+  after the `//`, the call included, and gave a false VAC-002. The tokenizer now
+  steps over regex literals with the shared `regexLiteralEnd`, so division
+  (`a / b // note`) and a real trailing comment after a regex are still
+  comments. Python is unchanged.
+
 - **A misconfigured guardian sticky identity no longer stacks comments silently
   (#1685).** Logins were compared exactly, so a `CANARY_GUARDIAN_LOGIN` in
   different case or with a leading `@` missed the sticky its own token wrote,

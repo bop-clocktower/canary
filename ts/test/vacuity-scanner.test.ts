@@ -952,6 +952,45 @@ describe('VAC-002 — a trailing or block comment is not an invocation (#1691)',
   });
 });
 
+// Follow-up to #1697. The JS comment tokenizer had no regex-literal arm, and
+// blanking leaves a regex's content intact, so an unescaped `//` or `/*` in a
+// character class opened a "comment" that swallowed the rest of the line --
+// and the call after it -- for a false VAC-002.
+describe('VAC-002 — a // or /* inside a regex literal is not a comment', () => {
+  const HEAD =
+    `import { it, expect } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let hookSpawns = 0;\n`;
+  const vac002Tests = (body: string) =>
+    scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`)
+      .findings.filter((f) => f.rule === 'VAC-002')
+      .map((f) => f.test);
+
+  it.each([
+    ['a // in a character class', `/[//]/g`],
+    ['a /* in a character class', `/[/*]/g`],
+  ])('still counts a call that follows %s', (_l, regex) => {
+    expect(
+      vac002Tests(
+        `  expect('a/b'.replace(${regex}, '') + makeStore()).toBe(1);\n`,
+      ),
+    ).toEqual([]);
+  });
+
+  // The guards: skipping regex literals must not turn a real comment into code.
+  it('still reads a // after division as a comment', () => {
+    expect(
+      vac002Tests(`  expect(hookSpawns / 2 // makeStore()\n  ).toBe(0);\n`),
+    ).toEqual(['counts']);
+  });
+
+  it('still reads a trailing // after a regex literal as a comment', () => {
+    expect(
+      vac002Tests(`  expect(/[//]/.test('x')).toBe(false); // makeStore(1)\n`),
+    ).toEqual(['counts']);
+  });
+});
+
 describe('VAC-003 — every assertion asserts absence', () => {
   // The canary-katana case from #486: `expect(existsSync(ledger)).toBe(false)`
   // was free, because the buggy code exited before the write. An all-absence

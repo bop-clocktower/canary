@@ -77,6 +77,7 @@ import {
   frameworkForPath,
   type TestBlock,
 } from './static-linter.js';
+import { regexLiteralEnd } from './js-literals.js';
 import { blankStringContent } from './string-literals.js';
 
 /** How the target under test was resolved. Mirrors the guardian's ladder. */
@@ -803,22 +804,49 @@ function commentSpans(line: string, python: boolean): Span[] {
   if (!python && (s.startsWith('#') || s.startsWith('*'))) {
     return [[line.length - s.length, line.length]];
   }
+  if (!python) return jsCommentSpans(line);
   const spans: Span[] = [];
-  const opener = python ? '#' : '/';
-  for (const m of line.matchAll(
-    python ? PY_STRING_OR_COMMENT : STRING_OR_COMMENT,
-  )) {
-    if (m[0].startsWith(opener)) spans.push([m.index, m.index + m[0].length]);
+  for (const m of line.matchAll(PY_STRING_OR_COMMENT)) {
+    if (m[0].startsWith('#')) spans.push([m.index, m.index + m[0].length]);
   }
   return spans;
 }
 
 /**
- * One left-to-right token: an escape, a closed string (skipped, so its `//` is
- * content), or a comment -- `//` to the end, `/*` to its close or the end.
+ * The JS walk: a regex literal is stepped over before the token is tried, so
+ * a `//` or `/*` in `/[//]/g` is regex content, not a comment that swallows
+ * the rest of the line. Blanking leaves regex content intact, so this is the
+ * only place that can tell them apart. `regexLiteralEnd` decides division vs
+ * regex from the previous significant character, so `a / b // c` still ends
+ * in a comment.
+ */
+function jsCommentSpans(line: string): Span[] {
+  const spans: Span[] = [];
+  for (let i = 0; i < line.length;) {
+    const regexEnd = regexLiteralEnd(line, i);
+    if (regexEnd !== null) {
+      i = regexEnd;
+      continue;
+    }
+    STRING_OR_COMMENT.lastIndex = i;
+    const m = STRING_OR_COMMENT.exec(line);
+    if (m === null) {
+      i += 1;
+      continue;
+    }
+    if (m[0].startsWith('/')) spans.push([i, i + m[0].length]);
+    i += m[0].length;
+  }
+  return spans;
+}
+
+/**
+ * One token AT the cursor (sticky): an escape, a closed string (skipped, so
+ * its `//` is content), or a comment -- `//` to the end, `/*` to its close or
+ * the end.
  */
 const STRING_OR_COMMENT =
-  /\\.|(['"`])(?:\\.|(?!\1)[^\\])*\1|\/\/.*|\/\*.*?(?:\*\/|$)/g;
+  /\\.|(['"`])(?:\\.|(?!\1)[^\\])*\1|\/\/.*|\/\*.*?(?:\*\/|$)/y;
 
 /** The Python form of {@link STRING_OR_COMMENT}: `#` to the end is a comment. */
 const PY_STRING_OR_COMMENT = /\\.|(['"])(?:\\.|(?!\1)[^\\])*\1|#.*/g;
