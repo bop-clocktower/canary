@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **A misconfigured guardian sticky identity no longer stacks comments silently
+  (#1685).** Logins were compared exactly, so a `CANARY_GUARDIAN_LOGIN` in
+  different case or with a leading `@` missed the sticky its own token wrote,
+  and a library caller's empty login matched an empty author. Logins now compare
+  case-insensitively with a leading `@` ignored, and an empty login falls back
+  to `github-actions[bot]`. When a new comment's author would not be adopted on
+  the next run, guardian and `canary briefing` warn on stderr with the login to
+  set. The identity rules moved to `ts/src/guardian/identity.ts`.
+
 - **The session siren no longer calls a marketplace directory with no `.git`
   missing (#1692).** Check 3 reported "marketplace checkout missing" whenever
   `$MKT/.git` was absent, even though the directory was there. It now says the

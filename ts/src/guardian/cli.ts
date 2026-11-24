@@ -1272,7 +1272,11 @@ async function postStickyComment(
     STICKY_MARKER,
     identityFromEnv(deps.env),
   );
-  if (res.action === 'degraded' && res.notice) {
+  if (res.action === 'degraded' && res.notice && res.comment_id !== null) {
+    // #1685: the comment landed, but under an author the next run won't adopt.
+    deps.err(degradationAnnotation(res.notice));
+    appendStepSummary(deps.env, res.notice);
+  } else if (res.action === 'degraded' && res.notice) {
     deps.out(degradationAnnotation(res.notice));
     appendStepSummary(deps.env, res.notice);
     // #1467: the comment was the verdict's only reader-facing surface, so a

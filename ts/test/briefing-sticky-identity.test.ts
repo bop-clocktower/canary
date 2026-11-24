@@ -130,6 +130,28 @@ describe('briefing sticky under a non-default token identity (#1678)', () => {
   });
 });
 
+describe('briefing --comment surfaces an unadoptable post on stderr (#1685)', () => {
+  it('posts the charter, says so on stdout, and warns on stderr', async () => {
+    // A PAT posts as ci-service-user while the sticky identity is the default,
+    // so the next run would not adopt this comment. Assert what the user SEES
+    // (the stderr warning), not just that postCharter returned a notice.
+    const client = new IdentityClient(PAT_AUTHOR);
+    const res = await invokeCanary(
+      ['briefing', '--diff', diffPath, '--comment'],
+      {
+        cwd: root,
+        env: PR_ENV,
+        deps: { buildCommentClient: () => client },
+      },
+    );
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('Charter posted as a PR comment');
+    expect(res.stderr).toContain(
+      '::warning::canary briefing: sticky comment posted as ci-service-user',
+    );
+  });
+});
+
 describe('postCharter identity parameter (#1678)', () => {
   it('matches the sticky by the identity it is given', async () => {
     const client = new IdentityClient(APP_AUTHOR);
