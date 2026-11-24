@@ -4,7 +4,8 @@
  * Split from `mutation-report.ts` to keep it inside the 300-line perf budget.
  * Everything a Stryker report supplies (paths, mutator names, replacements,
  * test names) and every suppression reason is untrusted text on its way into a
- * PR comment, so it is rendered through {@link mdCode} or {@link mdText}.
+ * PR comment, so it is rendered through {@link mdCode}: a code span is the one
+ * place GitHub autolinks neither `#N`, `@user` nor a URL (#1673, #1680).
  */
 
 import type { MutationReport } from './mutation.js';
@@ -43,10 +44,6 @@ export function mdReason(raw: string): string {
     .trimEnd();
   return mdCode(`${kept}\u{2026}`);
 }
-
-/** Text as plain Markdown that cannot open a code span, emphasis or a tag. */
-export const mdText = (text: string): string =>
-  text.replace(/\s*[\r\n]+\s*/g, ' ').replace(/[\\`*_[\]<>|]/g, '\\$&');
 
 /**
  * Why a run that killed nothing, and had nothing survive or time out, is an
