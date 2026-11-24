@@ -876,6 +876,82 @@ describe('VAC-002 — a comment is not an invocation (#1681)', () => {
   });
 });
 
+// #1691. #1681 only stripped lines that START with `//`, `#` or `*`, and the
+// annotation walk had its own `/*` check, so the two disagreed and a comment
+// AFTER code, or a `/* ... */` line, still counted as naming the target.
+describe('VAC-002 — a trailing or block comment is not an invocation (#1691)', () => {
+  const HEAD =
+    `import { it, expect } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let hookSpawns = 0;\n`;
+  const vac002Tests = (r: ReturnType<typeof scan>) =>
+    r.findings.filter((f) => f.rule === 'VAC-002').map((f) => f.test);
+
+  it.each([
+    ['a trailing // comment', `  expect(hookSpawns).toBe(0); // makeStore\n`],
+    [
+      'a /* */ line',
+      `  /* makeStore() is not called */\n  expect(hookSpawns).toBe(0);\n`,
+    ],
+    [
+      'a trailing /* */ span',
+      `  expect(hookSpawns /* makeStore */).toBe(0);\n`,
+    ],
+  ])('reports a test whose only mention is %s', (_l, body) => {
+    const r = scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`);
+    expect(vac002Tests(r)).toEqual(['counts']);
+  });
+
+  // The negative: `//` inside a string is content, not a comment, so a call
+  // written after one on the same line still counts.
+  it('still counts a call that follows a // inside a string', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `it('fetches', () => {\n  expect(get('http://x', makeStore())).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+  });
+
+  it('still counts a call that follows a closed /* */ span', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `it('calls', () => {\n  /* setup */ expect(makeStore()).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+  });
+
+  // Python has its own comment syntax: `//` is floor division and `/*` is not
+  // a token, so only a quote-aware `#` opens a comment. Reading the JS forms in
+  // a Python body blanked `10 // target(5)` down to `10` -- a false VAC-002.
+  describe('in a Python body', () => {
+    const PY_HEAD = `from store import target\n\n`;
+    const pyTest = (body: string) =>
+      vac002Tests(scan('test_a.py', PY_HEAD + `def test_t():\n${body}`));
+
+    it('keeps a call that follows `//` floor division', () => {
+      expect(pyTest(`    assert 10 // target(5) == 2\n`)).toEqual([]);
+    });
+
+    it('still counts a call that a trailing `#` comment follows', () => {
+      expect(pyTest(`    assert target(1) == 2  # the happy path\n`)).toEqual(
+        [],
+      );
+    });
+
+    it('reports a test whose only mention is a trailing `#` comment', () => {
+      expect(
+        pyTest(`    value = 1\n    assert value == 1  # target(1)\n`),
+      ).toEqual(['test_t']);
+    });
+
+    it('does not read a `#` inside a string as a comment', () => {
+      expect(pyTest(`    assert f('#', target(1)) == 1\n`)).toEqual([]);
+    });
+  });
+});
+
 describe('VAC-003 — every assertion asserts absence', () => {
   // The canary-katana case from #486: `expect(existsSync(ledger)).toBe(false)`
   // was free, because the buggy code exited before the write. An all-absence
