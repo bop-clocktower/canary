@@ -1,0 +1,45 @@
+{
+  "issues": [1681],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/vacuity-scanner.test.ts",
+  "reproducingTests": [
+    "ts/test/vacuity-scanner.test.ts::reports a test whose only mention of a one-level name is a comment",
+    "ts/test/vacuity-scanner.test.ts::reports a test whose only mention of a direct import is a comment",
+    "ts/test/vacuity-scanner.test.ts::does not credit a test with the comment above the next one",
+    "ts/test/vacuity-scanner.test.ts::does not lift a two-level chain on a comment mention"
+  ],
+  "pins": [
+    "ts/test/vacuity-scanner.test.ts::still counts a bare code mention of a hook-assigned value",
+    "ts/test/vacuity-scanner.test.ts::lifts a two-level helper chain to invoked via a hook-assigned value"
+  ],
+  "redAtBase": "npx vitest run test/vacuity-scanner.test.ts -t 1681 -> Tests 4 failed | 2 passed at 95745ee1 + red commit 63f79465 (the 2 passing are the pins, green by design)",
+  "commits": [
+    "63f79465 (red test)",
+    "87c0918d (fix)",
+    "8628fdb3 (CHANGELOG + SKILL.md + reword)"
+  ],
+  "closingKeyword": "Closes",
+  "confirmAnswers": {
+    "Q2": "(a) pass the comment-stripped body (the filtered `lines` text) to helperVerdict; keep the value-binding bare-mention rule unchanged and pin it",
+    "Q3": "(a) do not change JS_PLAIN_ASSIGN / reachingHookAssigns scope; reword the code comment, the #1672 CHANGELOG entry and canary-cassandra SKILL.md to say plain assignment anywhere in the file"
+  },
+  "realFileCheck": {
+    "ts/test/refresh-baseline-push-job.test.ts:220": "invoked (base 95745ee1) -> VAC-002 finding (fix)",
+    "ts/test/refresh-baseline-push-job.test.ts:226": "invoked, unchanged (code mention of hook-assigned `template`; pinned rule)",
+    "ts/test/branch-prune.test.ts:296,306": "invoked, unchanged (code mention of hook-assigned `root`; pinned rule)"
+  },
+  "selfScanShift": {
+    "ts/test": "VAC-002 findings 165 -> 176, helper abstentions 270 -> 275 (366 files); every change is silent-invoked -> finding/abstention, none the other way",
+    "agents/skills/test + npm/scripts/__tests__": "VAC-002 findings rose in 10 files (e.g. canary-katana.test.ts:2153, contracts-validate.test.ts:34); spot-checked as comment-only mentions",
+    "gate": "dogfood.yml vacuity-check is advisory (findings exit 0); no ratchet reads the count"
+  },
+  "assumptions": [
+    "Q2a and Q3a taken from the human CONFIRM round; not re-asked",
+    "'comment-stripped' means the existing isComment line filter (full lines starting with //, #, or *), the same lines every other VAC rule reads; an inline trailing comment (`x(); // template`) or a line opening with /* is still read as code -- not widened, out of the decided scope",
+    "the 'deeper' -> 'invoked' transition is pinned with a synthetic two-level helper chain lifted by a code mention of a hook-assigned value, rather than by scanning branch-prune.test.ts / refresh-baseline-push-job.test.ts in a test (real files churn)",
+    "only one copy of canary-cassandra SKILL.md is tracked (agents/skills/claude-code/canary-cassandra/SKILL.md); no generated/plugin copy to sync",
+    "the #1672 CHANGELOG entry is still under [Unreleased], so it is edited in place rather than amended by a new entry",
+    "the self-scan increase is the intended direction (false 'invoked' removed) and is reported, not allowanced; no ratchet/baseline file touched"
+  ]
+}
