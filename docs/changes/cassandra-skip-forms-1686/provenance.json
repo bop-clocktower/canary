@@ -1,0 +1,31 @@
+{
+  "issues": [1686],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": {
+    "file": "ts/test/vacuity-scanner.test.ts",
+    "names": [
+      "every skip form is exempt, and disclosed (#1686) > skips every test inside a describe.skip block",
+      "every skip form is exempt, and disclosed (#1686) > skips every test inside a xdescribe block",
+      "every skip form is exempt, and disclosed (#1686) > still scans a test after the skipped block closes",
+      "every skip form is exempt, and disclosed (#1686) > recognises xit as a skipped declaration",
+      "every skip form is exempt, and disclosed (#1686) > recognises xtest as a skipped declaration",
+      "every skip form is exempt, and disclosed (#1686) > recognises it.skip.each as a skipped declaration",
+      "every skip form is exempt, and disclosed (#1686) > recognises test.skip.each as a skipped declaration"
+    ]
+  },
+  "redBeforeFix": "vitest -t 1686 against the #1691 base (96862833): 7 failed | 0 passed. 4x the parked xit/xtest/.skip.each body ran into 'real' (findings not []); 2x describe.skip/xdescribe bodies drew VAC findings; 1x checked 2 vs 1. Re-confirmed by restoring only static-linter.ts and vacuity-scanner.ts to the base after the fix (7 failed), 7 passed with the fix.",
+  "assumptions": [
+    "Human decision: all three findings in scope; F4 answer (a).",
+    "Every test inside a describe.skip(...) or xdescribe(...) call is skipped: exempt from VAC-001/VAC-002 and not counted as checked. The block extent is the balanced (...) of that call over string-blanked code, stepping over comments and string/template/regex literals; a call whose ) cannot be found marks nothing (tests stay scanned, the pre-#1686 behaviour) rather than skipping the rest of the file.",
+    "xit, xtest, it.skip.each and test.skip.each are recognised as declarations in the shared enumerator (enumerateTests) and marked skipped. The .each table is matched lazily, bounded to 2000 chars and never across ';'; a table longer than that is not recognised (falls back to the old behaviour).",
+    "Out of scope and unchanged: it.each / test.each (non-skip) are still not enumerated; describe.skip.each, context.skip, suite.skip and Python skip markers are not treated as skipped suites.",
+    "Because enumerateTests is shared, LINT-006 exempts the same forms and the test inventory now lists xit/xtest/.skip.each tests.",
+    "The VAC skip reason text changed from 'declared .skip: ...' to 'declared skipped (.skip, xit/xtest, or inside describe.skip/xdescribe): ...'; it still contains '.skip'.",
+    "Docs: SKILL.md VAC-002 reassignment bullet and the #1672 CHANGELOG entry now say 'a direct call of it abstains; a method call on it is still judged'; SKILL.md and the #1669 CHANGELOG entry name the exempt skip forms. No mirrored copy of canary-cassandra/SKILL.md exists in the repo and no sync script covers it.",
+    "Measured on canary's own ts/test: no change (5619 checked, 215 findings, 579 skipped before and after) -- the suite uses none of these forms outside string fixtures."
+  ],
+  "closingKeyword": "Closes",
+  "fleet": "roadmap-fleet",
+  "runId": "fc1124c-w4"
+}
