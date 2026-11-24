@@ -84,7 +84,9 @@ sections, a judgment file written by the workflow below.
 5. **Render.** Run `canary briefing --judgment <file>` (stdout), or add
    `--comment` in CI to upsert a sticky comment under
    `<!-- canary-mission-briefing -->`. With no PR context, or a 403, the charter
-   prints to stdout instead (the 403 with a `::warning::`), and it exits 0.
+   prints to stdout instead (the 403 with a `::warning::`), and it exits 0. If
+   CI posts with a GitHub App token or a PAT, set `CANARY_GUARDIAN_LOGIN` /
+   `CANARY_GUARDIAN_APP_SLUG` as for guardian, or each run stacks a new charter.
 
 ## Honesty rules
 

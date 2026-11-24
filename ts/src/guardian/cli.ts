@@ -443,8 +443,10 @@ export function isForkContext(env: NodeJS.ProcessEnv): boolean {
  * so the core stays pure. `CANARY_GUARDIAN_LOGIN` replaces the
  * `github-actions[bot]` default (a PAT, or an App's `<slug>[bot]`);
  * `CANARY_GUARDIAN_APP_SLUG` adds the App-bot match. Blank means unset.
+ * Exported as the one definition briefing also reads (#1678), so the two
+ * comments always agree on what the variables mean.
  */
-function identityFromEnv(env: NodeJS.ProcessEnv): GuardianIdentity {
+export function identityFromEnv(env: NodeJS.ProcessEnv): GuardianIdentity {
   // Blank is unset: '' must never become a login that matches a ghost author.
   const login = env['CANARY_GUARDIAN_LOGIN']?.trim();
   const appSlug = env['CANARY_GUARDIAN_APP_SLUG']?.trim();

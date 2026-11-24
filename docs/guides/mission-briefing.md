@@ -73,6 +73,18 @@ canary briefing --diff change.diff --json
 | `--judgment <file>` | Skill-written judgment JSON. Items not citing an added line go to "Out of this charter"; unreadable input warns and degrades to facts only.                                                         |
 | `--comment`         | Upsert a sticky PR comment under `<!-- canary-mission-briefing -->`; never edits the guardian comment. No PR context or a failed write (403 included, with `::warning::`) prints to stdout; exit 0. |
 
+#### Sticky-comment identity
+
+`--comment` updates its charter in place by finding a comment that starts with
+the marker **and** was written by the posting identity, `github-actions[bot]` by
+default. If the step posts with a GitHub App installation token or a PAT, set
+the same variables guardian uses, or every run stacks a new charter (#1678):
+`CANARY_GUARDIAN_LOGIN` replaces the default login, and
+`CANARY_GUARDIAN_APP_SLUG` adds a match for a `Bot` acting through that App. An
+empty value counts as unset. See
+[Sticky-comment identity](pr-guardian.md#sticky-comment-identity) in the
+guardian guide for the full rules.
+
 ### Exit codes
 
 | Code | Meaning                                                                                                  |

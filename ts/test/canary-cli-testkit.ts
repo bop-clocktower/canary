@@ -28,6 +28,9 @@ const CANARY_ENV_KEYS = [
   'ATLASSIAN_USER',
   'ATLASSIAN_TOKEN',
   'GITHUB_TOKEN',
+  // #1678: briefing's sticky-comment identity; a host value must not leak in.
+  'CANARY_GUARDIAN_LOGIN',
+  'CANARY_GUARDIAN_APP_SLUG',
 ];
 
 export interface InvokeOptions {
