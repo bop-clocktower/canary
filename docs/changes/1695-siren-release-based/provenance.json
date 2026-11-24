@@ -1,0 +1,26 @@
+{
+  "issues": [1695],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/install-siren.test.ts",
+  "reproducingTests": [
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > stays silent when main moves past the release without a new release (#1695)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > reports an install older than the latest release",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > ranks versions numerically, not as strings (#1695)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > cannot rank a latest tag that sits on no vX.Y.Z, and says so (#1695)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > follows a pinned (#latest) clone to the release with the marketplace refresh (#1695)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > treats a clone AHEAD of the release as current, never as behind (#1682, #1695)"
+  ],
+  "redAtBase": "Tests 19 failed | 51 passed of 70 with the new suite run against the base hook (06c15041); all 70 pass with the change",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "Checks 0, 3 and 4b now compare with the latest release tag rather than origin HEAD, so commits to main between releases no longer fire the siren; covered red-first.",
+  "assumptions": [
+    "CONFIRM chosen by the human: alert on releases, not commits; README install pins the marketplace to #latest so installs are releases and the version names the code.",
+    "Reference is the floating `latest` tag that release.yml moves to the highest stable vX.Y.Z (#1427/#1481), read with one capped ls-remote of refs/tags/latest* and refs/tags/v*. The pattern is `latest*` because an exact `refs/tags/latest` pattern omits the peeled `latest^{}` line, which would compare the tag object instead of the commit (caught by the fixture).",
+    "Check 4b compares the installed version with the release version numerically (X.Y.Z). Same-version commits after a release are not reported; every release bumps plugin.json.",
+    "Default taken: a clone ahead of the release (tracking main, or with local commits) is current. A clone with local commits on top of the release is therefore no longer flagged; diverged still is.",
+    "Default taken: a detached-HEAD clone (added with #latest) gets `claude plugin marketplace update bop-clocktower`; a clone on a branch keeps `git -C <clone> pull --ff-only`, which the verbatim-remedy test still runs.",
+    "The hook stays bash 3.2 compatible (syntax-checked with /bin/bash 3.2.57)."
+  ],
+  "base": "06c15041"
+}

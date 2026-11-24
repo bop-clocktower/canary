@@ -664,6 +664,26 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
   };
 
   /**
+   * Tag the upstream tip as a stable release the way release.yml does: an
+   * annotated vX.Y.Z, and the floating annotated `latest` force-moved onto
+   * it. The siren compares against this, not against main's HEAD (#1695).
+   */
+  const tagRelease = (version: string): void => {
+    for (const tag of [`v${version}`, 'latest']) {
+      execFileSync('git', ['tag', '-f', '-a', '-m', tag, tag], {
+        cwd: upstream,
+        env: GIT_ENV,
+      });
+    }
+  };
+  /** Commit `version` upstream and release it; returns the release commit. */
+  const cutRelease = (version: string): string => {
+    const sha = writeUpstream(version);
+    tagRelease(version);
+    return sha;
+  };
+
+  /**
    * Backdate the clone's last fetch, as an unattended machine would. A fixed
    * past instant rather than now-minus-N, so the fixture never reads the wall
    * clock; any instant years back is far past the hook's 1-day threshold.
@@ -737,7 +757,7 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
       mkdirSync(dirname(join(upstream, f)), { recursive: true });
       copyFileSync(join(REPO_ROOT, f), join(upstream, f));
     }
-    mktHead = writeUpstream('9.5.0');
+    mktHead = cutRelease('9.5.0');
     // A real clone, so origin/<branch> and the branch upstream exist, then a
     // fetch so FETCH_HEAD is present and fresh — a healthy marketplace.
     execFileSync('git', ['clone', '-q', upstream, mkt]);
@@ -754,34 +774,91 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     );
   });
 
-  it('reports an install behind the marketplace even when the versions match', () => {
-    // canary main lands without bumping plugin.json, so equal version strings
-    // can still mean stale files. Only the commit can tell.
-    writeInstalled({ version: '9.5.0', gitCommitSha: 'b'.repeat(40) });
+  it('reports an install older than the latest release', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    cutRelease('9.6.0');
     const msg = findings('9.5.0');
-    expect(msg).toContain('installed canary plugin is behind the marketplace');
-    expect(msg).toContain(mktHead.slice(0, 7));
+    expect(msg).toContain(
+      'installed canary plugin 9.5.0 is older than the latest release v9.6.0',
+    );
   });
 
-  it('is silent on skew and staleness when the install matches the marketplace HEAD', () => {
+  it('ranks versions numerically, not as strings (#1695)', () => {
+    // "9.10.0" sorts before "9.9.0" as text; the release is the newer one.
+    writeInstalled({ version: '9.9.0', gitCommitSha: mktHead });
+    cutRelease('9.10.0');
+    expect(findings('9.9.0')).toContain(
+      'installed canary plugin 9.9.0 is older than the latest release v9.10.0',
+    );
+  });
+
+  it('is silent on skew and staleness when the install is the latest release', () => {
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     const msg = findings('9.5.0');
     expect(msg).not.toContain('skew');
-    expect(msg).not.toContain('behind the marketplace');
+    expect(msg).not.toContain('older than the latest release');
     expect(msg).not.toContain('stale reference');
   });
 
-  it('reports drift the clone has not fetched yet, against the live origin (#1495)', () => {
+  it('stays silent when main moves past the release without a new release (#1695)', () => {
+    // The #1695 repro: main takes several commits a day, and the siren fired
+    // on each one — clone "behind origin", install "behind the marketplace" —
+    // so nearly every session opened with a siren nobody needed to act on.
+    // Unreleased commits are not rot, whether the clone has them or not.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    writeUpstream('9.5.0-next');
+    const unfetched = findings('9.5.0');
+    execFileSync('git', ['pull', '-q', '--ff-only'], {
+      cwd: mkt,
+      env: GIT_ENV,
+    });
+    const pulledPastRelease = findings('9.5.0');
+    for (const msg of [unfetched, pulledPastRelease]) {
+      expect(msg).not.toContain('marketplace clone');
+      expect(msg).not.toContain('older than the latest release');
+      expect(msg).not.toContain('unverifiable');
+    }
+  });
+
+  it('reports a release the clone has not fetched yet, against the live origin (#1495)', () => {
     // The #1495 false green: upstream moved, the clone never fetched, so its
     // HEAD and every local ref still equal the stale install. `ls-remote`
     // reads the origin itself, so no local ref can hide the move.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
-    const tip = writeUpstream('9.5.0-next');
+    const tip = cutRelease('9.6.0');
     ageFetch();
     const msg = findings('9.5.0');
-    expect(msg).toContain('marketplace clone is behind origin');
-    expect(msg).toContain('installed canary plugin is behind the marketplace');
-    expect(msg).toContain(tip.slice(0, 7));
+    expect(msg).toContain('marketplace clone is behind the latest release');
+    expect(msg).toContain(`release v9.6.0 @${tip.slice(0, 7)}`);
+    expect(msg).toContain('older than the latest release v9.6.0');
+  });
+
+  it('cannot rank a latest tag that sits on no vX.Y.Z, and says so (#1695)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    writeUpstream('9.5.0-next');
+    execFileSync('git', ['tag', '-f', '-a', '-m', 'latest', 'latest'], {
+      cwd: upstream,
+      env: GIT_ENV,
+    });
+    const msg = findings('9.5.0');
+    expect(msg).toContain('sits on no vX.Y.Z release tag');
+    expect(msg).toContain('unverifiable');
+  });
+
+  it('follows a pinned (#latest) clone to the release with the marketplace refresh (#1695)', () => {
+    // A marketplace added as `bop-clocktower/canary#latest` sits on a detached
+    // HEAD, where `pull --ff-only` has nothing to pull into.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    execFileSync('git', ['checkout', '-q', '--detach', 'latest'], { cwd: mkt });
+    cutRelease('9.6.0');
+    const line = findings('9.5.0')
+      .split('\n')
+      .find((l) =>
+        l.includes('marketplace clone is behind the latest release'),
+      );
+    expect(line).toMatch(
+      /run: claude plugin marketplace update bop-clocktower$/,
+    );
   });
 
   it('is silent when the clone HEAD matches origin, however old FETCH_HEAD is (#1599)', () => {
@@ -805,11 +882,13 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
 
   it('names a remedy that, run verbatim, clears the clone-behind finding (#1599)', () => {
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
-    writeUpstream('9.5.0-next');
+    cutRelease('9.6.0');
     const before = findings('9.5.0');
     const line = before
       .split('\n')
-      .find((l) => l.includes('marketplace clone is behind origin'));
+      .find((l) =>
+        l.includes('marketplace clone is behind the latest release'),
+      );
     expect(line).toBeDefined();
     const remedy = /run: (.+)$/.exec(line ?? '')?.[1];
     expect(remedy).toMatch(/^git -C .+ pull --ff-only$/);
@@ -825,19 +904,19 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
       { cwd: mkt },
     );
     const msg = findings('9.5.0');
-    expect(msg).toContain('git ls-remote origin HEAD failed');
+    expect(msg).toContain('git ls-remote origin refs/tags/latest failed');
     expect(msg).toContain('unverifiable');
   });
 
-  it('reports an origin that answers with no HEAD as unverifiable (#1599)', () => {
-    // An empty origin: ls-remote exits 0 and prints nothing. A zero exit with
-    // no answer is not a pass.
+  it('reports an origin with no latest release tag as unverifiable (#1599, #1695)', () => {
+    // An origin that answers but has never been released: ls-remote exits 0
+    // with no `latest`. A zero exit with no answer is not a pass.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
-    const empty = join(dir, 'empty-origin');
-    execFileSync('git', ['init', '-q', '--bare', empty]);
-    execFileSync('git', ['remote', 'set-url', 'origin', empty], { cwd: mkt });
+    execFileSync('git', ['tag', '-d', 'latest'], { cwd: upstream });
     const msg = findings('9.5.0');
-    expect(msg).toContain('git ls-remote origin HEAD returned no HEAD');
+    expect(msg).toContain(
+      'git ls-remote origin refs/tags/latest returned no latest release tag',
+    );
     expect(msg).toContain('unverifiable');
   });
 
@@ -897,7 +976,8 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
         const { stdout } = await execFileAsync('bash', [SIREN], { env });
         const msg = systemMessage(stdout);
         return (
-          /git ls-remote origin HEAD (.+?) for /.exec(msg)?.[1] ?? '(none)'
+          /git ls-remote origin refs\/tags\/latest (.+?) for /.exec(msg)?.[1] ??
+          '(none)'
         );
       }),
     );
@@ -909,15 +989,14 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     expect(readdirSync(tmp)).toEqual([]);
   });
 
-  it('reports an install behind origin when the clone fetched but never merged (#1495)', () => {
+  it('reports an install older than a release the clone fetched but never merged (#1495)', () => {
     // HEAD is not the reference: a fetch moves origin/<branch> and leaves
     // HEAD where the stale install is.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
-    const tip = writeUpstream('9.5.0-next');
+    cutRelease('9.6.0');
     execFileSync('git', ['fetch', '-q'], { cwd: mkt });
     const msg = findings('9.5.0');
-    expect(msg).toContain('installed canary plugin is behind the marketplace');
-    expect(msg).toContain(tip.slice(0, 7));
+    expect(msg).toContain('older than the latest release v9.6.0');
     expect(msg).not.toContain('stale reference');
   });
 
@@ -938,36 +1017,38 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     }).trim();
   };
 
-  it('never calls a clone that is AHEAD of origin behind it (#1682)', () => {
-    // The #1682 repro: one local commit ahead. "pull --ff-only" answers
-    // "Already up to date", so a "behind" finding could never clear.
+  it('treats a clone AHEAD of the release as current, never as behind (#1682, #1695)', () => {
+    // The #1682 repro was one local commit ahead, called "behind" with a pull
+    // that answers "Already up to date". Against the release (#1695), a clone
+    // that contains it is current, as every clone tracking main is.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     commitInClone();
     const msg = findings('9.5.0');
-    expect(msg).toContain('marketplace clone differs from origin (ahead)');
-    expect(msg).not.toContain('behind origin');
+    expect(msg).not.toContain('marketplace clone');
     expect(msg).not.toContain('pull --ff-only');
   });
 
-  it('never calls a DIVERGED clone behind origin (#1682)', () => {
+  it('never calls a clone DIVERGED from the release behind it (#1682)', () => {
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     commitInClone();
-    writeUpstream('9.5.0-next');
+    cutRelease('9.6.0');
     execFileSync('git', ['fetch', '-q'], { cwd: mkt });
     const msg = findings('9.5.0');
-    expect(msg).toContain('marketplace clone differs from origin (diverged)');
-    expect(msg).not.toContain('behind origin');
+    expect(msg).toContain(
+      'marketplace clone differs from the latest release (diverged)',
+    );
+    expect(msg).not.toContain('behind the latest release');
     expect(msg).not.toContain('pull --ff-only');
   });
 
   it('still names the pull remedy for a fetched clone that is truly behind (#1682)', () => {
-    // Origin's tip is local and the clone's HEAD is its ancestor: the one
-    // case where --ff-only is guaranteed to bring the clone to origin.
+    // The release is local and the clone's HEAD is its ancestor: the one
+    // case where --ff-only is guaranteed to bring the clone to it.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
-    writeUpstream('9.5.0-next');
+    cutRelease('9.6.0');
     execFileSync('git', ['fetch', '-q'], { cwd: mkt });
     const msg = findings('9.5.0');
-    expect(msg).toContain('marketplace clone is behind origin');
+    expect(msg).toContain('marketplace clone is behind the latest release');
     expect(msg).toMatch(/run: git -C .+ pull --ff-only/);
   });
 
@@ -1049,15 +1130,15 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
 
   it('never offers a stale clone as the source of a hook refresh (#1670)', () => {
     // The #1670 repro: the hooks were installed from a dev checkout NEWER
-    // than the marketplace clone, and the clone is behind origin. Installing
+    // than the marketplace clone, and the clone is behind the release. Installing
     // from the clone would overwrite the newer copy with a stale one, so the
     // remedy is to pull the clone first.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     const hook = installedHook();
     writeFileSync(hook, `${readFileSync(hook, 'utf-8')}# a newer dev fix\n`);
-    const tip = writeUpstream('9.5.0-next');
+    const tip = cutRelease('9.6.0');
     const msg = runInstalled(hook);
-    expect(msg).toContain('marketplace clone is behind origin');
+    expect(msg).toContain('marketplace clone is behind the latest release');
     expect(msg).toContain(tip.slice(0, 7));
     expect(msg).toContain('pull the clone first');
     expect(msg).toMatch(/run: git -C .+ pull --ff-only/);
@@ -1077,26 +1158,26 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     const msg = runInstalled(hook);
     expect(msg).toContain('differs from the marketplace copy');
     expect(msg).toContain('--install-hooks');
-    expect(msg).not.toContain('behind origin');
+    expect(msg).not.toContain('behind the latest release');
     expect(msg).not.toMatch(/clone is (current|fresh|up to date)/);
     // The abstention is a finding with its reason, not a silent skip (#1682).
     expect(msg).toContain(
-      'clone freshness unverifiable: git ls-remote origin HEAD failed',
+      'clone freshness unverifiable: git ls-remote origin refs/tags/latest failed',
     );
   });
 
-  it('keeps the install remedy, with a caveat, for a clone AHEAD of origin (#1682)', () => {
+  it('keeps the plain install remedy for a clone AHEAD of the release (#1682, #1695)', () => {
     // A pull cannot clear an ahead clone ("Already up to date"), so naming
-    // it withholds the install remedy forever.
+    // it withheld the install remedy forever (#1682). A clone that contains
+    // the release is a safe source (#1695), so it needs no caveat either.
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     const hook = installedHook();
     shipNewerHook();
     commitInClone();
     const msg = runInstalled(hook);
-    expect(msg).toContain('marketplace clone differs from origin (ahead)');
-    expect(msg).not.toContain('behind origin');
+    expect(msg).toContain('1 tooling-rot finding');
+    expect(msg).not.toContain('marketplace clone');
     expect(msg).not.toContain('pull --ff-only');
-    expect(msg).toContain('commits origin does not have');
     expect(msg).toContain('--install-hooks');
   });
 
@@ -1105,11 +1186,14 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     const hook = installedHook();
     shipNewerHook();
     commitInClone();
-    writeUpstream('9.5.0-next');
+    cutRelease('9.6.0');
     execFileSync('git', ['fetch', '-q'], { cwd: mkt });
     const msg = runInstalled(hook);
-    expect(msg).toContain('marketplace clone differs from origin (diverged)');
-    expect(msg).not.toContain('behind origin');
+    expect(msg).toContain(
+      'marketplace clone differs from the latest release (diverged)',
+    );
+    expect(msg).toContain('commits the release does not have');
+    expect(msg).not.toContain('behind the latest release');
     expect(msg).not.toContain('pull --ff-only');
     expect(msg).toContain('--install-hooks');
   });
@@ -1118,10 +1202,10 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     const hook = installedHook();
     writeFileSync(hook, `${readFileSync(hook, 'utf-8')}# a newer dev fix\n`);
-    writeUpstream('9.5.0-next');
+    cutRelease('9.6.0');
     execFileSync('git', ['fetch', '-q'], { cwd: mkt });
     const msg = runInstalled(hook);
-    expect(msg).toContain('marketplace clone is behind origin');
+    expect(msg).toContain('marketplace clone is behind the latest release');
     expect(msg).toContain('pull the clone first');
     expect(msg).not.toContain('--install-hooks');
   });

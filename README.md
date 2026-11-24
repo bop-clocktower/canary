@@ -90,9 +90,13 @@ below for the full surface organized by use case, or the exhaustive catalog in
 marketplace:
 
 ```bash
-/plugin marketplace add https://github.com/bop-clocktower/canary
+/plugin marketplace add https://github.com/bop-clocktower/canary#latest
 /plugin install canary@bop-clocktower
 ```
+
+`#latest` follows the floating tag that each stable release moves, so you get
+releases rather than every commit to `main`, and the version number names the
+code you run. The session siren alerts on a new release, not on new commits.
 
 Or, if you've already cloned the repo:
 
