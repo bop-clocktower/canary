@@ -16,6 +16,18 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Cassandra no longer reports VAC findings on `.skip` tests, and no longer
+  counts them as checked (#1669).** Since #1665 the test enumerator reads
+  `.skip` declarations, so `vacuity-check` began scanning bodies it had never
+  seen: `expect(1).toBe(1)` in a parked `test.skip` drew a VAC-001. A skipped
+  test never runs, so it cannot pass vacuously, and LINT-006 already exempts it
+  on the same grounds. The choice was (a), exempt, over (b), keep scanning
+  because the test is still vacuous once un-skipped: a finding nobody can act on
+  until the test is un-skipped is noise, and the un-skip puts it back in the
+  scan. The exemption keeps the denominator honest: each `.skip` test leaves
+  `checked` and is listed as a skip (`declared .skip: it never runs ...`), so a
+  file whose only tests are `.skip` abstains instead of passing.
+
 - **Guardian's sticky comment no longer stacks a new copy on every run when the
   token is not `github-actions[bot]` (#1352).** Guardian finds its own sticky by
   author (#931), and only `github-actions[bot]` could match, so a job posting
@@ -74,6 +86,14 @@ under the project's former name) are documented in the
   refreshes only the hook copies. `--verify` no longer prints `healthy` above
   `DIVERGENT` lines; a healthy scheduler with a stale hook copy now reads
   `hooks-not-current`.
+- **Cassandra VAC-002 reads a module-scope `let` that a hook reassigns
+  (#1672).** `let mod; beforeAll(async () => { mod = await import('../x') })`
+  left `mod` unresolved, so when the file had any other relative import, a test
+  calling `mod.save()` drew a false VAC-002. An assignment now binds the name
+  when it reaches the target: a relative `import(` or `require(` (also
+  `.default`) makes it a handle, and a right-hand side that names an imported
+  binding makes it a one-level helper. Any other assignment leaves the name
+  unresolved, so the #1170 abstention still applies to it.
 - **The release workflow's `Move latest tag` step names a rejected push instead
   of blaming a race (#1504).** An auth failure, a network failure or a tag
   ruleset refusal used to log "latest moved on origin", retry, and fail with
@@ -122,6 +142,13 @@ under the project's former name) are documented in the
   longer reported as never invoking its target (#1365). A helper that only
   launches a bare command, or mentions a file name outside the launch arguments,
   is still not read as a target.
+- **Cassandra reads a `@covers` annotation above a wrapped `.only`, `.skip` or
+  backtick-titled declaration (#1666).** When a test title wraps onto the next
+  line, the annotation walk must start at the `it`/`test` keyword, and the
+  keyword search knew only a bare `it(`/`test(` with a `'`/`"` title. For the
+  other forms the walk started at the title line, stopped at `it.only(` as code,
+  and dropped the annotation, so a wrong `@covers` went unchecked and the test
+  fell back to import inference.
 
 ## [9.7.0] - 2026-11-21
 

@@ -140,6 +140,10 @@ lines or not — that launches a script written inline, a binding such as
 destructured `({ save } = await import('./store.js'))` in a hook), and an import
 wrapper, `const importRoute = () => import('../route.js')`, so that
 `const { POST } = await importRoute()` reaches the target one helper level deep.
+A module-scope `let` that a hook reassigns is read the same way (#1672):
+`let mod; beforeAll(async () => { mod = await import('../x') })` binds `mod` as
+a handle (a relative `require(` counts too), and `store = makeStore()` binds
+`store` as a one-level helper of the imported `makeStore`.
 
 **Same-file helpers count one level deep** (#1170). A test that calls a helper
 defined in the same file — an arrow, a `function` declaration, or a
@@ -152,9 +156,10 @@ const parse = (...argv: string[]) => parseArgv(['node', 'cli', ...argv]); // the
 
 Deeper than that — a helper that reaches the target only through another helper
 — or a helper whose body cannot be resolved (declared with no initializer and
-assigned in a hook), and `VAC-002` **abstains** for that test: no finding, a
-`skipped` entry with the reason, and a count. It is never passed in silence. A
-helper that does not reach the target at all is still a `VAC-002`.
+assigned in a hook to something that reaches no target), and `VAC-002`
+**abstains** for that test: no finding, a `skipped` entry with the reason, and a
+count. It is never passed in silence. A helper that does not reach the target at
+all is still a `VAC-002`.
 
 To upgrade a finding from inferred to annotated, add the annotation above the
 test:
@@ -185,6 +190,12 @@ itself, so:
 - **A test whose target sits behind a helper chain** → the same, plus a count:
   `vac002_abstained` in the `--json` summary (always present, `0` included) and
   an `N test(s) abstained on VAC-002` line in text output.
+
+- **A `.skip` test** → not scanned and not counted in `checked`, but listed as a
+  skip (`declared .skip: it never runs, so it cannot pass vacuously`) (#1669).
+  It never runs, so it cannot pass vacuously, and `LINT-006` exempts it too.
+  Un-skipping it puts it back in the scan. A file whose only tests are `.skip`
+  checks zero tests and abstains. `.only` tests run, so they are scanned.
 
 `checked` in the JSON payload is the number of **tests** read, not files. Always
 read it before believing a zero.
@@ -218,11 +229,14 @@ with no denominator is not a result.
 - **A VAC-001 finding is never a false positive.** It is a comparison of a value
   with itself. Fix the test.
 - **A large VAC-002 count on first run usually means an unread binding form.**
-  The dynamic-import and subprocess forms above are read. A plain reassignment
-  of a module-scope `let` (`Route = (await import('../route')).default` in a
-  hook) is not, and a test calling such a name abstains on VAC-002 rather than
-  being flagged. Annotate what remains, or accept the tier and move on — do not
-  rewrite the suite to satisfy a heuristic.
+  The dynamic-import and subprocess forms above are read. So is a plain
+  reassignment of a module-scope `let` in a hook (#1672) when it reaches the
+  target: `mod = await import('../x')`, `mod = (await import('../x')).default`,
+  `mod = require('../x')`, or a right-hand side that names an imported binding
+  (`store = makeStore()`). A reassignment that reaches nothing the scanner can
+  read leaves the name unresolved, and a test calling it abstains on VAC-002
+  rather than being flagged. Annotate what remains, or accept the tier and move
+  on — do not rewrite the suite to satisfy a heuristic.
 - **An E2E suite that still shows many VAC-002 findings** is not being detected
   as browser-driver context — check that it imports its driver package or uses a
   `page`/`browser`/`driver` fixture, and read the
