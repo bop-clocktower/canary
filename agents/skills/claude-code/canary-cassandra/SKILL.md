@@ -140,7 +140,8 @@ lines or not — that launches a script written inline, a binding such as
 destructured `({ save } = await import('./store.js'))` in a hook), and an import
 wrapper, `const importRoute = () => import('../route.js')`, so that
 `const { POST } = await importRoute()` reaches the target one helper level deep.
-A module-scope `let` that a hook reassigns is read the same way (#1672):
+A module-scope `let` reassigned later is read the same way (#1672). The
+assignment is matched anywhere in the file, not only in a hook (#1681):
 `let mod; beforeAll(async () => { mod = await import('../x') })` binds `mod` as
 a handle (a relative `require(` counts too), and `store = makeStore()` binds
 `store` as a one-level helper of the imported `makeStore`.
@@ -156,10 +157,15 @@ const parse = (...argv: string[]) => parseArgv(['node', 'cli', ...argv]); // the
 
 Deeper than that — a helper that reaches the target only through another helper
 — or a helper whose body cannot be resolved (declared with no initializer and
-assigned in a hook to something that reaches no target), and `VAC-002`
-**abstains** for that test: no finding, a `skipped` entry with the reason, and a
-count. It is never passed in silence. A helper that does not reach the target at
-all is still a `VAC-002`.
+assigned later to something that reaches no target), and `VAC-002` **abstains**
+for that test: no finding, a `skipped` entry with the reason, and a count. It is
+never passed in silence. A helper that does not reach the target at all is still
+a `VAC-002`.
+
+**A comment is not an invocation** (#1681). VAC-002 reads the test body with its
+comment lines removed, so a comment naming the target or a one-level helper —
+including the comment above the next test, which the body would otherwise own —
+does not count as the test invoking it.
 
 To upgrade a finding from inferred to annotated, add the annotation above the
 test:
@@ -230,13 +236,14 @@ with no denominator is not a result.
   with itself. Fix the test.
 - **A large VAC-002 count on first run usually means an unread binding form.**
   The dynamic-import and subprocess forms above are read. So is a plain
-  reassignment of a module-scope `let` in a hook (#1672) when it reaches the
-  target: `mod = await import('../x')`, `mod = (await import('../x')).default`,
-  `mod = require('../x')`, or a right-hand side that names an imported binding
-  (`store = makeStore()`). A reassignment that reaches nothing the scanner can
-  read leaves the name unresolved, and a test calling it abstains on VAC-002
-  rather than being flagged. Annotate what remains, or accept the tier and move
-  on — do not rewrite the suite to satisfy a heuristic.
+  reassignment of a module-scope `let`, anywhere in the file (#1672), when it
+  reaches the target: `mod = await import('../x')`,
+  `mod = (await import('../x')).default`, `mod = require('../x')`, or a
+  right-hand side that names an imported binding (`store = makeStore()`). A
+  reassignment that reaches nothing the scanner can read leaves the name
+  unresolved, and a test calling it abstains on VAC-002 rather than being
+  flagged. Annotate what remains, or accept the tier and move on — do not
+  rewrite the suite to satisfy a heuristic.
 - **An E2E suite that still shows many VAC-002 findings** is not being detected
   as browser-driver context — check that it imports its driver package or uses a
   `page`/`browser`/`driver` fixture, and read the

@@ -658,7 +658,8 @@ function oneLevelHelpers(decls: LocalDecl[], direct: Set<string>): Set<string> {
 
 /**
  * `let parse;` / `let parse: Parser;` -- a module-scope name with no
- * initializer, typically assigned later in a hook by a plain assignment. Unless
+ * initializer, typically assigned later (usually in a hook) by a plain
+ * assignment. Unless
  * that assignment reaches the target (see `reachingHookAssigns`, #1672), its
  * body cannot be resolved, so a test that calls it abstains (#1170) rather
  * than being judged on a helper nobody read.
@@ -677,8 +678,10 @@ function unresolvedNames(code: string, decls: LocalDecl[]): Set<string> {
 }
 
 /**
- * `mod = await import('../x')` in a hook, assigning a module-scope `let mod;`
- * (#1672). Only an assignment that REACHES the target binds the name: a
+ * `mod = await import('../x')`, assigning a module-scope `let mod;` (#1672).
+ * The match is a plain assignment ANYWHERE in the file -- a hook is the common
+ * case, but a test body or a helper counts the same; it is not scoped to hooks
+ * (#1681). Only an assignment that REACHES the target binds the name: a
  * relative `import(`/`require(` makes a handle (added to `direct`), and a
  * right-hand side naming a direct target makes a one-level helper. Any other
  * stays unresolved, so #1170's abstention still holds.
@@ -945,9 +948,12 @@ function scanBlock(
   );
   const reaching = inference?.reaching ?? null;
   const targets = annotated !== null ? new Set([annotated]) : reaching;
+  // The verdict reads the comment-stripped lines, not `block.body`: a body
+  // runs to the next declaration, so the raw text also owns the comment above
+  // the NEXT test, and prose naming a target is not an invocation (#1681).
   const invoked =
     annotated === null && !outOfBand
-      ? helperVerdict(block.body, inference)
+      ? helperVerdict(lines.map((l) => l.text).join('\n'), inference)
       : 'invoked';
   if (invoked === 'deeper' || invoked === 'unresolved') {
     // Abstain, counted: the helper chain is too deep or too opaque to judge,
