@@ -4,7 +4,7 @@ version: 1
 created: 2026-05-11
 updated: 2026-08-02
 last_synced: 2026-06-29
-last_manual_edit: 2026-11-23T21:18:52.035Z
+last_manual_edit: 2026-11-23T23:33:08.505Z
 ---
 
 # Roadmap
@@ -769,6 +769,61 @@ last_manual_edit: 2026-11-23T21:18:52.035Z
 - **Assignee:** —
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#1659
+
+### guardian mutation report: test names autolink and abstainReason posts raw text
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** ts/src/guardian/mutation-text.ts still posts test names that GitHub autolinks (#N, @user, URLs) and an unescaped abstainReason (report path + raw error) into the PR comment; route both through mdCode/mdText and break autolinks, test-first with hostile inputs.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1673
+
+### siren check 0 calls a differing hook copy 'older' and hides check 3's stale-clone finding
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** hooks/canary-session-siren.sh check 0 (#1662) words a cmp -s difference as 'older' and suppresses check 3's stale-clone finding, so its remedy can install a stale clone over a newer copy; word it 'differs from', run/report check 3 first, add a stale-clone test.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1670
+
+### cassandra: VAC rules now scan .skip test bodies that LINT-006 exempts
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Since #1665 enumerates .skip tests, scanAllBlocks in ts/src/core/vacuity-scanner.ts scans skipped bodies LINT-006 exempts; decide (a) exempt skipped blocks with a test, or (b) keep scanning by design and document it. Canonical for the skip decision (also raised as #1666 item 2).
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1669
+
+### vacuity-scanner: jsDeclarationStart doesn't know .only/.skip/backtick declarations
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** jsDeclarationStart in ts/src/core/vacuity-scanner.ts only matches it(/test( with a quote title, so wrapped .only/.skip or backtick-titled declarations fall back to bodyStart and the annotationFor pragma walk starts on the wrong line; widen the keyword regex and accept backticks. Scope narrowed to item 1 (item 2 tracked in #1669).
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1666
+
+### cassandra VAC-002: module-scope let reassigned in a hook is not read as a target
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** VAC-002 target resolution does not follow a module-scope let reassigned in a hook (let mod; beforeAll(() => { mod = await import(...) })), so tests using it can be misreported vacuous or miss a real VAC-002; failing fixture first, then follow hook assignments.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1672
 
 ## Engine and Platform
 
