@@ -1217,7 +1217,7 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 78 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 83 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place, then 27 shipped rows archived by the
   2026-09-14 `roadmap-groom --check-issues` reconciliation, then 11 more
@@ -1233,10 +1233,11 @@ Two related facts worth not rediscovering:
   (#1321/#1437/#1438/#1636/#1637) archived on 2026-11-23, then the Intake row
   linked to #1659 by issue-fleet on 2026-11-23, then five Intake rows linked to
   #1666/#1669/#1670/#1672/#1673 by issue-fleet on 2026-11-23, then four Intake
-  rows linked to #1682/#1680/#1681/#1678 by issue-fleet on 2026-11-24. The count
-  is of LINKED rows, and every row in the roadmap is linked, so `--check-issues`
-  abstains on none of them — and `Priority`, serialized in that same extended
-  group, is populated on every one of them.
+  rows linked to #1682/#1680/#1681/#1678 by issue-fleet on 2026-11-24, then five
+  Intake rows linked to #1685/#1686/#1691/#1692/#1693 by issue-fleet on
+  2026-11-24. The count is of LINKED rows, and every row in the roadmap is
+  linked, so `--check-issues` abstains on none of them — and `Priority`,
+  serialized in that same extended group, is populated on every one of them.
 - **The `route:*` label vocabulary is canary's half of the `issue-fleet`
   contract (#1071, ADR 0034).** `issue-fleet` computes a route per triaged issue
   and has nowhere to put it; the skill is vendored under
@@ -1265,7 +1266,7 @@ Two related facts worth not rediscovering:
   auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 78 rows
+  effectively blind gate that reported a real number nobody read. All 83 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless

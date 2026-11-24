@@ -4,7 +4,7 @@ version: 1
 created: 2026-05-11
 updated: 2026-08-02
 last_synced: 2026-06-29
-last_manual_edit: 2026-11-23T23:33:08.505Z
+last_manual_edit: 2026-11-24T20:33:52.210Z
 ---
 
 # Roadmap
@@ -868,6 +868,61 @@ last_manual_edit: 2026-11-23T23:33:08.505Z
 - **Assignee:** —
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#1678
+
+### guardian: a misconfigured sticky identity stacks comments silently (strict login match, no degradation notice)
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** isAuthoredBy in ts/src/guardian/pr-comment.ts compares logins with strict ===, so a missing, differently-cased or @-prefixed CANARY_GUARDIAN_LOGIN misses the sticky and stacks copies with no notice; normalise the login, emit a degradation notice from createComment's author, use || over ?? for an empty login, and document the one-time extra comment.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1685
+
+### cassandra: skip-form gaps — describe.skip bodies scanned, xit / it.skip.each unrecognised, abstain docs overstated
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Tests inside describe.skip still draw VAC-001/VAC-002, xit and it.skip.each are not enumerated as declarations in ts/src/core/static-linter.ts so a vacuous body is charged to the preceding real test, and SKILL.md plus the CHANGELOG overstate when a hook-assigned name abstains (direct call only, not a method call).
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1686
+
+### cassandra: isComment misses trailing // and /* comments, so VAC-002 can still count a comment mention as invoking
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** isComment in ts/src/core/vacuity-scanner.ts only recognises lines starting with #, // or *, so a target name in a trailing // comment or a /* */ line still counts as invoked for VAC-002; red-first test, then share one comment definition with the ~1368 helper.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1691
+
+### siren: check 3 says 'checkout missing' when $MKT exists but has no .git
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Check 3 in hooks/canary-session-siren.sh reports the marketplace checkout as missing when $MKT is present but not a git clone; name that case separately with its own remedy (re-clone or remove the stale directory) and keep the truly-missing message, with a test for each.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1692
+
+### siren: the 'no readable HEAD' branches of checks 0 and 3 have no test
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** The no-readable-HEAD (*) branches of siren checks 0 and 3 in hooks/canary-session-siren.sh are unexercised; add tests in ts/test/install-siren.test.ts that assert the "freshness unverifiable" finding for each and fail if the branch is removed. Same file as #1692, so land serially.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1693
 
 ## Engine and Platform
 
