@@ -39,6 +39,9 @@ const GUARDIAN_ENV_KEYS = [
   'GITHUB_STEP_SUMMARY',
   'CANARY_GUARDIAN_AGENT',
   'CANARY_GUARDIAN_IS_FORK',
+  // #1352: guardian's sticky-comment identity; a host value must not leak in.
+  'CANARY_GUARDIAN_LOGIN',
+  'CANARY_GUARDIAN_APP_SLUG',
   'CANARY_HISTORY_DB_URL',
 ];
 
