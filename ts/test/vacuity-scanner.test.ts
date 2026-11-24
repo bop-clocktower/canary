@@ -322,6 +322,29 @@ describe('VAC-002 — the declared target is never invoked', () => {
     expect(f[0]!.message).toContain('migrate');
   });
 
+  // #1666 item 1. A wrapped title puts `bodyStart` a line below the keyword,
+  // and the `@covers` walk must start at the keyword's line or it stops at
+  // `it.only(` as code and drops the annotation -- a false green, because the
+  // wrong `@covers` then goes unchecked. The keyword search knew only bare
+  // `it(`/`test(` with a `'`/`"` title.
+  it.each([
+    ['an .only declaration', `it.only(\n  'claims to migrate',\n`],
+    ['a test.only declaration', `test.only(\n  "claims to migrate",\n`],
+    ['a backtick title', `it(\n  \`claims to migrate\`,\n`],
+    ['an .only backtick title', `test.only(\n  \`claims to migrate\`,\n`],
+  ])('reads @covers above %s whose title wraps', (_label, opening) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `// @covers migrate\n` +
+        opening +
+        `  () => { expect(save(1)).toBe(1); },\n);\n`,
+    );
+    const f = r.findings.filter((x) => x.rule === 'VAC-002');
+    expect(f).toHaveLength(1);
+    expect(f[0]!.fidelity).toBe('annotated');
+  });
+
   it('clears an annotated target that IS invoked', () => {
     const r = scan(
       'a.test.ts',
