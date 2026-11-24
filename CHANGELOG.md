@@ -27,6 +27,41 @@ under the project's former name) are documented in the
   scan. The exemption keeps the denominator honest: each `.skip` test leaves
   `checked` and is listed as a skip (`declared .skip: it never runs ...`), so a
   file whose only tests are `.skip` abstains instead of passing.
+
+- **The guardian mutation report no longer turns test names into links or
+  mentions, and no longer posts its abstain reason raw (#1673).** A covering
+  test name is now an inert code span, like the excluded test paths already
+  were, so a `#123`, an `@user` or a URL inside a name stays text in the PR
+  comment instead of linking an issue or notifying a stranger. The abstain
+  reason, which can carry a report path and a parse error verbatim, is now one
+  code span too, collapsed to a single line and cut to at most 200 characters
+  with an ellipsis.
+
+- **The session siren no longer calls a differing hook copy "older", and never
+  refreshes the hooks from a stale clone (#1670).** Check 0 compares the
+  installed hook with the marketplace clone's copy byte for byte, which shows
+  only that they differ, so the finding now says "differs from". When the copies
+  differ it also asks origin (the same capped `ls-remote` check 3 makes): if the
+  clone is behind origin, it reports that with a "pull the clone first" remedy
+  and no longer offers `install-siren.mjs --install-hooks`, which would have
+  overwritten a newer installed copy with the stale one. An unreachable origin
+  keeps the install remedy and claims nothing about the clone.
+
+- **canary-blackhawk `BH003` no longer flags a `toLocale*()` call that cannot
+  read the host time zone, and its exemption only accepts a string-literal zone
+  that nothing later overrides (#1659, refs PR #1657).** A numeric-literal
+  receiver (`(5000).toLocaleString('en-US')`, `5000n.toLocaleString()`) is
+  exempt, and so is a call whose own options object pins `timeZone` to a string
+  literal. The pin must be a top-level `timeZone: '<literal>'` in the object
+  passed as the call's options (second) argument — an object in the locales
+  slot, `d.toLocaleString({ timeZone: 'UTC' })`, is ignored by JS and stays
+  flagged — and the literal must be the last zone source in that object:
+  `{ ...opts, timeZone: 'UTC' }` is exempt, while
+  `{ timeZone: 'UTC', ...opts }`, a later `timeZone` key and a later computed
+  key stay flagged. Any non-literal value (`tz`, `process.env.TZ`, `undefined`,
+  the `{ timeZone }` shorthand) and a pin inside a comment, a string, a nested
+  call or a ternary branch stay flagged too, as does a numeric literal after a
+  call such as `foo?.(1)`, `make<Date>(0)`, `fn!(0)` or `new Date (0)`.
 - **The session siren now reports when its own installed copy is stale
   (#1632).** `install-siren.mjs` installs the hooks into `~/.claude/hooks/` as
   copies, and updating the marketplace or the plugin does not refresh them, so a

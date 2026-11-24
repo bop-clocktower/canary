@@ -19,7 +19,13 @@ import {
   SuppressedMutant,
   unattributedSurvivorLines,
 } from './mutation.js';
-import { excludedLine, mdCode, mdText, noKillReason } from './mutation-text.js';
+import {
+  excludedLine,
+  mdCode,
+  mdReason,
+  mdText,
+  noKillReason,
+} from './mutation-text.js';
 
 /** The `// canary:allow-mutant <reason>` marker, mirroring allow-untested. */
 const SUPPRESS_MUTANT_RE = /(?:\/\/|#)\s*canary:allow-mutant\s+(.+)/;
@@ -252,7 +258,8 @@ export function renderMutationReport(report: MutationReport): string {
   const lines = ['### Mutation'];
   if (report.verdict === 'abstained') {
     lines.push(
-      `Abstained ${'\u{2014}'} ${report.abstainReason ?? 'no reason given'}. ` +
+      `Abstained ${'\u{2014}'} ` +
+        `${report.abstainReason === undefined ? 'no reason given' : mdReason(report.abstainReason)}. ` +
         'This is not a pass.',
     );
     // ADR 0037 F2: another abstain reason must not hide untested mutants.
@@ -271,7 +278,9 @@ export function renderMutationReport(report: MutationReport): string {
     )) {
       const covering =
         finding.coveredBy.length > 0
-          ? finding.coveredBy.map(mdText).join('; ')
+          ? // A code span: GitHub autolinks `#N`, `@user` and URLs in a
+            // test name anywhere else (#1673).
+            finding.coveredBy.map(mdCode).join('; ')
           : 'attribution not recorded';
       lines.push(
         `- ${mdCode(`${finding.path}:${finding.line}`)} ` +

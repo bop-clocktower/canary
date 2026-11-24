@@ -433,7 +433,7 @@ describe('unattributed survivor disclosure (ADR 0037 F1)', () => {
     expect(disclosure).toBeLessThan(lines.indexOf('3 survived:'));
     // The attributed survivor beside them still names its test.
     expect(lines.join('\n')).toContain(
-      'ran but did not fail: suppression strips the reason',
+      'ran but did not fail: `suppression strips the reason`',
     );
   });
 
@@ -724,7 +724,7 @@ describe('renderMutationReport escapes report text (#1568)', () => {
     const line = text.split('\n').find((l) => l.startsWith('- '));
     expect(line).toBe(
       '- ``ts/src/a`b.ts:10`` String\\`Literal \u{2192} ``` `` ``` ' +
-        '\u{2014} ran but did not fail: renders \\`x\\` safely',
+        '\u{2014} ran but did not fail: ``renders `x` safely``',
     );
   });
 
@@ -766,6 +766,106 @@ describe('renderMutationReport escapes report text (#1568)', () => {
     );
     expect(renderMutationReport(mapped)).toContain(
       '- suppressed ``a`b.ts:1``: \\`y\\` is equivalent',
+    );
+  });
+});
+
+// #1673: a test name and an abstain reason are untrusted text too. GitHub
+// autolinks `#N`, `@user` and bare URLs in plain Markdown (a stray issue link,
+// a notification to a stranger), but never inside a code span.
+describe('renderMutationReport neutralizes autolinks (#1673)', () => {
+  const HOSTILE = 'fixes #123 for @octocat see https://evil.example';
+
+  const survivorLine = (name: string): string => {
+    const r = report([{ line: 7, status: 'Survived', coveredBy: ['t1'] }]);
+    r.testFiles!['ts/test/a.test.ts']!.tests[0]!.name = name;
+    const text = renderMutationReport(
+      mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+    );
+    return text.split('\n').find((l) => l.startsWith('- '))!;
+  };
+
+  it('renders a hostile test name as a code span', () => {
+    const line = survivorLine(HOSTILE);
+    expect(line.endsWith(`ran but did not fail: \`${HOSTILE}\``)).toBe(true);
+  });
+
+  it('keeps a test name with a backtick inside one code span', () => {
+    expect(survivorLine('renders `x` for #9')).toMatch(
+      /ran but did not fail: ``renders `x` for #9``$/,
+    );
+  });
+
+  it('keeps a multi-line test name on one line, inside the span', () => {
+    const text = (() => {
+      const r = report([{ line: 7, status: 'Survived', coveredBy: ['t1'] }]);
+      r.testFiles!['ts/test/a.test.ts']!.tests[0]!.name =
+        'first line @octocat\n# heading';
+      return renderMutationReport(
+        mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+      );
+    })();
+    expect(text).toContain(
+      'ran but did not fail: `first line @octocat # heading`',
+    );
+    expect(text).not.toMatch(/^# heading/m);
+  });
+
+  it('joins several covering test names as separate code spans', () => {
+    const r = report([
+      { line: 7, status: 'Survived', coveredBy: ['t1', 't2'] },
+    ]);
+    expect(
+      renderMutationReport(
+        mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+      ),
+    ).toContain(
+      'ran but did not fail: `suppression strips the reason`; ' +
+        '`suppression keeps the finding`',
+    );
+  });
+
+  // The CLI builds this reason from a report path plus the parse error.
+  const HOSTILE_ERROR =
+    'the stryker report at /tmp/@octocat/report.json could not be read: ' +
+    'Unexpected token in JSON\n  see #9 and [docs](https://evil.example)\n' +
+    '# not a heading ' +
+    'x'.repeat(250);
+
+  const abstainLine = (reason: string): string =>
+    renderMutationReport(abstainedReport(reason, NO_EXCLUSIONS)).split(
+      '\n',
+    )[1]!;
+
+  it('renders the abstain reason as one code span, not raw Markdown', () => {
+    const line = abstainLine(HOSTILE_ERROR);
+    const span = /^Abstained \u{2014} `([^`]*)`\. This is not a pass\.$/u.exec(
+      line,
+    );
+    expect(span).not.toBeNull();
+    expect(span![1]).toMatch(
+      /^the stryker report at \/tmp\/@octocat\/report\.json could not be read: Unexpected token in JSON see #9 and \[docs\]\(https:\/\/evil\.example\) # not a heading x+/,
+    );
+    expect(
+      renderMutationReport(abstainedReport(HOSTILE_ERROR, NO_EXCLUSIONS)),
+    ).not.toMatch(/^# not a heading/m);
+  });
+
+  it('truncates a long abstain reason to 200 characters with an ellipsis', () => {
+    const span = /`([^`]*)`/.exec(abstainLine(HOSTILE_ERROR))![1]!;
+    expect(span).toHaveLength(200);
+    expect(span.endsWith('\u{2026}')).toBe(true);
+  });
+
+  it('leaves a short abstain reason whole, with no ellipsis', () => {
+    expect(abstainLine('no diff')).toBe(
+      'Abstained \u{2014} `no diff`. This is not a pass.',
+    );
+  });
+
+  it('keeps a backtick in the abstain reason inert', () => {
+    expect(abstainLine('bad `files` map')).toBe(
+      'Abstained \u{2014} ``bad `files` map``. This is not a pass.',
     );
   });
 });

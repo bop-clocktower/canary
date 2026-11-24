@@ -962,7 +962,7 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     const hook = installedHook();
     shipNewerHook();
     const msg = runInstalled(hook);
-    expect(msg).toContain('siren hook is older than the marketplace copy');
+    expect(msg).toContain('siren hook differs from the marketplace copy');
     expect(msg).toContain('1 tooling-rot finding');
     expect(msg).not.toContain('installed canary plugin is behind');
   });
@@ -973,7 +973,7 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     shipNewerHook();
     const line = runInstalled(hook)
       .split('\n')
-      .find((l) => l.includes('older than the marketplace copy'));
+      .find((l) => l.includes('differs from the marketplace copy'));
     expect(line).toBeDefined();
     const remedy = /run: (.+)$/.exec(line ?? '')?.[1];
     expect(remedy).toMatch(/^node .+install-siren\.mjs' --install-hooks$/);
@@ -984,7 +984,51 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     expect(readFileSync(hook, 'utf-8')).toBe(
       readFileSync(join(mkt, 'hooks', 'canary-session-siren.sh'), 'utf-8'),
     );
-    expect(runInstalled(hook)).not.toContain('older than the marketplace');
+    expect(runInstalled(hook)).not.toContain('marketplace copy');
+  });
+
+  it('never calls a differing hook copy older — a byte compare cannot tell (#1670)', () => {
+    // cmp -s says the copies differ, not which one is newer.
+    writeInstalled({ version: '9.5.0', gitCommitSha: 'b'.repeat(40) });
+    const hook = installedHook();
+    shipNewerHook();
+    const msg = runInstalled(hook);
+    expect(msg).toContain('differs from the marketplace copy');
+    expect(msg).not.toMatch(/\b(older|newer)\b/); // "folders" is in the temp path
+  });
+
+  it('never offers a stale clone as the source of a hook refresh (#1670)', () => {
+    // The #1670 repro: the hooks were installed from a dev checkout NEWER
+    // than the marketplace clone, and the clone is behind origin. Installing
+    // from the clone would overwrite the newer copy with a stale one, so the
+    // remedy is to pull the clone first.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    writeFileSync(hook, `${readFileSync(hook, 'utf-8')}# a newer dev fix\n`);
+    const tip = writeUpstream('9.5.0-next');
+    const msg = runInstalled(hook);
+    expect(msg).toContain('marketplace clone is behind origin');
+    expect(msg).toContain(tip.slice(0, 7));
+    expect(msg).toContain('pull the clone first');
+    expect(msg).toMatch(/run: git -C .+ pull --ff-only/);
+    expect(msg).toContain('differs from the marketplace copy');
+    expect(msg).not.toContain('--install-hooks');
+  });
+
+  it('keeps the install remedy, and claims nothing fresh, when origin is unreachable (#1670)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    shipNewerHook();
+    execFileSync(
+      'git',
+      ['remote', 'set-url', 'origin', join(dir, 'no-such-origin')],
+      { cwd: mkt },
+    );
+    const msg = runInstalled(hook);
+    expect(msg).toContain('differs from the marketplace copy');
+    expect(msg).toContain('--install-hooks');
+    expect(msg).not.toContain('behind origin');
+    expect(msg).not.toMatch(/clone is (current|fresh|up to date)/);
   });
 
   it('is silent about itself when the installed copy matches the marketplace (#1632)', () => {
