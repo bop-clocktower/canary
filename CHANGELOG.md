@@ -25,6 +25,17 @@ under the project's former name) are documented in the
   #1673. The reason now reads in monospace; a backtick inside it stays in the
   same span.
 
+- **Cassandra VAC-002 no longer counts a comment as invoking the target
+  (#1681).** The verdict read the raw test body, and a body runs to the next
+  declaration, so it also owned the comment above the next test. Prose naming a
+  target or a one-level helper (since #1672 that includes common words such as
+  `template`, `root` or `store`) passed a test that never invoked anything —
+  `expect(hookSpawns).toBe(0)` was one. The verdict now reads the same
+  comment-stripped lines the other rules read. Expect more VAC-002 findings and
+  abstentions on a first scan: on canary's own `ts/test` the count went from 165
+  to 176 findings and from 270 to 275 abstentions. A bare code mention of a
+  value binding still counts as invoked.
+
 - **Cassandra no longer reports VAC findings on `.skip` tests, and no longer
   counts them as checked (#1669).** Since #1665 the test enumerator reads
   `.skip` declarations, so `vacuity-check` began scanning bodies it had never
@@ -95,14 +106,15 @@ under the project's former name) are documented in the
   refreshes only the hook copies. `--verify` no longer prints `healthy` above
   `DIVERGENT` lines; a healthy scheduler with a stale hook copy now reads
   `hooks-not-current`.
-- **Cassandra VAC-002 reads a module-scope `let` that a hook reassigns
+- **Cassandra VAC-002 reads a module-scope `let` that is reassigned later
   (#1672).** `let mod; beforeAll(async () => { mod = await import('../x') })`
   left `mod` unresolved, so when the file had any other relative import, a test
-  calling `mod.save()` drew a false VAC-002. An assignment now binds the name
-  when it reaches the target: a relative `import(` or `require(` (also
-  `.default`) makes it a handle, and a right-hand side that names an imported
-  binding makes it a one-level helper. Any other assignment leaves the name
-  unresolved, so the #1170 abstention still applies to it.
+  calling `mod.save()` drew a false VAC-002. A plain assignment anywhere in the
+  file (a hook is the common case, not a requirement) now binds the name when it
+  reaches the target: a relative `import(` or `require(` (also `.default`) makes
+  it a handle, and a right-hand side that names an imported binding makes it a
+  one-level helper. Any other assignment leaves the name unresolved, so the
+  #1170 abstention still applies to it.
 - **The release workflow's `Move latest tag` step names a rejected push instead
   of blaming a race (#1504).** An auth failure, a network failure or a tag
   ruleset refusal used to log "latest moved on origin", retry, and fail with
