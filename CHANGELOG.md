@@ -24,8 +24,10 @@ under the project's former name) are documented in the
   author: `CANARY_GUARDIAN_LOGIN` replaces the `github-actions[bot]` default,
   and `CANARY_GUARDIAN_APP_SLUG` adds a match for a `Bot` acting through that
   GitHub App. `pr-check --post-comment` and `precision` both read them. An empty
-  or whitespace-only value counts as unset, and a human comment that carries the
-  marker is still never adopted. With both unset nothing changes.
+  or whitespace-only value counts as unset. A comment is adopted only when its
+  author matches the configured login, or is a `Bot` acting through the
+  configured App; any other comment carrying the marker is never adopted. With
+  both unset nothing changes.
 
 - **The session siren now reports when its own installed copy is stale
   (#1632).** `install-siren.mjs` installs the hooks into `~/.claude/hooks/` as

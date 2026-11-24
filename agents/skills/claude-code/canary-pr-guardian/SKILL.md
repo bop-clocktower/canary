@@ -91,9 +91,11 @@ export CANARY_GUARDIAN_LOGIN='my-app[bot]'     # replaces github-actions[bot] (a
 export CANARY_GUARDIAN_APP_SLUG=my-app         # also match a Bot acting through this GitHub App
 ```
 
-Both are optional. An empty or whitespace-only value counts as unset. A human
-comment that contains the marker is never adopted, whatever these are set to.
-`canary guardian precision` reads the sticky under the same identity.
+Both are optional. An empty or whitespace-only value counts as unset. A comment
+is adopted only when its author matches the configured login, or is a `Bot`
+acting through the configured App; any other comment carrying the marker is
+never adopted. `canary guardian precision` reads the sticky under the same
+identity.
 
 ### Phase 1 — Quality audit (Tier ≥ 1, read-only)
 

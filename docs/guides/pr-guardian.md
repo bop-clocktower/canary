@@ -278,10 +278,11 @@ new comment ([#1352]):
 | `CANARY_GUARDIAN_APP_SLUG` | Adds a match for a `Bot` author acting through the GitHub App with this slug (`performed_via_github_app.slug`). |
 
 Both are optional and unset by default, which keeps the `github-actions[bot]`
-behavior. An empty or whitespace-only value counts as unset. A comment by a
-`User`, even one that carries the marker or was made through the same App, is
-never adopted. `canary guardian precision` reads stickies under the same
-identity, so set the variables on that workflow too.
+behavior. An empty or whitespace-only value counts as unset. A comment is
+adopted only when its author matches the configured login, or is a `Bot` acting
+through the configured App; any other comment carrying the marker is never
+adopted. `canary guardian precision` reads stickies under the same identity, so
+set the variables on that workflow too.
 
 [#1352]: https://github.com/bop-clocktower/canary/issues/1352
 
