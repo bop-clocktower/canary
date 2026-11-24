@@ -1138,6 +1138,43 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     expect(msg).toContain('no .git');
   });
 
+  /**
+   * #1693: point the clone's HEAD at a ref that does not exist. The repo stays
+   * valid, so origin still answers ls-remote, but `rev-parse HEAD` fails —
+   * the one state that reaches the `*)` (unknown) arm. A fully corrupt HEAD
+   * would not: git would stop treating the directory as a repo at all.
+   */
+  const unreadableHead = (): void => {
+    writeFileSync(
+      join(mkt, '.git', 'HEAD'),
+      'ref: refs/heads/no-such-branch\n',
+    );
+  };
+
+  it('check 3 states freshness as unverifiable for a clone with no readable HEAD (#1693)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    unreadableHead();
+    const msg = findings('9.5.0');
+    expect(msg).toContain(
+      `bop-clocktower marketplace clone has no readable HEAD to compare with origin @${mktHead.slice(0, 7)} — freshness unverifiable`,
+    );
+    expect(msg).not.toContain('behind origin');
+  });
+
+  it('check 0 states freshness as unverifiable for a clone with no readable HEAD (#1693)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    shipNewerHook();
+    unreadableHead();
+    const msg = runInstalled(hook);
+    expect(msg).toContain('differs from the marketplace copy');
+    expect(msg).toContain('--install-hooks');
+    expect(msg).toMatch(
+      /clone freshness unverifiable: .+ has no readable HEAD to compare with origin @[0-9a-f]{7}/,
+    );
+    expect(msg).not.toContain('behind origin');
+  });
+
   it('names a marketplace dir with no .git as present but not a clone (#1692)', () => {
     // The directory is there, so "checkout missing" sends the reader looking
     // for something that exists; the remedy is a re-clone, not a first clone.
