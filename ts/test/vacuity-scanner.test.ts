@@ -18,6 +18,8 @@
  * still be able to say how many tests it read.
  */
 
+import { fileURLToPath } from 'node:url';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { gateOutcome } from '../src/core/gate-result.js';
@@ -1357,6 +1359,67 @@ it('c', () => { render(<List />); expect(screen.getByText('y')).toBeVisible(); }
 // advanced past line 1 and the scan spun forever. A sync loop cannot be timed
 // out in-process, so a budget on the walk's own primitive turns the hang into
 // a red assertion instead of a stuck worker.
+// #1669, option (a). A `.skip` test never runs, so it cannot pass vacuously --
+// LINT-006 already exempts it. Since #1665 the enumerator reads `.skip`, so VAC
+// began scanning bodies it never saw and reported them as findings. Exempting
+// them must not read as "checked clean" either: a skipped test leaves the
+// denominator and is disclosed as a skip with its reason.
+describe('a .skip test is exempt, and disclosed, not checked (#1669)', () => {
+  it('reports no VAC finding on a vacuous .skip test', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('saves', () => { expect(save(1)).toBe(1); });\n` +
+        `it.skip('parked', () => { expect(1).toBe(1); });\n` +
+        `test.skip('parked too', () => { expect(true).toBe(true); });\n`,
+    );
+    expect(r.findings).toEqual([]);
+  });
+
+  it('takes a .skip test out of `checked` and lists it as a skip', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('saves', () => { expect(save(1)).toBe(1); });\n` +
+        `it.skip('parked', () => { expect(1).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(1);
+    const skip = r.skipped?.find((s) => s.name.includes('(parked)'));
+    expect(skip?.reason).toMatch(/\.skip/);
+  });
+
+  it('abstains on a file whose only tests are .skip, rather than passing', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it.skip('parked', () => { expect(save(1)).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(0);
+    expect(gateOutcome(r, 'advisory').abstained).toBe(true);
+  });
+
+  it('still scans an .only test, which does run', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it.only('focused', () => { expect(1).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(1);
+    expect(rules(r.findings)).toContain('VAC-001');
+  });
+
+  it('reports nothing on the unquarantine fixture whose .skip test is vacuous', () => {
+    const fixture = fileURLToPath(
+      new URL(
+        '../../agents/skills/test/fixtures/unquarantine/suite/tests/orders/reservations.spec.js',
+        import.meta.url,
+      ),
+    );
+    const r = scanVacuity(fixture);
+    expect(r.findings).toEqual([]);
+    expect(r.checked).toBe(0);
+    expect(r.skipped).toHaveLength(3);
+  });
+});
+
 describe('a file that starts with a blank line', () => {
   it('scans to a result instead of hanging', () => {
     const real = String.prototype.lastIndexOf;
