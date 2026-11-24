@@ -86,6 +86,13 @@ under the project's former name) are documented in the
   longer reported as never invoking its target (#1365). A helper that only
   launches a bare command, or mentions a file name outside the launch arguments,
   is still not read as a target.
+- **Cassandra reads a `@covers` annotation above a wrapped `.only`, `.skip` or
+  backtick-titled declaration (#1666).** When a test title wraps onto the next
+  line, the annotation walk must start at the `it`/`test` keyword, and the
+  keyword search knew only a bare `it(`/`test(` with a `'`/`"` title. For the
+  other forms the walk started at the title line, stopped at `it.only(` as code,
+  and dropped the annotation, so a wrong `@covers` went unchecked and the test
+  fell back to import inference.
 
 ## [9.7.0] - 2026-11-21
 
