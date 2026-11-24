@@ -921,6 +921,35 @@ describe('VAC-002 — a trailing or block comment is not an invocation (#1691)',
     );
     expect(vac002Tests(r)).toEqual([]);
   });
+
+  // Python has its own comment syntax: `//` is floor division and `/*` is not
+  // a token, so only a quote-aware `#` opens a comment. Reading the JS forms in
+  // a Python body blanked `10 // target(5)` down to `10` -- a false VAC-002.
+  describe('in a Python body', () => {
+    const PY_HEAD = `from store import target\n\n`;
+    const pyTest = (body: string) =>
+      vac002Tests(scan('test_a.py', PY_HEAD + `def test_t():\n${body}`));
+
+    it('keeps a call that follows `//` floor division', () => {
+      expect(pyTest(`    assert 10 // target(5) == 2\n`)).toEqual([]);
+    });
+
+    it('still counts a call that a trailing `#` comment follows', () => {
+      expect(pyTest(`    assert target(1) == 2  # the happy path\n`)).toEqual(
+        [],
+      );
+    });
+
+    it('reports a test whose only mention is a trailing `#` comment', () => {
+      expect(
+        pyTest(`    value = 1\n    assert value == 1  # target(1)\n`),
+      ).toEqual(['test_t']);
+    });
+
+    it('does not read a `#` inside a string as a comment', () => {
+      expect(pyTest(`    assert f('#', target(1)) == 1\n`)).toEqual([]);
+    });
+  });
 });
 
 describe('VAC-003 — every assertion asserts absence', () => {

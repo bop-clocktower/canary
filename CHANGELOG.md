@@ -41,9 +41,12 @@ under the project's former name) are documented in the
   with `//`, `#` or `*`, and the `@covers` walk kept its own `/*` check, so
   `x(); // makeStore` and `/* makeStore */` still read as code. Both now use one
   quote-aware definition of a comment: a `//` inside a string such as
-  `'http://x'` is content, not a comment. On canary's own `ts/test` the finding
-  count is unchanged at 215; two tests whose body ran into a `/** ... */` opener
-  naming the target now abstain (577 to 579 skipped).
+  `'http://x'` is content, not a comment. The definition is language-aware: in a
+  Python body only a quote-aware `#` opens a comment, so `10 // target(5)`
+  (floor division) still invokes `target`, and a trailing `# target(1)` no
+  longer counts as invoking it. On canary's own `ts/test` the finding count is
+  unchanged at 215; two tests whose body ran into a `/** ... */` opener naming
+  the target now abstain (577 to 579 skipped).
 
 - **The session siren no longer calls an ahead or diverged marketplace clone
   "behind origin", and says when it could not check the clone at all (#1682).**
