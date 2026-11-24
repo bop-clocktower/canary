@@ -38,6 +38,14 @@ under the project's former name) are documented in the
   refreshes only the hook copies. `--verify` no longer prints `healthy` above
   `DIVERGENT` lines; a healthy scheduler with a stale hook copy now reads
   `hooks-not-current`.
+- **Cassandra VAC-002 reads a module-scope `let` that a hook reassigns
+  (#1672).** `let mod; beforeAll(async () => { mod = await import('../x') })`
+  left `mod` unresolved, so when the file had any other relative import, a test
+  calling `mod.save()` drew a false VAC-002. An assignment now binds the name
+  when it reaches the target: a relative `import(` or `require(` (also
+  `.default`) makes it a handle, and a right-hand side that names an imported
+  binding makes it a one-level helper. Any other assignment leaves the name
+  unresolved, so the #1170 abstention still applies to it.
 - **The release workflow's `Move latest tag` step names a rejected push instead
   of blaming a race (#1504).** An auth failure, a network failure or a tag
   ruleset refusal used to log "latest moved on origin", retry, and fail with

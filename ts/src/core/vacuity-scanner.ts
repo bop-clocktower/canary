@@ -431,10 +431,10 @@ function reachesOutOfBandTarget(rawBody: string): boolean {
  * than {@link reachesOutOfBandTarget}'s per-test read, because a handle also
  * makes a file with no import resolvable, and so arms VAC-002 for every OTHER
  * test in it: the script literal must be an ARGUMENT of the launch, and the
- * relative specifier an argument of a real `import(` call. A helper
- * that runs `git ls-files` and then filters on `'.d.ts'` is not a handle
- * (measured on canary's own `typecheck-denominator.test.ts`), and a bare
- * command (`spawnSync('git', ...)`) never is.
+ * relative specifier an argument of a real `import(` or (#1672) `require(`
+ * call. A helper that runs `git ls-files` and then filters on `'.d.ts'` is not
+ * a handle (measured on canary's own `typecheck-denominator.test.ts`), and a
+ * bare command (`spawnSync('git', ...)`) never is.
  */
 function outOfBandHandles(source: string, decls: LocalDecl[]): Set<string> {
   const names = new Set<string>();
@@ -444,8 +444,10 @@ function outOfBandHandles(source: string, decls: LocalDecl[]): Set<string> {
       callArguments(d.body, raw, LAUNCH_CALLS).some((a) =>
         SCRIPT_PATH_LITERAL.test(a),
       ) ||
-      callArguments(d.body, raw, DYNAMIC_IMPORT_CALLS).some((a) =>
-        RELATIVE_SPECIFIER_ARG.test(a),
+      [DYNAMIC_IMPORT_CALLS, REQUIRE_CALLS].some((re) =>
+        callArguments(d.body, raw, re).some((a) =>
+          RELATIVE_SPECIFIER_ARG.test(a),
+        ),
       );
     if (reaches) for (const n of d.names) names.add(n);
   }
@@ -454,6 +456,7 @@ function outOfBandHandles(source: string, decls: LocalDecl[]): Set<string> {
 
 const LAUNCH_CALLS = new RegExp(SUBPROCESS_LAUNCH.source, 'g');
 const DYNAMIC_IMPORT_CALLS = /(?<![\w$.])import\s*\(/g;
+const REQUIRE_CALLS = /(?<![\w$.])require\s*\(/g;
 const RELATIVE_SPECIFIER_ARG = /^\(\s*['"`]\./;
 
 /**
@@ -655,9 +658,10 @@ function oneLevelHelpers(decls: LocalDecl[], direct: Set<string>): Set<string> {
 
 /**
  * `let parse;` / `let parse: Parser;` -- a module-scope name with no
- * initializer, typically assigned later in a hook by a plain assignment no
- * declaration pattern bounds. Its body cannot be resolved, so a test that calls
- * it abstains (#1170) rather than being judged on a helper nobody read.
+ * initializer, typically assigned later in a hook by a plain assignment. Unless
+ * that assignment reaches the target (see `reachingHookAssigns`, #1672), its
+ * body cannot be resolved, so a test that calls it abstains (#1170) rather
+ * than being judged on a helper nobody read.
  */
 const JS_UNINITIALIZED_DECL =
   /(?:^|\n)[^\S\n]*(?:let|var)\s+([A-Za-z_$][\w$]*)\s*(?::(?:[^=;\n]|=>)+)?;/g;
@@ -670,6 +674,40 @@ function unresolvedNames(code: string, decls: LocalDecl[]): Set<string> {
     if (!resolved.has(m[1]!)) names.add(m[1]!);
   }
   return names;
+}
+
+/**
+ * `mod = await import('../x')` in a hook, assigning a module-scope `let mod;`
+ * (#1672). Only an assignment that REACHES the target binds the name: a
+ * relative `import(`/`require(` makes a handle (added to `direct`), and a
+ * right-hand side naming a direct target makes a one-level helper. Any other
+ * stays unresolved, so #1170's abstention still holds.
+ */
+const JS_PLAIN_ASSIGN =
+  /(?<![\w$.])([A-Za-z_$][\w$]*)[^\S\n]*=(?![=>])[^\S\n]*([^;\n]+)/g;
+
+function reachingHookAssigns(
+  source: string,
+  code: string,
+  decls: LocalDecl[],
+  direct: Set<string>,
+): LocalDecl[] {
+  const pending = unresolvedNames(code, decls);
+  const assigns: LocalDecl[] = [];
+  JS_PLAIN_ASSIGN.lastIndex = 0;
+  for (const m of code.matchAll(JS_PLAIN_ASSIGN)) {
+    if (!pending.has(m[1]!)) continue;
+    const body = m[2]!;
+    assigns.push({
+      names: [m[1]!],
+      body,
+      start: m.index! + m[0].length - body.length,
+    });
+  }
+  for (const n of outOfBandHandles(source, assigns)) direct.add(n);
+  return assigns.filter(
+    (d) => direct.has(d.names[0]!) || mentionsAny(d.body, direct),
+  );
 }
 
 /** One same-file declaration: the names it binds and the text it owns. */
@@ -1334,7 +1372,10 @@ function resolveTargets(
 ): TargetInference | null {
   const direct = importedTargets(source, python);
   const decls = localDecls(code, python);
-  if (!python) for (const n of outOfBandHandles(source, decls)) direct.add(n);
+  if (!python) {
+    for (const n of outOfBandHandles(source, decls)) direct.add(n);
+    decls.push(...reachingHookAssigns(source, code, decls, direct));
+  }
   if (direct.size === 0) return null;
   return {
     direct,
