@@ -479,7 +479,7 @@ describe('unattributed survivor disclosure (ADR 0037 F1)', () => {
         ],
       }),
     );
-    expect(text).toContain('pr-check.ts:2`: equivalent');
+    expect(text).toContain('pr-check.ts:2`: `equivalent`');
     expect(text).not.toContain(POINTER);
   });
 });
@@ -723,7 +723,7 @@ describe('renderMutationReport escapes report text (#1568)', () => {
     );
     const line = text.split('\n').find((l) => l.startsWith('- '));
     expect(line).toBe(
-      '- ``ts/src/a`b.ts:10`` String\\`Literal \u{2192} ``` `` ``` ' +
+      '- ``ts/src/a`b.ts:10`` ``String`Literal`` \u{2192} ``` `` ``` ' +
         '\u{2014} ran but did not fail: ``renders `x` safely``',
     );
   });
@@ -765,7 +765,7 @@ describe('renderMutationReport escapes report text (#1568)', () => {
       { 'a`b.ts': ['x; // canary:allow-mutant `y` is equivalent'] },
     );
     expect(renderMutationReport(mapped)).toContain(
-      '- suppressed ``a`b.ts:1``: \\`y\\` is equivalent',
+      '- suppressed ``a`b.ts:1``: `` `y` is equivalent ``',
     );
   });
 });
@@ -867,5 +867,51 @@ describe('renderMutationReport neutralizes autolinks (#1673)', () => {
     expect(abstainLine('bad `files` map')).toBe(
       'Abstained \u{2014} ``bad `files` map``. This is not a pass.',
     );
+  });
+});
+
+// #1680: the allow-mutant reason is prose the PR author writes, and the
+// mutator name comes from the report JSON. mdText escaped their Markdown
+// structure but left `#N`, `@user` and URLs to autolink; both now render as
+// code spans, like the test names and abstain reason (#1673).
+describe('renderMutationReport neutralizes autolinks in reasons and mutators (#1680)', () => {
+  const HOSTILE = '@someuser #12 https://evil.example';
+
+  const suppressedLine = (reason: string): string => {
+    const mapped = applyMutantSuppressions(
+      mapStrykerReport(
+        report([{ line: 1, status: 'Survived', coveredBy: ['t1'] }], 'a.ts'),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+      { 'a.ts': [`x; // canary:allow-mutant ${reason}`] },
+    );
+    return renderMutationReport(mapped)
+      .split('\n')
+      .find((l) => l.startsWith('- suppressed'))!;
+  };
+
+  it('renders a hostile allow-mutant reason as one code span', () => {
+    expect(suppressedLine(HOSTILE)).toBe(
+      `- suppressed \`a.ts:1\`: \`${HOSTILE}\``,
+    );
+  });
+
+  it('keeps a backtick in the allow-mutant reason inside one code span', () => {
+    expect(suppressedLine('`y` is equivalent, see #12')).toBe(
+      '- suppressed `a.ts:1`: `` `y` is equivalent, see #12 ``',
+    );
+  });
+
+  it('renders a hostile mutator name as a code span', () => {
+    const text = renderMutationReport(
+      mapStrykerReport(
+        report([
+          { line: 3, status: 'Survived', coveredBy: ['t1'], mutator: HOSTILE },
+        ]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+    );
+    const line = text.split('\n').find((l) => l.startsWith('- '))!;
+    expect(line).toContain(` \`${HOSTILE}\` \u{2192} `);
   });
 });

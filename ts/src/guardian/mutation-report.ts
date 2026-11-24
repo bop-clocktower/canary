@@ -23,7 +23,6 @@ import {
   excludedLine,
   mdCode,
   mdReason,
-  mdText,
   noKillReason,
 } from './mutation-text.js';
 
@@ -226,7 +225,9 @@ function suppressionLines(report: MutationReport): string[] {
   return report.suppressed.map(
     (entry) =>
       `- suppressed ${mdCode(`${entry.finding.path}:${entry.finding.line}`)}: ` +
-      mdText(entry.reason),
+      // A code span: the reason is the PR author's prose, and GitHub
+      // autolinks `#N`, `@user` and URLs anywhere else (#1680).
+      mdCode(entry.reason),
   );
 }
 
@@ -284,7 +285,7 @@ export function renderMutationReport(report: MutationReport): string {
           : 'attribution not recorded';
       lines.push(
         `- ${mdCode(`${finding.path}:${finding.line}`)} ` +
-          `${mdText(finding.mutator)} ${'\u{2192}'} ` +
+          `${mdCode(finding.mutator)} ${'\u{2192}'} ` +
           `${mdCode(finding.replacement)} ${'\u{2014}'} ran but did not fail: ` +
           covering,
       );
