@@ -922,6 +922,56 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
   });
 
   /**
+   * Commit straight into the marketplace clone, so it carries a commit origin
+   * has never seen — an ahead clone, or a diverged one once origin moves too.
+   */
+  const commitInClone = (): string => {
+    writeFileSync(join(mkt, 'local-note.txt'), 'a local commit\n');
+    execFileSync('git', ['add', '-A'], { cwd: mkt });
+    execFileSync('git', ['commit', '-q', '-m', 'local'], {
+      cwd: mkt,
+      env: GIT_ENV,
+    });
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: mkt,
+      encoding: 'utf-8',
+    }).trim();
+  };
+
+  it('never calls a clone that is AHEAD of origin behind it (#1682)', () => {
+    // The #1682 repro: one local commit ahead. "pull --ff-only" answers
+    // "Already up to date", so a "behind" finding could never clear.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    commitInClone();
+    const msg = findings('9.5.0');
+    expect(msg).toContain('marketplace clone differs from origin (ahead)');
+    expect(msg).not.toContain('behind origin');
+    expect(msg).not.toContain('pull --ff-only');
+  });
+
+  it('never calls a DIVERGED clone behind origin (#1682)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    commitInClone();
+    writeUpstream('9.5.0-next');
+    execFileSync('git', ['fetch', '-q'], { cwd: mkt });
+    const msg = findings('9.5.0');
+    expect(msg).toContain('marketplace clone differs from origin (diverged)');
+    expect(msg).not.toContain('behind origin');
+    expect(msg).not.toContain('pull --ff-only');
+  });
+
+  it('still names the pull remedy for a fetched clone that is truly behind (#1682)', () => {
+    // Origin's tip is local and the clone's HEAD is its ancestor: the one
+    // case where --ff-only is guaranteed to bring the clone to origin.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    writeUpstream('9.5.0-next');
+    execFileSync('git', ['fetch', '-q'], { cwd: mkt });
+    const msg = findings('9.5.0');
+    expect(msg).toContain('marketplace clone is behind origin');
+    expect(msg).toMatch(/run: git -C .+ pull --ff-only/);
+  });
+
+  /**
    * #1632: `install-siren.mjs` installs the hook as a COPY in
    * `~/.claude/hooks/`, so a merged siren fix never reaches a machine until
    * someone reinstalls, and the stale copy keeps firing findings from old
@@ -1029,6 +1079,63 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     expect(msg).toContain('--install-hooks');
     expect(msg).not.toContain('behind origin');
     expect(msg).not.toMatch(/clone is (current|fresh|up to date)/);
+    // The abstention is a finding with its reason, not a silent skip (#1682).
+    expect(msg).toContain(
+      'clone freshness unverifiable: git ls-remote origin HEAD failed',
+    );
+  });
+
+  it('keeps the install remedy, with a caveat, for a clone AHEAD of origin (#1682)', () => {
+    // A pull cannot clear an ahead clone ("Already up to date"), so naming
+    // it withholds the install remedy forever.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    shipNewerHook();
+    commitInClone();
+    const msg = runInstalled(hook);
+    expect(msg).toContain('marketplace clone differs from origin (ahead)');
+    expect(msg).not.toContain('behind origin');
+    expect(msg).not.toContain('pull --ff-only');
+    expect(msg).toContain('commits origin does not have');
+    expect(msg).toContain('--install-hooks');
+  });
+
+  it('keeps the install remedy, with a caveat, for a DIVERGED clone (#1682)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    shipNewerHook();
+    commitInClone();
+    writeUpstream('9.5.0-next');
+    execFileSync('git', ['fetch', '-q'], { cwd: mkt });
+    const msg = runInstalled(hook);
+    expect(msg).toContain('marketplace clone differs from origin (diverged)');
+    expect(msg).not.toContain('behind origin');
+    expect(msg).not.toContain('pull --ff-only');
+    expect(msg).toContain('--install-hooks');
+  });
+
+  it('still says pull first for a fetched clone that is truly behind (#1682)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    writeFileSync(hook, `${readFileSync(hook, 'utf-8')}# a newer dev fix\n`);
+    writeUpstream('9.5.0-next');
+    execFileSync('git', ['fetch', '-q'], { cwd: mkt });
+    const msg = runInstalled(hook);
+    expect(msg).toContain('marketplace clone is behind origin');
+    expect(msg).toContain('pull the clone first');
+    expect(msg).not.toContain('--install-hooks');
+  });
+
+  it('states freshness as unverifiable when the marketplace has no .git (#1682)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    shipNewerHook();
+    rmSync(join(mkt, '.git'), { recursive: true, force: true });
+    const msg = runInstalled(hook);
+    expect(msg).toContain('differs from the marketplace copy');
+    expect(msg).toContain('--install-hooks');
+    expect(msg).toContain('clone freshness unverifiable');
+    expect(msg).toContain('no .git');
   });
 
   it('is silent about itself when the installed copy matches the marketplace (#1632)', () => {

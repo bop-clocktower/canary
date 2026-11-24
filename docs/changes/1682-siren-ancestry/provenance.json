@@ -1,0 +1,32 @@
+{
+  "issues": [1682],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/install-siren.test.ts",
+  "reproducingTests": [
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > never calls a clone that is AHEAD of origin behind it (#1682)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > never calls a DIVERGED clone behind origin (#1682)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > keeps the install remedy, with a caveat, for a clone AHEAD of origin (#1682)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > keeps the install remedy, with a caveat, for a DIVERGED clone (#1682)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > states freshness as unverifiable when the marketplace has no .git (#1682)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > keeps the install remedy, and claims nothing fresh, when origin is unreachable (#1670)"
+  ],
+  "guardTests": [
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > still names the pull remedy for a fetched clone that is truly behind (#1682)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > still says pull first for a fetched clone that is truly behind (#1682)"
+  ],
+  "redAtBase": "Tests 6 failed | 2 passed of the 8 new/amended cases (red commit af6f3ea7 on base 95745ee1); the 2 passing are the truly-behind guards, which must stay green",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "Both defects in #1682 (inequality-as-ordering in checks 0 and 3, and the dropped cannot-verify reason in check 0 for an unreachable origin or a clone without .git) are fixed and covered red-first.",
+  "assumptions": [
+    "CONFIRM Q4 = (a), chosen by the human: when heads differ, check ancestry (git cat-file -e, then git merge-base --is-ancestor). Only a true ancestor gets the 'behind origin ... pull --ff-only' remedy; an ahead or diverged clone gets 'differs from origin (ahead)' / '(diverged)' and, in check 0, keeps the install remedy with a caveat; check 3 gets the same ordering. The && chain is split so 'origin could not be asked' and 'no .git' are findings ('clone freshness unverifiable: git ls-remote origin HEAD <reason>' and a no-.git equivalent).",
+    "Default taken (tip not fetched locally): when origin's tip object is absent from the clone, the clone cannot contain it, so it is behind or diverged but never ahead. It keeps the 'behind origin' wording and the pull --ff-only remedy, because that pull fetches the tip first and then either fast-forwards (clearing the finding) or refuses loudly on divergence; it can never no-op with 'Already up to date', which was the #1682 failure. This also keeps the existing #1495/#1599/#1670 not-yet-fetched cases unchanged. No extra network call is made to disambiguate.",
+    "Default taken (ahead/diverged remedy in check 3): no destructive remedy (reset --hard) is named; the finding points at 'git -C <clone> log --oneline <origin-tip>..HEAD' to inspect the clone's extra commits.",
+    "Default taken (unreadable clone HEAD): reported as freshness unverifiable rather than given an ordering, in both checks.",
+    "Check 3's 'marketplace checkout missing at $MKT' wording when $MKT exists without .git is unchanged (out of scope; check 0 already emits the no-.git finding and exits first when the hook copy differs).",
+    "No README/docs/SKILL text quotes the check 0/3 wording; the only mentions are harness-managed roadmap rows describing the issue itself, so there is no doc drift to fix.",
+    "The hook stays bash 3.2 compatible (syntax-checked with /bin/bash 3.2.57)."
+  ],
+  "run": "fc1124b",
+  "base": "95745ee1"
+}
