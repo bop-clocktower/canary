@@ -191,6 +191,10 @@ describe('BH003 local-timezone', () => {
     'expect(make<Date>(0).toLocaleString()).toBe(s);',
     'expect(fn!(0).toLocaleString()).toBe(s);',
     'expect(new Date (0).toLocaleString()).toBe(s);',
+    // An object in the LOCALES slot is ignored by JS, so the call still
+    // renders in the host zone: only the options argument can pin it.
+    "d.toLocaleString({ timeZone: 'UTC' });",
+    "expect(d.toLocaleTimeString({ timeZone: 'UTC' })).toBe(s);",
   ])('still flags %s', (line) => {
     expect(ids(line)).toContain('BH003-local-timezone');
   });
