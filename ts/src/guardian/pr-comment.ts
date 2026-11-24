@@ -44,21 +44,6 @@ export interface GuardianIdentity {
   appSlug?: string;
 }
 
-/**
- * The sticky author identity from the environment (#1352, #1678). The one
- * definition both guardian and briefing read, so the two comments always agree
- * on what the variables mean. `CANARY_GUARDIAN_LOGIN` replaces the
- * `github-actions[bot]` default (a PAT, or an App's `<slug>[bot]`);
- * `CANARY_GUARDIAN_APP_SLUG` adds the App-bot match. Blank means unset. Called
- * only at a CLI edge, so the posting core stays pure.
- */
-export function identityFromEnv(env: NodeJS.ProcessEnv): GuardianIdentity {
-  // Blank is unset: '' must never become a login that matches a ghost author.
-  const login = env['CANARY_GUARDIAN_LOGIN']?.trim();
-  const appSlug = env['CANARY_GUARDIAN_APP_SLUG']?.trim();
-  return { ...(login ? { login } : {}), ...(appSlug ? { appSlug } : {}) };
-}
-
 const DEFAULT_LOGIN = 'github-actions[bot]';
 
 /** The comment-poster seam. Every consumer depends on this, not on HTTP. */

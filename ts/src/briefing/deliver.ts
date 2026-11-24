@@ -16,7 +16,7 @@ import { jsonIndent2 } from '../cli-common.js';
 import { renderCharter } from './charter.js';
 // Briefing honors guardian's sticky identity (#1678): the same token posts both
 // comments, so it reads guardian's variables through guardian's one definition.
-import { identityFromEnv } from '../guardian/pr-comment.js';
+import { identityFromEnv } from '../guardian/cli.js';
 import { commentClientFor, postCharter } from './comment.js';
 import {
   type JudgmentResult,
