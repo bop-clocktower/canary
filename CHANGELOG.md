@@ -28,6 +28,15 @@ under the project's former name) are documented in the
   `checked` and is listed as a skip (`declared .skip: it never runs ...`), so a
   file whose only tests are `.skip` abstains instead of passing.
 
+- **The mission-briefing charter comment no longer stacks a new copy on every
+  run when the token is not `github-actions[bot]` (#1678).**
+  `canary briefing --comment` found its own sticky by author, and only
+  `github-actions[bot]` could match, so an App installation token or a PAT
+  posted a fresh charter on every run, the same bug guardian had. Briefing now
+  reads guardian's own `CANARY_GUARDIAN_LOGIN` / `CANARY_GUARDIAN_APP_SLUG` with
+  the same meaning, since both comments are normally posted by the same token,
+  so one setting covers both. With both unset nothing changes.
+
 - **Guardian's sticky comment no longer stacks a new copy on every run when the
   token is not `github-actions[bot]` (#1352).** Guardian finds its own sticky by
   author (#931), and only `github-actions[bot]` could match, so a job posting

@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 
 import { jsonIndent2 } from '../cli-common.js';
 import { renderCharter } from './charter.js';
+import type { GuardianIdentity } from '../guardian/pr-comment.js';
 import { commentClientFor, postCharter } from './comment.js';
 import {
   type JudgmentResult,
@@ -61,6 +62,21 @@ function loadJudgment(
   return applyJudgment(parsed, facts.units);
 }
 
+/**
+ * Who the charter's sticky is authored by (#1678), read here at the CLI edge so
+ * `postCharter` stays pure. Briefing honors guardian's own variables (#1352),
+ * since both comments are posted by the same token: `CANARY_GUARDIAN_LOGIN`
+ * replaces the `github-actions[bot]` default and `CANARY_GUARDIAN_APP_SLUG`
+ * adds the App-bot match. Blank means unset. A local read rather than an
+ * import from guardian's CLI, which would be a cross-layer dependency.
+ */
+function identityFromEnv(env: NodeJS.ProcessEnv): GuardianIdentity {
+  // Blank is unset: '' must never become a login that matches a ghost author.
+  const login = env['CANARY_GUARDIAN_LOGIN']?.trim();
+  const appSlug = env['CANARY_GUARDIAN_APP_SLUG']?.trim();
+  return { ...(login ? { login } : {}), ...(appSlug ? { appSlug } : {}) };
+}
+
 /** `--comment`: post, else print with a note or ::warning:: (never exit 1). */
 async function deliverComment(
   charter: string,
@@ -73,7 +89,7 @@ async function deliverComment(
     sink.out(fallback);
     return;
   }
-  const result = await postCharter(client, charter);
+  const result = await postCharter(client, charter, identityFromEnv(sink.env));
   if (result.kind === 'posted') {
     sink.out(
       `Charter posted as a PR comment (${result.action}, id ${result.commentId}).`,

@@ -9,6 +9,7 @@
 import { prContextFromEnv } from '../guardian/cli.js';
 import {
   type GitHubClient,
+  type GuardianIdentity,
   GitHubPermissionError,
   RestGitHubClient,
   upsertStickyComment,
@@ -41,16 +42,22 @@ type PostResult =
 const FORBIDDEN_NOTICE =
   'canary briefing: token lacks write permission on PR comments (HTTP 403) \u{2014} charter printed to stdout instead';
 
-/** Upsert the charter under {@link BRIEFING_MARKER}; never throws. */
+/**
+ * Upsert the charter under {@link BRIEFING_MARKER}; never throws. `identity`
+ * is who the token posts as (#1678): without it a charter written by an App
+ * or PAT is never recognised as ours, so every run would stack a new one.
+ */
 export async function postCharter(
   client: GitHubClient,
   charter: string,
+  identity: GuardianIdentity = {},
 ): Promise<PostResult> {
   try {
     const r = await upsertStickyComment(
       client,
       `${BRIEFING_MARKER}\n${charter}`,
       BRIEFING_MARKER,
+      identity,
     );
     if (r.action === 'degraded')
       return { kind: 'degraded', notice: degraded(r.notice) };

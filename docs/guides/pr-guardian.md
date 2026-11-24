@@ -282,9 +282,12 @@ behavior. An empty or whitespace-only value counts as unset. A comment is
 adopted only when its author matches the configured login, or is a `Bot` acting
 through the configured App; any other comment carrying the marker is never
 adopted. `canary guardian precision` reads stickies under the same identity, so
-set the variables on that workflow too.
+set the variables on that workflow too. `canary briefing --comment` honors the
+same two variables for its charter comment ([#1678]), so set them on a briefing
+step that posts with the same token.
 
 [#1352]: https://github.com/bop-clocktower/canary/issues/1352
+[#1678]: https://github.com/bop-clocktower/canary/issues/1678
 
 ### At-desk check and authoring (the `preCommit` surface)
 
