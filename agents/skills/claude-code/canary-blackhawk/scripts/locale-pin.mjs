@@ -105,23 +105,25 @@ function topLevelParts(text) {
 }
 
 /**
- * True when one of the call's own arguments is an object literal whose last
- * top-level zone source is a `timeZone: '<literal>'` property. A pin nested
+ * True when the call's OPTIONS argument (the second; `toLocale*String` take
+ * `(locales, options)`) is an object literal whose last top-level zone source
+ * is a `timeZone: '<literal>'` property. An object in the locales slot does
+ * not pin: JS ignores it there and renders in the host zone. A pin nested
  * in another call, a ternary branch or an inner object does not count, and
  * neither does one a later spread, computed key or `timeZone` key can
  * override (`{ timeZone: 'UTC', ...opts }`); `{ ...opts, timeZone: 'UTC' }`
  * still pins, because the literal is applied last.
  */
 function pinsLiteralZone(args) {
-  return topLevelParts(args).some((arg) => {
-    const object = arg.trim();
-    if (!object.startsWith('{') || !object.endsWith('}')) return false;
-    const body = object.slice(1, -1);
-    // `{ a } || { b }` starts and ends with braces but is not one object.
-    if (closesUnopened(body)) return false;
-    const last = topLevelParts(body).findLast((p) => ZONE_SOURCE.test(p));
-    return last !== undefined && ZONE_LITERAL_PROP.test(last);
-  });
+  const options = topLevelParts(args)[1];
+  if (options === undefined) return false;
+  const object = options.trim();
+  if (!object.startsWith('{') || !object.endsWith('}')) return false;
+  const body = object.slice(1, -1);
+  // `{ a } || { b }` starts and ends with braces but is not one object.
+  if (closesUnopened(body)) return false;
+  const last = topLevelParts(body).findLast((p) => ZONE_SOURCE.test(p));
+  return last !== undefined && ZONE_LITERAL_PROP.test(last);
 }
 
 /** Whether `text` closes a bracket it never opened. */
