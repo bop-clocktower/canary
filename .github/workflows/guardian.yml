@@ -105,6 +105,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           BASE_COVERAGE: ${{ steps.base.outputs.path }}
+          # Optional (#1352): guardian finds its own sticky comment by author.
+          # Posting with a token other than github.token (an App installation
+          # token or a PAT)? Name its author, or every run stacks a new comment.
+          # Blank means unset; unset keeps the github-actions[bot] default.
+          # CANARY_GUARDIAN_LOGIN: my-app[bot]
+          # CANARY_GUARDIAN_APP_SLUG: my-app
         # `--emit-analysis` writes the finding record to the .harness/analyses/
         # channel (the #899 harness reverse-handoff producer); `--post-comment`
         # keeps findings visible while the harness consumer (#899) is pending —

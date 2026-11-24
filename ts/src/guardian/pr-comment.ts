@@ -36,16 +36,15 @@ export interface Comment {
 }
 
 /**
- * Who guardian posts as. The Actions token cannot call `GET /user`, so the
- * login is configured (default `github-actions[bot]`); `appSlug` admits a
- * `Bot` author acting through that GitHub App.
+ * Who guardian posts as (configured: the Actions token can't `GET /user`).
+ * `login` unset = `github-actions[bot]`; `appSlug` admits that App's `Bot`.
  */
 export interface GuardianIdentity {
-  login: string;
+  login?: string;
   appSlug?: string;
 }
 
-const DEFAULT_IDENTITY: GuardianIdentity = { login: 'github-actions[bot]' };
+const DEFAULT_LOGIN = 'github-actions[bot]';
 
 /** The comment-poster seam. Every consumer depends on this, not on HTTP. */
 export interface GitHubClient {
@@ -87,7 +86,7 @@ export class FakeGitHubClient implements GitHubClient {
     const row: Comment = {
       id: this.nextId,
       body,
-      user: { login: DEFAULT_IDENTITY.login, type: 'Bot' },
+      user: { login: DEFAULT_LOGIN, type: 'Bot' },
     };
     this.comments.push(row);
     return row;
@@ -128,7 +127,7 @@ export interface UpsertResult {
 export function findSticky(
   comments: Comment[],
   marker: string = STICKY_MARKER,
-  identity: GuardianIdentity = DEFAULT_IDENTITY,
+  identity: GuardianIdentity = {},
 ): Comment | null {
   let best: Comment | null = null;
   for (const c of comments.filter((x) => isSticky(x, marker, identity))) {
@@ -142,7 +141,7 @@ function isSticky(c: Comment, marker: string, id: GuardianIdentity): boolean {
 }
 
 function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {
-  if (c.user?.login === identity.login) return true;
+  if (c.user?.login === (identity.login ?? DEFAULT_LOGIN)) return true;
   const slug = c.performed_via_github_app?.slug;
   return c.user?.type === 'Bot' && !!slug && slug === identity.appSlug;
 }
@@ -160,9 +159,10 @@ export async function upsertStickyComment(
   client: GitHubClient,
   body: string,
   marker: string = STICKY_MARKER,
+  identity: GuardianIdentity = {},
 ): Promise<UpsertResult> {
   try {
-    const existing = findSticky(await client.listComments(), marker);
+    const existing = findSticky(await client.listComments(), marker, identity);
     if (existing !== null) {
       const updated = await client.updateComment(existing.id, body);
       return { action: 'updated', comment_id: updated.id, notice: null };

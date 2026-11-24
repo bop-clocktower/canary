@@ -34,6 +34,10 @@ jobs:
       - name: Derive precision into the step summary
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Optional (#1352): match the identity the guardian job posts as, so
+          # precision finds its sticky. Blank or unset keeps github-actions[bot].
+          # CANARY_GUARDIAN_LOGIN: my-app[bot]
+          # CANARY_GUARDIAN_APP_SLUG: my-app
         run: |
           set -euo pipefail
           report="$(node ts/bin/canary.js guardian precision --repo "$GITHUB_REPOSITORY")"

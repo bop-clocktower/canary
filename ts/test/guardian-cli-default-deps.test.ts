@@ -31,6 +31,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultDeps } from '../src/guardian/cli.js';
+import { STICKY_MARKER } from '../src/guardian/pr-comment.js';
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -293,13 +294,44 @@ describe('defaultDeps() GitHub client builders', () => {
   it('buildAdjudicationSource reads PR files with the token it was given', async () => {
     const fetchSpy = stubFetch([]);
     const files = await defaultDeps()
-      .buildAdjudicationSource('o/r', 'adj-tok')
+      .buildAdjudicationSource('o/r', 'adj-tok', {})
       .prFiles(5);
     expect(files).toEqual([]);
     expect(firstRequest(fetchSpy)).toEqual([
       'https://api.github.com/repos/o/r/pulls/5/files?per_page=100',
       'Bearer adj-tok',
     ]);
+  });
+
+  it('buildAdjudicationSource finds the sticky under the identity it was given (#1352)', async () => {
+    const sticky = {
+      id: 9,
+      node_id: 'IC_9',
+      body: `${STICKY_MARKER}\nlast`,
+      user: { login: 'example-app[bot]', type: 'Bot' },
+      performed_via_github_app: { slug: 'example-app' },
+    };
+    const json = (body: unknown): Response =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.endsWith('/graphql')
+          ? json({
+              data: {
+                node: { userContentEdits: { totalCount: 0, nodes: [] } },
+              },
+            })
+          : json([sticky]),
+      ),
+    );
+    const history = await defaultDeps()
+      .buildAdjudicationSource('o/r', 'tok', { appSlug: 'example-app' })
+      .stickyHistory(7);
+    expect(history?.revisions).toEqual([sticky.body]);
   });
 
   it('buildBranchProtectionClient reads required checks with the token it was given', async () => {

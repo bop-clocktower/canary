@@ -93,6 +93,21 @@ and `coverage_delta.status` reports `unavailable`. Read that field before
 treating an empty finding list as "no regressions" — a run that compared nothing
 has abstained, not passed.
 
+**Sticky-comment identity (#1352).** `--post-comment` updates guardian's own
+sticky comment in place, and it recognizes that comment by its author, never by
+the marker alone. The default author is `github-actions[bot]`. When the token
+posts as anyone else, name that author or the run stacks a new comment every
+time:
+
+```bash
+export CANARY_GUARDIAN_LOGIN='my-app[bot]'     # replaces github-actions[bot] (a PAT's login, or an App's <slug>[bot])
+export CANARY_GUARDIAN_APP_SLUG=my-app         # also match a Bot acting through this GitHub App
+```
+
+Both are optional. An empty or whitespace-only value counts as unset. A human
+comment that contains the marker is never adopted, whatever these are set to.
+`canary guardian precision` reads the sticky under the same identity.
+
 ### Phase 1 — Quality audit (Tier ≥ 1, read-only)
 
 Export the availability signal so the probe reports the ceiling, then audit the

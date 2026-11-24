@@ -16,6 +16,17 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Guardian's sticky comment no longer stacks a new copy on every run when the
+  token is not `github-actions[bot]` (#1352).** Guardian finds its own sticky by
+  author (#931), and only `github-actions[bot]` could match, so a job posting
+  with a GitHub App installation token or a PAT never found the comment it wrote
+  and posted another one. Two optional environment variables now name the
+  author: `CANARY_GUARDIAN_LOGIN` replaces the `github-actions[bot]` default,
+  and `CANARY_GUARDIAN_APP_SLUG` adds a match for a `Bot` acting through that
+  GitHub App. `pr-check --post-comment` and `precision` both read them. An empty
+  or whitespace-only value counts as unset, and a human comment that carries the
+  marker is still never adopted. With both unset nothing changes.
+
 - **The session siren now reports when its own installed copy is stale
   (#1632).** `install-siren.mjs` installs the hooks into `~/.claude/hooks/` as
   copies, and updating the marketplace or the plugin does not refresh them, so a
