@@ -1409,6 +1409,10 @@ function annotationFor(
   return matches.at(-1)?.[1] ?? null;
 }
 
+const TITLE_QUOTES = ["'", '"', '`'];
+/** The keyword opening a wrapped declaration, `.only`/`.skip` too (#1666). */
+const DECLARATION_KEYWORD = /\b(?:it|test)(?:\.(?:only|skip))?\s*\(\s*$/;
+
 /**
  * Offset of the `it`/`test` keyword opening a JS declaration, or of the body
  * start when it cannot be found. Python needs none of this: `def test_x(` is
@@ -1417,17 +1421,17 @@ function annotationFor(
  * A title wrapped onto its own line (`it(\n  'name',`) puts `bodyStart` a line
  * below the keyword, and the walk in {@link annotationFor} must begin at the
  * keyword's line or it stops at `it(` as code. The name holds no quote, so the
- * character before `bodyStart` is the closing quote and the previous one of the
- * same kind opens it; the search before that is bounded so a file of many
- * tests stays linear.
+ * character before `bodyStart` is the closing quote (`'`, `"` or a backtick)
+ * and the previous one of the same kind opens it; the search before that is
+ * bounded so a file of many tests stays linear.
  */
 function jsDeclarationStart(code: string, block: TestBlock): number {
   const quote = code[block.bodyStart - 1]!;
-  if (quote !== "'" && quote !== '"') return block.bodyStart;
+  if (!TITLE_QUOTES.includes(quote)) return block.bodyStart;
   const open = code.lastIndexOf(quote, block.bodyStart - 2);
   if (open < 0) return block.bodyStart;
   const from = Math.max(0, open - 80);
-  const kw = code.slice(from, open).search(/\b(?:it|test)\s*\(\s*$/);
+  const kw = code.slice(from, open).search(DECLARATION_KEYWORD);
   return kw < 0 ? block.bodyStart : from + kw;
 }
 
