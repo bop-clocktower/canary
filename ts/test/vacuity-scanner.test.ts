@@ -789,6 +789,93 @@ describe('VAC-002 — a module-scope let a hook reassigns (#1672)', () => {
   });
 });
 
+// #1681. VAC-002 read the RAW test body, comments included -- and a body runs
+// to the next declaration, so it also owned the comment above the NEXT test.
+// Once #1672 bound common words (`template`, `root`, `store`) as target names,
+// prose saying "not the template's" counted as invoking the target, and a test
+// whose only line was `expect(hookSpawns).toBe(0)` passed in silence. The
+// verdict now reads the comment-stripped body, the same lines every other rule
+// reads.
+describe('VAC-002 — a comment is not an invocation (#1681)', () => {
+  const HEAD4 =
+    `import { it, expect, beforeEach } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let template;\n` +
+    `let hookSpawns = 0;\n` +
+    `beforeEach(() => {\n  template = makeStore();\n});\n`;
+  const vac002Tests = (r: ReturnType<typeof scan>) =>
+    r.findings.filter((f) => f.rule === 'VAC-002').map((f) => f.test);
+
+  it.each([
+    [
+      'a one-level name',
+      `it('counts', () => {\n  // the template's copy\n  expect(hookSpawns).toBe(0);\n});\n`,
+    ],
+    [
+      'a direct import',
+      `it('counts', () => {\n  // makeStore is not called here\n  expect(hookSpawns).toBe(0);\n});\n`,
+    ],
+  ])('reports a test whose only mention of %s is a comment', (_l, test) => {
+    const r = scan('a.test.ts', HEAD4 + test);
+    expect(vac002Tests(r)).toEqual(['counts']);
+  });
+
+  it('does not credit a test with the comment above the next one', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD4 +
+        `it('counts', () => {\n  expect(hookSpawns).toBe(0);\n});\n\n` +
+        `// a push lands here, not the template's\n` +
+        `it('pushes', () => {\n  expect(template.push()).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual(['counts']);
+  });
+
+  // Pinned, NOT changed by #1681: a value binding (not a function) counts as
+  // invoked on a bare mention in code, e.g. `join(root, 'wt')`.
+  it('still counts a bare code mention of a hook-assigned value', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD4 + `it('uses', () => {\n  expect(use(template)).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+    expect(r.helperAbstained ?? 0).toBe(0);
+  });
+
+  // The `deeper` -> `invoked` transition #1679 introduced: a test that reaches
+  // the target only through a two-level helper chain abstains, but naming a
+  // hook-assigned value in code lifts it to `invoked`.
+  it('lifts a two-level helper chain to invoked via a hook-assigned value', () => {
+    const chain =
+      `const raw = () => makeStore();\n` + `const helper = () => raw();\n`;
+    const deeper = scan(
+      'a.test.ts',
+      HEAD4 + chain + `it('t', () => {\n  expect(helper()).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(deeper)).toEqual([]);
+    expect(deeper.helperAbstained).toBe(1);
+    const lifted = scan(
+      'a.test.ts',
+      HEAD4 +
+        chain +
+        `it('t', () => {\n  expect(helper(template)).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(lifted)).toEqual([]);
+    expect(lifted.helperAbstained ?? 0).toBe(0);
+  });
+
+  it('does not lift a two-level chain on a comment mention', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD4 +
+        `const raw = () => makeStore();\n` +
+        `const helper = () => raw();\n` +
+        `it('t', () => {\n  // see template\n  expect(helper()).toBe(1);\n});\n`,
+    );
+    expect(r.helperAbstained).toBe(1);
+  });
+});
+
 describe('VAC-003 — every assertion asserts absence', () => {
   // The canary-katana case from #486: `expect(existsSync(ledger)).toBe(false)`
   // was free, because the buggy code exited before the write. An all-absence
