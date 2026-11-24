@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The guardian mutation report no longer turns test names into links or
+  mentions, and no longer posts its abstain reason raw (#1673).** A covering
+  test name is now an inert code span, like the excluded test paths already
+  were, so a `#123`, an `@user` or a URL inside a name stays text in the PR
+  comment instead of linking an issue or notifying a stranger. The abstain
+  reason, which can carry a report path and a parse error verbatim, is now one
+  code span too, collapsed to a single line and cut to at most 200 characters
+  with an ellipsis.
+
 - **The session siren no longer calls a differing hook copy "older", and never
   refreshes the hooks from a stale clone (#1670).** Check 0 compares the
   installed hook with the marketplace clone's copy byte for byte, which shows
