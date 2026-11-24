@@ -16,6 +16,12 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The session siren no longer calls a marketplace directory with no `.git`
+  missing (#1692).** Check 3 reported "marketplace checkout missing" whenever
+  `$MKT/.git` was absent, even though the directory was there. It now says the
+  directory is present but not a git clone, with the remedy to remove the stale
+  directory or re-clone. A truly absent directory keeps the old message.
+
 - **The guardian mutation report no longer turns an allow-mutant reason or a
   mutator name into links or mentions (#1680).** The reason written after
   `// canary:allow-mutant` and the mutator name of a survivor were escaped for

@@ -1138,6 +1138,29 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     expect(msg).toContain('no .git');
   });
 
+  it('names a marketplace dir with no .git as present but not a clone (#1692)', () => {
+    // The directory is there, so "checkout missing" sends the reader looking
+    // for something that exists; the remedy is a re-clone, not a first clone.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    rmSync(join(mkt, '.git'), { recursive: true, force: true });
+    const msg = findings('9.5.0');
+    expect(msg).toContain(
+      `bop-clocktower marketplace directory at ${mkt} is present but not a git clone`,
+    );
+    expect(msg).toContain('remove the stale directory or re-clone');
+    expect(msg).not.toContain('checkout missing');
+  });
+
+  it('keeps the checkout-missing finding when the marketplace dir is absent (#1692)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    rmSync(mkt, { recursive: true, force: true });
+    const msg = findings('9.5.0');
+    expect(msg).toContain(
+      `bop-clocktower marketplace checkout missing at ${mkt}`,
+    );
+    expect(msg).not.toContain('not a git clone');
+  });
+
   it('is silent about itself when the installed copy matches the marketplace (#1632)', () => {
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     // Other checks (launchd, say) may still speak in a sandbox; this one

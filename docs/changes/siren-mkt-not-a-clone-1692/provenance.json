@@ -1,0 +1,18 @@
+{
+  "issues": [1692],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": {
+    "file": "ts/test/install-siren.test.ts",
+    "name": "canary-session-siren.sh skew check — executed, not read > names a marketplace dir with no .git as present but not a clone (#1692)"
+  },
+  "redBeforeFix": "Against origin/main 2f6817f9's hook: 1 failed | 1 passed (-t 1692). The siren message contained 'marketplace checkout missing' and not 'present but not a git clone'. The guard test for a truly absent dir passed (unchanged behaviour). With the fix: 68/68 in install-siren.test.ts. Stashing the hook change re-reds the test (1 failed | 1 passed); restoring re-greens it.",
+  "assumptions": [
+    "Human answer: when $MKT exists without .git, check 3 says the marketplace dir is 'present but not a git clone' with the remedy 'remove the stale directory or re-clone'; the truly-missing message is unchanged.",
+    "Exact wording: 'bop-clocktower marketplace directory at $MKT is present but not a git clone — remove the stale directory or re-clone'.",
+    "Out of scope: hooks/canary-deep-siren.sh line 72 has the same conflation; flagged as a follow-up, not fixed here."
+  ],
+  "closingKeyword": "Closes",
+  "fleet": "roadmap-fleet",
+  "runId": "fc1124c-w4"
+}
