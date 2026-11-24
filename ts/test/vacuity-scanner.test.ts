@@ -876,6 +876,53 @@ describe('VAC-002 — a comment is not an invocation (#1681)', () => {
   });
 });
 
+// #1691. #1681 only stripped lines that START with `//`, `#` or `*`, and the
+// annotation walk had its own `/*` check, so the two disagreed and a comment
+// AFTER code, or a `/* ... */` line, still counted as naming the target.
+describe('VAC-002 — a trailing or block comment is not an invocation (#1691)', () => {
+  const HEAD =
+    `import { it, expect } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let hookSpawns = 0;\n`;
+  const vac002Tests = (r: ReturnType<typeof scan>) =>
+    r.findings.filter((f) => f.rule === 'VAC-002').map((f) => f.test);
+
+  it.each([
+    ['a trailing // comment', `  expect(hookSpawns).toBe(0); // makeStore\n`],
+    [
+      'a /* */ line',
+      `  /* makeStore() is not called */\n  expect(hookSpawns).toBe(0);\n`,
+    ],
+    [
+      'a trailing /* */ span',
+      `  expect(hookSpawns /* makeStore */).toBe(0);\n`,
+    ],
+  ])('reports a test whose only mention is %s', (_l, body) => {
+    const r = scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`);
+    expect(vac002Tests(r)).toEqual(['counts']);
+  });
+
+  // The negative: `//` inside a string is content, not a comment, so a call
+  // written after one on the same line still counts.
+  it('still counts a call that follows a // inside a string', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `it('fetches', () => {\n  expect(get('http://x', makeStore())).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+  });
+
+  it('still counts a call that follows a closed /* */ span', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `it('calls', () => {\n  /* setup */ expect(makeStore()).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+  });
+});
+
 describe('VAC-003 — every assertion asserts absence', () => {
   // The canary-katana case from #486: `expect(existsSync(ledger)).toBe(false)`
   // was free, because the buggy code exited before the write. An all-absence

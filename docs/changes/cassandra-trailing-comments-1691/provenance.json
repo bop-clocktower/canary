@@ -1,0 +1,27 @@
+{
+  "issues": [1691],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": {
+    "file": "ts/test/vacuity-scanner.test.ts",
+    "names": [
+      "VAC-002 — a trailing or block comment is not an invocation (#1691) > reports a test whose only mention is a trailing // comment",
+      "VAC-002 — a trailing or block comment is not an invocation (#1691) > reports a test whose only mention is a /* */ line",
+      "VAC-002 — a trailing or block comment is not an invocation (#1691) > reports a test whose only mention is a trailing /* */ span",
+      "VAC-002 — a trailing or block comment is not an invocation (#1691) > still counts a call that follows a // inside a string",
+      "VAC-002 — a trailing or block comment is not an invocation (#1691) > still counts a call that follows a closed /* */ span"
+    ]
+  },
+  "redBeforeFix": "vitest -t 1691 on origin/main source (2f6817f9): 3 failed | 2 passed -- the three comment cases returned no VAC-002 (expected ['counts'], got []); the two negative guards passed. Re-confirmed red by reverting only vacuity-scanner.ts after the fix (3 failed), green with it (161/161 in the file).",
+  "assumptions": [
+    "Human decision: one shared, quote-aware comment definition (commentSpans/isComment) used by both the VAC-002 body filter and the @covers annotation walk (attachesToDeclaration); the separate s.startsWith('/*') check is removed.",
+    "Trailing // and /* ... */ spans are blanked offset-preserving from both the blanked text and the raw line, so VAC-001 and the other rules also stop reading comment tails.",
+    "A line starting with # or * stays whole-line comment (pre-existing behaviour kept). A trailing Python # comment after code is NOT stripped: # is a JS private-field sigil and the helper has no language flag; out of scope for #1691.",
+    "A /* opened on a line and closed on a later line is stripped to end of line; continuation lines that do not start with * are still read as code (pre-existing, out of scope).",
+    "Behaviour change at the annotation walk: a line '/* x */ code()' no longer attaches to the declaration below it, because it holds code.",
+    "Measured on canary's own ts/test: findings unchanged (215); skipped 577 -> 579, two tests whose body ran into a /** ... */ opener naming the target now abstain (deeper) instead of passing as invoked."
+  ],
+  "closingKeyword": "Closes",
+  "fleet": "roadmap-fleet",
+  "runId": "fc1124c-w4"
+}

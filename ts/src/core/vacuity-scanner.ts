@@ -781,9 +781,67 @@ function bodyLines(code: string, source: string, block: TestBlock): BodyLine[] {
     .map((text, i) => ({ text, raw: raw[i] ?? text, line: first + i }));
 }
 
+type Span = [number, number];
+
+/**
+ * The comment spans of one line, half-open -- the ONE definition of a comment
+ * that the verdict filter and the annotation walk share (#1691).
+ *
+ * A line that starts with `#` or `*` is all comment (a Python comment, or the
+ * middle of a block). Otherwise a `//` runs to the end and a `/* ... *\/` span
+ * is cut out, so `x(); // makeStore` no longer reads as naming `makeStore`.
+ * Quote-aware: a `//` inside `'http://x'` opens nothing. Callers pass blanked
+ * text, where that is already true, but the definition must not depend on it.
+ */
+function commentSpans(line: string): Span[] {
+  const s = line.trimStart();
+  if (s.startsWith('#') || s.startsWith('*')) {
+    return [[line.length - s.length, line.length]];
+  }
+  const spans: Span[] = [];
+  for (const m of line.matchAll(STRING_OR_COMMENT)) {
+    if (m[0].startsWith('/')) spans.push([m.index, m.index + m[0].length]);
+  }
+  return spans;
+}
+
+/**
+ * One left-to-right token: an escape, a closed string (skipped, so its `//` is
+ * content), or a comment -- `//` to the end, `/*` to its close or the end.
+ */
+const STRING_OR_COMMENT =
+  /\\.|(['"`])(?:\\.|(?!\1)[^\\])*\1|\/\/.*|\/\*.*?(?:\*\/|$)/g;
+
+/** `line` with every comment span replaced by spaces, length preserved. */
+function blankSpans(line: string, spans: Span[]): string {
+  let out = line;
+  for (const [start, end] of spans) {
+    out = out.slice(0, start) + ' '.repeat(end - start) + out.slice(end);
+  }
+  return out;
+}
+
+/** Is `line` nothing but comment (blank lines are not comments)? */
 function isComment(line: string): boolean {
-  const s = line.trim();
-  return s.startsWith('#') || s.startsWith('//') || s.startsWith('*');
+  return (
+    line.trim() !== '' && blankSpans(line, commentSpans(line)).trim() === ''
+  );
+}
+
+/**
+ * The body lines the rules read: comment-only lines dropped, and comment spans
+ * blanked out of the rest -- from `raw` too, at the same offsets, so VAC-001
+ * never compares a comment tail (#1691).
+ */
+function codeLines(lines: BodyLine[]): BodyLine[] {
+  return lines.flatMap((l) => {
+    if (isComment(l.text)) return [];
+    const spans = commentSpans(l.text);
+    if (spans.length === 0) return [l];
+    return [
+      { ...l, text: blankSpans(l.text, spans), raw: blankSpans(l.raw, spans) },
+    ];
+  });
 }
 
 /** The text inside a balanced `expect(...)`, or null. */
@@ -943,9 +1001,7 @@ function scanBlock(
   outOfBand: boolean,
 ): VacuityFinding[] {
   const { code, source, path: file, python, inference } = ctx;
-  const lines = bodyLines(code, source, block).filter(
-    (l) => !isComment(l.text),
-  );
+  const lines = codeLines(bodyLines(code, source, block));
   const reaching = inference?.reaching ?? null;
   const targets = annotated !== null ? new Set([annotated]) : reaching;
   // The verdict reads the comment-stripped lines, not `block.body`: a body
@@ -1485,7 +1541,7 @@ function jsDeclarationStart(code: string, block: TestBlock): number {
 /** Can `line` sit between a test's annotation and its declaration? */
 function attachesToDeclaration(line: string, python: boolean): boolean {
   const s = line.trim();
-  if (s === '' || s.startsWith('/*') || isComment(s)) return true;
+  if (s === '' || isComment(s)) return true;
   return python && s.startsWith('@');
 }
 
