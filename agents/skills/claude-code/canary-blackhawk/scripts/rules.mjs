@@ -17,6 +17,8 @@
 // JS has no verbose-regex flag, so patterns are compact literals documented by
 // the comment above them.
 
+import { localeCallIsPinned } from './locale-pin.mjs';
+
 export const SEVERITIES = ['high', 'medium', 'low'];
 
 // Frozen-clock idioms. Their presence anywhere in a file suppresses every
@@ -152,53 +154,6 @@ function delayIsPositive(match) {
     const n = Number.parseFloat(String(raw).replace(/_/g, ''));
     return Number.isFinite(n) && n > 0;
   });
-}
-
-// #1636: a JS numeric literal (decimal, fraction, exponent, hex/binary/octal,
-// `_` separators, BigInt `n`), as the receiver of `.toLocaleString(`: bare
-// (`1e3.`, `5000..` -- the first dot is the literal's own), or parenthesised
-// with an optional sign (`(5000)`, `(-5n)`), where the `(` is a grouping paren
-// rather than a call (`foo(1).toLocaleString` returns anything).
-const NUMBER = String.raw`(?:0[xXbBoO][\da-fA-F_]+|\d[\d_]*(?:\.[\d_]*)?(?:[eE][+-]?\d+)?|\.\d[\d_]*(?:[eE][+-]?\d+)?)n?`;
-const NUMERIC_RECEIVER = new RegExp(
-  String.raw`(?:(?<![\w$.])${NUMBER}|(?<![\w$)\]])\(\s*[-+]?\s*${NUMBER}\s*\))$`,
-);
-// A `timeZone` option key (quoted, or the `{ timeZone }` shorthand).
-const TIMEZONE_PIN = /(?<![\w$])(?<q>['"]?)timeZone\k<q>\s*[:,}]/;
-const STRING_LITERAL = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g;
-
-/**
- * The argument text of the call whose `(` ends just before `start`, or null
- * when the call does not close on this line (the scanner is line-based).
- */
-function callArgs(line, start) {
-  // Blank string contents (same length) so a paren inside one cannot count.
-  const rest = line
-    .slice(start)
-    .replace(STRING_LITERAL, (s) => s[0] + ' '.repeat(s.length - 2) + s[0]);
-  let depth = 1;
-  for (let i = 0; i < rest.length; i += 1) {
-    if (rest[i] === '(') depth += 1;
-    else if (rest[i] === ')' && (depth -= 1) === 0) {
-      return line.slice(start, start + i);
-    }
-  }
-  return null;
-}
-
-/**
- * A `.toLocale*(` call that cannot read the host zone: Number/BigInt
- * `toLocaleString` on a numeric literal, or any of the three with a
- * `timeZone` option in its own arguments. A pinned locale alone is not enough.
- */
-function localeCallIsPinned(line, m) {
-  if (!m[0].startsWith('.toLocale')) return false; // strftime('%Z')
-  const numeric =
-    m[0].startsWith('.toLocaleString') &&
-    NUMERIC_RECEIVER.test(line.slice(0, m.index));
-  if (numeric) return true;
-  const args = callArgs(line, m.index + m[0].length);
-  return args !== null && TIMEZONE_PIN.test(args);
 }
 
 /**
