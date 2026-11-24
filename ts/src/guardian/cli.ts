@@ -154,6 +154,7 @@ import {
   RestGitHubClient,
   STICKY_MARKER,
   degradationAnnotation,
+  identityFromEnv,
   upsertStickyComment,
 } from './pr-comment.js';
 import { buildSummary } from './summary-emitter.js';
@@ -436,19 +437,6 @@ export function isForkContext(env: NodeJS.ProcessEnv): boolean {
   const raw = env['CANARY_GUARDIAN_IS_FORK'];
   if (raw === undefined) return false;
   return raw.trim() !== '0';
-}
-
-/**
- * Who guardian's sticky comment is authored by (#1352), read at the CLI edge
- * so the core stays pure. `CANARY_GUARDIAN_LOGIN` replaces the
- * `github-actions[bot]` default (a PAT, or an App's `<slug>[bot]`);
- * `CANARY_GUARDIAN_APP_SLUG` adds the App-bot match. Blank means unset.
- */
-function identityFromEnv(env: NodeJS.ProcessEnv): GuardianIdentity {
-  // Blank is unset: '' must never become a login that matches a ghost author.
-  const login = env['CANARY_GUARDIAN_LOGIN']?.trim();
-  const appSlug = env['CANARY_GUARDIAN_APP_SLUG']?.trim();
-  return { ...(login ? { login } : {}), ...(appSlug ? { appSlug } : {}) };
 }
 
 /** Append `notice` to the `$GITHUB_STEP_SUMMARY` file when set (no-op else). */
