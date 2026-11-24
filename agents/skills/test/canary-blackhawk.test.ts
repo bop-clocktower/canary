@@ -127,8 +127,19 @@ describe('BH003 local-timezone', () => {
     "expect(new Date(x).toLocaleString('en-US', { timeZone: 'UTC' })).toBe(s);",
     "expect(d.toLocaleDateString('en-US', { timeZone: 'UTC' })).toBe(s);",
     "expect(d.toLocaleTimeString('en-US', { 'timeZone': 'UTC' })).toBe(s);",
-    "expect(d.toLocaleString('en-US', { hour12: false, timeZone })).toBe(s);",
     "f(d.toLocaleString('it\\')', { timeZone: 'UTC' }), (1).toLocaleString());",
+    // #1659: only a string-literal zone pins the call.
+    'expect(d.toLocaleString("en-US", { "timeZone": "America/New_York" })).toBe(s);',
+    "expect(d.toLocaleString('en-US', { hour12: false, timeZone: 'UTC', })).toBe(s);",
+    'expect(d.toLocaleString(`en-US`, { timeZone: `UTC` })).toBe(s);',
+    // #1659 F1a: a spread BEFORE the literal cannot override it -- the
+    // literal is the last zone source, so it wins.
+    "d.toLocaleString('en-US', { ...opts, timeZone: 'UTC' });",
+    "d.toLocaleString('en-US', { hour12: false, ...opts, 'timeZone': 'UTC' });",
+    "d.toLocaleString('en-US', { timeZone: tz, timeZone: 'UTC' });",
+    // A keyword or an arrow before the paren makes it a grouping paren.
+    "return (5).toLocaleString('en-US');",
+    "const f = () => (5).toLocaleString('en-US');",
   ])('does not flag %s', (line) => {
     expect(ids(line)).not.toContain('BH003-local-timezone');
   });
@@ -149,6 +160,41 @@ describe('BH003 local-timezone', () => {
     // Line-based: an options object that opens a multi-line call is unseen.
     "expect(d.toLocaleString('en-US', {",
     "expect(foo(1).toLocaleString('en-US')).toBe(s);",
+    // #1659 class 1: the zone value must be a string literal; anything else
+    // is, or may be, the host zone.
+    "d.toLocaleString('en-US', { timeZone: undefined });",
+    "d.toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });",
+    "d.toLocaleString('en-US', { timeZone: process.env.TZ });",
+    "d.toLocaleString('en-US', cond ? { timeZone: 'UTC' } : {});",
+    "d.toLocaleString('en-US', { timeZone: tz });",
+    "expect(d.toLocaleString('en-US', { hour12: false, timeZone })).toBe(s);",
+    "d.toLocaleString('en-US', { timeZone: tz ?? 'UTC' });",
+    "d.toLocaleString('en-US', { timeZone: 'Etc/' + tz });",
+    'd.toLocaleString(`en-US`, { timeZone: `${tz}` });',
+    "d.toLocaleString('en-US', { nested: { timeZone: 'UTC' } });",
+    // #1659 class 2: a pin in a comment, a string, or a nested call's
+    // arguments does not pin this call.
+    "d.toLocaleString('en-US', { /* timeZone: 'UTC' */ });",
+    "d.toLocaleString('timeZone: x');",
+    "d.toLocaleString(s.replace(/'/g, ''), f({ timeZone: 'UTC' }));",
+    // #1659 F1a: the literal must be the LAST zone source in the object; a
+    // later spread, computed key or `timeZone` key can override it.
+    "d.toLocaleString('en-US', { timeZone: 'UTC', ...opts });",
+    "d.toLocaleString('en-US', { 'timeZone': 'UTC', hour12: false, ...opts });",
+    "d.toLocaleString('en-US', { timeZone: 'UTC', timeZone: tz });",
+    "d.toLocaleString('en-US', { timeZone: 'UTC', \"timeZone\": tz });",
+    "d.toLocaleString('en-US', { timeZone: 'UTC', timeZone });",
+    "d.toLocaleString('en-US', { timeZone: 'UTC', [key]: tz });",
+    // #1659: rarer call shapes before a numeric literal are calls, not
+    // grouping parens.
+    'expect(foo?.(1).toLocaleString()).toBe(s);',
+    'expect(make<Date>(0).toLocaleString()).toBe(s);',
+    'expect(fn!(0).toLocaleString()).toBe(s);',
+    'expect(new Date (0).toLocaleString()).toBe(s);',
+    // An object in the LOCALES slot is ignored by JS, so the call still
+    // renders in the host zone: only the options argument can pin it.
+    "d.toLocaleString({ timeZone: 'UTC' });",
+    "expect(d.toLocaleTimeString({ timeZone: 'UTC' })).toBe(s);",
   ])('still flags %s', (line) => {
     expect(ids(line)).toContain('BH003-local-timezone');
   });

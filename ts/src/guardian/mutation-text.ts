@@ -24,6 +24,26 @@ export function mdCode(raw: string): string {
   return `${fence}${pad}${text}${pad}${fence}`;
 }
 
+/** The longest abstain reason the report prints, ellipsis included (#1673). */
+const REASON_MAX = 200;
+
+/**
+ * An abstain reason as one inert code span. It can carry a report path and a
+ * parse error verbatim, so it gets the same treatment as test names: a code
+ * span is the one place GitHub autolinks neither `#N`, `@user` nor a URL. It
+ * is collapsed to one line first so the 200-character cap counts what prints.
+ */
+export function mdReason(raw: string): string {
+  // Code points, so the cut never splits a surrogate pair.
+  const chars = [...raw.replace(/\s+/g, ' ').trim()];
+  if (chars.length <= REASON_MAX) return mdCode(chars.join(''));
+  const kept = chars
+    .slice(0, REASON_MAX - 1)
+    .join('')
+    .trimEnd();
+  return mdCode(`${kept}\u{2026}`);
+}
+
 /** Text as plain Markdown that cannot open a code span, emphasis or a tag. */
 export const mdText = (text: string): string =>
   text.replace(/\s*[\r\n]+\s*/g, ' ').replace(/[\\`*_[\]<>|]/g, '\\$&');
