@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The guardian mutation report no longer turns an allow-mutant reason or a
+  mutator name into links or mentions (#1680).** The reason written after
+  `// canary:allow-mutant` and the mutator name of a survivor were escaped for
+  Markdown structure but not for GitHub autolinks, so a `#12`, an `@user` or a
+  URL in them still linked an issue or notified a stranger in the PR comment.
+  Both are now inert code spans, like the test names and abstain reason since
+  #1673. The reason now reads in monospace; a backtick inside it stays in the
+  same span.
+
 - **Cassandra VAC-002 no longer counts a comment as invoking the target
   (#1681).** The verdict read the raw test body, and a body runs to the next
   declaration, so it also owned the comment above the next test. Prose naming a
@@ -26,6 +35,7 @@ under the project's former name) are documented in the
   abstentions on a first scan: on canary's own `ts/test` the count went from 165
   to 176 findings and from 270 to 275 abstentions. A bare code mention of a
   value binding still counts as invoked.
+
 - **Cassandra no longer reports VAC findings on `.skip` tests, and no longer
   counts them as checked (#1669).** Since #1665 the test enumerator reads
   `.skip` declarations, so `vacuity-check` began scanning bodies it had never

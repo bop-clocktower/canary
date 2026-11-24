@@ -1,0 +1,15 @@
+{
+  "issues": [1680],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-mutation.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "CONFIRM Q1 = (a), decided by the human: render both the allow-mutant reason (suppressionLines) and the mutator name with the existing mdCode helper; option (b), a zero-width-joiner autolink breaker that keeps the reason as prose, was not taken.",
+    "mdCode already handles backticks (fence one longer than the longest run, padded at the edges), so no change to the helper was needed; a red-first test pins a reason containing backticks.",
+    "mdText had no other caller once both sinks moved to mdCode, so it was removed from ts/src/guardian/mutation-text.ts rather than left as a dead export; the module docstring now names mdCode as the one renderer.",
+    "Three existing tests that pinned the old mdText output (mutator String`Literal, suppressed reason `y` is equivalent, suppressed reason equivalent) were updated to the code-span form; the change in their expectations is the intended behavior change.",
+    "Hostile fixtures use placeholder values (@someuser, #12, https://evil.example), never a real login or issue number.",
+    "The #1675 PR body wording (two places, when the suppression reason was a third) is corrected only by a note in this PR body; #1675 itself is not edited."
+  ]
+}
