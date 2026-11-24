@@ -81,6 +81,7 @@ async function deliverComment(
     sink.out(
       `Charter posted as a PR comment (${result.action}, id ${result.commentId}).`,
     );
+    if (result.notice) sink.err(`::warning::${result.notice}`);
     return;
   }
   sink.out(fallback);
