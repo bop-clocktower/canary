@@ -292,3 +292,24 @@ describe('loadTargets', () => {
     expect(loadTargets(file).errors).toContain(`${file}: $.version: must be 1`);
   });
 });
+
+describe('the shipped examples', () => {
+  const scripts = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '..',
+    'claude-code',
+    'canary-cry',
+    'scripts',
+  );
+
+  it('flows.example.json and targets.example.json validate together', () => {
+    const flows = loadFlows(path.join(scripts, 'flows.example.json'));
+    expect(flows.errors).toEqual([]);
+    const ids = new Set<string>(flows.doc.flows.map((f: any) => f.id));
+    const targets = loadTargets(
+      path.join(scripts, 'targets.example.json'),
+      ids,
+    );
+    expect(targets.errors).toEqual([]);
+  });
+});
