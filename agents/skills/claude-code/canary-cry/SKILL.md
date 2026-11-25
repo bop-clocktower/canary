@@ -13,10 +13,17 @@ description:
   scream budget) with no network and no agent. Live runs against an allowlisted
   non-prod target arrive in later phases. NOT input fuzzing and NOT targeted bug
   pursuit (that is canary-huntress).
+cli: scripts/cli.mjs
 requires: [node>=20]
 ---
 
 # Canary Cry
+
+## Quick start
+
+```bash
+canary skills run canary-cry -- --help
+```
 
 Pre-launch "try to break it" sweep of ordinary user flows (#608). Phase 1 is in
 progress; see the
