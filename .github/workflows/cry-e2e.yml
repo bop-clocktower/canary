@@ -6,8 +6,12 @@
 # and `--confirm`. It proves what the offline suite cannot: SC11 (corrupted on
 # the bug, clean on the fix), SC12 (a spec re-run standalone reproduces its
 # fingerprint), SC13 (egress to an undeclared host is aborted and recorded),
-# SC14 (a stale selector is flow-broken, never a finding) and SC25 (a
-# cross-account leak is named by field, and no artifact holds the value).
+# SC14 (a stale selector is flow-broken, never a finding), SC25 (a
+# cross-account leak is named by field, and no artifact holds the value),
+# and from #608 P4 every pattern at intensities 2 and 3, SC17 (a confirmed
+# scream converges after two barren rounds) and SC18 (--max-wall stops
+# PARTIAL; a resume after a flows edit exits 4; a resume finishes in place).
+# The suite takes about 3 minutes locally (one Playwright run per scenario).
 #
 # ADVISORY and PATH-FILTERED, so it is never a required check: a required
 # check behind a `paths:` filter never reports on a PR outside those paths
