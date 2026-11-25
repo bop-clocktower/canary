@@ -25,6 +25,38 @@ export function mdCode(raw: string): string {
   return `${fence}${pad}${text}${pad}${fence}`;
 }
 
+/** Covering tests named per survivor before the rest are only counted. */
+const COVERING_SHOWN = 3;
+
+/**
+ * A survivor's covering tests as code spans, the first three named and the
+ * rest counted. A real run attributes ~20 tests to one guardian survivor, and
+ * repeating every name on every survivor buried the report (#486 slice 2); the
+ * JSON artifact keeps the full list.
+ */
+export function coveringTests(names: string[]): string {
+  if (names.length === 0) return 'attribution not recorded';
+  const shown = names.slice(0, COVERING_SHOWN).map(mdCode).join('; ');
+  const rest = names.length - COVERING_SHOWN;
+  return rest > 0 ? `${shown} and ${rest} more` : shown;
+}
+
+const TRUNCATED_NOTE =
+  '_Truncated to stay under GitHub\u{2019}s comment size limit. The full ' +
+  'report is the `mutation-report.json` artifact of this run._';
+
+/**
+ * `body` cut at a line boundary so it fits `budget`, with a note naming the
+ * artifact that holds the rest. GitHub rejects an oversized body outright, and
+ * a rejected sticky is a verdict nobody sees (#369).
+ */
+export function withinCommentBudget(body: string, budget: number): string {
+  if (body.length <= budget) return body;
+  const room = budget - TRUNCATED_NOTE.length - 2;
+  const cut = body.lastIndexOf('\n', room);
+  return `${body.slice(0, cut > 0 ? cut : room)}\n\n${TRUNCATED_NOTE}`;
+}
+
 /** The longest abstain reason the report prints, ellipsis included (#1673). */
 const REASON_MAX = 200;
 

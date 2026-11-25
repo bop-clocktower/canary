@@ -70,6 +70,16 @@
       "why": "Same shape as /scripts/rehearse.mjs (#1189): a CLI entry point (also imported by rehearse.mjs for its pure compare()) whose efferent imports grew by exactly one, the shared scripts/lib/is-main.mjs entry guard, which put its ratio at 0.83 against a 0.7 threshold."
     },
     {
+      "rule": "coupling",
+      "path": "/ts/src/guardian/mutation-run.ts",
+      "why": "#486 slice 2: the mutation run's orchestrator, imported only by guardian/cli.ts. Its 7 efferent imports are node:fs/os/path plus the four mutation modules it sequences (scope, engine, the runner guard, the unit type), so the ratio is 7/8 = 0.88 by construction. It is the leaf half of a split made to keep both files under the 300-line perf budget; re-merging it would trade this finding for a file-length one."
+    },
+    {
+      "rule": "coupling",
+      "path": "/ts/src/guardian/mutation-engine.ts",
+      "why": "#486 slice 2: the side-effecting half of the mutation run (Stryker's instrumenter and process), imported by guardian/cli.ts and mutation-run.ts. Five of its six efferent imports are node builtins (child_process, fs, module, path, url) needed to resolve and spawn the ts/-local Stryker, so the ratio is 6/8 = 0.75. Split from mutation-run.ts for the 300-line budget and so tests can inject a fake engine."
+    },
+    {
       "rule": "complexity",
       "path": "spike/**",
       "why": "A one-shot spike measurement harness under spike/765-shape-extraction, kept so the D2 numbers in SPIKE_REPORT.md can be re-run (ADR 0012 keeps recorded spikes). It is not engine code, nothing in ts/ imports it, and it ships in no package, so complexity there buys no maintenance risk. Scoped to spike/** only. Exclusion was tried first: spike/** in entropy.excludePatterns changes neither check-perf nor check-arch. Human-approved 2026-09-15; prune when the spike directory is removed."

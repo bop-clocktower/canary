@@ -523,8 +523,25 @@ authenticated session with no API key required.
 not fail on. A mutant nothing notices is a _surviving mutant_, and it is
 concrete evidence of a weak assertion, which is what coverage cannot see.
 
-The report covers whatever the Stryker run it maps covered; `--report` is not
-narrowed to the diff, so it is not described as diff-scoped.
+Without `--report` it runs Stryker itself, on the lines the PR adds under
+`ts/src` (the guardian's own diff resolution: `--diff`, else the PR diff in CI,
+else `git diff`). `--report <path>` instead maps an existing Stryker run, and is
+not narrowed to the diff.
+
+- **The run.** Pinned `@stryker-mutator/{core,vitest-runner,instrumenter}`
+  10.1.1, `coverageAnalysis: perTest`, the vitest `forks` pool (so no suite is
+  excluded), `inPlace` (Stryker's sandbox copies only `ts/`, which breaks suites
+  that read repo-root files), and `StringLiteral`/`ObjectLiteral` excluded (spec
+  D8). Every target file is snapshotted first and restored byte for byte if a
+  killed run leaves it mutated.
+- **The cap.** At most 150 runnable mutants per PR (D7), counted up front with
+  Stryker's own instrumenter and cut as a deterministic (path, line) prefix of
+  whole lines; a capped report says `sampled N of M`. Stryker gets 7 of the
+  job's 10 minutes (`--timeout-ms`).
+- **The comment.** `--post-comment` upserts its own sticky
+  (`<!-- canary-guardian-mutation -->`), separate from pr-check's, kept under
+  the comment size budget. CI runs the PR's tests in a step with no token and
+  posts from `mutation-report.json` in a separate step (`--post-report`).
 
 - **Advisory, on purpose.** The `mutation` job in `guardian.yml` never fails a
   PR on survivors, and it is listed under `advisory` in
@@ -534,9 +551,10 @@ narrowed to the diff, so it is not described as diff-scoped.
 - **Exit codes** follow ADR 0009: `0` every sampled mutant was killed, `1`
   survivors, `3` abstained.
 - **Abstention is not a pass.** Zero mutants, no mutant that ran a test (every
-  one untested), no mutant covered by any test, an unreadable report, or a
-  runner that cannot kill reports `abstained` with the reason. It never renders
-  "0 survived".
+  one untested), no mutant covered by any test, an unreadable report, a diff
+  with nothing to mutate under `ts/src`, Stryker crashing or timing out, or a
+  runner that cannot kill reports `abstained` with the reason, and still writes
+  `--report-out`. It never renders "0 survived".
 - **A timeout is not a kill.** Timeouts are excluded from the killed numerator,
   so a run that killed nothing and only timed out abstains rather than reporting
   `all-killed`; every non-abstained report renders its timeout count, zero
@@ -557,12 +575,12 @@ narrowed to the diff, so it is not described as diff-scoped.
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,
   exactly like `canary:allow-untested`.
-- **It currently abstains everywhere, and says so.**
-  `@stryker-mutator/vitest-runner` 10.0.0 runs zero tests per mutant on vitest
-  5, so every covered mutant would read "survived" (upstream `stryker-js#6210`).
-  The command refuses to print that. Details and the second constraint -- suites
-  using `process.chdir` cannot run in Stryker's worker-thread pool, and every
-  report discloses which ones were excluded -- are in
+- **The runner guard stays.** `@stryker-mutator/vitest-runner` 10.0.0 runs zero
+  tests per mutant on vitest 5, so every covered mutant would read "survived"
+  (upstream `stryker-js#6210`, fixed in 10.1.x). Any install at or below 10.0.0
+  still abstains rather than print that. A `--report` from a `threads`-pool run
+  can pass `--pool threads` to disclose the `process.chdir` suites such a run
+  had to exclude. Details are in
   `docs/changes/486-diff-scoped-mutation-testing/`.
 
 ## Integration with Harness

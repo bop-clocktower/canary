@@ -381,6 +381,14 @@ describe('threadUnsafeTests', () => {
       'test/b.test.ts',
     ]);
   });
+
+  it('lists nothing, without throwing, for a root with no src or test dir', () => {
+    // Only `--pool threads` reaches this since #486 slice 2, on a supplied
+    // report whose repo root may not be a canary checkout at all.
+    expect(
+      threadUnsafeTests(mkdtempSync(join(tmpdir(), 'canary-mutation-'))),
+    ).toEqual([]);
+  });
 });
 
 // bug-fleet A5: Stryker omits `coveredBy` unless coverageAnalysis is
@@ -809,6 +817,26 @@ describe('renderMutationReport neutralizes autolinks (#1673)', () => {
       'ran but did not fail: `first line @octocat # heading`',
     );
     expect(text).not.toMatch(/^# heading/m);
+  });
+
+  it('names at most three covering tests per survivor and counts the rest (slice 2)', () => {
+    // A real run attributes ~20 tests to one guardian survivor; listing all of
+    // them on every survivor buried the report. The artifact keeps them all.
+    const r = report([
+      {
+        line: 7,
+        status: 'Survived',
+        coveredBy: ['t1', 't2', 't3', 't4', 't5'],
+      },
+    ]);
+    const text = renderMutationReport(
+      mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+    );
+    expect(text).toContain(
+      'ran but did not fail: `suppression strips the reason`; ' +
+        '`suppression keeps the finding`; `t3` and 2 more',
+    );
+    expect(text).not.toContain('`t4`');
   });
 
   it('joins several covering test names as separate code spans', () => {

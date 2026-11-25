@@ -26,6 +26,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/instrumenter": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "^5.1.1",
@@ -35,5 +38,10 @@
   },
   "allowScripts": {
     "esbuild@0.21.5": true
+  },
+  "overrides": {
+    "typed-rest-client": {
+      "qs": "6.16.1"
+    }
   }
 }

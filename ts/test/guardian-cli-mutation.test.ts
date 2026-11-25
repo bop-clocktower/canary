@@ -161,37 +161,50 @@ describe('guardian mutation abstain guard (F6)', () => {
     expect(res.findings).toEqual([]);
   });
 
-  it('abstains on a compatible runner too, because no run is wired yet', async () => {
+  it('lets a compatible runner through the guard to the diff (#486 slice 2)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'canary-mutation-guard-'));
+    const diff = join(root, 'docs.diff');
+    writeFileSync(
+      diff,
+      'diff --git a/docs/a.md b/docs/a.md\n--- a/docs/a.md\n+++ b/docs/a.md\n@@ -0,0 +1 @@\n+hi\n',
+    );
     const res = await invokeGuardian([
       'mutation',
+      '--repo-root',
+      root,
+      '--diff',
+      diff,
       '--runner-version',
       '11.0.0',
       '--vitest-version',
       '5.0.0',
     ]);
     expect(res.code).toBe(3);
-    expect(res.stdout).toContain('Abstained');
+    expect(res.stdout).toContain('adds no lines under ts/src');
     expect(res.stdout).not.toContain(RUNNER_ISSUE);
   });
 });
 
 describe('guardian mutation disclosure', () => {
-  it('discloses the excluded thread-unsafe suites in JSON', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'canary-mutation-disclose-'));
+  it('discloses the thread-unsafe suites a --pool threads report excluded', async () => {
+    const { reportPath, root } = writeReport([
+      { line: 1, status: 'Killed', coveredBy: ['t1'] },
+    ]);
     mkdirSync(join(root, 'ts', 'test'), { recursive: true });
-    mkdirSync(join(root, 'ts', 'src'), { recursive: true });
     writeFileSync(join(root, 'ts', 'test', 'a.test.ts'), 'process.chdir(d);');
-    const res = await invokeGuardianJson([
-      'mutation',
-      '--json',
+    const base = ['mutation', '--json', '--report', reportPath];
+    const threads = await invokeGuardianJson([
+      ...base,
       '--repo-root',
       root,
-      '--runner-version',
-      '10.0.0',
-      '--vitest-version',
-      '5.0.0',
+      '--pool',
+      'threads',
     ]);
-    expect(res.excludedTests).toEqual(['test/a.test.ts']);
+    expect(threads.excludedTests).toEqual(['test/a.test.ts']);
+    // The forks pool (the default, and canary's own run) excludes nothing, so
+    // claiming those suites were skipped would be a false disclosure.
+    const forks = await invokeGuardianJson([...base, '--repo-root', root]);
+    expect(forks.excludedTests).toEqual([]);
   });
 
   it('writes the report artifact when asked', async () => {
