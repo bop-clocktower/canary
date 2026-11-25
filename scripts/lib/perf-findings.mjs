@@ -38,6 +38,10 @@ const RULES = [
   { rule: 'file-length', re: /^File has (?<mag>\d+) lines/ },
   { rule: 'import-count', re: /^File has (?<mag>\d+) imports/ },
   { rule: 'coupling', re: /^Coupling ratio is (?<mag>\d+(?:\.\d+)?)/ },
+  // Harness CLI 14's info-level afferent rule. Unknown, it made parseFindings
+  // return null for every report, so every PR's delta fell back to a count
+  // and no allowance applied (found on #486 slice 2).
+  { rule: 'fan-in', re: /^File is imported by (?<mag>\d+) files/ },
   {
     rule: 'complexity',
     re: /^Function "(?<fn>.+)" has cyclomatic complexity of (?<mag>\d+) \((?<band>error|warning) threshold/,
