@@ -31,15 +31,17 @@ const SKILL_MD = fs.readFileSync(
 // matched with its whitespace collapsed.
 const PROSE = SKILL_MD.replace(/\s+/g, ' ');
 
-const row = (first: string) =>
-  SKILL_MD.split('\n').find((l) =>
-    new RegExp(`^\\|\\s*${first}\\s*\\|`).test(l),
-  );
 const cells = (line: string | undefined) =>
   (line ?? '')
     .split('|')
     .slice(1, -1)
     .map((c) => c.trim());
+// The table row whose first cell is `first`, compared as a literal string: no
+// regex is built from data, so a label never needs escaping.
+const row = (first: string) =>
+  SKILL_MD.split('\n').find(
+    (l) => l.trimStart().startsWith('|') && cells(l)[0] === first,
+  );
 
 describe('canary-cry SKILL.md (P1, P2, P3)', () => {
   it.each(['validate', 'matrix', 'run'])(
@@ -118,7 +120,7 @@ describe('canary-cry SKILL.md: a confirmed run (P3)', () => {
     ['probe-failed', { invariants: [{ id: '<invariant>', error: 'x' }] }],
   ])('has a verdict row for %s, worded as the code reports it', (_, over) => {
     const first = label(over);
-    expect(row(first.replace(/[()]/g, '\\$&')), first).toBeDefined();
+    expect(row(first), first).toBeDefined();
   });
 
   it.each(['no-observation', 'runtime-error'])(
