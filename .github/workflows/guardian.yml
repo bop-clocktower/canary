@@ -213,8 +213,12 @@ jobs:
             exit 0
           fi
           exit "$rc"
-      # Posts from the artifact and runs nothing, so the token never shares a
-      # step with PR code. A missing or tampered artifact posts an abstention.
+      # Posts from the artifact and runs no Stryker, so the token is not in the
+      # step that runs the PR's tests. It is NOT a trust boundary: this step
+      # still runs the PR-built CLI from a workspace those tests could modify,
+      # the same posture as the guardian job's pr-check step. Moving both
+      # posters to a trusted-base job is #1708. A missing or
+      # tampered artifact posts an abstention.
       - name: Post the mutation sticky
         if: always()
         env:
