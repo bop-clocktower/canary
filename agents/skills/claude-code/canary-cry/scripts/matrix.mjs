@@ -44,11 +44,21 @@ const hasAccount = (target, key) =>
   typeof target.accounts === 'object' &&
   Object.hasOwn(target.accounts, key);
 
-/** What a target-scoped pattern needs the target to declare. */
+/**
+ * What a target-scoped pattern needs the target to declare, as the list of
+ * declarations it LACKS. One predicate serves both scheduling (nothing
+ * missing) and the `unscheduled` list (what is missing), so a pattern can
+ * never be dropped without being named.
+ */
 const REQUIRES = Object.freeze({
-  'session-keys': (target) => (target.auth?.sessionKeys?.length ?? 0) > 0,
+  'session-keys': (target) =>
+    (target.auth?.sessionKeys?.length ?? 0) > 0 ? [] : ['auth.sessionKeys'],
   'two-accounts': (target) =>
-    Boolean(target.auth) && hasAccount(target, 'A') && hasAccount(target, 'B'),
+    [
+      hasAccount(target, 'A') ? null : 'accounts.A',
+      hasAccount(target, 'B') ? null : 'accounts.B',
+      target.auth ? null : 'auth',
+    ].filter((m) => m !== null),
 });
 
 const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -67,16 +77,21 @@ function isCritical(flow, areas) {
   });
 }
 
-function applies(pattern, target) {
-  if (pattern.requires === null) return true;
-  return target !== null && REQUIRES[pattern.requires](target);
+/** Why a pattern cannot run against `target`, or null when it applies. */
+function whyNot(pattern, target) {
+  if (pattern.requires === null) return null;
+  if (target === null) return 'no --target';
+  const missing = REQUIRES[pattern.requires](target);
+  return missing.length
+    ? `target does not declare ${missing.join(', ')}`
+    : null;
 }
 
 /** One flow's scenarios before intensity: every pattern x anchored step. */
-function flowScenarios(flow, patterns, target, areas) {
+function flowScenarios(flow, patterns, areas) {
   const boost = isCritical(flow, areas) ? CRITICAL_BOOST : 0;
   const out = [];
-  for (const pattern of patterns.filter((p) => applies(p, target))) {
+  for (const pattern of patterns) {
     for (const step of ANCHORS[pattern.anchor](flow)) {
       const score = flow.risk * pattern.weight + boost;
       out.push({ flow: flow.id, pattern: pattern.id, step: step.id, score });
@@ -86,10 +101,10 @@ function flowScenarios(flow, patterns, target, areas) {
 }
 
 /** Flows ranked by their best scenario; a flow nothing applies to drops. */
-function rankFlows(flows, patterns, target, areas) {
+function rankFlows(flows, patterns, areas) {
   return flows
     .map((flow) => {
-      const base = flowScenarios(flow, patterns, target, areas);
+      const base = flowScenarios(flow, patterns, areas);
       const score = Math.max(0, ...base.map((s) => s.score));
       return { id: flow.id, score, base };
     })
@@ -111,12 +126,20 @@ function atIntensity(chosen, n) {
     .sort(byScoreThenId);
 }
 
-/** Target-scoped patterns left out for want of --target: listed, not hidden. */
-function unscheduled(patterns, target) {
-  if (target !== null) return [];
-  return patterns
-    .filter((p) => p.requires !== null)
-    .map((p) => ({ pattern: p.id, reason: 'no --target' }));
+/**
+ * The budget's patterns split by whether they apply to the target. Patterns
+ * the budget itself excludes (whisper's core-only cut) never reach here: that
+ * is the documented budget, not an omission.
+ */
+function schedule(patterns, target) {
+  const applied = [];
+  const unscheduled = [];
+  for (const pattern of patterns) {
+    const reason = whyNot(pattern, target);
+    if (reason === null) applied.push(pattern);
+    else unscheduled.push({ pattern: pattern.id, reason });
+  }
+  return { applied, unscheduled };
 }
 
 function budgetFor(amplitude) {
@@ -144,10 +167,8 @@ export function buildMatrix(input) {
   const areas = input.areas ?? null;
   const patterns = PATTERNS.filter((p) => p.core || !budget.coreOnly);
   const spec = target === null ? null : target.spec;
-  const chosen = rankFlows(input.flows, patterns, spec, areas).slice(
-    0,
-    budget.radius,
-  );
+  const { applied, unscheduled } = schedule(patterns, spec);
+  const chosen = rankFlows(input.flows, applied, areas).slice(0, budget.radius);
   const scenarios = budget.intensities.flatMap((n) => atIntensity(chosen, n));
   return {
     format: 'canary.cry-matrix/1',
@@ -156,10 +177,10 @@ export function buildMatrix(input) {
     seed: input.seed,
     ranking: areas === null ? 'declared' : 'declared+critical-areas',
     target: target === null ? null : target.name,
-    patterns: patterns.map((p) => p.id),
+    patterns: applied.map((p) => p.id),
     intensities: [...budget.intensities],
     flows: chosen.map((ranked) => ranked.id),
-    unscheduled: unscheduled(patterns, target),
+    unscheduled,
     scenarios,
   };
 }

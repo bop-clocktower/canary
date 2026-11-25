@@ -166,6 +166,18 @@ function loadAreas(explicit) {
   return { value: read.doc.areas, errors: [] };
 }
 
+/** One line per distinct reason, in first-seen (catalog) order. */
+function unscheduledLines(unscheduled) {
+  const byReason = new Map();
+  for (const u of unscheduled) {
+    byReason.set(u.reason, [...(byReason.get(u.reason) ?? []), u.pattern]);
+  }
+  return [...byReason].map(
+    ([reason, names]) =>
+      `target-scoped patterns not scheduled (${reason}): ${names.join(', ')}`,
+  );
+}
+
 function renderMatrix(m) {
   const where = m.target === null ? '' : `, target ${m.target}`;
   const lines = [
@@ -188,10 +200,7 @@ function renderMatrix(m) {
       lines.push(`  ${String(s.score).padStart(3)}  ${s.id}`);
     }
   }
-  if (m.unscheduled.length) {
-    const names = m.unscheduled.map((u) => u.pattern).join(', ');
-    lines.push(`target-scoped patterns not scheduled (no --target): ${names}`);
-  }
+  lines.push(...unscheduledLines(m.unscheduled));
   return lines.join('\n');
 }
 

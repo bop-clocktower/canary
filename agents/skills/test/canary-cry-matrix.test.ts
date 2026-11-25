@@ -200,6 +200,80 @@ describe('applicability (SC3)', () => {
     });
     expect(whisper.unscheduled).toEqual([]);
   });
+
+  // A named target that lacks a requirement must not make its pattern vanish:
+  // the omission is listed with what is missing, the same as `no --target`.
+  const shout = (spec: any) =>
+    buildMatrix({
+      flows: flows10(),
+      amplitude: 'shout',
+      seed: 0,
+      target: { name: 't', spec },
+    });
+  const scheduled = (m: any) => new Set(m.scenarios.map((s: any) => s.pattern));
+
+  it('lists shared-machine when the target has session keys but not accounts A and B', () => {
+    const m = shout({
+      accounts: { A: { env: 'CRY_A' } },
+      auth: { signIn: 'f00', signOut: 'f01', sessionKeys: ['cookie:s'] },
+    });
+    expect(scheduled(m).has('token-expiry')).toBe(true);
+    expect(scheduled(m).has('shared-machine')).toBe(false);
+    expect(m.unscheduled).toEqual([
+      {
+        pattern: 'shared-machine',
+        reason: 'target does not declare accounts.B',
+      },
+    ]);
+    expect(m.patterns).toEqual(ALL.filter((p) => p !== 'shared-machine'));
+  });
+
+  it('lists token-expiry when the target has accounts A, B and auth but no session keys', () => {
+    const m = shout({
+      accounts: { A: { env: 'CRY_A' }, B: { env: 'CRY_B' } },
+      auth: { signIn: 'f00', signOut: 'f01', sessionKeys: [] },
+    });
+    expect(scheduled(m).has('shared-machine')).toBe(true);
+    expect(scheduled(m).has('token-expiry')).toBe(false);
+    expect(m.unscheduled).toEqual([
+      {
+        pattern: 'token-expiry',
+        reason: 'target does not declare auth.sessionKeys',
+      },
+    ]);
+    expect(m.patterns).toEqual(ALL.filter((p) => p !== 'token-expiry'));
+  });
+
+  it('names every missing requirement of a bare target', () => {
+    expect(shout({}).unscheduled).toEqual([
+      {
+        pattern: 'token-expiry',
+        reason: 'target does not declare auth.sessionKeys',
+      },
+      {
+        pattern: 'shared-machine',
+        reason: 'target does not declare accounts.A, accounts.B, auth',
+      },
+    ]);
+  });
+
+  it('lists in patterns only the patterns that applied', () => {
+    const m = buildMatrix({ flows: flows10(), amplitude: 'shout', seed: 0 });
+    expect(m.patterns).toEqual(
+      ALL.filter((p) => !['token-expiry', 'shared-machine'].includes(p)),
+    );
+  });
+
+  it('never lists what the whisper budget leaves out, even for a bare target', () => {
+    const m = buildMatrix({
+      flows: flows10(),
+      amplitude: 'whisper',
+      seed: 0,
+      target: { name: 't', spec: {} },
+    });
+    expect(m.unscheduled).toEqual([]);
+    expect(m.patterns).toEqual(['multi-submit', 'abandon-midflow']);
+  });
 });
 
 describe('critical-areas ranking (SC4)', () => {

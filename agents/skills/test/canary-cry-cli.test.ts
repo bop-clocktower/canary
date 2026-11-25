@@ -281,6 +281,31 @@ describe('matrix', () => {
     expect(r.stdout).not.toContain('not scheduled');
   });
 
+  it('names what a target lacks instead of dropping its pattern silently', () => {
+    const { dir, flows } = inputs();
+    const doc = targetsDoc();
+    delete doc.targets.staging.accounts.B;
+    const targets = write(dir, 'one-account.json', doc);
+    const r = run([
+      'matrix',
+      '--flows',
+      flows,
+      '--targets',
+      targets,
+      '--target',
+      'staging',
+      '--amplitude',
+      'shout',
+      '--strict',
+    ]);
+    // Not an abstention: the other patterns still scheduled, so --strict stays 0.
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('checkout:token-expiry:i1:saddress');
+    expect(r.stdout).toContain(
+      'target-scoped patterns not scheduled (target does not declare accounts.B): shared-machine',
+    );
+  });
+
   describe('critical areas (SC4)', () => {
     const areas = {
       areas: [{ path: 'src/checkout/pay.ts', risk_score: 0.9 }],
