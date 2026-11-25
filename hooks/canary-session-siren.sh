@@ -218,13 +218,14 @@ FINDINGS=()
 #
 #    A byte compare says the copies DIFFER, not which is newer (#1670). The
 #    hooks may have come from a dev checkout ahead of a clone that is itself
-#    behind origin, and then `--install-hooks` from that clone would overwrite
-#    the newer copy with a stale one. So check 3's clone-freshness call runs
+#    behind the latest release (#1695), and then `--install-hooks` from that
+#    clone would overwrite the newer copy with a stale one. So check 3's clone-freshness call runs
 #    here too (same capped ls-remote, no extra call: the hook exits after),
 #    and a behind clone is reported with "pull the clone first" in place of
 #    the install remedy. Only a clone that is truly behind gets that (#1682):
-#    an ahead or diverged clone cannot be cleared by a pull, so it keeps the
-#    install remedy with a caveat. An origin that cannot be asked, or a clone
+#    an ahead clone contains the release and keeps the plain install remedy;
+#    a diverged one cannot be cleared by a pull, so it keeps the install
+#    remedy with a caveat. An origin that cannot be asked, or a clone
 #    with no .git, keeps the install remedy and says freshness is unverifiable
 #    rather than going quiet about it.
 SELF="${BASH_SOURCE[0]:-}"

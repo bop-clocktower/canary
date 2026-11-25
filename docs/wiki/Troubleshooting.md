@@ -192,7 +192,7 @@ volta install node
 Then restart your terminal (or `source ~/.zshrc`) and retry:
 
 ```bash
-/plugin marketplace add https://github.com/bop-clocktower/canary
+/plugin marketplace add https://github.com/bop-clocktower/canary#latest
 /plugin install canary@bop-clocktower
 ```
 
