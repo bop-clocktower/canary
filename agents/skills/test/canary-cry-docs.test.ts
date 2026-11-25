@@ -79,7 +79,9 @@ describe('canary-cry SKILL.md (P1, P2, P3)', () => {
       const [, core, weight, , , mayRefuse] = cells(row(`\`${id}\``));
       expect(weight, id).toBe(String(p.weight));
       expect(core, id).toBe(p.core ? 'yes' : 'no');
-      expect(mayRefuse, id).toBe(p.mayRefuse ? 'yes' : 'no');
+      // One flag per intensity (#608 P4), written `i1 / i2 / i3`.
+      const flags = p.mayRefuse.map((f: boolean) => (f ? 'yes' : 'no'));
+      expect(mayRefuse, id).toBe(flags.join(' / '));
     },
   );
 

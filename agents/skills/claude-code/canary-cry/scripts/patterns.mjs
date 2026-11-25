@@ -11,27 +11,36 @@
 // that corrupts state or leaks across accounts outranks one that only strains
 // session handling.
 //
-// `mayRefuse` says how a correct app is expected to answer the abuse (#1720).
-// false: it still completes the flow exactly once, so every invariant must
-// show exactly its declared `delta` / `equals`. true: a correct app may
-// instead REFUSE the flow, so an invariant also passes when nothing changed
-// -- but a partial or a double write is still a breach. Only token-expiry
-// sets it: it clears the session before the write, and a correct app rejects
-// an unauthenticated write. abandon-midflow re-enters and completes the flow,
-// and the races (multi-submit, stale-optimistic, duplicate-tab) and
-// shared-machine all finish it once, so a refusal there is a real finding.
+// `mayRefuse` says how a correct app is expected to answer the abuse (#1720),
+// one flag per intensity (#608 P4): an intensity can decide whether the flow
+// can complete at all. false: a correct app still completes the flow exactly
+// once, so every invariant must show exactly its declared `delta` / `equals`.
+// true: a correct app may instead REFUSE the flow, so an invariant also
+// passes when nothing changed -- but a partial or a double write is still a
+// breach. token-expiry sets it at every intensity: the session is gone before
+// a write, and a correct app rejects an unauthenticated write. abandon-midflow
+// sets it at i3 only: `context.close()` abandons the flow for good, so no app
+// can complete it, while i1 and i2 re-enter and complete it. The races
+// (multi-submit, stale-optimistic, duplicate-tab) and shared-machine finish
+// the flow once at every intensity, so a refusal there is a real finding.
 
 /** The highest intensity any pattern runs at (spec D5: the ceiling). */
 export const INTENSITY_CEILING = 3;
 
 const pattern = (spec) =>
-  Object.freeze({ ...spec, intensities: Object.freeze(spec.intensities) });
+  Object.freeze({
+    ...spec,
+    mayRefuse: Object.freeze(spec.mayRefuse),
+    intensities: Object.freeze(spec.intensities),
+  });
+
+const NEVER = [false, false, false];
 
 /** Catalog order is the order patterns are listed in every matrix. */
 export const PATTERNS = Object.freeze([
   pattern({
     id: 'multi-submit',
-    mayRefuse: false,
+    mayRefuse: NEVER,
     core: true,
     weight: 5,
     anchor: 'write',
@@ -40,7 +49,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'abandon-midflow',
-    mayRefuse: false,
+    mayRefuse: [false, false, true],
     core: true,
     weight: 4,
     anchor: 'write-not-last',
@@ -49,7 +58,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'stale-optimistic',
-    mayRefuse: false,
+    mayRefuse: NEVER,
     core: false,
     weight: 4,
     anchor: 'await-response',
@@ -58,7 +67,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'duplicate-tab',
-    mayRefuse: false,
+    mayRefuse: NEVER,
     core: false,
     weight: 3,
     anchor: 'write',
@@ -67,7 +76,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'token-expiry',
-    mayRefuse: true,
+    mayRefuse: [true, true, true],
     core: false,
     weight: 3,
     anchor: 'first-write',
@@ -76,7 +85,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'shared-machine',
-    mayRefuse: false,
+    mayRefuse: NEVER,
     core: false,
     weight: 5,
     anchor: 'last-step',

@@ -302,14 +302,14 @@ canary-test-reporter.
 
 ## Abuse patterns
 
-| Pattern            | Core | Weight | Applies to                                                  | Intensity 1 / 2 / 3                                   | May refuse |
-| ------------------ | ---- | ------ | ----------------------------------------------------------- | ----------------------------------------------------- | ---------- |
-| `multi-submit`     | yes  | 5      | each step with `writes`                                     | 2x @ no throttle / 3x @ 400 ms / 5x @ 3 s             | no         |
-| `abandon-midflow`  | yes  | 4      | each `writes` step that is not the last step                | back / reload / context.close()                       | no         |
-| `stale-optimistic` | no   | 4      | each step with `awaitResponse`                              | delay past UI timeout / fake 500 / drop               | no         |
-| `duplicate-tab`    | no   | 3      | each step with `writes`                                     | 2 / 3 / 3 tabs racing                                 | no         |
-| `token-expiry`     | no   | 3      | the first `writes` step, on a target with session keys      | before the write / between writes / before every step | yes        |
-| `shared-machine`   | no   | 5      | the last step, on a target with accounts A and B and `auth` | sign-out / sign-out + back / no sign-out              | no         |
+| Pattern            | Core | Weight | Applies to                                                  | Intensity 1 / 2 / 3                                   | May refuse (i1 / i2 / i3) |
+| ------------------ | ---- | ------ | ----------------------------------------------------------- | ----------------------------------------------------- | ------------------------- |
+| `multi-submit`     | yes  | 5      | each step with `writes`                                     | 2x @ no throttle / 3x @ 400 ms / 5x @ 3 s             | no / no / no              |
+| `abandon-midflow`  | yes  | 4      | each `writes` step that is not the last step                | back / reload / context.close()                       | no / no / yes             |
+| `stale-optimistic` | no   | 4      | each step with `awaitResponse`                              | delay past UI timeout / fake 500 / drop               | no / no / no              |
+| `duplicate-tab`    | no   | 3      | each step with `writes`                                     | 2 / 3 / 3 tabs racing                                 | no / no / no              |
+| `token-expiry`     | no   | 3      | the first `writes` step, on a target with session keys      | before the write / between writes / before every step | yes / yes / yes           |
+| `shared-machine`   | no   | 5      | the last step, on a target with accounts A and B and `auth` | sign-out / sign-out + back / no sign-out              | no / no / no              |
 
 ## Exit codes
 

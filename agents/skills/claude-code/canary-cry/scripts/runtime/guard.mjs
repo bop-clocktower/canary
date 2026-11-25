@@ -11,7 +11,14 @@
 // already recorded first-hand.
 
 const SETTLE_MS = 10_000;
+const QUIET_MS = 250;
 const NETWORK_ECHO = 'Failed to load resource';
+
+/**
+ * Marks a response canary-cry itself fulfilled (stale-optimistic's fake 500,
+ * session.mjs), so it is never recorded as the app's own 5xx.
+ */
+export const INJECTED_HEADER = 'x-canary-cry-injected';
 
 const hostOf = (entry) =>
   String(entry).trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
@@ -68,6 +75,7 @@ export function observe(context, watch) {
   context.on('response', (res) => {
     const url = new URL(res.url());
     if (res.status() < 500 || !hostAllowed(url.hostname, watch.hosts)) return;
+    if (res.headers()[INJECTED_HEADER] !== undefined) return;
     const method = res.request().method();
     watch.signal('http-5xx', `${method} ${url.pathname} ${res.status()}`);
   });
@@ -76,7 +84,14 @@ export function observe(context, watch) {
 /** Wait until no request is in flight, so after-probes see every write. */
 export async function settle(inflight, page, limitMs = SETTLE_MS) {
   const deadline = Date.now() + limitMs;
-  while (inflight.n > 0 && Date.now() < deadline) {
+  let quietSince = null;
+  // Idle means nothing in flight for QUIET_MS (#608 P4): the page's own
+  // handler for the last response -- hiding an error banner a retry just
+  // cleared -- runs after the response, not with it.
+  while (Date.now() < deadline) {
+    if (inflight.n > 0) quietSince = null;
+    else quietSince ??= Date.now();
+    if (quietSince !== null && Date.now() - quietSince >= QUIET_MS) return;
     await page.waitForTimeout(50);
   }
 }

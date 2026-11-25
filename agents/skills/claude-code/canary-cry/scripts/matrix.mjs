@@ -125,7 +125,7 @@ function atIntensity(chosen, n) {
       id: `${s.flow}:${s.pattern}:i${n}:s${s.step}`,
       flow: s.flow,
       pattern: s.pattern,
-      mayRefuse: s.mayRefuse,
+      mayRefuse: s.mayRefuse[n - 1],
       intensity: n,
       step: s.step,
       score: s.score,

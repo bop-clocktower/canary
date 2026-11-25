@@ -204,6 +204,7 @@ describe('the run dir', () => {
     fs.writeFileSync(path.join(dir, 'observations', 'a.b.json'), '{"x":1}');
     fs.writeFileSync(path.join(dir, 'observations', 'c.d.json'), '{bad');
     const out = readOutcome(dir, [{ id: 'a:b' }, { id: 'c:d' }, { id: 'e:f' }]);
+      'runtime/tamper.mjs',
     expect(out.results).toBe(false);
     expect([...out.observations]).toEqual([
       ['a.b', { x: 1 }],
