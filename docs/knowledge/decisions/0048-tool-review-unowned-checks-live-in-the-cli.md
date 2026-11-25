@@ -2,7 +2,7 @@
 number: 0048
 title: Unowned tool-review checks live in the CLI; the contract stays /1
 date: 2026-11-25
-status: proposed
+status: accepted
 tier: medium
 source: https://github.com/bop-clocktower/canary/issues/1527
 ---
@@ -11,8 +11,8 @@ source: https://github.com/bop-clocktower/canary/issues/1527
 
 # ADR 0048 — Unowned tool-review checks live in the CLI; the contract stays `canary.tool-review/1`
 
-**Status:** proposed **Date:** 2026-11-25 **Deciders:** Bri Stevenski
-(maintainer), sign-off pending **Related:**
+**Status:** accepted **Date:** 2026-11-25 **Deciders:** Bri Stevenski
+(maintainer) **Related:**
 [#1527](https://github.com/bop-clocktower/canary/issues/1527) (this decision);
 [#1524](https://github.com/bop-clocktower/canary/issues/1524) (canary-blackalice
 tracking); ADR 0045 (the `canary.tool-review/1` contract and its versioning
