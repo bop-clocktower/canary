@@ -1,18 +1,31 @@
 /**
- * canary-cry's SKILL.md says what the shipped code does (#608 P1-P3; the full
- * SC20 check lands with `report` in P5).
+ * canary-cry's SKILL.md says what the shipped code does (#608 P1-P5; SC20).
+ *
+ * SC20 reads SKILL.md against the code, not against a list typed here: the
+ * subcommands come from the --help choice list (render.mjs USAGE), the limit
+ * line from manifest.mjs, the report format and replay command from a report
+ * the real report.mjs writes, and the skills the agent layer composes from the
+ * skill directories and their CLI_SPECs.
  *
  * The pattern table and the budget table are copies of data the code owns
  * (patterns.mjs, matrix.mjs AMPLITUDES), so they are read back against it: a
  * re-weighted pattern or a re-sized budget fails here, not in a reader's head.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  CLI_SPEC as CRY_SPEC,
+  main as cryMain,
+} from '../claude-code/canary-cry/scripts/cli.mjs';
 import { ALLOWED_ENVIRONMENTS } from '../claude-code/canary-cry/scripts/gate.mjs';
+import { SERVER_SIDE_LIMIT } from '../claude-code/canary-cry/scripts/manifest.mjs';
+import { USAGE } from '../claude-code/canary-cry/scripts/render.mjs';
+import { CLI_SPEC as REPORTER_SPEC } from '../claude-code/canary-test-reporter/scripts/cli.mjs';
 import { AMPLITUDES } from '../claude-code/canary-cry/scripts/matrix.mjs';
 import { buildFindings } from '../claude-code/canary-cry/scripts/findings.mjs';
 import {
@@ -54,13 +67,6 @@ const row = (first: string) =>
   );
 
 describe('canary-cry SKILL.md (P1-P4)', () => {
-  it.each(['validate', 'matrix', 'run'])(
-    'has a section for `%s`',
-    (command) => {
-      expect(SKILL_MD).toMatch(new RegExp(`^## \`${command}\``, 'm'));
-    },
-  );
-
   it.each(['0', '1', '2', '3', '4'])('has an exit-code row for %s', (code) => {
     expect(row(`\`${code}\``), `exit ${code}`).toBeDefined();
   });
@@ -77,10 +83,9 @@ describe('canary-cry SKILL.md (P1-P4)', () => {
     );
   });
 
-  it('states the server-side limit line verbatim', () => {
-    expect(PROSE).toContain(
-      'server-side side effects (email, webhooks, payments) are NOT intercepted by canary-cry.',
-    );
+  it('states the server-side limit line verbatim, as the manifest prints it', () => {
+    expect(SERVER_SIDE_LIMIT).toMatch(/NOT intercepted/);
+    expect(PROSE).toContain(SERVER_SIDE_LIMIT);
   });
 
   it.each(PATTERNS.map((p) => [p.id, p]))(
@@ -252,5 +257,204 @@ describe('canary-cry SKILL.md: rounds, checkpoints, --resume (P4)', () => {
     ]) {
       expect(PROSE, reason).toContain(`\`${reason}\``);
     }
+  });
+});
+
+const REPO = path.join(HERE, '..', '..', '..');
+const SKILLS_DIR = path.join(HERE, '..', 'claude-code');
+const SPEC_MD = path.join(REPO, 'docs', 'changes', 'canary-cry', 'proposal.md');
+const ADR_0046 = path.join(
+  REPO,
+  'docs',
+  'knowledge',
+  'decisions',
+  '0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md',
+);
+
+/** The body of the `## <title>` / `### <title>` section, up to the next heading of its level or above. */
+function section(title: string): string {
+  const lines = SKILL_MD.split('\n');
+  const at = lines.findIndex(
+    (l) => /^#{2,3} /.test(l) && l.replace(/^#+ /, '') === title,
+  );
+  if (at < 0) return '';
+  const level = lines[at]!.indexOf(' ');
+  const end = lines.findIndex(
+    (l, i) => i > at && /^#+ /.test(l) && l.indexOf(' ') <= level,
+  );
+  return lines
+    .slice(at + 1, end < 0 ? undefined : end)
+    .join(' ')
+    .replace(/\s+/g, ' ');
+}
+
+/** The commands --help offers: `{validate,matrix,run,report}` in USAGE. */
+const COMMANDS = /\{([a-z,]+)\}/.exec(USAGE)![1]!.split(',');
+
+const tmps: string[] = [];
+afterEach(() => {
+  vi.restoreAllMocks();
+  while (tmps.length) fs.rmSync(tmps.pop()!, { recursive: true, force: true });
+});
+
+/** A real report.mjs --json document, over a findings.json buildFindings wrote. */
+function realReport(): any {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canary-cry-docs-'));
+  tmps.push(dir);
+  const runDir = path.join(dir, 'runs', RUN_ID);
+  fs.mkdirSync(runDir, { recursive: true });
+  const id = 'checkout:multi-submit:i1:spay';
+  const doc = buildFindings({
+    run: { id: RUN_ID },
+    manifest: {
+      scenarios: [
+        {
+          id,
+          flow: 'checkout',
+          pattern: 'multi-submit',
+          intensity: 1,
+          step: 'pay',
+          score: 25,
+        },
+      ],
+    },
+    observations: new Map([
+      [
+        'checkout.multi-submit.i1.spay',
+        {
+          verdict: 'clean',
+          reason: null,
+          fidelity: 'state-verified',
+          fingerprints: [],
+          invariants: [],
+          signals: [],
+          blockedEgress: [],
+          error: null,
+        },
+      ],
+    ]),
+  });
+  fs.writeFileSync(path.join(runDir, 'findings.json'), JSON.stringify(doc));
+  const out: string[] = [];
+  vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+    out.push(a.join(' '));
+  });
+  const code = cryMain([
+    'report',
+    RUN_ID,
+    '--json',
+    '--flows',
+    path.join(dir, 'flows.json'),
+  ]);
+  vi.restoreAllMocks();
+  expect(code).toBe(0);
+  return JSON.parse(out.join('\n'));
+}
+
+describe('canary-cry SKILL.md: SC20 (P5)', () => {
+  it('--help offers the four top-level commands, report among them', () => {
+    expect(COMMANDS).toEqual(['validate', 'matrix', 'run', 'report']);
+  });
+
+  it.each([...COMMANDS, 'run --resume'])(
+    'has a section for `%s`',
+    (command) => {
+      const level = command.includes(' ') ? '###' : '##';
+      expect(SKILL_MD.split('\n')).toContain(`${level} \`${command}\``);
+    },
+  );
+
+  it('every command in a usage block is one --help offers', () => {
+    const blocks = [...SKILL_MD.matchAll(/^```text\n([\s\S]*?)^```/gm)].map(
+      (m) => m[1]!,
+    );
+    const used = blocks.flatMap((b) =>
+      [...b.matchAll(/^canary-cry ([a-z]+) /gm)].map((m) => m[1]),
+    );
+    expect(new Set(used)).toEqual(new Set(COMMANDS));
+  });
+
+  it('ADR 0046 exists and the spec links it', () => {
+    expect(fs.existsSync(ADR_0046)).toBe(true);
+    const spec = fs.readFileSync(SPEC_MD, 'utf8');
+    const links = [...spec.matchAll(/\]\(([^)]+0046-[^)]+\.md)\)/g)].map((m) =>
+      path.resolve(path.dirname(SPEC_MD), m[1]!),
+    );
+    expect(links).toContain(ADR_0046);
+  });
+
+  it('documents the report format and replay command report.mjs writes', () => {
+    const r = realReport();
+    expect(PROSE).toContain(`"format": "${r.format}"`);
+    const generic = r.ranked[0].replay.replace(
+      /specs\/\S+$/,
+      'specs/<scenario>.spec.mjs',
+    );
+    expect(section('`report`')).toContain(generic);
+    for (const key of Object.keys(r.ranked[0])) {
+      expect(section('`report`'), key).toContain(key);
+    }
+  });
+
+  it('states the report ranking the code applies', () => {
+    expect(section('`report`')).toContain('corrupted, symptom, clean, abstain');
+  });
+});
+
+describe('canary-cry SKILL.md: the agent layer (P5)', () => {
+  it.each([
+    'The agent layer',
+    'Drafting `flows.json`',
+    'Composing with other skills',
+    'The gate pause',
+    'Triage with Playwright MCP',
+  ])('has a section: %s', (title) => {
+    expect(section(title), title).not.toBe('');
+  });
+
+  it('the agent never supplies --confirm, fresh or on --resume', () => {
+    const gate = section('The gate pause');
+    expect(gate).toContain('never run a command that carries `--confirm`');
+    expect(gate).toContain('`run --resume`');
+    expect(gate).toContain('The human runs the confirmed command themselves');
+  });
+
+  it('MCP triage never produces or alters a verdict (D2)', () => {
+    const triage = section('Triage with Playwright MCP');
+    expect(triage).toContain('never produces a finding');
+    expect(triage).toContain(
+      'never produces, upgrades, downgrades or removes a verdict',
+    );
+  });
+
+  it('composes only skills that exist, the five the spec names among them', () => {
+    const named = new Set(
+      [
+        ...section('Composing with other skills').matchAll(
+          /\*\*(canary-[a-z-]+)\*\*/g,
+        ),
+      ].map((m) => m[1]!),
+    );
+    expect([...named].sort()).toEqual([
+      'canary-company-knowledge',
+      'canary-critical-areas',
+      'canary-edge-case-discovery',
+      'canary-failure-impact',
+      'canary-test-reporter',
+    ]);
+    for (const skill of named) {
+      expect(
+        fs.existsSync(path.join(SKILLS_DIR, skill, 'SKILL.md')),
+        skill,
+      ).toBe(true);
+    }
+  });
+
+  it('hands each composed skill a flag its CLI really takes', () => {
+    const compose = section('Composing with other skills');
+    expect(compose).toContain('--results <run dir>/results.json');
+    expect(Object.keys(REPORTER_SPEC.values)).toContain('--results');
+    expect(compose).toContain('--critical-areas PATH');
+    expect(Object.keys(CRY_SPEC.values)).toContain('--critical-areas');
   });
 });

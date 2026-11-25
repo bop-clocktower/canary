@@ -619,11 +619,13 @@ Module map, as shipped:
 
 ### Architectural Decisions
 
-- **D2 + D4 → ADR 0046**, _Live-target skills: confirmed-manifest gate and
-  no-replay-no-finding._ canary-cry is the first canary skill that writes to an
-  external system; the sha-bound confirm, absolute prod refusal, and "an agent
-  action cannot produce a finding" set precedent for any later live skill
-  (including `canary-huntress`).
+- **D2 + D4 →
+  [ADR 0046](../../knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md)**,
+  _Live-target skills: confirmed-manifest gate and no-replay-no-finding._
+  canary-cry is the first canary skill that writes to an external system; the
+  sha-bound confirm, absolute prod refusal, and "an agent action cannot produce
+  a finding" set precedent for any later live skill (including
+  `canary-huntress`).
 - D1, D3, D5, D6, D7 stay in this spec — canary-cry-specific or already house
   patterns.
 
