@@ -10,7 +10,7 @@
  */
 import { join } from 'node:path';
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { redactCredentials, redactFailureText } from '../src/util/redact.js';
 
@@ -93,7 +93,11 @@ const CASES: Array<[string, string, Env]> = [
   ],
 ];
 
-let npmRedactText: RedactText;
+/** Placeholder while no npm redactor is loaded: any call is a test bug. */
+const UNLOADED: RedactText = () => {
+  throw new Error('npm redactor not loaded');
+};
+let npmRedactText: RedactText = UNLOADED;
 
 beforeAll(async () => {
   const path = join(
@@ -107,6 +111,11 @@ beforeAll(async () => {
   );
   const mod = (await import(path)) as { redactText: RedactText };
   npmRedactText = mod.redactText;
+});
+
+// Release the loaded module handle so no later file in the worker sees it.
+afterAll(() => {
+  npmRedactText = UNLOADED;
 });
 
 describe('history redactor parity with the TestTracker redactor (#1354)', () => {
