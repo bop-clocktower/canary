@@ -312,6 +312,12 @@ PHPUnit and Pest are detected from `phpunit.xml(.dist)`, `tests/Pest.php` and
 | `canary history {record\|push\|flaky\|timeline\|summary\|migrate}`                            | CLI — query and manage the per-suite run-history store.                                                                                                                               |
 | `canary history record <vitest.json\|playwright.json\|junit.xml> --suite <name>`              | CLI — record a finished run INTO the store (the write side), with run and test durations; fills `area` from `.canary/critical-areas.json` and `failure_category` from error text.     |
 
+### I want to try to break it before a launch
+
+| Tool               | What it does                                                                                                                                                                                                                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canary-cry` skill | Abuses ordinary user flows the way real people do (double-submit, abandoned flows, a shared machine, a duplicated tab, an expiring token) against a non-prod target and judges by state corruption; `report` ranks the findings with a replay command each. The agent drafts the flows and pauses for you at the gate. |
+
 ### I want to watch API changes for test impact
 
 | Tool                      | What it does                                                          |
