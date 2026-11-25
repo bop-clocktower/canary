@@ -166,7 +166,14 @@ ever holds a secret value — accounts are referenced by environment-variable
   string, so there is no shell interpolation of template values.
 - `delta` is evaluated as `after − before` for one logical completion of the
   flow; a pattern that legitimately completes the flow once must yield exactly
-  the declared delta.
+  the declared delta. A pattern marked **may refuse** in the catalog below
+  (`mayRefuse` in `patterns.mjs`; only `token-expiry`) is one whose abuse a
+  correct app answers by refusing the flow, so for its scenarios an invariant
+  passes when the app either **refused cleanly** or **completed exactly once**:
+  `delta: d` passes iff `after − before ∈ {0, d}`, and `equals: v` passes iff
+  the after-value equals `v` (completed) or equals the before-value (refused,
+  nothing changed). A partial write (a change strictly between 0 and `d`), a
+  double write (`2d`) or any other value is still a breach (#1720).
 - Template values: `{{account.<K>.<field>}}` (resolved from the env var named in
   `targets.json`), `{{fixture.<name>}}` (a flows-file `fixtures` map), and
   `{{unique.<kind>}}` (seed-derived unique test data).
@@ -203,18 +210,20 @@ never written to any run artifact. `auth.signIn` / `auth.signOut` name flows in
 
 ### Abuse-pattern catalog (`scripts/patterns.mjs`, data only)
 
-| id                  | Weight | Applies to                                        | Intensity 1 → 2 → 3 (ceiling)                         | Abuse                                                                                                                                                                                                                                                                                                                        |
-| ------------------- | ------ | ------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `multi-submit` ★    | 5      | a step with `writes`                              | 2× @ no throttle → 3× @ 400 ms → 5× @ 3 s             | Fire the write step N times concurrently under `route()` latency.                                                                                                                                                                                                                                                            |
-| `abandon-midflow` ★ | 4      | a `writes` step that is not the last step         | back → reload → `context.close()`                     | Abandon after write _k_, re-enter, complete the flow.                                                                                                                                                                                                                                                                        |
-| `stale-optimistic`  | 4      | a step with `awaitResponse`                       | delay past UI timeout → fake 500 → drop               | Let the request reach the server (`route.fetch()`), then present a failure to the client, so the flow retries.                                                                                                                                                                                                               |
-| `duplicate-tab`     | 3      | a `writes` step                                   | 2 → 3 → 3 tabs racing                                 | Several pages in one context, each advanced to the write.                                                                                                                                                                                                                                                                    |
-| `token-expiry`      | 3      | flows on a target with `auth.sessionKeys`         | before the write → between writes → before every step | Clear the session keys mid-flow and continue.                                                                                                                                                                                                                                                                                |
-| `shared-machine`    | 5      | targets declaring accounts `A` and `B` and `auth` | sign-out → sign-out + back → no sign-out              | A runs the flow; B signs in on the same context (cache, storage, autofill) and runs it; A's invariants are checked for both accounts, and a `cross-account-leak` symptom fires when B's page contains any value from A's account JSON — matched in memory, recorded by field name (`account.A.email`) only, never the value. |
+| id                  | Weight | Applies to                                        | Intensity 1 → 2 → 3 (ceiling)                         | Abuse                                                                                                                                                                                                                                                                                                                        | May refuse |
+| ------------------- | ------ | ------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `multi-submit` ★    | 5      | a step with `writes`                              | 2× @ no throttle → 3× @ 400 ms → 5× @ 3 s             | Fire the write step N times concurrently under `route()` latency.                                                                                                                                                                                                                                                            | no         |
+| `abandon-midflow` ★ | 4      | a `writes` step that is not the last step         | back → reload → `context.close()`                     | Abandon after write _k_, re-enter, complete the flow.                                                                                                                                                                                                                                                                        | no         |
+| `stale-optimistic`  | 4      | a step with `awaitResponse`                       | delay past UI timeout → fake 500 → drop               | Let the request reach the server (`route.fetch()`), then present a failure to the client, so the flow retries.                                                                                                                                                                                                               | no         |
+| `duplicate-tab`     | 3      | a `writes` step                                   | 2 → 3 → 3 tabs racing                                 | Several pages in one context, each advanced to the write.                                                                                                                                                                                                                                                                    | no         |
+| `token-expiry`      | 3      | flows on a target with `auth.sessionKeys`         | before the write → between writes → before every step | Clear the session keys mid-flow and continue.                                                                                                                                                                                                                                                                                | yes        |
+| `shared-machine`    | 5      | targets declaring accounts `A` and `B` and `auth` | sign-out → sign-out + back → no sign-out              | A runs the flow; B signs in on the same context (cache, storage, autofill) and runs it; A's invariants are checked for both accounts, and a `cross-account-leak` symptom fires when B's page contains any value from A's account JSON — matched in memory, recorded by field name (`account.A.email`) only, never the value. | no         |
 
-★ = the _core_ set used by `whisper`. Each pattern also carries a fixed `weight`
-used for ranking; the values above are the P1 values in `patterns.mjs`, and
-`SKILL.md`'s pattern table is tested against them.
+★ = the _core_ set used by `whisper`. **May refuse** (`mayRefuse`) widens what
+an invariant accepts to a clean refusal as well as one completion (see Inputs,
+`delta`). Each pattern also carries a fixed `weight` used for ranking; the
+values above are the P1 values in `patterns.mjs`, and `SKILL.md`'s pattern table
+is tested against them.
 
 ### Matrix (`scripts/matrix.mjs`, pure)
 
@@ -332,9 +341,28 @@ used for ranking; the values above are the P1 values in `patterns.mjs`, and
     flow with no invariants. A step that fails after the abuse point is a
     `step-failed` UI signal. A scheduled scenario with no observation abstains
     as `no-observation`, and one whose runtime threw as `runtime-error`.
-  - Known limit: `token-expiry` at intensity 1 reports `corrupted` whenever the
-    app correctly refuses the unauthenticated write, because `delta` means
-    exactly one completion. Settling that is left to a later decision.
+  - Known limit (settled by #1720, below): `token-expiry` at intensity 1
+    reported `corrupted` whenever the app correctly refused the unauthenticated
+    write, because `delta` meant exactly one completion.
+- **As shipped (#1720):**
+  - `token-expiry` carries `mayRefuse: true` in `patterns.mjs`; every other
+    pattern carries `false`. The matrix copies the flag onto each scenario, so
+    the manifest the operator confirms shows it (and its sha covers it); codegen
+    hands it to the runtime, which passes it to `checkExpect`. No verdict code
+    names a pattern.
+  - `abandon-midflow` keeps `false`: its runner re-enters and completes the
+    flow, so a correct app still shows exactly one completion. The races
+    (`multi-submit`, `stale-optimistic`, `duplicate-tab`) and `shared-machine`
+    complete the flow once too. A later intensity that cannot complete the flow
+    (P4) must set the flag on its pattern, not special-case the verdict.
+  - A refusal is read from the account's state only: an app that accepts the
+    write as a guest's, never filing it under the account, is a refusal as far
+    as the probes can tell.
+  - The cry-e2e fixture plants a token-expiry bug: the buggy shop files an
+    address saved with no session under the cart's owner while the payment stays
+    a guest's, so an expired session half-completes the checkout. A
+    whole-checkout invariant (`delta: 2`, address + order) sees the change of 1
+    and reports `corrupted`; the fixed shop's change of 0 is `clean`.
 
 ### Verdicts and convergence (`scripts/verdict.mjs`)
 
