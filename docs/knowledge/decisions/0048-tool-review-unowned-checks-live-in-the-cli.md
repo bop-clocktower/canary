@@ -1,8 +1,6 @@
 ---
 number: 0048
-title:
-  Unowned tool-review checks live in the CLI; the contract stays
-  canary.tool-review/1
+title: Unowned tool-review checks live in the CLI; the contract stays /1
 date: 2026-11-25
 status: proposed
 tier: medium
