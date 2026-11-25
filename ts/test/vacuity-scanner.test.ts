@@ -139,13 +139,13 @@ describe('VAC-001 — tautological assertion', () => {
   // character class, so ANY parenthesised expected value made the match fail and
   // the line was silently passed over. The call form is the common shape in API
   // and integration suites (`res.status()`, `page.url()`), so the rule was
-  // weakest exactly where it was needed most.
+  // weakest exactly where it was needed most. Since #1233 only a BINDING on
+  // both sides is a self-comparison; a member path is still one.
   it.each([
-    `expect(res.status()).toBe(res.status());`,
     `expect(res.body.code).toBe(res.body.code);`,
-    `expect(save(load(1))).toBe(save(load(1)));`,
-    `expect(load(1)).toEqual(load(1));`,
-  ])('flags the parenthesised self-comparison %s', (line) => {
+    `expect((res.body).code).toBe((res.body).code);`,
+    `expect(res.items[0]).toEqual(res.items[0]);`,
+  ])('flags the member-path self-comparison %s', (line) => {
     const r = scan(
       'a.test.ts',
       IMPORTS +
@@ -1358,21 +1358,19 @@ describe('VAC-001 — same callee, different arguments (#1171)', () => {
     expect(rules(r.findings)).not.toContain('VAC-001');
   });
 
-  // The genuine self-comparisons stay critical, with no new code: an identical
-  // call on both sides -- including the no-argument `f()` the issue counted as
-  // genuine -- and the literal tautology.
-  it.each([
-    `expect(true).toBe(true);`,
-    `expect(load()).toBe(load());`,
-    `expect(save('a')).toBe(save('a'));`,
-    `expect(save('a', 1)).toBe(save( 'a',1 ));`,
-  ])('still flags %s', (line) => {
-    const r = scan(
-      'a.test.ts',
-      IMPORTS + `it('proves nothing', () => {\n  ${line}\n});\n`,
-    );
-    expect(rules(r.findings)).toContain('VAC-001');
-  });
+  // The genuine self-comparisons stay critical: the literal tautology and the
+  // same binding. Identical CALLS are two evaluations and stopped being one in
+  // #1233 -- see that describe block.
+  it.each([`expect(true).toBe(true);`, `expect(out).toBe(out);`])(
+    'still flags %s',
+    (line) => {
+      const r = scan(
+        'a.test.ts',
+        IMPORTS + `it('proves nothing', () => {\n  ${line}\n});\n`,
+      );
+      expect(rules(r.findings)).toContain('VAC-001');
+    },
+  );
 
   it('does not flag the pytest form with different string arguments', () => {
     const r = scan(
@@ -1382,10 +1380,79 @@ describe('VAC-001 — same callee, different arguments (#1171)', () => {
     expect(rules(r.findings)).not.toContain('VAC-001');
   });
 
-  it('still flags the pytest form with identical string arguments', () => {
+  it('still flags the pytest form on the same binding', () => {
     const r = scan(
       'test_a.py',
-      `from store import save\n\ndef test_same():\n    assert save("a") == save("a")\n`,
+      `from store import save\n\ndef test_same():\n    out = save("a")\n    assert out == out\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-001');
+  });
+});
+
+// #1233. Since #1076 VAC-001 compared call expressions, so two independent
+// calls with identical arguments -- a determinism or referential-identity test
+// -- read as "compares a value with itself; no implementation can fail it".
+// Each side is a separate evaluation, and an implementation that returns a
+// fresh object or a random value per call DOES fail it. Only the same binding
+// (an identifier or member path, with no call, `new` or `await`) on both sides
+// is a self-comparison.
+describe('VAC-001 — identical calls are two evaluations, not one value (#1233)', () => {
+  it.each([
+    `expect(f(1)).toBe(f(1));`,
+    `expect(mod.useRouter()).toBe(mod.useRouter());`,
+    `expect(deterministicUuid('client-acme:EMP-001')).toBe(deterministicUuid('client-acme:EMP-001'));`,
+    `expect(load()).toBe(load());`,
+    `expect(save('a', 1)).toBe(save( 'a',1 ));`,
+    `expect(save(load(1))).toBe(save(load(1)));`,
+    `expect(res.status()).toBe(res.status());`,
+    `expect(make?.()).toBe(make?.());`,
+    `expect(new Store()).toEqual(new Store());`,
+    'expect(sql`select 1`).toBe(sql`select 1`);',
+  ])('does not flag %s', (line) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it('is deterministic', () => {\n  ${line}\n});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-001');
+  });
+
+  it('does not flag two identical awaited values', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('is stable', async () => {\n  expect(await load()).toEqual(await load());\n});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-001');
+  });
+
+  it.each([
+    `expect(store).toBe(store);`,
+    `expect(store.items.length).toBe(store.items.length);`,
+    `expect('f(1)').toBe('f(1)');`,
+  ])('still flags the same binding or literal %s', (line) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it('proves nothing', () => {\n  ${line}\n});\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-001');
+  });
+
+  it.each([
+    'assert save("a") == save("a")',
+    'assert f(1) == f(1)',
+    'assert obj.read() == obj.read()',
+  ])('does not flag the pytest form %s', (line) => {
+    const r = scan(
+      'test_a.py',
+      `from store import save\n\ndef test_same():\n    ${line}\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-001');
+  });
+
+  it('still flags the pytest form on the same member path', () => {
+    const r = scan(
+      'test_a.py',
+      `from store import save\n\ndef test_same():\n    out = save("a")\n    assert out.value == out.value\n`,
     );
     expect(rules(r.findings)).toContain('VAC-001');
   });

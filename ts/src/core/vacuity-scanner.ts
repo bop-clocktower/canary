@@ -1019,6 +1019,24 @@ function sameExpression(
 }
 
 /**
+ * A call (`f(`, `f?.(`, `f!(`, `f()(`), a tagged template, `new` or `await`:
+ * the marks of an EVALUATION, read on blanked text so a `(` inside a string
+ * cannot count.
+ */
+const EVALUATION = /(?:[\w$)\]]!?|\?\.)\s*[(`]|\b(?:new|await)\b/;
+
+/**
+ * Is `expr` the same value on both sides -- a literal, an identifier or a
+ * member path -- rather than an evaluation? Each side of `f(1)` vs `f(1)` runs
+ * separately, so an implementation returning a fresh object or a random value
+ * per call fails it: a determinism test, not a self-comparison (#1233). There
+ * is no advisory channel to downgrade it into, so it is not reported.
+ */
+function isBinding(expr: string): boolean {
+  return !EVALUATION.test(expr);
+}
+
+/**
  * VAC-001 for one JS/TS line.
  *
  * Structure is read from `line` (blanked, so a `)` inside a string cannot
@@ -1031,6 +1049,8 @@ function jsTautology(line: string, raw: string): boolean {
   if (actual === null || matcher === null || matcher.negated) return false;
   if (normalize(actual) === '' || normalize(matcher.argument) === '')
     return false;
+  // One side suffices: a binding never matches an evaluation textually.
+  if (!isBinding(actual)) return false;
   const aStart = line.indexOf('expect(') + 'expect('.length;
   return sameExpression(
     raw,
@@ -1047,7 +1067,7 @@ function pyTautology(line: string, raw: string): boolean {
   if (/^assert\s+True\s*(?:,|$)/.test(t)) return true;
   // Same reason `.not` is excluded above: `assert x != x` can only ever fail.
   const cmp = /^assert\s+(.+?)\s*==\s*(.+?)\s*(?:,|$)/d.exec(t);
-  if (!cmp?.indices) return false;
+  if (!cmp?.indices || !isBinding(cmp[1]!)) return false;
   const lead = line.length - line.trimStart().length;
   const shift = ([s, e]: [number, number]): [number, number] => [
     s + lead,
