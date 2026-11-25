@@ -1,6 +1,6 @@
 ---
 name: TestTracker Ingest Reporter (interim)
-status: draft
+status: approved
 type: dx
 owner: brianna.stevenski@example.com
 created: 2026-07-24
