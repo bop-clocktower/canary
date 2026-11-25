@@ -36,7 +36,10 @@ import { main as signalMain } from '../claude-code/canary-signal/scripts/cli.mjs
 import { main as starlingMain } from '../claude-code/canary-starling/scripts/cli.mjs';
 import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
 import { main as unquarantineMain } from '../claude-code/canary-unquarantine/scripts/cli.mjs';
-import { main as cryMain } from '../claude-code/canary-cry/scripts/cli.mjs';
+import { main as cryMainAny } from '../claude-code/canary-cry/scripts/cli.mjs';
+
+// Only a confirmed `run` returns a Promise; these argv never confirm.
+const cryMain = (argv: string[]) => cryMainAny(argv) as number;
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;

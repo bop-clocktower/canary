@@ -42,7 +42,7 @@ export const USAGE =
 
 // #508 convention line, written as escapes so this source stays ASCII (the
 // same wording as ts/src/core/gate-result.ts and the other skill CLIs).
-const ABSTAINED_LINE =
+export const ABSTAINED_LINE =
   '\u{26A0} Abstained \u{2014} verified zero items; this is not a pass.';
 
 /** Why the matrix is empty: no flows at all, or no pattern fits a step. */

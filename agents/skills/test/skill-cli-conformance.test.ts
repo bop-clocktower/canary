@@ -119,8 +119,10 @@ describe.each(ROWS)('$name', (row) => {
       src,
       `${row.name} must not call process.exit(main(...))`,
     ).not.toMatch(/process\.exit\(main\(/);
+    // `await` is allowed: a CLI whose main() can return a Promise (canary-cry's
+    // confirmed run, #608 P3) still sets exitCode, just after it settles.
     expect(src).toMatch(
-      /process\.exitCode = main\(process\.argv\.slice\(2\)\)/,
+      /process\.exitCode = (await )?main\(process\.argv\.slice\(2\)\)/,
     );
   });
 

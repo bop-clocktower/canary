@@ -50,7 +50,8 @@ function run(argv: string[]): {
   vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
     err.push(a.join(' '));
   });
-  const code = main(argv);
+  // Only a confirmed `run` returns a Promise; nothing here confirms.
+  const code = main(argv) as number;
   vi.restoreAllMocks();
   return { code, stdout: out.join('\n'), stderr: err.join('\n') };
 }
