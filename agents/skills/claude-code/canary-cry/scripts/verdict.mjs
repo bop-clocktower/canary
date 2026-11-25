@@ -37,18 +37,28 @@ function canonical(value) {
 /**
  * Evaluate one invariant's `expect` against its before/after probe values.
  * `delta` is after - before for one logical completion of the flow.
+ *
+ * `mayRefuse` (the scenario's pattern, patterns.mjs; #1720) also accepts a
+ * clean refusal: a delta of 0, or an after-value equal to the before-value.
+ * Anything else that is not exactly one completion -- a partial write, a
+ * double write -- is still a breach.
+ * @param {{mayRefuse?: boolean}} [options]
  * @returns {{breached: boolean} | {error: string}}
  */
-export function checkExpect(expect, before, after) {
+export function checkExpect(expect, before, after, { mayRefuse = false } = {}) {
   if (Object.hasOwn(expect, 'equals')) {
-    return { breached: canonical(after) !== canonical(expect.equals) };
+    const completed = canonical(after) === canonical(expect.equals);
+    const refused = mayRefuse && canonical(after) === canonical(before);
+    return { breached: !completed && !refused };
   }
   if (typeof before !== 'number' || typeof after !== 'number') {
     return {
       error: `delta needs numbers, got ${typeof before} before and ${typeof after} after`,
     };
   }
-  return { breached: after - before !== expect.delta };
+  const change = after - before;
+  const refused = mayRefuse && change === 0;
+  return { breached: change !== expect.delta && !refused };
 }
 
 const verdict = (name, reason = null, fingerprints = []) => ({

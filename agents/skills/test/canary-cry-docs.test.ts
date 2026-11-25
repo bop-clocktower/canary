@@ -74,11 +74,12 @@ describe('canary-cry SKILL.md (P1, P2, P3)', () => {
   });
 
   it.each(PATTERNS.map((p) => [p.id, p]))(
-    'lists pattern %s with its catalog weight and core flag',
+    'lists pattern %s with its catalog weight, core and mayRefuse flags',
     (id, p: any) => {
-      const [, core, weight] = cells(row(`\`${id}\``));
+      const [, core, weight, , , mayRefuse] = cells(row(`\`${id}\``));
       expect(weight, id).toBe(String(p.weight));
       expect(core, id).toBe(p.core ? 'yes' : 'no');
+      expect(mayRefuse, id).toBe(p.mayRefuse ? 'yes' : 'no');
     },
   );
 
@@ -151,6 +152,11 @@ describe('canary-cry SKILL.md: a confirmed run (P3)', () => {
       observations: new Map(),
     });
     expect(PROSE).toContain(`"format": "${doc.format}"`);
+  });
+
+  it('no longer lists the token-expiry false positive as a known limit (#1720)', () => {
+    expect(PROSE).not.toContain('correctly refuses the unauthenticated write');
+    expect(PROSE).toContain('passes on a clean refusal');
   });
 
   it('shows the standalone replay command', () => {

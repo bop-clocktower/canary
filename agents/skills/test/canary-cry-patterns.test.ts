@@ -49,6 +49,16 @@ describe('abuse-pattern catalog', () => {
     ]);
   });
 
+  // #1720: token-expiry clears the session mid-flow, so a correct app refuses
+  // the write. Every other pattern either completes the flow once (the
+  // runners re-enter or finish it) or is a race a correct app absorbs.
+  it('lets only token-expiry pass on a clean refusal', () => {
+    expect(PATTERNS.filter((p) => p.mayRefuse).map((p) => p.id)).toEqual([
+      'token-expiry',
+    ]);
+    for (const p of PATTERNS) expect(typeof p.mayRefuse, p.id).toBe('boolean');
+  });
+
   it('gives each pattern a weight, a known anchor and one line per intensity', () => {
     expect(INTENSITY_CEILING).toBe(3);
     for (const p of PATTERNS) {

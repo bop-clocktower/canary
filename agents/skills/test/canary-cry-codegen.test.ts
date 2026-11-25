@@ -97,6 +97,7 @@ describe('scenarioPayload', () => {
         file: 'checkout.multi-submit.i1.spay',
         pattern: 'multi-submit',
         intensity: 1,
+        mayRefuse: false,
         step: 'pay',
         seed: 7,
         baseURL: 'http://127.0.0.1:8080',
@@ -112,6 +113,14 @@ describe('scenarioPayload', () => {
     });
     expect(s.auth!.sessionKeys).toEqual(['cookie:s']);
     expect(s.invariants[0].id).toBe('one');
+  });
+
+  it("hands the runtime the confirmed scenario's mayRefuse flag (#1720)", () => {
+    const { manifest } = plan();
+    const refusing = { ...manifest.scenarios[0], mayRefuse: true };
+    expect(scenarioPayload(manifest, refusing).mayRefuse).toBe(true);
+    const legacy = { ...manifest.scenarios[0], mayRefuse: undefined };
+    expect(scenarioPayload(manifest, legacy).mayRefuse).toBe(false);
   });
 
   it('a target without auth gives a null auth, and a flow without probes an empty list', () => {
