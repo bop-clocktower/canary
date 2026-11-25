@@ -14,7 +14,29 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary guardian mutation` now runs Stryker on the lines a PR adds (#486,
+  #1380).** Before this, the advisory `mutation` job could only abstain behind
+  the stryker-js#6210 guard. Now it pins `@stryker-mutator/*` 10.1.1 (which
+  fixed #6210) and mutates only added lines under `ts/src`, capped at 150
+  mutants as a disclosed, deterministic line sample. It uses the `forks` pool,
+  so no suite is excluded any more, and gives Stryker 7 minutes. A crash or
+  timeout still writes an abstained `mutation-report.json` with Stryker's error
+  line. The report is upserted as its own sticky comment
+  (`<!-- canary-guardian-mutation -->`), posted from a step that never runs the
+  PR's tests. Still advisory until the ADR 0038 exit criterion is met.
+
 ### Fixed
+
+- **The perf ratchet's per-finding delta works again.** Harness CLI 14 prints an
+  info-level `File is imported by N files` finding that
+  `scripts/lib/perf-findings.mjs` could not classify. One unclassifiable finding
+  made the whole report unparseable, so since the CLI 14.1.1 adoption (#1640)
+  every PR's delta silently fell back to a bare count:
+  `delta OK by count ... no allowance was applied`. Every `deltaAllowances`
+  entry and the magnitude-growth warning were dark. The rule is now classified
+  (`fan-in`), so allowances apply by name again.
 
 - **canary-cassandra no longer reads a `//` or `/*` inside a regex literal as a
   comment.** This is a regression from #1697. The JS comment tokenizer had no

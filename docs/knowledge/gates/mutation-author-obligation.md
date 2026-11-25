@@ -48,7 +48,9 @@ mutation run had to exclude.
   mutants is an abstention, never a pass (ADR 0009).
 - The list of test files excluded from the run (`excludedTests`), because a
   mutant only an excluded suite would kill reads as a survivor, and a survivor
-  count read without that list overstates what was checked.
+  count read without that list overstates what was checked. Canary's own run
+  uses the vitest `forks` pool, so it excludes none and says so; a `--report`
+  from a `threads`-pool run lists them under `--pool threads`.
 
 ## Definitions
 
