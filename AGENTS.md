@@ -386,6 +386,17 @@ via slash commands.
     classifies candidate / blocked / stale / unlinked / abstain. Needs the
     network (`gh`; Jira only for company.json `jira_projects`). Zero rows read
     or any unreadable tracker abstains, never reads as clear.
+  - `canary-cry` (#608): the pre-launch "try to break it" sweep of ordinary user
+    flows, judged by state corruption. `validate` / `matrix` / `report` are
+    Tier-0 (`report` ranks a run's `findings.json` into `report.md`, a replay
+    command per verdict); `run --live` is the first skill that writes to an
+    external system, behind the confirmed-manifest gate of
+    [ADR 0046](docs/knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md):
+    non-prod only, exit 4 on refusal, and only a human-supplied
+    `--confirm <sha>` loads the executor. The SKILL.md agent layer drafts
+    `flows.json`, pauses for the human at the gate and triages findings with
+    Playwright MCP, and never produces a verdict. See
+    [the spec](docs/changes/canary-cry/proposal.md).
 - **Slash commands:** `commands/*.md`, loaded by the default `commands/` scan.
 - **Activate:** load the repo root as a Claude Code plugin.
 
@@ -1745,6 +1756,12 @@ harness persona for its CI trigger, a canary persona for its output register.
 The two share only a word; see
 [ADR 0016](docs/knowledge/decisions/0016-two-meanings-of-persona.md) before
 assuming they are one mechanism.
+
+`canary-cry` (#608) states its axes per command: `validate`, `matrix` and
+`report` are deterministic, no network, no agent (Tier-0, enforced by
+`agents/skills/test/canary-cry-tier.test.ts`); `run` is non-deterministic and
+needs the network (a live app), with no agent; the SKILL.md agent layer is an
+agent and never produces a finding.
 
 #### `canary-*` names
 

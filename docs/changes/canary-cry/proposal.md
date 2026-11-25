@@ -474,6 +474,47 @@ a quiet clean:
   command.
 - Playwright's `results.json` is kept in the run dir, consumable unchanged by
   `canary-test-reporter`.
+- **As shipped in P5:**
+  - `findings.json` is written by `findings.mjs` (P3), as it was; `report.mjs`
+    is the reader. `cry report <run-id>` reads `runs/<run-id>/findings.json`
+    beside the flows file, writes `report.md` into the run dir and prints it.
+  - "Fidelity then score" is the order corrupted, symptom, clean, abstain, then
+    score descending, then id. The run's own text (P3) puts abstentions above
+    clean; the report puts what could not be measured last. The counts are
+    recomputed from the scenarios; the status (`ok`, `abstained`, `partial`) is
+    the run's.
+  - A verdict's replay command is
+    `npx playwright test -c playwright.config.mjs specs/<stem>.spec.mjs`, run
+    from the run dir, and is **derived from the scenario id**, never copied from
+    the file: a `repro.spec` that is not the scenario's own spec, a scenario id
+    that is not one, an unknown verdict or status, another format, or a `run.id`
+    naming another run makes the file damaged (exit 2), so a tampered
+    `findings.json` cannot hand an operator a command to paste. The run-id is
+    checked with `isRunId` before it becomes a path; a run with no
+    `findings.json` (planned, never confirmed) is exit 2 too. Every field the
+    report renders must be a string of at most 4096 characters (exit 2
+    otherwise), and each is rendered through one `inert` helper in
+    `report-text.mjs` (no backtick, no control or line-separator character, at
+    most 300 characters), because a probe error is the target's own output: a
+    newline or backtick in it could otherwise forge a `- replay:` line or a
+    heading (security review, P5).
+  - `--json` prints `canary.cry-report/1` (the run, status, reason, counts,
+    stop, blocked egress, the run dir, the report path, and `ranked`).
+    `--strict` uses `findings.mjs`'s `exitCode`, the function a confirmed run
+    exits with, so the two never disagree: 1 on a `corrupted`, else 3 for
+    `ABSTAINED` or `PARTIAL`, else 0.
+  - `report.mjs` (reading and checking) and `report-text.mjs` (ranking and text,
+    pure: split so neither crosses the coupling threshold) are in the Tier-0
+    closure (SC6), statically imported by `cli.mjs`; they bring the pure
+    `findings.mjs`, `verdict.mjs` and `codegen.mjs` into the closure with them
+    (each import-free or importing only pure modules, which the tier test
+    checks). The one dynamic import is still `cli.mjs -> ./execute.mjs`.
+  - The SKILL.md agent layer (drafting `flows.json`, composition, the gate
+    pause, MCP triage) is enforced against the code by `canary-cry-docs.test.ts`
+    (SC20): the subcommand sections from the `--help` choice list, the limit
+    line from `SERVER_SIDE_LIMIT`, the report format and replay from a report
+    the real `report.mjs` writes, and the composed skills from their directories
+    and `CLI_SPEC`s.
 
 ### CLI and exit codes
 
@@ -542,6 +583,11 @@ Module map, as shipped:
   - [runs.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runs.mjs):
     `run`'s argument rules, a new run dir, and a run read back for `--resume`
     (P4).
+  - [report.mjs](../../../agents/skills/claude-code/canary-cry/scripts/report.mjs):
+    `report`, a run's `findings.json` checked and ranked into `report.md` (P5),
+    with
+    [report-text.mjs](../../../agents/skills/claude-code/canary-cry/scripts/report-text.mjs):
+    the report's ranking and text, pure.
 - The executor, loaded by one lazy `import()` after the sha matches:
   - [execute.mjs](../../../agents/skills/claude-code/canary-cry/scripts/execute.mjs):
     orchestrates a confirmed run.
@@ -555,7 +601,9 @@ Module map, as shipped:
   - [verdict.mjs](../../../agents/skills/claude-code/canary-cry/scripts/verdict.mjs)
     and
     [findings.mjs](../../../agents/skills/claude-code/canary-cry/scripts/findings.mjs):
-    the per-scenario verdicts and `findings.json`.
+    the per-scenario verdicts and `findings.json`. Both are pure, and since P5
+    also in the Tier-0 closure: `report` takes its exit code from
+    `findings.mjs`, which reads `codegen.mjs`'s `fileStem`.
   - [rounds.mjs](../../../agents/skills/claude-code/canary-cry/scripts/rounds.mjs):
     the round loop (P4), one scenario at a time, checkpointing after each.
   - [convergence.mjs](../../../agents/skills/claude-code/canary-cry/scripts/convergence.mjs):
@@ -619,11 +667,13 @@ Module map, as shipped:
 
 ### Architectural Decisions
 
-- **D2 + D4 → ADR 0046**, _Live-target skills: confirmed-manifest gate and
-  no-replay-no-finding._ canary-cry is the first canary skill that writes to an
-  external system; the sha-bound confirm, absolute prod refusal, and "an agent
-  action cannot produce a finding" set precedent for any later live skill
-  (including `canary-huntress`).
+- **D2 + D4 →
+  [ADR 0046](../../knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md)**,
+  _Live-target skills: confirmed-manifest gate and no-replay-no-finding._
+  canary-cry is the first canary skill that writes to an external system; the
+  sha-bound confirm, absolute prod refusal, and "an agent action cannot produce
+  a finding" set precedent for any later live skill (including
+  `canary-huntress`).
 - D1, D3, D5, D6, D7 stay in this spec — canary-cry-specific or already house
   patterns.
 

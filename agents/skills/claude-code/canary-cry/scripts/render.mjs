@@ -7,8 +7,8 @@
 const PROG = 'canary-cry';
 
 export const USAGE =
-  'usage: canary-cry [-h] {validate,matrix,run} [--flows PATH] [--targets PATH]\n' +
-  '                  [--target NAME] [--critical-areas PATH]\n' +
+  'usage: canary-cry [-h] {validate,matrix,run,report} [RUN_ID] [--flows PATH]\n' +
+  '                  [--targets PATH] [--target NAME] [--critical-areas PATH]\n' +
   '                  [--amplitude {whisper,shout,scream}] [--seed N]\n' +
   '                  [--live NAME] [--confirm SHA] [--max-wall D]\n' +
   '                  [--resume RUN_ID] [--json] [--strict]\n' +
@@ -25,10 +25,13 @@ export const USAGE =
   "                        on the target project's Playwright, round by\n" +
   '                        round; --resume RUN_ID --confirm SHA picks a\n' +
   '                        stopped run back up\n' +
+  "  report RUN_ID         rank the run's findings.json into its report.md,\n" +
+  '                        each verdict with its replay command (no network)\n' +
   '\n' +
   'options:\n' +
   '  -h, --help            show this help message and exit\n' +
-  '  --flows PATH          flows file (default: .canary/cry/flows.json)\n' +
+  '  --flows PATH          flows file (default: .canary/cry/flows.json); run\n' +
+  '                        dirs live in the runs/ beside it\n' +
   '  --targets PATH        targets file (default: .canary/cry/targets.json)\n' +
   '  --target NAME         matrix: also schedule the target-scoped patterns\n' +
   '  --critical-areas PATH matrix: rank with critical areas (default:\n' +
@@ -47,9 +50,11 @@ export const USAGE =
   '                        1h30m) has elapsed: PARTIAL, resumable\n' +
   '  --resume RUN_ID       run: continue a stopped run; its target, amplitude\n' +
   '                        and seed come from the run, its sha must match\n' +
-  '  --json                matrix: print the canonical matrix.json document\n' +
-  '  --strict              matrix, run: exit 3 when abstained (run: or\n' +
-  '                        PARTIAL); run: exit 1 when a scenario is corrupted';
+  '  --json                matrix: print the canonical matrix.json document;\n' +
+  '                        report: print the canary.cry-report/1 document\n' +
+  '  --strict              matrix, run, report: exit 3 when abstained (run,\n' +
+  '                        report: or PARTIAL); run, report: exit 1 when a\n' +
+  '                        scenario is corrupted';
 
 // #508 convention line, written as escapes so this source stays ASCII (the
 // same wording as ts/src/core/gate-result.ts and the other skill CLIs).
