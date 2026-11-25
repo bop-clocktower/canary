@@ -29,6 +29,18 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The session siren alerts on a new release, not on every commit to `main`
+  (#1695).** Checks 0, 3 and 4b compared the clone and the install with origin's
+  HEAD, and `main` takes several commits a day, so nearly every session opened
+  with a siren nobody needed to act on. They now compare with the `latest`
+  release tag (one `ls-remote`, as before): a clone that contains the release is
+  current, and the install is stale only when its version is older than the
+  release's `vX.Y.Z`. A `latest` with no `vX.Y.Z` on it, or an origin with no
+  `latest`, is reported as unverifiable. A clone pinned with `#latest` (now the
+  README's install line) is told to run `claude plugin marketplace update`,
+  since `pull --ff-only` cannot move a detached HEAD. Trade-off: a clone with
+  local commits on top of the release is no longer flagged.
+
 - **The perf ratchet's per-finding delta works again.** Harness CLI 14 prints an
   info-level `File is imported by N files` finding that
   `scripts/lib/perf-findings.mjs` could not classify. One unclassifiable finding

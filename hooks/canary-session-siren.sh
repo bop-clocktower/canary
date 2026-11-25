@@ -28,13 +28,23 @@ LS_REMOTE_TIMEOUT="${CANARY_SIREN_LS_REMOTE_TIMEOUT:-3}"
 # Single-quote a value for a copy-pasteable remedy (bash 3.2 has no ${v@Q}).
 shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
-# Set ORIGIN_TIP to origin's HEAD sha via `git ls-remote`, killed after
+# The reference every freshness check compares against is the LATEST RELEASE,
+# not origin's HEAD (#1695). main takes several commits a day, so "one commit
+# behind main" fired nearly every session and taught people to skim the siren.
+# release.yml moves the floating `latest` tag to the highest stable vX.Y.Z, so
+# a release is the thing worth an alert, and an install pinned to `#latest` is
+# exactly one.
+#
+# Set ORIGIN_TIP to the commit `latest` points at, and RELEASE_VER to the
+# vX.Y.Z tag on that same commit, via one `git ls-remote`, killed after
 # LS_REMOTE_TIMEOUT seconds (macOS ships no `timeout`, so a watchdog does it).
 # On failure returns 1 and sets LS_REMOTE_WHY. Called directly, not in $(...),
-# so both globals survive. Never prompts for https credentials, and any other
+# so the globals survive. Never prompts for https credentials, and any other
 # prompt (ssh) is cut off by the timeout rather than hanging the session.
 ORIGIN_TIP="unknown"
+RELEASE_VER="unknown"
 LS_REMOTE_WHY=""
+LS_REMOTE_WHAT="git ls-remote origin refs/tags/latest"
 origin_tip() {
   local out pid wd rc tip fired=0
   out=$(mktemp "${TMPDIR:-/tmp}/canary-siren.XXXXXX") || {
@@ -43,7 +53,7 @@ origin_tip() {
   }
   # GIT_SSH_COMMAND is deliberately left alone: setting it would override a
   # user's core.sshCommand and turn a reachable origin into a false finding.
-  GIT_TERMINAL_PROMPT=0 git -C "$MKT" ls-remote origin HEAD >"$out" 2>/dev/null </dev/null &
+  GIT_TERMINAL_PROMPT=0 git -C "$MKT" ls-remote origin 'refs/tags/latest*' 'refs/tags/v*' >"$out" 2>/dev/null </dev/null &
   pid=$!
   # The watchdog's stdio is detached so a lingering sleep cannot hold the
   # hook's stdout open after it exits. It drops a marker BEFORE the kill, so
@@ -61,14 +71,26 @@ origin_tip() {
   kill "$wd" 2>/dev/null
   wait "$wd" 2>/dev/null # reaped, so no marker can appear after the check
   [ -e "$out.fired" ] && fired=1
-  tip=$(awk '$2 == "HEAD" { print $1; exit }' "$out")
+  # An annotated tag lists its own object and then the commit as `<tag>^{}`;
+  # the commit is the one to compare, so the peeled line wins when present.
+  tip=$(awk '$2 == "refs/tags/latest^{}" { p = $1 } $2 == "refs/tags/latest" { t = $1 }
+    END { print (p != "" ? p : t) }' "$out")
+  if [ -n "$tip" ]; then
+    # The stable vX.Y.Z on the same commit names the release. Same peel rule
+    # per tag; a pre-release (vX.Y.Z-rc1) never names one, as `latest` skips them.
+    RELEASE_VER=$(awk -v tip="$tip" '
+      { ref = $2; peeled = sub(/\^\{\}$/, "", ref); sub(/^refs\/tags\/v/, "", ref) }
+      ref ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ { if (peeled) p[ref] = $1; else if (!(ref in p)) p[ref] = $1 }
+      END { for (v in p) if (p[v] == tip) { print v; exit } }' "$out")
+    RELEASE_VER=${RELEASE_VER:-unknown}
+  fi
   rm -f "$out" "$out.fired"
   if [ "$rc" -ne 0 ] && [ "$fired" = 1 ]; then
     LS_REMOTE_WHY="timed out after ${LS_REMOTE_TIMEOUT}s"
   elif [ "$rc" -ne 0 ]; then
     LS_REMOTE_WHY="failed (offline, or origin unreachable)"
   elif ! printf '%s' "$tip" | grep -Eq '^[0-9a-f]{40}([0-9a-f]{24})?$'; then
-    LS_REMOTE_WHY="returned no HEAD"
+    LS_REMOTE_WHY="returned no latest release tag"
   else
     ORIGIN_TIP=$tip
     return 0
@@ -76,7 +98,47 @@ origin_tip() {
   return 1
 }
 
-# How the clone's HEAD relates to ORIGIN_TIP once the two differ (#1682).
+# The release as people say it: "v9.7.0 @06c1504", or just the commit when no
+# vX.Y.Z tag sits on it.
+release_label() {
+  if [ "$RELEASE_VER" != "unknown" ]; then
+    printf 'v%s @%s' "$RELEASE_VER" "${ORIGIN_TIP:0:7}"
+  else
+    printf '@%s' "${ORIGIN_TIP:0:7}"
+  fi
+}
+
+# The remedy that brings a behind clone to the release. A clone on a branch
+# (one added without a ref, tracking main) fast-forwards with a pull. A clone
+# on a detached HEAD (added with `#latest`) has nothing to pull into, so it
+# gets Claude Code's own refresh, which re-resolves the ref.
+clone_refresh() {
+  if git -C "$MKT" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    printf 'git -C %s pull --ff-only' "$(shq "$MKT")"
+  else
+    printf 'claude plugin marketplace update bop-clocktower'
+  fi
+}
+
+# 0 when $1 is X.Y.Z or X.Y.Z-suffix, the only shapes version_lt can rank.
+is_semver() { printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-.*)?$'; }
+
+# 0 when version $1 is older than $2 (X.Y.Z, numeric per field); 1 otherwise,
+# including when either cannot be read, so the caller checks is_semver first.
+version_lt() {
+  local a1 a2 a3 b1 b2 b3
+  is_semver "$1" && is_semver "$2" || return 1
+  IFS=. read -r a1 a2 a3 <<<"${1%%-*}"
+  IFS=. read -r b1 b2 b3 <<<"${2%%-*}"
+  [ "$a1" -lt "$b1" ] && return 0
+  [ "$a1" -gt "$b1" ] && return 1
+  [ "$a2" -lt "$b2" ] && return 0
+  [ "$a2" -gt "$b2" ] && return 1
+  [ "$a3" -lt "$b3" ]
+}
+
+# How the clone's HEAD relates to ORIGIN_TIP (the latest release, #1695) once
+# the two differ (#1682).
 # Inequality is not ordering: only an ancestor is "behind", the one case
 # `pull --ff-only` is guaranteed to clear. Prints one of:
 #   behind    MKT_HEAD is an ancestor of origin's tip
@@ -156,13 +218,14 @@ FINDINGS=()
 #
 #    A byte compare says the copies DIFFER, not which is newer (#1670). The
 #    hooks may have come from a dev checkout ahead of a clone that is itself
-#    behind origin, and then `--install-hooks` from that clone would overwrite
-#    the newer copy with a stale one. So check 3's clone-freshness call runs
+#    behind the latest release (#1695), and then `--install-hooks` from that
+#    clone would overwrite the newer copy with a stale one. So check 3's clone-freshness call runs
 #    here too (same capped ls-remote, no extra call: the hook exits after),
 #    and a behind clone is reported with "pull the clone first" in place of
 #    the install remedy. Only a clone that is truly behind gets that (#1682):
-#    an ahead or diverged clone cannot be cleared by a pull, so it keeps the
-#    install remedy with a caveat. An origin that cannot be asked, or a clone
+#    an ahead clone contains the release and keeps the plain install remedy;
+#    a diverged one cannot be cleared by a pull, so it keeps the install
+#    remedy with a caveat. An origin that cannot be asked, or a clone
 #    with no .git, keeps the install remedy and says freshness is unverifiable
 #    rather than going quiet about it.
 SELF="${BASH_SOURCE[0]:-}"
@@ -184,29 +247,35 @@ if [ -d "$MKT" ]; then # an absent clone is check 3's finding
     elif ! origin_tip; then
       FINDINGS=(
         "$DIFFERS — run: $INSTALL"
-        "clone freshness unverifiable: git ls-remote origin HEAD $LS_REMOTE_WHY for $MKT — install from it only if you know it is current"
+        "clone freshness unverifiable: $LS_REMOTE_WHAT $LS_REMOTE_WHY for $MKT — install from it only if you know it is current"
       )
     elif [ "$MKT_HEAD" = "$ORIGIN_TIP" ]; then
       FINDINGS=("$DIFFERS — run: $INSTALL")
     else
+      # Against the release (#1695): a clone that contains it (ahead, as a
+      # clone tracking main is) is a safe source; only behind and diverged
+      # are worth a caveat.
       REL=$(clone_relation)
       case "$REL" in
       behind | unfetched)
         FINDINGS=(
-          "bop-clocktower marketplace clone is behind origin (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}), so it is not a safe source for the siren hooks — pull the clone first, run: git -C $(shq "$MKT") pull --ff-only"
-          "$DIFFERS — once the clone is at origin, the next session compares again"
+          "bop-clocktower marketplace clone is behind the latest release (clone @${MKT_HEAD:0:7}, release $(release_label)), so it is not a safe source for the siren hooks — pull the clone first, run: $(clone_refresh)"
+          "$DIFFERS — once the clone has the release, the next session compares again"
         )
         ;;
-      ahead | diverged)
+      ahead)
+        FINDINGS=("$DIFFERS — run: $INSTALL")
+        ;;
+      diverged)
         FINDINGS=(
-          "bop-clocktower marketplace clone differs from origin ($REL) (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}) — a pull cannot bring it to origin; inspect: git -C $(shq "$MKT") log --oneline ${ORIGIN_TIP:0:12}..HEAD"
-          "$DIFFERS — the clone has commits origin does not have, so this installs them too; run: $INSTALL"
+          "bop-clocktower marketplace clone differs from the latest release (diverged) (clone @${MKT_HEAD:0:7}, release $(release_label)) — a pull cannot bring it to the release; inspect: git -C $(shq "$MKT") log --oneline ${ORIGIN_TIP:0:12}..HEAD"
+          "$DIFFERS — the clone has commits the release does not have, so this installs them too; run: $INSTALL"
         )
         ;;
       *)
         FINDINGS=(
           "$DIFFERS — run: $INSTALL"
-          "clone freshness unverifiable: $MKT has no readable HEAD to compare with origin @${ORIGIN_TIP:0:7} — install from it only if you know it is current"
+          "clone freshness unverifiable: $MKT has no readable HEAD to compare with the latest release $(release_label) — install from it only if you know it is current"
         )
         ;;
       esac
@@ -239,27 +308,32 @@ fi
 #    clone, origin and install all sat on the same commit. The end state is
 #    the thing to check; when a fetch last happened is not. An origin that
 #    cannot be asked is a loud abstention, never a pass.
+#
+#    The reference is the latest release, not origin's HEAD (#1695): a clone
+#    that contains the release is current, however far main has moved since.
 if [ -d "$MKT/.git" ]; then
   if origin_tip; then
     MKT_HEAD=$(git -C "$MKT" rev-parse --verify -q HEAD 2>/dev/null || echo "unknown")
     # Inequality is not ordering (#1682): only a clone a pull can clear is
-    # "behind"; an ahead or diverged one gets no remedy that no-ops.
+    # "behind"; a diverged one gets no remedy that no-ops. An ahead clone
+    # contains the release, so it is current (#1695).
     if [ "$MKT_HEAD" != "$ORIGIN_TIP" ]; then
       REL=$(clone_relation)
       case "$REL" in
       behind | unfetched)
-        FINDINGS+=("bop-clocktower marketplace clone is behind origin (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}) — run: git -C $(shq "$MKT") pull --ff-only")
+        FINDINGS+=("bop-clocktower marketplace clone is behind the latest release (clone @${MKT_HEAD:0:7}, release $(release_label)) — run: $(clone_refresh)")
         ;;
-      ahead | diverged)
-        FINDINGS+=("bop-clocktower marketplace clone differs from origin ($REL) (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}) — a pull cannot bring it to origin; inspect: git -C $(shq "$MKT") log --oneline ${ORIGIN_TIP:0:12}..HEAD")
+      ahead) ;;
+      diverged)
+        FINDINGS+=("bop-clocktower marketplace clone differs from the latest release (diverged) (clone @${MKT_HEAD:0:7}, release $(release_label)) — a pull cannot bring it to the release; inspect: git -C $(shq "$MKT") log --oneline ${ORIGIN_TIP:0:12}..HEAD")
         ;;
       *)
-        FINDINGS+=("bop-clocktower marketplace clone has no readable HEAD to compare with origin @${ORIGIN_TIP:0:7} — freshness unverifiable")
+        FINDINGS+=("bop-clocktower marketplace clone has no readable HEAD to compare with the latest release $(release_label) — freshness unverifiable")
         ;;
       esac
     fi
   else
-    FINDINGS+=("git ls-remote origin HEAD $LS_REMOTE_WHY for $MKT — marketplace freshness and installed-plugin staleness unverifiable")
+    FINDINGS+=("$LS_REMOTE_WHAT $LS_REMOTE_WHY for $MKT — marketplace freshness and installed-plugin staleness unverifiable")
   fi
 elif [ -d "$MKT" ]; then
   # Present but not a clone (#1692): naming it missing points at the wrong fix.
@@ -298,18 +372,26 @@ else
   FINDINGS+=("canary CLI not on PATH")
 fi
 
-# 4b. Installed plugin vs origin's tip. canary main often lands without a
-#     plugin.json bump, and `claude plugin update` compares version strings
-#     only, so equal versions can still mean stale files. The commit is the
-#     only thing that tells.
+# 4b. Installed plugin vs the latest release (#1695). Commits on main between
+#     releases are not rot: the alert is for a release this machine does not
+#     run. Every release bumps plugin.json, so the installed version against
+#     the release's vX.Y.Z tag is the whole comparison. (Comparing commits
+#     against origin's HEAD fired on every merge to main.)
 #
-#     The reference is origin's live HEAD from check 3, not any local ref
-#     (#1495, #1599): a local ref is only as fresh as the last fetch, and how
-#     fresh that is cannot be read reliably from disk. When check 3 could not
-#     reach origin it has already reported this check as unverifiable.
-if [ "$INST_SHA" != "unknown" ] && [ "$ORIGIN_TIP" != "unknown" ] &&
-  [ "$ORIGIN_TIP" != "$INST_SHA" ]; then
-  FINDINGS+=("installed canary plugin is behind the marketplace (installed $INST_VER @${INST_SHA:0:7}, origin @${ORIGIN_TIP:0:7}) — once the clone is at origin: claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower --scope user")
+#     The release is read from origin live in check 3, not from any local ref
+#     (#1495, #1599): a local ref is only as fresh as the last fetch. When
+#     check 3 could not reach origin it has already reported this check as
+#     unverifiable. A `latest` that sits on no vX.Y.Z tag cannot be ranked,
+#     and that is said rather than passed.
+if [ "$INST_VER" != "unknown" ] && [ "$ORIGIN_TIP" != "unknown" ]; then
+  if [ "$RELEASE_VER" = "unknown" ]; then
+    FINDINGS+=("the latest tag (@${ORIGIN_TIP:0:7}) sits on no vX.Y.Z release tag — whether installed canary $INST_VER is current is unverifiable")
+  elif ! is_semver "$INST_VER"; then
+    # version_lt reads an unparseable version as "not older"; say so instead.
+    FINDINGS+=("installed canary plugin version $INST_VER is not X.Y.Z — whether it is older than the latest release v$RELEASE_VER is unverifiable")
+  elif version_lt "$INST_VER" "$RELEASE_VER"; then
+    FINDINGS+=("installed canary plugin $INST_VER is older than the latest release v$RELEASE_VER — once the clone has the release: claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower --scope user")
+  fi
 fi
 
 # 5. The deep siren must be REGISTERED and RECENT (#758).
