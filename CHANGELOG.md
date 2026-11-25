@@ -14,7 +14,61 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [9.8.0] - 2026-11-25
+
 ### Added
+
+- **canary-cry: a new skill that abuses your app's flows the way real users do,
+  on purpose (#608, ADR 0046).** You declare flows in `flows.json` and targets
+  in `targets.json`. canary-cry then runs six abuse patterns against them:
+  `multi-submit`, `abandon-midflow`, `stale-optimistic`, `duplicate-tab`,
+  `token-expiry` and `shared-machine`. It shipped in five phases (#1717, #1719,
+  #1721, #1724, #1726):
+  - **`validate` and `matrix` (Tier 0, no infrastructure).** These check both
+    files with JSON-path errors and rank a flows × patterns scenario matrix by
+    amplitude (`whisper` / `shout` / `scream`). An empty matrix abstains with
+    "no flows declared" instead of reporting a green zero.
+  - **`run --live <target>`, the two-step gate.** Only a listed `local`, `dev`,
+    `staging` or `preview` target can be driven. A refusal exits 4 and has no
+    override flag. The run prints a hash-bound manifest and executes only when
+    you call it again with `--confirm <sha>`.
+  - **Execution.** A confirmed run generates one Playwright spec per scenario
+    and runs it under an egress lockdown that aborts and records non-allowlisted
+    hosts. Verdicts go to `findings.json`. `shout` runs intensities 1–2.
+    `scream` runs rounds until convergence or the i3 ceiling. `--max-wall` stops
+    between scenarios with a `PARTIAL` line, and
+    `run --resume <run-id> --confirm <sha>` finishes an interrupted run from its
+    `checkpoint.json`.
+  - **`report <run-id> [--json] [--strict]`.** Ranks the findings into
+    `report.md`, with a replay command for each verdict.
+  - **The SKILL.md agent layer.** The agent drafts `flows.json` for you to
+    confirm and composes with other skills. It always pauses for a human before
+    `--confirm`. Playwright MCP triage never produces a verdict.
+
+- **The ingest reporter and `canary testtracker push` can say which features
+  each test covers and at what level the suite tests (#1649).** A `featureMap`
+  (glob → feature slugs) comes from a reporter option,
+  `CANARY_INGEST_FEATURE_MAP` or `--features-map <file>`, and `level` comes from
+  an option, `CANARY_INGEST_LEVEL` or `--level`. A test no glob matches sends no
+  `features` key: the suite said nothing. A glob mapped to `[]` sends
+  `features: []`: the suite says the test covers no feature. A `--features-map`
+  file that is missing or malformed exits 1 and pushes nothing.
+
+- **A `unit` test shape for unit suites that aren't frontend (#1646).** It's for
+  backend services, dataflows and shared libraries. `vitest` and `pytest` list
+  `unit` in their categories, and overlays can now name it in `deploy_to`. The
+  classifier doesn't emit `unit` yet.
+
+- **`node scripts/route-queue.mjs report` lists open `route:roadmap` issues with
+  no `External-ID` roadmap row (#1658).** This is the invariant ADR 0043 sets.
+  The check is advisory, and the exit codes are unchanged. When it can't check
+  (an unreadable roadmap, an unknown slug, or zero rows for this repo), it
+  prints `could not check (<reason>)` instead of reporting 0.
+
+- **Realworld-functions batch 11: `path-normalizer-posix` (#1709, refs #602).**
+  A prompt-only Vitest example where the rejection path is the contract. It
+  covers the `startsWith` prefix trap, the base boundary and final-path
+  judgment.
 
 - **`canary guardian mutation` now runs Stryker on the lines a PR adds (#486,
   #1380).** Before this, the advisory `mutation` job could only abstain behind
@@ -28,6 +82,19 @@ under the project's former name) are documented in the
   PR's tests. Still advisory until the ADR 0038 exit criterion is met.
 
 ### Fixed
+
+- **canary-cry's `token-expiry` no longer reports `corrupted` on a correct app
+  (#1720, PR #1723).** Expiring the session mid-flow makes a correct app refuse
+  the write, and the invariant read that refusal as a breach. A pattern marked
+  `mayRefuse` (only `token-expiry`) now passes on either a full completion or a
+  clean refusal. A partial, double or negative change is still `corrupted`.
+
+- **`canary php audit` shows its denominator on a pass and names the lockfile
+  when it abstains (#1655).** A pass now reads
+  `✓ 0 finding(s) across N checked`. A missing or 0-package lockfile still exits
+  3, and the skip now names `<dir>/composer.lock` rather than `<dir>`, so a
+  wrong `--dir` shows up. JSON keys are unchanged; only `skipped[].name` changes
+  its value for lockfile abstentions.
 
 - **The session siren ranks a pre-release install as older than its release
   (#1710).** Check 4b dropped the `-suffix` before comparing, so an installed
@@ -5773,7 +5840,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.7.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.8.0...HEAD
+[9.8.0]: https://github.com/bop-clocktower/canary/compare/v9.7.0...v9.8.0
 [9.7.0]: https://github.com/bop-clocktower/canary/compare/v9.6.0...v9.7.0
 [9.6.0]: https://github.com/bop-clocktower/canary/compare/v9.5.0...v9.6.0
 [9.5.0]: https://github.com/bop-clocktower/canary/compare/v9.4.0...v9.5.0
