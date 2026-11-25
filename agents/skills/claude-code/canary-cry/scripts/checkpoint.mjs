@@ -29,6 +29,13 @@ const EXIT_REFUSED = 4;
 /** cli.mjs's run-id: `<UTC stamp>-<first 8 of the sha>`, nothing else. */
 const RUN_ID = /^\d{8}T\d{6}Z-[0-9a-f]{8}$/;
 
+/**
+ * Whether `text` has the run-id shape. The CLI asks before it reads
+ * `runs/<run-id>/` (#608 P4), so a hostile id such as `../..` never becomes
+ * a path; planResume still refuses one on its own.
+ */
+export const isRunId = (text) => typeof text === 'string' && RUN_ID.test(text);
+
 /** @param {{runId: string, manifestSha: string, total: number}} run */
 export function newCheckpoint({ runId, manifestSha, total }) {
   return { format: CHECKPOINT_FORMAT, runId, manifestSha, total, results: [] };
@@ -170,7 +177,7 @@ export function planResume({
   confirm,
   scenarioIds,
 }) {
-  if (typeof runId !== 'string' || !RUN_ID.test(runId) || checkpoint === null) {
+  if (!isRunId(runId) || checkpoint === null) {
     return refusal(EXIT_USAGE, `--resume: unknown run-id: ${runId}`);
   }
   const bad = unusable(checkpoint, runId);

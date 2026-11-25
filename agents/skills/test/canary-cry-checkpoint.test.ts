@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHECKPOINT_FORMAT,
   deadlineAt,
+  isRunId,
   newCheckpoint,
   parseMaxWall,
   partialLine,
@@ -182,8 +183,16 @@ describe('planResume (SC18)', () => {
     'a run id not in the run-id shape (%j) is refused before any lookup, exit 2',
     (runId) => {
       expect(resume({ runId }).exit).toBe(2);
+      // The caller asks first, so a bad id never becomes a path (#608 P4).
+      expect(isRunId(runId)).toBe(false);
     },
   );
+
+  it('isRunId accepts exactly the run-id shape cli writes', () => {
+    expect(isRunId(RUN_ID)).toBe(true);
+    expect(isRunId(`${RUN_ID}/..`)).toBe(false);
+    expect(isRunId(undefined)).toBe(false);
+  });
 
   it('a checkpoint of another format or run is refused, exit 2', () => {
     const wrongFormat = {
