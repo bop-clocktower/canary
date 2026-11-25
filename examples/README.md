@@ -47,6 +47,7 @@ design the test coverage — not from a URL or framework mechanic.
 | [luhn-card-validator](realworld-functions/luhn-card-validator/)                             | Unit | Pytest    | Luhn checksum validation — doubling-reduction, malformed-input reject, minimal 2-digit edge case        |
 | [topological-task-order](realworld-functions/topological-task-order/)                       | Unit | Pytest    | Dependency ordering with a pinned lexicographic tiebreak — cycle and unknown-prerequisite rejection     |
 | [percentile-nearest-rank](realworld-functions/percentile-nearest-rank/)                     | Unit | Vitest    | Nearest-rank percentile — pinned estimator, exact integer rank arithmetic, exact-multiple discontinuity |
+| [path-normalizer-posix](realworld-functions/path-normalizer-posix/)                         | Unit | Vitest    | POSIX path containment — segment-wise check (the startsWith prefix trap), base-boundary off-by-one      |
 
 See [realworld-functions/README.md](realworld-functions/README.md) for the
 rationale and how to add more.
