@@ -117,7 +117,7 @@ describe('command dispatch', () => {
   it.each<[string[], RegExp]>([
     [[], /the following arguments are required: command/],
     [['run'], /run: --live TARGET is required/],
-    [['report'], /'report' is not yet supported/],
+    [['report'], /report: RUN_ID is required/],
     [['frobnicate'], /invalid choice: 'frobnicate'/],
     [['validate', 'extra'], /unrecognized arguments: extra/],
   ])('rejects %j with exit 2', (argv, message) => {

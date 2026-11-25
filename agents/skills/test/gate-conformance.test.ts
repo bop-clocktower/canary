@@ -207,7 +207,36 @@ const ROWS: SkillGateRow[] = [
     run: (base) => run(cryMain, cryRunArgs(base)),
     strict: (base) => run(cryMain, [...cryRunArgs(base), '--strict']),
   },
+  {
+    // A confirmed run that abstained before any scenario (the target was
+    // unreachable): report must not read as a clean sweep (#608 P5).
+    command: 'canary-cry report (zero scenarios ran)',
+    forbid: ['## 1.', 'status: ok'],
+    run: (base) => run(cryMain, cryReportArgs(base)),
+    strict: (base) => run(cryMain, [...cryReportArgs(base), '--strict']),
+  },
 ];
+
+/** `report` over a findings.json whose run abstained with zero scenarios. */
+function cryReportArgs(base: string): string[] {
+  const id = '20261125T143333Z-0123abcd';
+  const dir = path.join(base, 'runs', id);
+  fs.mkdirSync(dir, { recursive: true });
+  const doc = {
+    format: 'canary.cry-findings/1',
+    run: { id, target: 'local', amplitude: 'whisper', seed: 0 },
+    status: 'abstained',
+    reason: 'target unreachable (ECONNREFUSED)',
+    counts: { corrupted: 0, symptom: 0, clean: 0, abstain: 0 },
+    stop: null,
+    rounds: [],
+    scenarios: [],
+    fingerprints: [],
+    blockedEgress: [],
+  };
+  fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify(doc));
+  return ['report', id, '--flows', path.join(base, 'flows.json')];
+}
 
 /** A valid profile plus a results file whose flows no fault ever touched. */
 function misfitArgv(base: string): string[] {

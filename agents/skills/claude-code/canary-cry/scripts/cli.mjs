@@ -3,7 +3,7 @@
 //
 // P1 shipped the Tier-0 half (deterministic, no network, no agent), P2 the
 // live gate, P3 the executor behind it (execute.mjs, lazily imported), P4
-// its rounds, convergence, --max-wall, checkpoints and --resume.
+// its rounds, convergence, --max-wall, checkpoints and --resume, P5 report.
 //
 //   validate  check .canary/cry/flows.json and targets.json; every error names
 //             the JSON path at fault
@@ -11,11 +11,11 @@
 //             cut to an --amplitude budget; same input, byte-identical --json
 //   run       --live <t>: gate, print the manifest + sha; --confirm runs it;
 //             --resume <run-id> --confirm <sha> picks a stopped run back up
+//   report    <run-id>: findings.json ranked into report.md, with replays
 //
-// `report` exits 2 "not yet supported" until its phase. Exit codes: 0 ok
-// (advisory), 2 usage or input error, 3 --strict and abstained or PARTIAL,
-// 1 --strict and >= 1 corrupted, 4 refused by a safety gate (ADR 0046), and
-// 1 an unexpected exception (issue 1716).
+// Exit codes: 0 ok (advisory), 2 usage or input error, 3 --strict and
+// abstained or PARTIAL, 1 --strict and >= 1 corrupted, 4 refused by a safety
+// gate (ADR 0046), and 1 an unexpected exception (issue 1716).
 //
 // Invoked via `canary skills run canary-cry -- <command> [options]`.
 
@@ -38,16 +38,15 @@ import {
   USAGE,
 } from './render.mjs';
 import { newRunDir, readRun, runArgError, trustResume } from './runs.mjs';
+import { runReport } from './report.mjs';
 import { readJsonFile } from './schema-core.mjs';
 import { loadFlows, loadTargets } from './schema.mjs';
 
 const PROG = 'canary-cry';
 const EXIT_ABSTAINED = 3;
 const EXIT_REFUSED = 4;
-const LATER_PHASE = '(a later phase of #608)';
 
 const DEFAULT_AREAS = '.canary/critical-areas.json';
-const LATER = new Set(['report']);
 
 export const CLI_SPEC = {
   prog: PROG,
@@ -79,6 +78,7 @@ const COMMANDS = {
   validate: validateCommand,
   matrix: matrixCommand,
   run: runCommand,
+  report: reportCommand,
 };
 
 /** A usage error for argv, or null. */
@@ -88,13 +88,11 @@ function usageError(error, positionals) {
   if (command === undefined) {
     return 'the following arguments are required: command';
   }
-  if (LATER.has(command)) {
-    return `'${command}' is not yet supported ${LATER_PHASE}`;
-  }
   if (!Object.hasOwn(COMMANDS, command)) {
-    return `argument command: invalid choice: '${command}' (choose from 'validate', 'matrix', 'run')`;
+    return `argument command: invalid choice: '${command}' (choose from 'validate', 'matrix', 'run', 'report')`;
   }
-  if (extra.length) return `unrecognized arguments: ${extra.join(' ')}`;
+  const over = extra.slice(command === 'report' ? 1 : 0); // its run-id
+  if (over.length) return `unrecognized arguments: ${over.join(' ')}`;
   return null;
 }
 
@@ -249,6 +247,13 @@ function resumeCommand(opts, ctx) {
   return execute(ctx, { opts, plan, dir: run.dir, resume: run.checkpoint });
 }
 
+function reportCommand(opts, _ctx, [runId]) {
+  const r = runReport(opts, runId);
+  if (r.errors !== null) return fail(r.errors);
+  console.log(r.text);
+  return r.exit;
+}
+
 function runCommand(opts, ctx) {
   const live = opts.resume === null;
   const bad =
@@ -280,7 +285,7 @@ export function main(argv = [], deps = {}) {
     return EXIT_USAGE;
   }
   try {
-    return COMMANDS[positionals[0]](opts, ctx);
+    return COMMANDS[positionals[0]](opts, ctx, positionals.slice(1));
   } catch (exc) {
     console.error(`${PROG}: ${exc.message}`);
     return 1;

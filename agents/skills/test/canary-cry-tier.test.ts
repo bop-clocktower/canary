@@ -13,7 +13,10 @@
  *
  * P2's `run --live` (gate + manifest) is in this closure on purpose: it must
  * decide a refusal and print a manifest with no way to reach the target, and
- * this test is what proves it. The P3 executor needs a socket and a child
+ * this test is what proves it. So is P5's `report`: it reads findings.json
+ * and writes report.md, deterministic and offline, so report.mjs and the
+ * pure findings module it takes its exit code from are in the closure too.
+ * The P3 executor needs a socket and a child
  * process, so it arrives through ONE lazy dynamic import, in cli.mjs, of one
  * module (execute.mjs), loaded only after a matching --confirm. Dynamic
  * imports are LISTED with their specifiers, never skipped: a second one, a
@@ -116,6 +119,9 @@ describe('canary-cry Tier-0 import closure (SC6)', () => {
         // #608 P4: --resume reads its run back and plans it before confirm.
         'claude-code/canary-cry/scripts/runs.mjs',
         'claude-code/canary-cry/scripts/checkpoint.mjs',
+        // #608 P5: report, and the pure exit-code judge it shares with run.
+        'claude-code/canary-cry/scripts/report.mjs',
+        'claude-code/canary-cry/scripts/findings.mjs',
         'lib/parse-args.mjs',
         'lib/contracts/critical-areas.mjs',
       ]),
@@ -129,6 +135,16 @@ describe('canary-cry Tier-0 import closure (SC6)', () => {
 
   it('touches no network global', () => {
     expect(c.globals).toEqual([]);
+  });
+
+  it('keeps report.mjs itself offline: no process, network or model module', () => {
+    const r = closure(path.join(path.dirname(CLI), 'report.mjs'));
+    expect(r.files).toContain('claude-code/canary-cry/scripts/findings.mjs');
+    expect(r.bare.filter((s) => !s.startsWith('node:'))).toEqual([]);
+    expect(forbidden(r.bare)).toEqual([]);
+    expect(r.globals).toEqual([]);
+    expect(r.dynamic).toEqual([]);
+    expect(r.files).not.toContain('claude-code/canary-cry/scripts/rundir.mjs');
   });
 
   it('reaches the executor only through one lazy import, in cli.mjs', () => {

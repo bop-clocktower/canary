@@ -333,6 +333,26 @@ describe('the planted double-submit bug (SC11, SC12, SC13)', () => {
     expect(obs.verdict).toBe('corrupted');
     expect(obs.fingerprints).toEqual(byId(doc, PAY).fingerprints);
   });
+
+  it('report ranks the corruption top with its replay, and --strict exits 1 (#608 P5)', async () => {
+    const id = path.basename(dir);
+    const r = await cry(path.dirname(path.dirname(path.dirname(dir))), [
+      'report',
+      id,
+      '--strict',
+      '--flows',
+      path.join(path.dirname(path.dirname(dir)), 'flows.json'),
+    ]);
+    expect(r.code, r.stdout + r.stderr).toBe(1);
+    const md = fs.readFileSync(path.join(dir, 'report.md'), 'utf8');
+    const top = md.split('\n').find((l) => l.startsWith('## 1. '));
+    expect(top).toMatch(/^## 1\. corrupted \(state-verified\): `checkout:/);
+    expect(md).toContain(
+      `\`npx playwright test -c playwright.config.mjs ${byId(doc, PAY).repro.spec}\``,
+    );
+    expect(`${r.stdout}`).toBe(md.trimEnd() + '\n');
+    expectNoSecret(dir);
+  });
 });
 
 describe('the fixed variant (SC11)', () => {
