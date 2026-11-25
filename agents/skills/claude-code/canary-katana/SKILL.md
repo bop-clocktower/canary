@@ -221,6 +221,28 @@ critical-area data unavailable, recording only, not alarming; run `canary critic
 Degradation never manufactures a failure — even under `--strict`, a degraded run
 exits `0`.
 
+### A stale map abstains
+
+The map is a snapshot. An area added or reshaped after it was written can never
+alarm, so "0 alarms" against an old map is a claim nobody checked (#1325).
+katana reads the map's `generated` stamp (which `canary critical-areas` always
+writes) and states its age next to the area denominator on the summary line:
+
+```text
+0 deletion(s) captured; checked against 12 critical area(s) from a map 85 day(s) old (limit 30).
+⚠ critical-areas map is stale: generated 2026-09-01T00:00:00Z, 85 day(s) ago, past the 30-day limit (--max-age-days). Areas added or reshaped since cannot alarm; regenerate it with `canary critical-areas`.
+⚠ Abstained — katana scored this diff against a map it cannot vouch is current, so 0 alarms is not a pass.
+```
+
+A map older than `--max-age-days` (default `30`, whole days; exactly the limit
+is still fresh) is **stale**. A map whose `generated` is missing, not a date, or
+more than a day in the future cannot be checked at all, and says
+`⚠ Cannot verify critical-areas map freshness: …` with `map of unknown age` on
+the summary line. Either way the run still assesses every area and still alarms;
+under `--strict` a run with no finding exits `3` (abstained), not `0`. A real
+alarm outranks the abstention and exits `1`. A degraded run (no map) has no age
+to check and is unchanged.
+
 ## The ledger
 
 Append-only JSON at `.canary/quarantine.json` (override with `--ledger`). Each
@@ -356,13 +378,18 @@ canary skills run canary-katana -- --json
 # Fail the step only when a critical path loses its last coverage:
 canary skills run canary-katana -- --strict
 
+# Accept a critical-areas map up to 90 days old (default 30):
+canary skills run canary-katana -- \
+  --critical-areas .canary/critical-areas.json --max-age-days 90
+
 # Usage and options (exits 0, and writes nothing to the ledger):
 canary skills run canary-katana -- --help
 ```
 
-Value flags (`--repo`, `--diff-file`, `--ledger`, `--critical-areas`) accept
-both `--repo <path>` and `--repo=<path>`, matching `canary-instrument` and
-`canary-fail-fast`.
+Value flags (`--repo`, `--diff-file`, `--ledger`, `--critical-areas`,
+`--max-age-days`) accept both `--repo <path>` and `--repo=<path>`, matching
+`canary-instrument` and `canary-fail-fast`. `--max-age-days` takes a whole
+number of at least `1`; anything else is a usage error (exit 2).
 
 An unknown flag is rejected with `unrecognized arguments: <flag>` and exit 2,
 and a value flag left without a usable value is
@@ -409,17 +436,26 @@ a usage request or a typo never mutates the working tree.
         "at_stake": false
       }
     ]
+  },
+  "map": {
+    "generated": "2026-11-20T00:00:00Z",
+    "age_days": 5,
+    "max_age_days": 30,
+    "freshness": "fresh"
   }
 }
 ```
 
-A degraded run adds a top-level `"degraded_notice"` and an empty `findings`.
-`abstained` is `true` in three cases, and `--strict` exits `3` exactly then:
+A degraded run adds a top-level `"degraded_notice"` and an empty `findings`, and
+has no `map`. `map.freshness` is `fresh`, `stale` or `unknown`; when `unknown`,
+`age_days` is `null` (and `generated` is `null` when the field is missing).
+`abstained` is `true` in four cases, and `--strict` exits `3` exactly then:
 
 - the diff was empty;
 - deletions were captured but the critical-areas file lists **0 areas** (a zero
   denominator, not a pass);
-- `findings` is empty and an `at_stake` area is not assessed.
+- `findings` is empty and an `at_stake` area is not assessed;
+- `findings` is empty and `map.freshness` is `stale` or `unknown` (#1325).
 
 A critical-areas file with no `areas` list at all is degraded (recording only,
 exit 0), like a missing file.
@@ -451,7 +487,7 @@ don't let it read as green:
     case "$rc" in
       0) echo "katana: no critical area lost its last coverage." ;;
       1) echo "::error title=Last coverage removed::see the step log"; exit 1 ;;
-      3) echo "::warning title=Katana abstained::empty diff, an empty areas list, or a touched area katana cannot assess (see areas.not_assessed)" ;;
+      3) echo "::warning title=Katana abstained::empty diff, an empty areas list, a touched area katana cannot assess (see areas.not_assessed), or a stale or undated critical-areas map (see map)" ;;
       *) echo "::error title=Katana failed::unexpected exit $rc"; exit "$rc" ;;
     esac
 ```

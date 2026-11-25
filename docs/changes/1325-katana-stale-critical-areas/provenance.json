@@ -1,0 +1,36 @@
+{
+  "issues": [1325],
+  "route": "bug",
+  "stages": ["debugging"],
+  "fleet": "roadmap-fleet",
+  "run": "fc1125",
+  "reproducingTest": "agents/skills/test/canary-katana-freshness.test.ts",
+  "reproducingTests": [
+    "agents/skills/test/canary-katana-freshness.test.ts::stale critical-areas map (#1325) > the issue repro: an 85-day-old map warns and --strict abstains with 3",
+    "agents/skills/test/canary-katana-freshness.test.ts::stale critical-areas map (#1325) > the summary line states the map age beside the area denominator",
+    "agents/skills/test/canary-katana-freshness.test.ts::stale critical-areas map (#1325) > exactly the limit is still fresh; one day past it is stale",
+    "agents/skills/test/canary-katana-freshness.test.ts::stale critical-areas map (#1325) > --max-age-days sets the limit",
+    "agents/skills/test/canary-katana-freshness.test.ts::stale critical-areas map (#1325) > a real alarm outranks the abstention: --strict exits 1",
+    "agents/skills/test/canary-katana-freshness.test.ts::stale critical-areas map (#1325) > --json carries the map age and abstains when stale",
+    "agents/skills/test/canary-katana-freshness.test.ts::a map whose freshness cannot be verified (#1325) > %s `generated` warns and --strict abstains with 3",
+    "agents/skills/test/gate-conformance.test.ts::canary-katana (undated critical-areas map) inherits exit 3 under --strict"
+  ],
+  "pins": [
+    "agents/skills/test/canary-katana-freshness.test.ts::stale critical-areas map (#1325) > a fresh map is quiet and --strict exits 0",
+    "agents/skills/test/canary-katana-freshness.test.ts::degraded runs are unchanged (#1325) > no map at all: no freshness line, --strict still exits 0"
+  ],
+  "redAtBase": "npx vitest run canary-katana-freshness (agents/skills) with the three katana scripts reverted to 07256a2c -> Tests 14 failed | 5 passed; the 5 passing are the 4 --max-age-days usage-error rows (an unknown flag already exits 2) and the degraded-run pin. Restored -> 19 passed. Manual repro at base: 85-day-old map, --strict -> '0 deletion(s) captured.' rc=0.",
+  "rootCause": "areas.loadCriticalAreas parsed the map and dropped its `generated` stamp; verdict-text.abstains had no freshness term, so a map of any age produced exit 0 under --strict.",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Threshold is exposed as the CLI flag --max-age-days (int, default 30, must be >= 1). katana has no config file, so the flag is the only config surface it already uses; no new config file was invented.",
+    "Age is whole days, floored; a map exactly at the limit is fresh and one day past it is stale.",
+    "A `generated` more than one day in the future is treated as 'cannot verify freshness'; under a day ahead is clock skew and reads as age 0.",
+    "A real alarm still outranks the stale-map abstention (ADR 0009): stale + finding -> exit 1, matching the existing at-stake abstention rule.",
+    "No/unparseable `generated` warns and, under --strict, abstains like a stale map (the recommended option). This changed the exit of five existing --strict tests whose hand-written fixtures had no `generated` (proximity suite) or relied on the wall clock (canary-katana.test.ts). Those were incidental fixtures, not a contract that an undated map is fine; they now carry a fresh stamp and a frozen clock, and their assertions are unchanged.",
+    "Degraded runs (no map, malformed map) have no freshness to check and are unchanged: still exit 0 under --strict.",
+    "The base-ancestor check (option b) was declined and is not implemented.",
+    "The clock is injected via main(argv, { now }) (the canary-cry pattern); no --now flag was added.",
+    "dogfood.yml runs katana without --critical-areas (degraded), so its exit-3 notice text was left alone."
+  ]
+}

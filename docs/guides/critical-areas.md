@@ -24,6 +24,10 @@ canary critical-areas --coverage reports/lcov.info
   found. A relative path resolves against the current directory.
 
 Katana has no default path for this file, so pass it with `--critical-areas`.
+Katana also reads the file's `generated` stamp: a map older than its
+`--max-age-days` (default 30) is reported as stale, and a map without a usable
+stamp as unverifiable. Under `--strict` either makes a run with no alarm exit
+`3` (abstained), so regenerate the map on a schedule shorter than that limit.
 
 ## Score
 

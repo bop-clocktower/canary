@@ -14,6 +14,19 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **canary-katana: a stale critical-areas map no longer reads as a clean run
+  (#1325).** katana scored every diff against `critical-areas.json` however old
+  it was, so a map written months ago reported `0 findings` under `--strict` and
+  exited `0` while new areas could never alarm. katana now reads the map's
+  `generated` stamp and states the map's age next to the area denominator. A map
+  older than `--max-age-days` (default 30) prints a stale warning. A map with no
+  usable `generated` prints "cannot verify freshness". Under `--strict` either
+  one exits `3` (abstained) instead of `0` when nothing alarmed; a real alarm
+  still exits `1`. `--json` gains a `map` object (`generated`, `age_days`,
+  `max_age_days`, `freshness`). Runs without a map are unchanged.
+
 ## [9.8.0] - 2026-11-25
 
 ### Added
