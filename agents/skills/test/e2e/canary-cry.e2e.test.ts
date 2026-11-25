@@ -13,6 +13,8 @@
  * - SC14 a stale selector before the abuse point -> `abstain: flow-broken@`
  * - SC25 shared-machine names `account.A.email` as a cross-account leak, and
  *        no run artifact contains an account value
+ * - #1720 token-expiry: the fixed shop refusing the unauthenticated write is
+ *        `clean`; the buggy one half-completing the checkout is `corrupted`
  * plus every one of the six patterns runs to a verdict at intensity 1.
  */
 import { execFile } from 'node:child_process';
@@ -101,12 +103,12 @@ function logoutFlow(): any {
   };
 }
 
-const countProbe = (id: string, table: string): any => ({
+const countProbe = (id: string, table: string, delta = 1): any => ({
   id,
   probe: {
     http: { method: 'GET', path: `/api/${table}?user={{account.A.id}}` },
   },
-  expect: { jsonPath: '$.length', delta: 1 },
+  expect: { jsonPath: '$.length', delta },
 });
 
 function checkoutSteps(cardSelector: string): any[] {
@@ -149,6 +151,8 @@ function flowsDoc(cardSelector = '[name=card]'): any {
         invariants: [
           countProbe('one-order', 'orders'),
           countProbe('one-address', 'addresses'),
+          // Address + order: 2 per checkout, so half a checkout is visible.
+          countProbe('one-checkout', 'checkout', 2),
         ],
         symptoms: { selectors: ['.error-banner'] },
       },
@@ -367,6 +371,8 @@ async function roundOne(variant: 'buggy' | 'fixed') {
   return { dir, doc: findingsIn(dir) };
 }
 
+const TOKEN_EXPIRY = 'checkout:token-expiry:i1:saddress';
+
 describe('all six patterns at intensity 1, and the shared machine (SC25)', () => {
   let buggy: any;
 
@@ -399,6 +405,14 @@ describe('all six patterns at intensity 1, and the shared machine (SC25)', () =>
     expect(byId(buggy.doc, id).verdict).toBe('corrupted');
   });
 
+  it('catches the half-completed checkout an expired session leaves (#1720)', () => {
+    const expiry = byId(buggy.doc, TOKEN_EXPIRY);
+    expect(expiry.verdict).toBe('corrupted');
+    expect(expiry.fingerprints).toEqual(['checkout:token-expiry:one-checkout']);
+    const whole = expiry.invariants.find((i: any) => i.id === 'one-checkout');
+    expect(whole.after - whole.before).toBe(1);
+  });
+
   it('names account.A.email as a cross-account leak, never its value', () => {
     const shared = byId(buggy.doc, 'checkout:shared-machine:i1:spay');
     expect(shared.verdict).toBe('symptom');
@@ -416,6 +430,11 @@ describe('all six patterns at intensity 1, and the shared machine (SC25)', () =>
     const fixed = await roundOne('fixed');
     const shared = byId(fixed.doc, 'checkout:shared-machine:i1:spay');
     expect(shared.verdict).toBe('clean');
+    // #1720: a refused unauthenticated write is clean, not corrupted.
+    const expiry = byId(fixed.doc, TOKEN_EXPIRY);
+    expect(expiry.verdict).toBe('clean');
+    const whole = expiry.invariants.find((i: any) => i.id === 'one-checkout');
+    expect(whole.after - whole.before).toBe(0);
     for (const id of [
       'checkout:duplicate-tab:i1:spay',
       'checkout:duplicate-tab:i1:saddress',
