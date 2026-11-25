@@ -241,13 +241,13 @@ pass covers the Playwright reporter, `canary testtracker push`, and the
 ## What it sends besides results
 
 - **`collected`** — every test Playwright collected, whether or not it ran
-  (`full_title`, `test_file`, `tags`, `area`). It is the denominator that lets
-  the dashboard tell "not covered" from "did not run" (#1150). An empty suite
-  sends `collected: []`, a real measured zero. A catalog from a partial run
-  would shrink the suite's denominator, so it is **left out (and the log says
-  why)** when the run is a shard, uses `--grep`/`--grep-invert`, or skipped any
-  configured project. Push from `merge-reports` to get a catalog for a sharded
-  suite. Playwright does not tell a reporter about `--last-failed` or
+  (`full_title`, `test_file`, `tags`, `area`, `features`). It is the denominator
+  that lets the dashboard tell "not covered" from "did not run" (#1150). An
+  empty suite sends `collected: []`, a real measured zero. A catalog from a
+  partial run would shrink the suite's denominator, so it is **left out (and the
+  log says why)** when the run is a shard, uses `--grep`/`--grep-invert`, or
+  skipped any configured project. Push from `merge-reports` to get a catalog for
+  a sharded suite. Playwright does not tell a reporter about `--last-failed` or
   `--only-changed`: set `CANARY_INGEST_COLLECTED=false` on jobs that use them.
   If the dashboard's `collected_count` differs from what was sent, the reporter
   prints a warning.
@@ -633,6 +633,9 @@ Validate a file with
   reporter's Playwright hooks and the public exports.
 - [`ingest/config.ts`](../../npm/src/reporters/ingest/config.ts) — options, env
   resolution (with legacy aliases) and area mapping.
+- [`ingest/entry/`](../../npm/src/reporters/ingest/entry/) — the glob rules
+  `areaMap` and `featureMap` share (`globs.ts`), feature resolution and the one
+  merge rule for features (`features.ts`), and result dedupe (`merge.ts`).
 - [`ingest/payload.ts`](../../npm/src/reporters/ingest/payload.ts) — the wire
   payload, status mapping, dedupe and the size budget.
 - [`ingest/describe.ts`](../../npm/src/reporters/ingest/describe.ts) — per-test
@@ -642,7 +645,8 @@ Validate a file with
 - [`ingest/junit.ts`](../../npm/src/reporters/ingest/junit.ts) — JUnit XML to
   result rows.
 - [`npm/src/testtracker.ts`](../../npm/src/testtracker.ts) —
-  `canary testtracker push`.
+  `canary testtracker push` (`--features-map` reading in
+  [`testtracker-features.ts`](../../npm/src/testtracker-features.ts)).
 
 ## Convergence
 
