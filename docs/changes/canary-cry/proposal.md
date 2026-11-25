@@ -384,6 +384,71 @@ is tested against them.
   `--resume <run-id> --confirm <sha>` re-verifies the sha against the rebuilt
   manifest (mismatch → exit 4) and skips completed ids. `--max-wall <duration>`
   elapsing → checkpoint, then `PARTIAL: n/m — resume with --resume <run-id>`.
+- **As shipped in P4:**
+  - `run` executes all three amplitudes; P3's exit 2 for `shout` and `scream`,
+    and the executor's refusal of rounds above i1, are gone. All six patterns
+    run at i1, i2 and i3 as the catalog table words them (`runtime/abuse.mjs`;
+    what they do to the network, history and session keys is
+    `runtime/tamper.mjs`).
+  - The decision logic is two pure modules, wired into the executor by the round
+    loop `scripts/rounds.mjs`: `convergence.mjs` (`planRounds`, `decideRound`,
+    `fingerprint`) and `checkpoint.mjs` (the checkpoint document, `--max-wall`,
+    `planResume`). The loop asks `decideRound` what runs next, runs one scenario
+    at a time, and stops on the first of: the budget spent, convergence, the
+    ceiling, the wall, or a crash. It is unit-tested with injected verdict
+    sequences and an injected clock.
+  - Each scenario is its own `playwright test` run, selecting exactly its spec
+    (an escaped, anchored file argument), with its report in
+    `results/<scenario>.json` (`CANARY_CRY_RESULTS` in the generated config; a
+    standalone replay still writes `results.json`). That is what lets a
+    checkpoint follow every scenario and the wall stop between them; it costs
+    about a second of Playwright start-up per scenario. `results.json` is the
+    reports merged in run order, for canary-test-reporter.
+  - Convergence reads a thin adapter (`toResult`) over each observation:
+    `abstain: <reason>` verdicts, and fingerprints built with convergence's own
+    `fingerprint` from the breached invariants and signal kinds, mirroring the
+    verdict ladder. `findings.json` keeps the runtime's fingerprints.
+  - Scream prints `converged after round <n>`, or
+    `not converged: stopped at the intensity ceiling after round 3`.
+    `findings.json` gains `stop` (`budget`, `converged`, `ceiling`, `partial`,
+    `crashed`, with its line) and `rounds`, and lists the scenarios that ran;
+    the manifest still lists every round, the worst case the sha covers.
+  - Exit code for a `--max-wall` stop: `PARTIAL` is advisory (0) by default and
+    **3 under `--strict`**, the code for a run that did not cover its budget,
+    because cannot-verify is never a pass; a `corrupted` scenario it already
+    proved still exits 1, which now outranks 3 for any stop (`exitCode` moved
+    from `verdict.mjs` to `findings.mjs`: it judges a run). `findings.json` is
+    written for a `PARTIAL` run, `"status": "partial"`.
+  - `run --resume <run-id> --confirm <sha>` takes only the target, amplitude and
+    seed from the run's `manifest.json`, rebuilds the manifest from the files
+    through the same gate, and hands `planResume` the rebuilt sha: mismatch with
+    `--confirm` or with the checkpoint's sha is exit 4, an unknown or malformed
+    run-id, a damaged or untrustworthy checkpoint, a damaged `manifest.json`,
+    `--live` alongside, or no `--confirm` are exit 2. The one core change:
+    `checkpoint.mjs` exports `isRunId`, so the CLI refuses a malformed id before
+    using it as a path (planResume still checks it too). A resume reaches the
+    executor through the same single lazy import as a fresh confirm.
+  - `mayRefuse` is per intensity in the catalog (#1720 follow-up):
+    `abandon-midflow` i3 closes the context and never re-enters, so no app can
+    complete the flow, and it is the one intensity besides `token-expiry`'s
+    three that may pass on a refusal. No verdict code names a pattern.
+  - Known limit: `mayRefuse` accepts nothing or a whole completion. An invariant
+    spanning several writes therefore reads a flow cut between them as a partial
+    write and `corrupted`, even on a correct app: `token-expiry` i2 (the session
+    goes after the first write) and `abandon-midflow` i3. The cry-e2e fixture's
+    whole-checkout invariant shows it; SKILL.md recommends one invariant per
+    write where a partial flow is legitimate.
+  - The runtime also stopped two of its own artifacts from reading as app
+    behavior: `route.fetch()` stored a response's `Set-Cookie` before the client
+    saw it, so a fake 500 or a drop still handed the browser a cookie it never
+    received (the jar is now restored, `fetchUnseen`); and a fake 500 carries a
+    marker header, so it is never the app's `http-5xx` signal. Settling now
+    waits for 250 ms with nothing in flight, so a page handler that runs after
+    the last response is seen by the symptom read.
+  - The fixture's fixed shop was hardened to stay correct at i2 and i3 (the cart
+    id stays stable under racing tabs, its sign-in form clears, and it survives
+    a dropped request), and the cry-e2e suite proves SC17 and SC18 in real
+    Chromium.
 
 ### Failure modes
 
@@ -447,6 +512,7 @@ agents/skills/claude-code/canary-cry/
   scripts/{schema,schema-core,schema-targets,patterns,matrix}.mjs   # P1
   scripts/{manifest,gate,codegen,verdict,report}.mjs                # P2–P5
   scripts/runtime/cry-runtime.mjs                                   # P3
+  scripts/{rounds,convergence,checkpoint,runs}.mjs                  # P4
   scripts/flows.example.json
   scripts/targets.example.json
 agents/skills/test/canary-cry-*.test.ts
@@ -473,6 +539,9 @@ Module map, as shipped:
     the target refusal, the manifest and its sha.
   - [render.mjs](../../../agents/skills/claude-code/canary-cry/scripts/render.mjs):
     all text output.
+  - [runs.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runs.mjs):
+    `run`'s argument rules, a new run dir, and a run read back for `--resume`
+    (P4).
 - The executor, loaded by one lazy `import()` after the sha matches:
   - [execute.mjs](../../../agents/skills/claude-code/canary-cry/scripts/execute.mjs):
     orchestrates a confirmed run.
@@ -487,19 +556,28 @@ Module map, as shipped:
     and
     [findings.mjs](../../../agents/skills/claude-code/canary-cry/scripts/findings.mjs):
     the per-scenario verdicts and `findings.json`.
+  - [rounds.mjs](../../../agents/skills/claude-code/canary-cry/scripts/rounds.mjs):
+    the round loop (P4), one scenario at a time, checkpointing after each.
+  - [convergence.mjs](../../../agents/skills/claude-code/canary-cry/scripts/convergence.mjs):
+    rounds, barren rounds and convergence, pure (P4).
+- Shared by both halves, pure:
+  - [checkpoint.mjs](../../../agents/skills/claude-code/canary-cry/scripts/checkpoint.mjs):
+    the checkpoint document, `--max-wall` and resume planning (P4).
 - The runtime, copied into every run dir and loaded by the generated specs:
   - [cry-runtime.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/cry-runtime.mjs):
     the entry point.
   - [session.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/session.mjs):
     accounts, sign-in, and the cross-account leak check.
   - [abuse.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/abuse.mjs):
-    the six patterns.
+    the six patterns, at intensities 1 to 3.
   - [steps.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/steps.mjs):
     flow steps.
   - [guard.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/guard.mjs):
     the egress lockdown and the UI signals.
   - [probes.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/probes.mjs):
     the state probes.
+  - [tamper.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/tamper.mjs):
+    what a pattern does to the network, the history and the session keys (P4).
 
 ## Integration Points
 

@@ -12,9 +12,12 @@ description:
   patterns, cut to a whisper, shout or scream budget) with no network and no
   agent; `run --live` gates a target (non-prod only, no override) and prints the
   hash-bound manifest, and `run --live --confirm <sha>` generates one Playwright
-  spec per scenario, runs it on the target project's own Playwright and reports
-  each scenario corrupted, symptom, clean or abstain with how it knows. NOT
-  input fuzzing and NOT targeted bug pursuit (that is canary-huntress).
+  spec per scenario, runs it on the target project's own Playwright round by
+  round (scream stops once two rounds find nothing new), checkpoints after every
+  scenario, stops loudly at an optional `--max-wall` and picks up again with
+  `run --resume <run-id> --confirm <sha>`, and reports each scenario corrupted,
+  symptom, clean or abstain with how it knows. NOT input fuzzing and NOT
+  targeted bug pursuit (that is canary-huntress).
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -53,6 +56,9 @@ canary skills run canary-cry -- validate
 canary skills run canary-cry -- matrix --amplitude whisper
 canary skills run canary-cry -- matrix --target staging --amplitude shout --json
 canary skills run canary-cry -- run --live staging
+canary skills run canary-cry -- run --live staging --amplitude scream --max-wall 2h
+canary skills run canary-cry -- run --live staging --amplitude scream --max-wall 2h --confirm <sha>
+canary skills run canary-cry -- run --resume <run-id> --confirm <sha>
 ```
 
 Start from the examples in this skill:
@@ -80,14 +86,15 @@ it later; the human confirms it, and the engine reads only the file.
   writes invalidates its own before/after comparison.
 - `delta` is `after - before` for **one** completion of the flow, and `equals`
   is the value after it. For most patterns an invariant passes only on exactly
-  that. A pattern marked **May refuse** in the pattern table (`token-expiry`,
-  which clears the session before the write) is one a correct app answers by
-  refusing the flow, so it also passes on a clean refusal: `delta: n` passes
-  when the change is `0` or `n`, and `equals: v` when the after-value is `v` or
-  is unchanged from the before-value. A partial write (between `0` and `n`) or a
-  double write (`2n`) is still `corrupted`. A refusal is read from the account's
-  state only: a write the app files as a guest's, never under the account,
-  counts as refused.
+  that. A pattern intensity marked **May refuse** in the pattern table
+  (`token-expiry`, which clears the session before a write, at every intensity;
+  `abandon-midflow` at i3, which closes the browser context and never comes
+  back) is one where a correct app cannot complete the flow, so it also passes
+  on a clean refusal: `delta: n` passes when the change is `0` or `n`, and
+  `equals: v` when the after-value is `v` or is unchanged from the before-value.
+  A partial write (between `0` and `n`) or a double write (`2n`) is still
+  `corrupted`. A refusal is read from the account's state only: a write the app
+  files as a guest's, never under the account, counts as refused.
 - Template values: `{{account.<K>.<field>}}`, `{{fixture.<name>}}` (from the
   top-level `fixtures` map) and `{{unique.<kind>}}`.
 - Ids are lowercase letters, digits and `-`. A `:` is never legal: it separates
@@ -163,13 +170,16 @@ catalog, ranked and cut to a budget.
 | `scream`  | all flows   | all      | i1, i2, i3         |
 
 `scream` lists every round up to the ceiling. Stopping early after two barren
-rounds is a property of a live run, not of the matrix.
+rounds is a property of a live run (see [Rounds](#rounds-and-convergence)), not
+of the matrix.
 
 ## `run`
 
 ```text
-canary-cry run --live NAME [--flows PATH] [--targets PATH] [--seed N]
-               [--confirm SHA] [--strict]
+canary-cry run --live NAME [--flows PATH] [--targets PATH] [--amplitude A]
+               [--seed N] [--confirm SHA] [--max-wall D] [--strict]
+canary-cry run --resume RUN_ID --confirm SHA [--flows PATH] [--targets PATH]
+               [--max-wall D] [--strict]
 ```
 
 The two-step gate in front of any live run
@@ -199,19 +209,22 @@ Checks run in this order, and each one stops the run:
 Without `--confirm`, `run --live` writes `manifest.json` to
 `runs/<UTC stamp>-<sha8>/` beside the flows file (`.canary/cry/runs/` by
 default), prints the manifest and its `manifest-sha`, and sends **no request**
-to the target. The manifest lists every scheduled scenario, the flows it drives
-in full (plus the target's sign-in and sign-out flows), the fixtures, every
-write step, every probe **verbatim** (a shell probe's argv included), the egress
-hosts, the account env var **names**, the amplitude and seed, and the
-server-side limit line. `manifest-sha` is the sha256 of its sorted-key JSON.
+to the target. The manifest lists every scheduled scenario of every round (the
+worst case: a scream that converges early still confirmed its last round), the
+flows it drives in full (plus the target's sign-in and sign-out flows), the
+fixtures, every write step, every probe **verbatim** (a shell probe's argv
+included), the egress hosts, the account env var **names**, the amplitude and
+seed, and the server-side limit line. `manifest-sha` is the sha256 of its
+sorted-key JSON.
 
 With `--confirm SHA`, the manifest is **rebuilt from the files** (never read
 back from the run dir) and its sha compared. A mismatch is exit 4: something
 that would run has changed since the manifest was read, so re-run without
 `--confirm` and read the new one.
 
-`run` executes `--amplitude whisper` only for now; `shout` and `scream` exit 2
-`not yet supported` (the `matrix` command accepts all three).
+`--max-wall D` is checked first: a malformed duration is exit 2 before anything
+is read or written. It is hours, minutes and seconds in that order, each at most
+once, integers only, above zero: `90s`, `30m`, `2h`, `1h30m`.
 
 ### A confirmed run
 
@@ -228,12 +241,14 @@ go on:
    `ABSTAINED: target unreachable` with the cause, and no scenario runs.
 4. The run dir gets `playwright.config.mjs` (one worker, no retries, the JSON
    reporter, no trace, screenshot or video), one `specs/<scenario>.spec.mjs` per
-   scenario, and a copy of the runtime. Then the target's `playwright test`
-   runs.
-5. No `results.json` afterwards is `ABSTAINED: playwright crashed`, with the
-   last 20 lines of its stderr.
-6. `findings.json` and the verdict text, ranked corrupted, symptom, abstain,
-   clean, then by score.
+   scenario, and a copy of the runtime.
+5. The rounds run (see below), **one `playwright test` per scenario**, each
+   selecting exactly its own spec and writing its own report to
+   `results/<scenario>.json`. `checkpoint.json` is rewritten after every one. A
+   scenario that leaves no report is `ABSTAINED: playwright crashed`, with the
+   last 20 lines of its stderr; the run stops there and keeps what completed.
+6. `results.json` (the scenarios' reports merged), `findings.json` and the
+   verdict text, ranked corrupted, symptom, abstain, clean, then by score.
 
 Per scenario, the runtime:
 
@@ -245,8 +260,9 @@ Per scenario, the runtime:
 - runs the flow with the pattern injected, in a context whose every request to a
   host outside the target's `hosts` (and its `baseURL` host) is **aborted and
   recorded**;
-- waits for in-flight requests to settle, reads the declared symptom selectors,
-  and takes the **after** probes;
+- waits until nothing has been in flight for 250 ms (so the page's own handler
+  for the last response has run), reads the declared symptom selectors, and
+  takes the **after** probes;
 - judges the verdict and writes `observations/<scenario>.json`. A corrupted
   scenario also fails its Playwright test, so the spec is a regression test as
   well as the repro.
@@ -263,6 +279,63 @@ npx playwright test -c playwright.config.mjs specs/<scenario>.spec.mjs
 
 The spec, the runtime copy and the seed are the whole repro. The same scenario
 types the same `{{unique.*}}` data on every run.
+
+### Rounds and convergence
+
+A run goes round by round, one intensity per round, ascending, never above the
+ceiling of 3. A round runs all its scenarios before the next round starts.
+
+- `whisper` runs i1 and `shout` runs i1 then i2: their whole budget, with no
+  convergence claim.
+- `scream` runs i1, i2, i3 and stops early after **two consecutive barren
+  rounds**, printing:
+
+  ```text
+  converged after round 2
+  ```
+
+  A round is **barren** when it adds no fingerprint unseen in an earlier round.
+  The fingerprint leaves out intensity and step, so the same breach found again
+  at a higher intensity is not new. A round in which every scenario abstained is
+  not barren: it measured nothing, and it breaks the streak. A scream that
+  reaches i3 without converging says
+  `not converged: stopped at the intensity ceiling after round 3`.
+
+### Checkpoints, `--max-wall` and `--resume`
+
+`checkpoint.json` (`canary.cry-checkpoint/1`) is rewritten in the run dir before
+the first scenario and after **every** scenario: the run id, the manifest-sha,
+the scenario count, and one `{id, verdict, fingerprints}` result per completed
+scenario. It holds no account value.
+
+`--max-wall D` is checked before each scenario. Once `D` has elapsed, the run
+checkpoints, writes `findings.json` with `"status": "partial"` for the scenarios
+that completed, and prints:
+
+```text
+PARTIAL: 2/6 — resume with --resume 20261125T143333Z-0123abcd
+```
+
+`n/m` is completed scenarios over the manifest's whole budget. A scenario that
+has started always finishes, so a run can overshoot `D` by one scenario.
+
+`run --resume RUN_ID --confirm SHA` picks the run back up in its own run dir. It
+reads only the target, amplitude and seed from the run's `manifest.json`,
+**rebuilds the manifest from the files** with them, and goes through the same
+gate as a fresh run. Then:
+
+- `--confirm` must equal the rebuilt manifest's sha, and that sha must equal the
+  one the checkpoint was written for. Either mismatch is exit 4 and nothing is
+  sent: something that would run changed since the run started (a flows, targets
+  or probe edit), so start a new run.
+- The completed ids are skipped and convergence continues from the checkpoint's
+  results, as if the run had never stopped. A resume can stop `PARTIAL` again
+  under its own `--max-wall`.
+- An unknown or malformed run-id, a damaged `checkpoint.json` or
+  `manifest.json`, and a checkpoint that cannot be trusted (a result that is
+  malformed, repeated, or not a scenario of the rebuilt matrix, which would
+  silently skip a scenario that never ran) are exit 2. So is `--live` alongside
+  `--resume`, or a missing `--confirm`.
 
 ### Verdicts
 
@@ -292,13 +365,16 @@ pass: `--strict` exits 3. Under `--strict` one `corrupted` exits 1, and a
 ### `findings.json`
 
 `"format": "canary.cry-findings/1"`: the run (`id`, `target`, `environment`,
-`baseURL`, `amplitude`, `seed`, `manifestSha`), `status` and `reason`, `counts`
-per verdict, and one entry per scheduled scenario with its verdict, fidelity,
-reason, fingerprints, each invariant's `before` / `after` values, its signals,
-the egress hosts it blocked, and `repro` paths (the spec and the observation).
-The run-wide `fingerprints` and `blockedEgress` lists are unique and sorted.
-Playwright's own `results.json` stays beside it, readable unchanged by
-canary-test-reporter.
+`baseURL`, `amplitude`, `seed`, `manifestSha`), `status` (`ok`, `abstained`, or
+`partial` after a `--max-wall` stop) and `reason`, `counts` per verdict, `stop`
+(how the rounds ended: `budget`, `converged`, `ceiling`, `partial` or `crashed`,
+with the line it printed), `rounds` (each completed round's intensity, its new
+fingerprints, and whether it was barren), and one entry per scenario that ran
+with its verdict, fidelity, reason, fingerprints, each invariant's `before` /
+`after` values, its signals, the egress hosts it blocked, and `repro` paths (the
+spec and the observation). The run-wide `fingerprints` and `blockedEgress` lists
+are unique and sorted. Playwright's own `results.json` stays beside it, readable
+unchanged by canary-test-reporter.
 
 ## Abuse patterns
 
@@ -313,21 +389,31 @@ canary-test-reporter.
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                                                                                                       |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Success. Advisory by default: an abstained matrix or run, and any verdict, still exit 0 without `--strict`. Under `--strict`, a run with no `corrupted` scenario (a `symptom` never fails it).                                |
-| `1`  | `--strict` and at least one scenario `corrupted` (state-verified). Also an unexpected exception: a crash, not a finding. Giving the crash its own code is [issue 1716](https://github.com/bop-clocktower/canary/issues/1716). |
-| `2`  | Usage or input error: an unknown flag or command, `report` or a not-yet-runnable amplitude or intensity (not yet supported), a file not found or not valid JSON, a schema error, or an unset or non-object account env var.   |
-| `3`  | `--strict` and the matrix or the run abstained: zero scenarios, no `@playwright/test` in the target, the target unreachable, Playwright crashed, or every scenario abstained.                                                 |
-| `4`  | Refused by a safety gate (ADR 0046): an unlisted target, a disallowed environment, a `prodHosts` match, or a `manifest-sha` mismatch. Exit 4 means nothing else.                                                              |
+| Code | Meaning                                                                                                                                                                                                                                                                                                                   |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success. Advisory by default: an abstained or `PARTIAL` matrix or run, and any verdict, still exit 0 without `--strict`. Under `--strict`, a run that ran its budget with no `corrupted` scenario (a `symptom` never fails it).                                                                                           |
+| `1`  | `--strict` and at least one scenario `corrupted` (state-verified), however the run ended: a corruption found before a `PARTIAL` stop or a crash still exits 1. Also an unexpected exception: a crash, not a finding. Giving the crash its own code is [issue 1716](https://github.com/bop-clocktower/canary/issues/1716). |
+| `2`  | Usage or input error: an unknown flag or command, `report` (not yet supported), a malformed `--max-wall`, a file not found or not valid JSON, a schema error, an unset or non-object account env var, or a `--resume` of an unknown or malformed run-id, or of a damaged or untrustworthy checkpoint.                     |
+| `3`  | `--strict` and the matrix or the run did not cover its budget: zero scenarios, no `@playwright/test` in the target, the target unreachable, Playwright crashed, every scenario abstained, or a `--max-wall` stop (`PARTIAL`). Cannot-verify is never a pass.                                                              |
+| `4`  | Refused by a safety gate (ADR 0046): an unlisted target, a disallowed environment, a `prodHosts` match, or a `manifest-sha` mismatch, including a `--resume` whose rebuilt manifest differs from the one the run started with. Exit 4 means nothing else.                                                                 |
 
 ## Limits in this phase
 
-- `run` executes `whisper` only, so it schedules only the two core patterns
-  (`multi-submit`, `abandon-midflow`). All six patterns are implemented at
-  intensity 1, and the cry-e2e suite runs each of them, but the other four are
-  reachable from `run` once `shout` and `scream` can run (a later phase), with
-  their rounds and convergence.
+- An invariant that spans several writes (an order plus its address) reads a
+  flow cut between them as a partial write, so it is `corrupted` even when a
+  correct app cut it there: `token-expiry` i2 clears the session after the first
+  write, and a correct app keeps that write and refuses the rest;
+  `abandon-midflow` i3 closes the context after a write and never returns. That
+  is a real finding only if the flow must be atomic. **May refuse** accepts
+  nothing or a whole completion, never a part, so declare one invariant per
+  write when a partial flow is legitimate.
+- A run launches Playwright once per scenario (so it can checkpoint and stop
+  between them), which costs about a second of start-up each. `--max-wall` is
+  checked between scenarios, so a run can overshoot it by one scenario. A run
+  killed mid-scenario re-runs that scenario on resume, on top of whatever it
+  already wrote: its delta reads the second attempt only.
+- A resume needs the same flows, targets and probes: any change to what would
+  run is exit 4, by design. Start a new run instead.
 - No `report` command yet; `findings.json` and the run's text are the output.
 - A cross-account leak compares only account A's values of 3 or more characters
   that B does not share; a shorter or shared value would match by accident.
