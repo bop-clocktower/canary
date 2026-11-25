@@ -20,6 +20,7 @@ import {
   resolveArea,
   resolveConfig,
 } from './reporters/ingest/config.js';
+import { resolveFeatures } from './reporters/ingest/entry/features.js';
 import type { ResolvedConfig } from './reporters/ingest/config.js';
 import { relativeFile } from './reporters/ingest/describe.js';
 import {
@@ -37,6 +38,11 @@ import {
 import { quarantineResults } from './reporters/ingest/quarantine.js';
 import { errText, push, warn } from './reporters/ingest/transport.js';
 import { runPushPerf } from './testtracker-perf.js';
+import {
+  isEnvFeatureMapWarning,
+  readFeaturesMap,
+} from './testtracker-features.js';
+import { USAGE } from './testtracker-usage.js';
 
 interface Writer {
   write(s: string): unknown;
@@ -50,43 +56,6 @@ export interface TesttrackerDeps {
   retryDelaysMs?: number[];
 }
 
-const USAGE = `usage: canary testtracker push --junit <file…> --suite <name> [options]
-       canary testtracker push-perf --k6-summary <file> --client <slug> --suite <slug> --env <env>   (k6; see push-perf --help)
-
-Push JUnit XML test reports to a TestTracker /api/ingest endpoint, with the
-same payload, retry and size budget as the Playwright reporter.
-
-  --junit <file…>    one or more JUnit XML reports (repeatable)
-  --suite <name>     dashboard suite (else CANARY_INGEST_SUITE)
-  --workflow <label> workflow label (else CANARY_INGEST_WORKFLOW, default "junit")
-  --no-collected     do not send the catalog; use when the reports are a
-                     subset of the suite (a shard, a name filter)
-  --strict-budget    refuse to push (exit 1, nothing sent) when fitting the
-                     payload under the 4 MB budget would drop the catalog or
-                     still leave it over budget; on by default when CI is set
-  --no-strict-budget push a degraded payload anyway, even under CI
-  --quarantine-ledger <path>
-                     canary-katana ledger: tag each skipped result with a
-                     matching (file, test) row "quarantined" and
-                     "quarantine:<issue>", and name rows that matched nothing
-                     (else CANARY_INGEST_QUARANTINE_LEDGER); a missing or
-                     unreadable ledger exits 1 with nothing pushed
-  --dry-run          print the payload instead of pushing
-  -h, --help         show this help
-
-Environment: CANARY_INGEST_URL and CANARY_INGEST_TOKEN (required to push),
-CANARY_INGEST_ENVIRONMENT, CANARY_INGEST_AREA_MAP, CANARY_INGEST_TEST_FILE_PREFIX.
-
-Producing a report:
-  vitest     vitest run --reporter=junit --outputFile=junit.xml
-  node       node --test --test-reporter=junit --test-reporter-destination=junit.xml
-  newman     newman run collection.json -r junit --reporter-junit-export junit.xml
-  maestro    maestro test flows/ --format junit --output junit.xml
-
-Exit: 0 pushed, 1 unreadable report or ledger, push not ingested, or refused by the
-strict budget (nothing pushed), 2 usage, 3 abstained (a report holds zero
-testcases; nothing pushed).
-`;
 
 interface PushArgs {
   junit: string[];
@@ -97,6 +66,8 @@ interface PushArgs {
   /** Unset = the CI default (`isCi`); a flag always wins. */
   strictBudget?: boolean;
   quarantineLedger?: string;
+  level?: string;
+  featuresMap?: string;
 }
 
 class UsageError extends Error {}
@@ -113,7 +84,10 @@ const FLAGS: Record<
   '--strict-budget': { takes: false, set: (p) => (p.strictBudget = true) },
   '--no-strict-budget': { takes: false, set: (p) => (p.strictBudget = false) },
   '--quarantine-ledger': { takes: true, set: (p, v) => (p.quarantineLedger = v) },
+  '--level': { takes: true, set: (p, v) => (p.level = v) },
+  '--features-map': { takes: true, set: (p, v) => (p.featuresMap = v) },
 };
+
 
 /**
  * `--junit=a.xml` is one file; `--junit a.xml b.xml` takes every following
@@ -177,6 +151,7 @@ function configure(
       workflow: opts.workflow ?? envVar(env, 'workflow') ?? 'junit',
       collected: opts.collected && envVar(env, 'collected') !== 'false',
       quarantineLedger: opts.quarantineLedger,
+      ...(opts.level ? { level: opts.level } : {}),
       ...(deps.retryDelaysMs ? { retryDelaysMs: deps.retryDelaysMs } : {}),
     },
     env,
@@ -196,7 +171,12 @@ function locator(cfg: ResolvedConfig): Locate {
       ? relativeFile(testFile, cfg.testFilePrefix)
       : reportPath;
     const area = resolveArea([], test_file, cfg.areaMap);
-    return { test_file, ...(area ? { area } : {}) };
+    const features = resolveFeatures([], test_file, cfg.featureMap);
+    return {
+      test_file,
+      ...(area ? { area } : {}),
+      ...(features ? { features } : {}),
+    };
   };
 }
 
@@ -216,8 +196,17 @@ async function runPush(
     err.write(`canary testtracker: ${errText(e)}\n\n${USAGE}`);
     return 2;
   }
-  for (const w of cfg.configWarnings) warn(w, env);
+  for (const w of cfg.configWarnings)
+    if (!(opts.featuresMap && isEnvFeatureMapWarning(w))) warn(w, env);
   try {
+    if (opts.featuresMap) {
+      const globWarnings: string[] = [];
+      cfg = {
+        ...cfg,
+        featureMap: readFeaturesMap(opts.featuresMap, globWarnings),
+      };
+      for (const w of globWarnings) warn(w, env);
+    }
     reports = opts.junit.map((f) => readJunitReport(f, locator(cfg)));
   } catch (e) {
     err.write(`canary testtracker: ${errText(e)} Nothing was pushed.\n`);

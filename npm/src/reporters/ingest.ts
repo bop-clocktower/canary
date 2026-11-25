@@ -1,3 +1,4 @@
+import { mergeCatalogEntry, resolveFeatures } from "./ingest/entry/features.js";
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from "@playwright/test/reporter";
 import { envVar, resolveConfig, resolveArea, shouldPush } from "./ingest/config.js";
 import { runTiming, buildPayload, fitPayload, resolveTestStatus, errorField, MAX_ERROR_MESSAGE, MAX_ERROR_STACK, mapStatus, runStatus, dedupeByFullTitle } from "./ingest/payload.js";
@@ -17,7 +18,7 @@ try {
 }
 
 /** The public surface consumers import from `canary-test-cli/reporter`. */
-export { redactText, redactTitle, resolveConfig, resolveArea, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs, toRunRecord, runFilePath };
+export { redactText, redactTitle, resolveConfig, resolveArea, resolveFeatures, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs, toRunRecord, runFilePath };
 export type { IngestReporterOptions, TitleFormat, TestTrackerReporterOptions, ResolvedConfig } from "./ingest/config.js";
 export type { ResultEntry, CollectedEntry, IngestPayload, Shard } from "./ingest/payload.js";
 export type { IngestResponse } from "./ingest/transport.js";
@@ -113,12 +114,14 @@ export default class IngestReporter implements Reporter {
       ]),
     ];
     const area = resolveArea(annotations, testFile, cfg.areaMap);
+    const features = resolveFeatures(annotations, testFile, cfg.featureMap);
     return {
       full_title:
         cfg.titleFormat === "clean" ? cleanTitle(test) : test.titlePath().filter(Boolean).join(" > "),
       test_file: testFile,
       tags,
       ...(area ? { area } : {}),
+      ...(features ? { features } : {}),
     };
   }
 
@@ -140,7 +143,7 @@ export default class IngestReporter implements Reporter {
       for (const test of suite.allTests()) {
         const entry = this.describeTest(test, this.cfg);
         const prior = byTitle.get(entry.full_title);
-        byTitle.set(entry.full_title, prior ? { ...prior, tags: [...new Set([...prior.tags, ...entry.tags])] } : entry);
+        byTitle.set(entry.full_title, prior ? mergeCatalogEntry(prior, entry) : entry);
       }
       return [...byTitle.values()];
     } catch (err) {

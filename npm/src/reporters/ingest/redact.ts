@@ -4,6 +4,7 @@
 // echo what a step typed or saw: emails, passwords, bearer tokens. TestTracker
 // is a management dashboard, so none of that may reach it. Redaction is ON by
 // default; `CANARY_INGEST_REDACT=0` (or `false`) turns it off.
+import { mergeCatalogEntry } from './entry/features.js';
 import type { CollectedEntry, ResultEntry } from './types.js';
 
 /**
@@ -264,7 +265,8 @@ export function redactEntry(
 
 /**
  * Redacts the catalog and collapses titles that now read the same into one
- * entry (tags merged): the dashboard keys the catalog by title too.
+ * entry (tags and features merged, as results are): the dashboard keys the
+ * catalog by title too.
  */
 export function redactCatalog(
   entries: CollectedEntry[],
@@ -278,7 +280,7 @@ export function redactCatalog(
     byTitle.set(
       full_title,
       prior
-        ? { ...prior, tags: [...new Set([...prior.tags, ...tags])] }
+        ? mergeCatalogEntry(prior, { ...c, full_title, tags })
         : { ...c, full_title, tags },
     );
   }
