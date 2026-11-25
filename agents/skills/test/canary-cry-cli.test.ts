@@ -79,23 +79,27 @@ function flowsDoc(): any {
   };
 }
 
+// Split in two so neither factory nests past the arch nestingDepth threshold
+// (4). Each call still returns a fresh copy for the test to mutate.
+function stagingTarget(): any {
+  return {
+    baseURL: 'https://staging.example.test',
+    environment: 'staging',
+    hosts: ['staging.example.test'],
+    accounts: { A: { env: 'CRY_A' }, B: { env: 'CRY_B' } },
+    auth: {
+      signIn: 'login',
+      signOut: 'login',
+      sessionKeys: ['cookie:session'],
+    },
+  };
+}
+
 function targetsDoc(): any {
   return {
     version: 1,
     prodHosts: [],
-    targets: {
-      staging: {
-        baseURL: 'https://staging.example.test',
-        environment: 'staging',
-        hosts: ['staging.example.test'],
-        accounts: { A: { env: 'CRY_A' }, B: { env: 'CRY_B' } },
-        auth: {
-          signIn: 'login',
-          signOut: 'login',
-          sessionKeys: ['cookie:session'],
-        },
-      },
-    },
+    targets: { staging: stagingTarget() },
   };
 }
 

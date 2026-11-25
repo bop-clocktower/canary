@@ -31,45 +31,48 @@ function writeTmp(name: string, body: string): string {
   return file;
 }
 
+// The fixture is assembled from small factories so none nests past the arch
+// nestingDepth threshold (4); every call still builds a fresh copy.
+function checkoutSteps(): any[] {
+  return [
+    { id: 'open', action: 'goto', url: '/cart' },
+    {
+      id: 'card',
+      action: 'fill',
+      selector: '[name=card]',
+      value: '{{fixture.card}}',
+    },
+    {
+      id: 'pay',
+      action: 'click',
+      selector: 'button[type=submit]',
+      writes: true,
+      awaitResponse: 'POST /api/orders',
+    },
+  ];
+}
+
+function oneOrderInvariant(): any {
+  const http = { method: 'GET', path: '/api/orders?u={{account.A.id}}' };
+  return {
+    id: 'one-order',
+    probe: { http },
+    expect: { jsonPath: '$.length', delta: 1 },
+  };
+}
+
 /** A minimal valid flows document; every test mutates a fresh copy. */
 function flowsDoc(): any {
+  const checkout = {
+    id: 'checkout',
+    risk: 5,
+    steps: checkoutSteps(),
+    invariants: [oneOrderInvariant()],
+  };
   return {
     version: 1,
     fixtures: { card: '4242424242424242' },
-    flows: [
-      {
-        id: 'checkout',
-        risk: 5,
-        steps: [
-          { id: 'open', action: 'goto', url: '/cart' },
-          {
-            id: 'card',
-            action: 'fill',
-            selector: '[name=card]',
-            value: '{{fixture.card}}',
-          },
-          {
-            id: 'pay',
-            action: 'click',
-            selector: 'button[type=submit]',
-            writes: true,
-            awaitResponse: 'POST /api/orders',
-          },
-        ],
-        invariants: [
-          {
-            id: 'one-order',
-            probe: {
-              http: {
-                method: 'GET',
-                path: '/api/orders?u={{account.A.id}}',
-              },
-            },
-            expect: { jsonPath: '$.length', delta: 1 },
-          },
-        ],
-      },
-    ],
+    flows: [checkout],
   };
 }
 

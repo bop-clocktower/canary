@@ -10,26 +10,30 @@ import { describe, expect, it } from 'vitest';
 
 import { validateTargets } from '../claude-code/canary-cry/scripts/schema-targets.mjs';
 
+// Split in two so neither factory nests past the arch nestingDepth threshold
+// (4). Each call still returns a fresh copy for the test to mutate.
+function stagingTarget(): any {
+  return {
+    baseURL: 'https://staging.example.test',
+    environment: 'staging',
+    hosts: ['staging.example.test'],
+    accounts: {
+      A: { env: 'CRY_ACCOUNT_A' },
+      B: { env: 'CRY_ACCOUNT_B' },
+    },
+    auth: {
+      signIn: 'login',
+      signOut: 'logout',
+      sessionKeys: ['cookie:session'],
+    },
+  };
+}
+
 function targetsDoc(): any {
   return {
     version: 1,
     prodHosts: ['*.example.com'],
-    targets: {
-      staging: {
-        baseURL: 'https://staging.example.test',
-        environment: 'staging',
-        hosts: ['staging.example.test'],
-        accounts: {
-          A: { env: 'CRY_ACCOUNT_A' },
-          B: { env: 'CRY_ACCOUNT_B' },
-        },
-        auth: {
-          signIn: 'login',
-          signOut: 'logout',
-          sessionKeys: ['cookie:session'],
-        },
-      },
-    },
+    targets: { staging: stagingTarget() },
   };
 }
 
