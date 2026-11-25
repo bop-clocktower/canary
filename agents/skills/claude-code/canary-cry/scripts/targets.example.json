@@ -1,0 +1,21 @@
+{
+  "//": "Example canary-cry targets file. Copy it to .canary/cry/targets.json and edit it. Each account names an environment variable holding a JSON object such as {\"email\": ..., \"password\": ..., \"id\": ...}; the value is read at run time only and never written to any artifact. Any host matching prodHosts is always refused.",
+  "version": 1,
+  "prodHosts": ["*.example.com"],
+  "targets": {
+    "staging": {
+      "baseURL": "https://staging.example.test",
+      "environment": "staging",
+      "hosts": ["staging.example.test"],
+      "accounts": {
+        "A": { "env": "CRY_ACCOUNT_A" },
+        "B": { "env": "CRY_ACCOUNT_B" }
+      },
+      "auth": {
+        "signIn": "login",
+        "signOut": "logout",
+        "sessionKeys": ["cookie:session"]
+      }
+    }
+  }
+}

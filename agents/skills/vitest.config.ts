@@ -1,15 +1,24 @@
 import { defineConfig } from 'vitest/config';
 
+// #608 P3: `CANARY_CRY_E2E=1 npx vitest run` runs ONLY the real-browser
+// canary-cry suite under test/e2e/ (the advisory cry-e2e workflow). It needs
+// a Playwright install this project deliberately does not have, so the
+// default suite never includes it, and it skips the engine and pytest
+// preconditions, which it does not use.
+const CRY_E2E = process.env.CANARY_CRY_E2E === '1';
+
 export default defineConfig({
   test: {
-    include: ['test/*.test.ts'],
+    include: CRY_E2E ? ['test/e2e/*.test.ts'] : ['test/*.test.ts'],
     // #1221: canary-cassandra (and its gate-conformance rows) load the built
     // engine. Fail the run ONCE with "ts/dist missing — run npm run build in
     // ts/" instead of 16 unrelated-looking assertion failures; warn if stale.
     // #1239: the canary-savant pytest-integration tests need a python3 with
     // pytest. Missing locally -> one loud "skipped N" warning and a real skip;
     // missing under CI or CANARY_REQUIRE_PYTEST=1 -> the run fails.
-    globalSetup: ['test/engine-precondition.ts', 'test/pytest-precondition.ts'],
+    globalSetup: CRY_E2E
+      ? []
+      : ['test/engine-precondition.ts', 'test/pytest-precondition.ts'],
     // #760, second half. `ts/vitest.config.ts` raised this to 30s for the same
     // reason; this project was left on the 5s default even though the issue's
     // own follow-up comment recorded seven failures here, not in `ts/`
@@ -57,7 +66,8 @@ export default defineConfig({
     //
     // Same value as `ts/`, derived independently: `ts/`'s severe 39-56s cases
     // exceed this budget, nothing observed in this project does.
-    testTimeout: 30_000,
+    // A real-browser run drives several scenarios per test.
+    testTimeout: CRY_E2E ? 600_000 : 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
@@ -76,6 +86,10 @@ export default defineConfig({
         'claude-code/canary-savant/scripts/**/*.mjs',
         'claude-code/canary-blackhawk/scripts/**/*.mjs',
         'claude-code/canary-cassandra/scripts/**/*.mjs',
+        // Top-level only: scripts/runtime/ drives a live browser and is
+        // proven by the cry-e2e suite (test/e2e/), like canary-misfit's
+        // route fixture below.
+        'claude-code/canary-cry/scripts/*.mjs',
         'claude-code/canary-katana/scripts/**/*.mjs',
         'claude-code/canary-unquarantine/scripts/**/*.mjs',
         // Top-level only (`*.mjs`, not `**`): the ported cli/run_types/

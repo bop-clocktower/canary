@@ -36,6 +36,10 @@ import { main as signalMain } from '../claude-code/canary-signal/scripts/cli.mjs
 import { main as starlingMain } from '../claude-code/canary-starling/scripts/cli.mjs';
 import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
 import { main as unquarantineMain } from '../claude-code/canary-unquarantine/scripts/cli.mjs';
+import { main as cryMainAny } from '../claude-code/canary-cry/scripts/cli.mjs';
+
+// Only a confirmed `run` returns a Promise; these argv never confirm.
+const cryMain = (argv: string[]) => cryMainAny(argv) as number;
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -185,7 +189,54 @@ const ROWS: SkillGateRow[] = [
     run: (base) => run(bardaMain, bardaArgs(base)),
     strict: (base) => run(bardaMain, [...bardaArgs(base), '--strict']),
   },
+  {
+    // flows.json parses and validates but declares no flow, so the matrix
+    // holds zero scenarios. The tempting read is "nothing to attack, the
+    // flows are safe"; in fact nothing was scheduled at all (#608, SC24).
+    command: 'canary-cry matrix (zero scenarios)',
+    forbid: ['scenario(s) over'],
+    run: (base) => run(cryMain, ['matrix', '--flows', emptyFlows(base)]),
+    strict: (base) =>
+      run(cryMain, ['matrix', '--flows', emptyFlows(base), '--strict']),
+  },
+  {
+    // The same empty matrix on the live path (#608 P2): a run that would
+    // drive nothing must not print a manifest an operator could confirm.
+    command: 'canary-cry run --live (zero scenarios)',
+    forbid: ['manifest-sha'],
+    run: (base) => run(cryMain, cryRunArgs(base)),
+    strict: (base) => run(cryMain, [...cryRunArgs(base), '--strict']),
+  },
+  {
+    // A confirmed run that abstained before any scenario (the target was
+    // unreachable): report must not read as a clean sweep (#608 P5).
+    command: 'canary-cry report (zero scenarios ran)',
+    forbid: ['## 1.', 'status: ok'],
+    run: (base) => run(cryMain, cryReportArgs(base)),
+    strict: (base) => run(cryMain, [...cryReportArgs(base), '--strict']),
+  },
 ];
+
+/** `report` over a findings.json whose run abstained with zero scenarios. */
+function cryReportArgs(base: string): string[] {
+  const id = '20261125T143333Z-0123abcd';
+  const dir = path.join(base, 'runs', id);
+  fs.mkdirSync(dir, { recursive: true });
+  const doc = {
+    format: 'canary.cry-findings/1',
+    run: { id, target: 'local', amplitude: 'whisper', seed: 0 },
+    status: 'abstained',
+    reason: 'target unreachable (ECONNREFUSED)',
+    counts: { corrupted: 0, symptom: 0, clean: 0, abstain: 0 },
+    stop: null,
+    rounds: [],
+    scenarios: [],
+    fingerprints: [],
+    blockedEgress: [],
+  };
+  fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify(doc));
+  return ['report', id, '--flows', path.join(base, 'flows.json')];
+}
 
 /** A valid profile plus a results file whose flows no fault ever touched. */
 function misfitArgv(base: string): string[] {
@@ -260,6 +311,36 @@ function emptyDiff(base: string): string {
   const file = path.join(base, 'empty.diff');
   fs.writeFileSync(file, '', 'utf-8');
   return file;
+}
+
+/** A valid flows.json that declares no flow: zero scenarios to schedule. */
+function emptyFlows(base: string): string {
+  const file = path.join(base, 'flows.json');
+  fs.writeFileSync(file, JSON.stringify({ version: 1, flows: [] }));
+  return file;
+}
+
+/** `run --live` over an empty flows file and a non-prod target with no accounts. */
+function cryRunArgs(base: string): string[] {
+  const targets = path.join(base, 'targets.json');
+  const target = {
+    baseURL: 'http://localhost:3000',
+    environment: 'local',
+    hosts: ['localhost'],
+  };
+  fs.writeFileSync(
+    targets,
+    JSON.stringify({ version: 1, prodHosts: [], targets: { local: target } }),
+  );
+  return [
+    'run',
+    '--live',
+    'local',
+    '--flows',
+    emptyFlows(base),
+    '--targets',
+    targets,
+  ];
 }
 
 describe('gate conformance registry -- skill layer (#508)', () => {

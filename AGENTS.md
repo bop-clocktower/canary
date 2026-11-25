@@ -386,6 +386,17 @@ via slash commands.
     classifies candidate / blocked / stale / unlinked / abstain. Needs the
     network (`gh`; Jira only for company.json `jira_projects`). Zero rows read
     or any unreadable tracker abstains, never reads as clear.
+  - `canary-cry` (#608): the pre-launch "try to break it" sweep of ordinary user
+    flows, judged by state corruption. `validate` / `matrix` / `report` are
+    Tier-0 (`report` ranks a run's `findings.json` into `report.md`, a replay
+    command per verdict); `run --live` is the first skill that writes to an
+    external system, behind the confirmed-manifest gate of
+    [ADR 0046](docs/knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md):
+    non-prod only, exit 4 on refusal, and only a human-supplied
+    `--confirm <sha>` loads the executor. The SKILL.md agent layer drafts
+    `flows.json`, pauses for the human at the gate and triages findings with
+    Playwright MCP, and never produces a verdict. See
+    [the spec](docs/changes/canary-cry/proposal.md).
 - **Slash commands:** `commands/*.md`, loaded by the default `commands/` scan.
 - **Activate:** load the repo root as a Claude Code plugin.
 
@@ -1235,7 +1246,7 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 83 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 82 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place, then 27 shipped rows archived by the
   2026-09-14 `roadmap-groom --check-issues` reconciliation, then 11 more
@@ -1253,6 +1264,7 @@ Two related facts worth not rediscovering:
   #1666/#1669/#1670/#1672/#1673 by issue-fleet on 2026-11-23, then four Intake
   rows linked to #1682/#1680/#1681/#1678 by issue-fleet on 2026-11-24, then five
   Intake rows linked to #1685/#1686/#1691/#1692/#1693 by issue-fleet on
+  2026-11-24, then the shipped ingest-reporter row (#603) archived on
   2026-11-24. The count is of LINKED rows, and every row in the roadmap is
   linked, so `--check-issues` abstains on none of them — and `Priority`,
   serialized in that same extended group, is populated on every one of them.
@@ -1284,7 +1296,7 @@ Two related facts worth not rediscovering:
   auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 83 rows
+  effectively blind gate that reported a real number nobody read. All 82 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless
@@ -1744,6 +1756,12 @@ harness persona for its CI trigger, a canary persona for its output register.
 The two share only a word; see
 [ADR 0016](docs/knowledge/decisions/0016-two-meanings-of-persona.md) before
 assuming they are one mechanism.
+
+`canary-cry` (#608) states its axes per command: `validate`, `matrix` and
+`report` are deterministic, no network, no agent (Tier-0, enforced by
+`agents/skills/test/canary-cry-tier.test.ts`); `run` is non-deterministic and
+needs the network (a live app), with no agent; the SKILL.md agent layer is an
+agent and never produces a finding.
 
 #### `canary-*` names
 

@@ -1,0 +1,93 @@
+# canary-cry against a real Chromium (#608 P3).
+#
+# Runs agents/skills/test/e2e/ (CANARY_CRY_E2E=1): the fixture shop under
+# agents/skills/test/fixtures/cry-app/ with its planted double-submit, partial
+# write and shared-machine bugs, driven end to end through `cry run --live`
+# and `--confirm`. It proves what the offline suite cannot: SC11 (corrupted on
+# the bug, clean on the fix), SC12 (a spec re-run standalone reproduces its
+# fingerprint), SC13 (egress to an undeclared host is aborted and recorded),
+# SC14 (a stale selector is flow-broken, never a finding), SC25 (a
+# cross-account leak is named by field, and no artifact holds the value),
+# and from #608 P4 every pattern at intensities 2 and 3, SC17 (a confirmed
+# scream converges after two barren rounds) and SC18 (--max-wall stops
+# PARTIAL; a resume after a flows edit exits 4; a resume finishes in place).
+# The suite takes about 3 minutes locally (one Playwright run per scenario).
+#
+# ADVISORY and PATH-FILTERED, so it is never a required check: a required
+# check behind a `paths:` filter never reports on a PR outside those paths
+# and that PR could never merge (#542, ADR 0011). It is listed as advisory in
+# .github/required-checks.json with that reason.
+#
+# canary-cry adds no Playwright dependency (spec D2): a generated spec runs on
+# the TARGET project's `@playwright/test`. This job builds that target
+# project outside the checkout with an exact pin, so nothing here changes
+# what the repo installs.
+name: cry-e2e
+
+on:
+  pull_request:
+    paths:
+      - 'agents/skills/claude-code/canary-cry/**'
+      - 'agents/skills/test/e2e/**'
+      - 'agents/skills/test/fixtures/cry-app/**'
+      - 'agents/skills/vitest.config.ts'
+      # Self-test: a path-filtered workflow must list its own file (#549).
+      - '.github/workflows/cry-e2e.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'agents/skills/claude-code/canary-cry/**'
+      - 'agents/skills/test/e2e/**'
+      - 'agents/skills/test/fixtures/cry-app/**'
+      - 'agents/skills/vitest.config.ts'
+      - '.github/workflows/cry-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cry-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Exact pin, never a range: the browser build is part of what is tested.
+  PLAYWRIGHT_VERSION: '1.65.0'
+
+jobs:
+  e2e:
+    name: cry-e2e (real Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: agents/skills/package-lock.json
+
+      - name: Install skills harness deps
+        working-directory: agents/skills
+        run: npm ci
+
+      # The target project of spec D2, outside the checkout. Both lines are
+      # network fetches, so each gets the bounded retry (#1533); nothing that
+      # checks or tests anything is ever wrapped.
+      - name: Install the target project's Playwright and Chromium
+        env:
+          TARGET: ${{ runner.temp }}/cry-target
+        run: |
+          mkdir -p "$TARGET"
+          printf '{"private": true}\n' > "$TARGET/package.json"
+          node scripts/retry-fetch.mjs -- npm install --prefix "$TARGET" --no-audit --no-fund "@playwright/test@$PLAYWRIGHT_VERSION"
+          node scripts/retry-fetch.mjs -- "$TARGET/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Real-browser suite (canary-cry)
+        working-directory: agents/skills
+        env:
+          CANARY_CRY_E2E: '1'
+          CRY_E2E_PROJECT: ${{ runner.temp }}/cry-target
+        run: npx vitest run
