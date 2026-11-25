@@ -792,6 +792,24 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     );
   });
 
+  it('ranks a pre-release as older than its own release (#1710)', () => {
+    // Semver: 9.6.0-rc.1 precedes 9.6.0. Stripping the suffix read them equal,
+    // so an rc install never got the "older than the latest release" finding.
+    writeInstalled({ version: '9.6.0-rc.1', gitCommitSha: mktHead });
+    cutRelease('9.6.0');
+    expect(findings('9.6.0-rc.1')).toContain(
+      'installed canary plugin 9.6.0-rc.1 is older than the latest release v9.6.0',
+    );
+  });
+
+  it('does not rank a pre-release of a newer version as older (#1710)', () => {
+    writeInstalled({ version: '9.7.0-rc.1', gitCommitSha: mktHead });
+    cutRelease('9.6.0');
+    expect(findings('9.7.0-rc.1')).not.toContain(
+      'older than the latest release',
+    );
+  });
+
   it('says an unrankable installed version is unverifiable, never current (#1695)', () => {
     // version_lt answers "not older" for a version it cannot parse, so 4b
     // read `dev` or `v9.5.0` against a newer release as current.

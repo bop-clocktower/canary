@@ -125,6 +125,9 @@ is_semver() { printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-.*)?$'; }
 
 # 0 when version $1 is older than $2 (X.Y.Z, numeric per field); 1 otherwise,
 # including when either cannot be read, so the caller checks is_semver first.
+# On equal X.Y.Z a pre-release precedes its release (semver §11, #1710):
+# 9.6.0-rc.1 < 9.6.0. Two pre-releases of one X.Y.Z are not ranked against
+# each other; the release side is always a bare X.Y.Z tag, so that never arises.
 version_lt() {
   local a1 a2 a3 b1 b2 b3
   is_semver "$1" && is_semver "$2" || return 1
@@ -134,7 +137,9 @@ version_lt() {
   [ "$a1" -gt "$b1" ] && return 1
   [ "$a2" -lt "$b2" ] && return 0
   [ "$a2" -gt "$b2" ] && return 1
-  [ "$a3" -lt "$b3" ]
+  [ "$a3" -lt "$b3" ] && return 0
+  [ "$a3" -gt "$b3" ] && return 1
+  [ "$1" != "${1%%-*}" ] && [ "$2" = "${2%%-*}" ]
 }
 
 # How the clone's HEAD relates to ORIGIN_TIP (the latest release, #1695) once

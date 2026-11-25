@@ -29,6 +29,12 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The session siren ranks a pre-release install as older than its release
+  (#1710).** Check 4b dropped the `-suffix` before comparing, so an installed
+  `9.6.0-rc.1` read as equal to the `v9.6.0` release and never got the "older
+  than the latest release" finding. On equal `X.Y.Z` a pre-release now ranks
+  older, as semver orders them; a pre-release of a newer version still does not.
+
 - **The session siren alerts on a new release, not on every commit to `main`
   (#1695).** Checks 0, 3 and 4b compared the clone and the install with origin's
   HEAD, and `main` takes several commits a day, so nearly every session opened
