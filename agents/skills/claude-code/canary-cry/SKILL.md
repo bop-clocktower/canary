@@ -171,8 +171,10 @@ rounds is a property of a live run, not of the matrix.
 | `2`  | Usage or input error: an unknown flag or command, `run`/`report` (not yet supported), a file not found or not valid JSON, or a schema error. |
 | `3`  | `--strict` and the matrix abstained (zero scenarios).                                                                                        |
 
-Exit 1 (`--strict` and a state-verified corruption) and exit 4 (refused by a
-safety gate, ADR 0046) belong to `run` and arrive with it.
+Exit 1 today means only an unexpected exception (a crash, not a finding). Exit 1
+for `--strict` and a state-verified corruption, and exit 4 (refused by a safety
+gate, ADR 0046), belong to `run` and arrive with it; giving the crash its own
+code is [issue 1716](https://github.com/bop-clocktower/canary/issues/1716).
 
 ## Limits in this phase
 

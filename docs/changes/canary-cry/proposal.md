@@ -203,17 +203,18 @@ never written to any run artifact. `auth.signIn` / `auth.signOut` name flows in
 
 ### Abuse-pattern catalog (`scripts/patterns.mjs`, data only)
 
-| id                  | Applies to                                        | Intensity 1 → 2 → 3 (ceiling)                         | Abuse                                                                                                                                                                                                                                                                                                                        |
-| ------------------- | ------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `multi-submit` ★    | a step with `writes`                              | 2× @ no throttle → 3× @ 400 ms → 5× @ 3 s             | Fire the write step N times concurrently under `route()` latency.                                                                                                                                                                                                                                                            |
-| `abandon-midflow` ★ | a `writes` step that is not the last step         | back → reload → `context.close()`                     | Abandon after write _k_, re-enter, complete the flow.                                                                                                                                                                                                                                                                        |
-| `stale-optimistic`  | a step with `awaitResponse`                       | delay past UI timeout → fake 500 → drop               | Let the request reach the server (`route.fetch()`), then present a failure to the client, so the flow retries.                                                                                                                                                                                                               |
-| `duplicate-tab`     | a `writes` step                                   | 2 → 3 → 3 tabs racing                                 | Several pages in one context, each advanced to the write.                                                                                                                                                                                                                                                                    |
-| `token-expiry`      | flows on a target with `auth.sessionKeys`         | before the write → between writes → before every step | Clear the session keys mid-flow and continue.                                                                                                                                                                                                                                                                                |
-| `shared-machine`    | targets declaring accounts `A` and `B` and `auth` | sign-out → sign-out + back → no sign-out              | A runs the flow; B signs in on the same context (cache, storage, autofill) and runs it; A's invariants are checked for both accounts, and a `cross-account-leak` symptom fires when B's page contains any value from A's account JSON — matched in memory, recorded by field name (`account.A.email`) only, never the value. |
+| id                  | Weight | Applies to                                        | Intensity 1 → 2 → 3 (ceiling)                         | Abuse                                                                                                                                                                                                                                                                                                                        |
+| ------------------- | ------ | ------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `multi-submit` ★    | 5      | a step with `writes`                              | 2× @ no throttle → 3× @ 400 ms → 5× @ 3 s             | Fire the write step N times concurrently under `route()` latency.                                                                                                                                                                                                                                                            |
+| `abandon-midflow` ★ | 4      | a `writes` step that is not the last step         | back → reload → `context.close()`                     | Abandon after write _k_, re-enter, complete the flow.                                                                                                                                                                                                                                                                        |
+| `stale-optimistic`  | 4      | a step with `awaitResponse`                       | delay past UI timeout → fake 500 → drop               | Let the request reach the server (`route.fetch()`), then present a failure to the client, so the flow retries.                                                                                                                                                                                                               |
+| `duplicate-tab`     | 3      | a `writes` step                                   | 2 → 3 → 3 tabs racing                                 | Several pages in one context, each advanced to the write.                                                                                                                                                                                                                                                                    |
+| `token-expiry`      | 3      | flows on a target with `auth.sessionKeys`         | before the write → between writes → before every step | Clear the session keys mid-flow and continue.                                                                                                                                                                                                                                                                                |
+| `shared-machine`    | 5      | targets declaring accounts `A` and `B` and `auth` | sign-out → sign-out + back → no sign-out              | A runs the flow; B signs in on the same context (cache, storage, autofill) and runs it; A's invariants are checked for both accounts, and a `cross-account-leak` symptom fires when B's page contains any value from A's account JSON — matched in memory, recorded by field name (`account.A.email`) only, never the value. |
 
 ★ = the _core_ set used by `whisper`. Each pattern also carries a fixed `weight`
-used for ranking.
+used for ranking; the values above are the P1 values in `patterns.mjs`, and
+`SKILL.md`'s pattern table is tested against them.
 
 ### Matrix (`scripts/matrix.mjs`, pure)
 
@@ -234,6 +235,16 @@ used for ranking.
   guidance, never the contract.
 
 - **Scenario id:** `<flow>:<pattern>:i<n>:s<step>`.
+- **Target-scoped patterns:** `token-expiry` and `shared-machine` need a target,
+  so they are scheduled only with `--target <name>`. A budget pattern that
+  cannot be scheduled is never silently dropped: it goes on the matrix's
+  `unscheduled` list as `{pattern, reason}`, where `reason` is `no --target` or
+  `target does not declare <what is missing>` (for example `auth.sessionKeys`,
+  or accounts `A` and `B` and `auth`). The text output prints one
+  `target-scoped patterns not scheduled (<reason>): <patterns>` line per reason.
+  The matrix's `patterns` field lists only the patterns that applied. Patterns
+  the `whisper` budget excludes (non-core) are the budget, not an omission, and
+  are not listed as unscheduled.
 - **Seed:** `--seed <int>` (validated like `canary-savant`'s — integer within
   ±(2^53 − 1), else exit 2). It feeds only `{{unique.*}}` test data, never
   scenario selection.
@@ -321,20 +332,21 @@ a quiet clean:
 
 ```text
 cry validate  [--flows <p>] [--targets <p>]
-cry matrix    [--amplitude <a>] [--seed <n>] [--json]                # deterministic, no network
+cry matrix    [--flows <p>] [--targets <p>] [--target <t>] [--critical-areas <p>]
+              [--amplitude <a>] [--seed <n>] [--json] [--strict]     # deterministic, no network
 cry run --live <t> [--amplitude <a>] [--seed <n>] [--max-wall <d>]   # manifest + sha; no target request
 cry run --live <t> ... --confirm <sha>                               # executes
 cry run --resume <run-id> --confirm <sha>
 cry report <run-id> [--json] [--strict]
 ```
 
-| Code | Meaning                                                                                                                                            |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Advisory run (the default), or `--strict` with no `corrupted`                                                                                      |
-| `1`  | `--strict` and ≥ 1 `corrupted`                                                                                                                     |
-| `2`  | Usage or schema error                                                                                                                              |
-| `3`  | `--strict` and the run `ABSTAINED`                                                                                                                 |
-| `4`  | Gate refusal — prod/unlisted target, environment not allowed, or sha mismatch. New canary-wide code, established by ADR 0046 beside ADR 0009's `3` |
+| Code | Meaning                                                                                                                                                                                             |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Advisory run (the default), or `--strict` with no `corrupted`                                                                                                                                       |
+| `1`  | `--strict` and ≥ 1 `corrupted`. From P1, `1` also means an unexpected exception (the `cli.mjs` catch-all); separating the two is [issue 1716](https://github.com/bop-clocktower/canary/issues/1716) |
+| `2`  | Usage or schema error                                                                                                                                                                               |
+| `3`  | `--strict` and the run `ABSTAINED`                                                                                                                                                                  |
+| `4`  | Gate refusal — prod/unlisted target, environment not allowed, or sha mismatch. New canary-wide code, established by ADR 0046 beside ADR 0009's `3`                                                  |
 
 `symptom` never fails `--strict`; only state-verified `corrupted` does.
 
@@ -350,8 +362,9 @@ cry report <run-id> [--json] [--strict]
 agents/skills/claude-code/canary-cry/
   SKILL.md
   scripts/cli.mjs
-  scripts/{schema,patterns,matrix,manifest,gate,codegen,verdict,report}.mjs
-  scripts/runtime/cry-runtime.mjs
+  scripts/{schema,schema-core,schema-targets,patterns,matrix}.mjs   # P1
+  scripts/{manifest,gate,codegen,verdict,report}.mjs                # P2–P5
+  scripts/runtime/cry-runtime.mjs                                   # P3
   scripts/flows.example.json
   scripts/targets.example.json
 agents/skills/test/canary-cry-*.test.ts
@@ -373,12 +386,13 @@ agents/skills/test/fixtures/cry-app/          # local fixture app with a planted
 
 - `.claude-plugin/plugin.json` `skills` — add the skill path
   (`ts/test/plugin-skills.test.ts` fails on an unclassified skill).
-- `harness.config.json` — add `canary-cry/scripts/cli.mjs` **and**
-  `scripts/runtime/cry-runtime.mjs` to both `entropy.entryPoints` blocks. The
-  runtime is loaded only by generated specs and would otherwise read as dead
-  code.
+- `harness.config.json` — add `canary-cry/scripts/cli.mjs` to both
+  `entropy.entryPoints` and `performance.entryPoints` (P1). P3 adds
+  `scripts/runtime/cry-runtime.mjs` to both blocks: the runtime is loaded only
+  by generated specs and would otherwise read as dead code.
 - `agents/skills/package.json` `format:check` — add
-  `claude-code/canary-cry/scripts/**/*.mjs`.
+  `claude-code/canary-cry/scripts/**/*.{mjs,json}` (the examples are formatted
+  too).
 - `agents/skills/package.json` devDependencies — `@playwright/test` (exact pin),
   used only by the `cry-e2e` job.
 - `docs/naming-registry.md:85` — `reserved` → `shipped` when the skill ships
@@ -519,7 +533,7 @@ that can reach a target (P3).
 | **P1** | `schema`, `patterns`, `matrix`; `cry validate` / `cry matrix`; examples; plugin + entropy + format registrations. Flip `docs/naming-registry.md:85` to `shipped` — `bop-name-registry.test.ts` fails on a present directory still marked `reserved`. | SC1–6, SC19 (partial), SC24 |
 | **P2** | `gate`, `manifest`; `run --live` prints manifest + sha; `--confirm` refuses everything (execution does not exist yet)                                                                                                                                | SC7–10, SC23                |
 | **P3** | `codegen`, `runtime`, `verdict` (single round, all six patterns at i1); fixture app; `cry-e2e` workflow (advisory, path-filtered — never a required check while filtered)                                                                            | SC11–16, SC21–22, SC25      |
-| **P4** | Rounds i2/i3, convergence, `--max-wall`, checkpoints, `--resume`. Until P4, `shout`/`scream` exit 2 `not yet supported` rather than silently running `whisper`.                                                                                      | SC17–18                     |
+| **P4** | Rounds i2/i3, convergence, `--max-wall`, checkpoints, `--resume`. Until P4, `run` with `shout`/`scream` exits 2 `not yet supported` rather than silently running `whisper`; `matrix` supports all three amplitudes from P1.                          | SC17–18                     |
 | **P5** | `report`; full SKILL.md agent layer (draft/confirm `flows.json`, skill composition, gate pause between plan and `--confirm`, MCP triage); AGENTS.md, README, roadmap `done`                                                                          | SC19–20                     |
 
 P3 is the sizing risk. Its natural split, if needed: runtime + verdict for the
