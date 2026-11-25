@@ -150,6 +150,28 @@ describe('blankStringContent', () => {
     expect(out.split('\n')[1]).toBe("x = ' '");
   });
 
+  // #1704: an f-string's `{...}` replacement field is code, like a template's
+  // `${...}`; `{{`/`}}` are escapes and stay content.
+  it.each([
+    ['f"a{g(x)}b"', 'f" {g(x)} "'],
+    ["rf'{g(x)}'", "rf'{g(x)}'"],
+    ['Fr"{d["k"]}"', 'Fr"{d[" "]}"'],
+    ['f"{{g(x)}}"', 'f"        "'],
+    ['f"{x:>{w}}!"', 'f"{x:>{w}} "'],
+    ['b"{g(x)}"', 'b"      "'],
+    ['elif"{g(x)}"', 'elif"      "'],
+    ['g(f, "{x}")', 'g(f, "   ")'],
+  ])('keeps python f-string fields as code: %s', (code, expected) => {
+    expect(blankStringContent(code, { python: true })).toBe(expected);
+  });
+
+  it('keeps fields of a triple-quoted f-string across lines', () => {
+    const code = 'f"""\nx {g(x)}\n"""';
+    expect(blankStringContent(code, { python: true })).toBe(
+      'f"""\n  {g(x)}\n"""',
+    );
+  });
+
   it('is a no-op on source containing no strings', () => {
     const code = 'const a = 1 + 2;\nconst b = a * 3;\n';
     expect(blankStringContent(code)).toBe(code);

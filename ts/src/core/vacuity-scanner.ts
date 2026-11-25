@@ -784,6 +784,12 @@ function bodyLines(code: string, source: string, block: TestBlock): BodyLine[] {
 
 type Span = [number, number];
 
+/** A line's comment spans, and whether a `/*` is still open at its end. */
+interface LineComments {
+  spans: Span[];
+  open: boolean;
+}
+
 /**
  * The comment spans of one line, half-open -- the ONE definition of a comment
  * that the verdict filter and the annotation walk share (#1691).
@@ -795,21 +801,23 @@ type Span = [number, number];
  * - Python: only `#` opens a comment, running to the end of the line. `//` is
  *   floor division and `/*` is not a token, so reading the JS forms blanked
  *   `10 // target(5)` down to `10` -- a false VAC-002.
- * - JS/TS: a line that starts with `#` or `*` is all comment (the middle of a
- *   block). Otherwise a `//` runs to the end and a `/* ... *\/` span is cut
- *   out, so `x(); // makeStore` no longer reads as naming `makeStore`.
+ * - JS/TS: only `//` and `/*` (so `/**`) open a comment (#1704). `inBlock`
+ *   says a `/*` from an earlier line is still open, so a block's middle lines
+ *   are comment because the block is open -- not because they start with `*`.
+ *   A line's first character decides nothing: `#count = f()` is a private
+ *   field and `* f()` a continuation, both code.
  */
-function commentSpans(line: string, python: boolean): Span[] {
-  const s = line.trimStart();
-  if (!python && (s.startsWith('#') || s.startsWith('*'))) {
-    return [[line.length - s.length, line.length]];
-  }
-  if (!python) return jsCommentSpans(line);
+function commentSpans(
+  line: string,
+  python: boolean,
+  inBlock: boolean,
+): LineComments {
+  if (!python) return jsCommentSpans(line, inBlock);
   const spans: Span[] = [];
   for (const m of line.matchAll(PY_STRING_OR_COMMENT)) {
     if (m[0].startsWith('#')) spans.push([m.index, m.index + m[0].length]);
   }
-  return spans;
+  return { spans, open: false };
 }
 
 /**
@@ -817,12 +825,20 @@ function commentSpans(line: string, python: boolean): Span[] {
  * a `//` or `/*` in `/[//]/g` is regex content, not a comment that swallows
  * the rest of the line. Blanking leaves regex content intact, so this is the
  * only place that can tell them apart. `regexLiteralEnd` decides division vs
- * regex from the previous significant character, so `a / b // c` still ends
- * in a comment.
+ * regex from the previous significant character ON THIS LINE, so `a / b // c`
+ * still ends in a comment.
  */
-function jsCommentSpans(line: string): Span[] {
+function jsCommentSpans(line: string, inBlock: boolean): LineComments {
   const spans: Span[] = [];
-  for (let i = 0; i < line.length;) {
+  let i = 0;
+  if (inBlock) {
+    const close = line.indexOf('*/');
+    if (close < 0) return { spans: [[0, line.length]], open: true };
+    spans.push([0, close + 2]);
+    i = close + 2;
+  }
+  let open = false;
+  while (i < line.length) {
     const regexEnd = regexLiteralEnd(line, i);
     if (regexEnd !== null) {
       i = regexEnd;
@@ -834,10 +850,15 @@ function jsCommentSpans(line: string): Span[] {
       i += 1;
       continue;
     }
-    if (m[0].startsWith('/')) spans.push([i, i + m[0].length]);
+    if (m[0].startsWith('/')) {
+      spans.push([i, i + m[0].length]);
+      // `/*/` ends in `*/` but does not close: the close needs its own `*`.
+      const t = m[0];
+      open = t.startsWith('/*') && (t.length < 4 || !t.endsWith('*/'));
+    }
     i += m[0].length;
   }
-  return spans;
+  return { spans, open };
 }
 
 /**
@@ -860,27 +881,29 @@ function blankSpans(line: string, spans: Span[]): string {
   return out;
 }
 
-/** Is `line` nothing but comment (blank lines are not comments)? */
+/** Is `line`, read on its own, nothing but comment (blank lines are not)? */
 function isComment(line: string, python: boolean): boolean {
   return (
     line.trim() !== '' &&
-    blankSpans(line, commentSpans(line, python)).trim() === ''
+    blankSpans(line, commentSpans(line, python, false).spans).trim() === ''
   );
 }
 
 /**
  * The body lines the rules read: comment-only lines dropped, and comment spans
  * blanked out of the rest -- from `raw` too, at the same offsets, so VAC-001
- * never compares a comment tail (#1691).
+ * never compares a comment tail (#1691). A `/*` left open carries into the
+ * next line, so a multi-line block is comment to its `*\/` (#1704).
  */
 function codeLines(lines: BodyLine[], python: boolean): BodyLine[] {
+  let open = false;
   return lines.flatMap((l) => {
-    if (isComment(l.text, python)) return [];
-    const spans = commentSpans(l.text, python);
-    if (spans.length === 0) return [l];
-    return [
-      { ...l, text: blankSpans(l.text, spans), raw: blankSpans(l.raw, spans) },
-    ];
+    const c = commentSpans(l.text, python, open);
+    open = c.open;
+    if (c.spans.length === 0) return [l];
+    const text = blankSpans(l.text, c.spans);
+    if (text.trim() === '') return [];
+    return [{ ...l, text, raw: blankSpans(l.raw, c.spans) }];
   });
 }
 
@@ -1583,7 +1606,10 @@ function jsDeclarationStart(code: string, block: TestBlock): number {
 function attachesToDeclaration(line: string, python: boolean): boolean {
   const s = line.trim();
   if (s === '' || isComment(s, python)) return true;
-  return python && s.startsWith('@');
+  // Walking UP through a `/** ... */` block meets its `*` lines before its
+  // opener, so the walk cannot know the block is open; a leading `*` is the
+  // one signal it has (#1704 moved that rule here from the comment model).
+  return python ? s.startsWith('@') : s.startsWith('*');
 }
 
 const SKIP_REASON =

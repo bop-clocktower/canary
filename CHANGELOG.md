@@ -14,6 +14,22 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cassandra VAC-002 reads three code shapes correctly (#1704).** The comment
+  model worked one line at a time. A JS line that started with `#` or `*` was
+  read as all comment, so a private field (`#count = makeStore()`), a `*`
+  expression continuation, or code after a block's closing `*/` was dropped and
+  gave a false VAC-002. A `/*` that did not close on its own line covered only
+  that line, so a call named in the block's middle lines counted as an
+  invocation and hid a real VAC-002. Only `//` and `/*` now open a JS comment,
+  and an open block carries across lines to its `*/`. In Python, an f-string's
+  `{...}` replacement field (`f`, `rf`, `fr` in any case) is now code, not
+  string content, so `f"{target(1)}"` invokes `target`; `{{` stays an escape.
+  The shared string blanker changed for Python f-strings, so the static linter
+  and test inventory also read those fields as code. On canary's own `ts/test`
+  the counts are unchanged (216 findings, 590 skipped).
+
 ## [9.8.0] - 2026-11-25
 
 ### Added

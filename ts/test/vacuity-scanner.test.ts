@@ -991,6 +991,82 @@ describe('VAC-002 — a // or /* inside a regex literal is not a comment', () =>
   });
 });
 
+// #1704. The comment model was per line: any JS line STARTING with `#` or `*`
+// was all comment (a proxy for "inside a block"), and a `/*` that did not close
+// on its own line covered only that line. So a private field or a `*`
+// continuation was dropped as prose, a block's middle line read as code, and a
+// Python f-string's `{...}` field was blanked with its string.
+describe('VAC-002 — the comment model reads three code shapes correctly (#1704)', () => {
+  const HEAD =
+    `import { it, expect } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let hookSpawns = 0;\n`;
+  const vac002Tests = (body: string) =>
+    scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`)
+      .findings.filter((f) => f.rule === 'VAC-002')
+      .map((f) => f.test);
+
+  it.each([
+    [
+      'a private field initialiser',
+      `  class K {\n    #count = makeStore();\n  }\n  expect(new K()).toBeTruthy();\n`,
+    ],
+    [
+      'a leading-* expression continuation',
+      `  const v = 2\n    * makeStore();\n  expect(v).toBe(2);\n`,
+    ],
+  ])('counts a call on %s as an invocation', (_l, body) => {
+    expect(vac002Tests(body)).toEqual([]);
+  });
+
+  it('reads the middle line of a multi-line /* */ as comment', () => {
+    expect(
+      vac002Tests(
+        `  /*\n     makeStore()\n  */\n  expect(hookSpawns).toBe(0);\n`,
+      ),
+    ).toEqual(['counts']);
+  });
+
+  it('reads a /** */ block line that opens with * as comment', () => {
+    expect(
+      vac002Tests(
+        `  /**\n   * makeStore() is not called here\n   */\n  expect(hookSpawns).toBe(0);\n`,
+      ),
+    ).toEqual(['counts']);
+  });
+
+  it('counts a call that follows the close of a multi-line block', () => {
+    expect(
+      vac002Tests(`  /*\n     setup\n  */ expect(makeStore()).toBe(1);\n`),
+    ).toEqual([]);
+  });
+
+  describe('in a Python body', () => {
+    const pyTest = (body: string) =>
+      scan('test_a.py', `from store import target\n\ndef test_t():\n${body}`)
+        .findings.filter((f) => f.rule === 'VAC-002')
+        .map((f) => f.test);
+
+    it.each([
+      ['an f-string', `    assert f"{target(1)}" == '1'\n`],
+      ['an rf-string', `    assert rf'{target(1)}' == '1'\n`],
+      ['a triple-quoted F-string', `    assert F"""x{target(1)}""" == 'x1'\n`],
+    ])('counts a call inside %s replacement field', (_l, body) => {
+      expect(pyTest(body)).toEqual([]);
+    });
+
+    it('does not count a {{ }} escape as a replacement field', () => {
+      expect(pyTest(`    assert f"{{target(1)}}" == '1'\n`)).toEqual([
+        'test_t',
+      ]);
+    });
+
+    it('still blanks a plain string that names the target', () => {
+      expect(pyTest(`    assert "{target(1)}" == '1'\n`)).toEqual(['test_t']);
+    });
+  });
+});
+
 describe('VAC-003 — every assertion asserts absence', () => {
   // The canary-katana case from #486: `expect(existsSync(ledger)).toBe(false)`
   // was free, because the buggy code exited before the write. An all-absence

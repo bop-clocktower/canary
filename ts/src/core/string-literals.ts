@@ -50,7 +50,9 @@
  *   expression may start (`regexLiteralEnd`); misread as division, a regex
  *   with a quote can still open a phantom string, and because an
  *   unterminated run is discarded the usual outcome is a no-op.
- * - Python f-string nesting beyond `${...}` is not modelled.
+ * - A Python f-string's `{...}` replacement field is CODE, like a template's
+ *   `${...}` (#1704); `{{` is an escape and stays content. A format spec after
+ *   `:` is read as code too, which costs at most a token, never a field.
  * - JSX children text is modelled only when the caller passes `jsx` (for
  *   `.tsx`/`.jsx`): see `jsx-text.ts` (#1180).
  */
@@ -145,7 +147,7 @@ function literalContentSpans(code: string, python: boolean): Span[] {
 
     const opener = readOpener(code, i, python);
     if (opener !== null) {
-      stack.push({ kind: 'string', quote: opener, start: i + opener.length });
+      stack.push(stringFrame(code, i, opener, python));
       i += opener.length - 1;
       continue;
     }
@@ -163,7 +165,7 @@ function literalContentSpans(code: string, python: boolean): Span[] {
  * where brace nesting has no meaning.
  */
 type Frame =
-  | { kind: 'string'; quote: string; start: number }
+  | { kind: 'string'; quote: string; start: number; fstring?: boolean }
   | { kind: 'interp'; depth: number };
 
 /**
@@ -226,7 +228,24 @@ function advanceInsideString(
     return i + 1;
   }
 
+  // An f-string field opens on `{`; `{{` is an escaped brace, content (#1704).
+  if (frame.fstring === true && ch === '{') {
+    if (code[i + 1] === '{') return i + 1;
+    pushSpan(spans, frame.start, i);
+    stack.push({ kind: 'interp', depth: 0 });
+  }
+
   return i;
+}
+
+/**
+ * The frame for a string opening at `i`. An `f`/`rf`/`fr` prefix (any case, a
+ * whole token: not the tail of `elif` or `x_f`) makes its `{...}` code.
+ */
+function stringFrame(code: string, i: number, quote: string, py: boolean) {
+  const prefix = code.slice(Math.max(0, i - 3), i);
+  const fstring = py && /(?:^|\W)(?:[fF][rR]?|[rR][fF])$/.test(prefix);
+  return { kind: 'string' as const, quote, start: i + quote.length, fstring };
 }
 
 /** Record a content span, skipping empty ones. */
