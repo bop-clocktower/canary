@@ -2,7 +2,7 @@
 number: 0047
 title: The refresh commit pushes with a per-run GitHub App token
 date: 2026-11-25
-status: proposed
+status: accepted
 tier: medium
 source: https://github.com/bop-clocktower/canary/issues/1616
 ---
@@ -11,7 +11,7 @@ source: https://github.com/bop-clocktower/canary/issues/1616
 
 # ADR 0047 — The refresh commit pushes with a per-run GitHub App token
 
-**Status:** proposed **Date:** 2026-11-25 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-11-25 **Deciders:** Bri Stevenski
 (maintainer) **Related:**
 [#1616](https://github.com/bop-clocktower/canary/issues/1616) (this decision);
 issue #1591 (the refresh commit starts no required check); #1463 (CWE-250, the
