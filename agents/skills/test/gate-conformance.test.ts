@@ -36,6 +36,7 @@ import { main as signalMain } from '../claude-code/canary-signal/scripts/cli.mjs
 import { main as starlingMain } from '../claude-code/canary-starling/scripts/cli.mjs';
 import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
 import { main as unquarantineMain } from '../claude-code/canary-unquarantine/scripts/cli.mjs';
+import { main as cryMain } from '../claude-code/canary-cry/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -185,6 +186,16 @@ const ROWS: SkillGateRow[] = [
     run: (base) => run(bardaMain, bardaArgs(base)),
     strict: (base) => run(bardaMain, [...bardaArgs(base), '--strict']),
   },
+  {
+    // flows.json parses and validates but declares no flow, so the matrix
+    // holds zero scenarios. The tempting read is "nothing to attack, the
+    // flows are safe"; in fact nothing was scheduled at all (#608, SC24).
+    command: 'canary-cry matrix (zero scenarios)',
+    forbid: ['scenario(s) over'],
+    run: (base) => run(cryMain, ['matrix', '--flows', emptyFlows(base)]),
+    strict: (base) =>
+      run(cryMain, ['matrix', '--flows', emptyFlows(base), '--strict']),
+  },
 ];
 
 /** A valid profile plus a results file whose flows no fault ever touched. */
@@ -259,6 +270,13 @@ function starlingArgs(base: string): string[] {
 function emptyDiff(base: string): string {
   const file = path.join(base, 'empty.diff');
   fs.writeFileSync(file, '', 'utf-8');
+  return file;
+}
+
+/** A valid flows.json that declares no flow: zero scenarios to schedule. */
+function emptyFlows(base: string): string {
+  const file = path.join(base, 'flows.json');
+  fs.writeFileSync(file, JSON.stringify({ version: 1, flows: [] }));
   return file;
 }
 

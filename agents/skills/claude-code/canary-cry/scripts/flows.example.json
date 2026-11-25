@@ -1,0 +1,81 @@
+{
+  "//": "Example canary-cry flows file. Copy it to .canary/cry/flows.json in the project under test and edit it. Accounts are referenced by NAME through targets.json: never put a secret here. Probes must be read-only, because a probe that writes invalidates its own before/after comparison.",
+  "version": 1,
+  "fixtures": { "card": "4242424242424242" },
+  "flows": [
+    {
+      "id": "login",
+      "risk": 3,
+      "steps": [
+        { "id": "open", "action": "goto", "url": "/login" },
+        {
+          "id": "email",
+          "action": "fill",
+          "selector": "[name=email]",
+          "value": "{{account.A.email}}"
+        },
+        {
+          "id": "password",
+          "action": "fill",
+          "selector": "[name=password]",
+          "value": "{{account.A.password}}"
+        },
+        {
+          "id": "submit",
+          "action": "click",
+          "selector": "button[type=submit]",
+          "awaitResponse": "POST /api/session"
+        }
+      ]
+    },
+    {
+      "id": "logout",
+      "risk": 1,
+      "steps": [
+        { "id": "open", "action": "goto", "url": "/account" },
+        { "id": "sign-out", "action": "click", "selector": "#sign-out" }
+      ]
+    },
+    {
+      "id": "checkout",
+      "risk": 5,
+      "criticalArea": "src/checkout",
+      "steps": [
+        { "id": "open", "action": "goto", "url": "/cart" },
+        {
+          "id": "address",
+          "action": "click",
+          "selector": "#save-address",
+          "writes": true,
+          "awaitResponse": "POST /api/addresses"
+        },
+        {
+          "id": "card",
+          "action": "fill",
+          "selector": "[name=card]",
+          "value": "{{fixture.card}}"
+        },
+        {
+          "id": "pay",
+          "action": "click",
+          "selector": "button[type=submit]",
+          "writes": true,
+          "awaitResponse": "POST /api/orders"
+        }
+      ],
+      "invariants": [
+        {
+          "id": "one-order",
+          "probe": {
+            "http": {
+              "method": "GET",
+              "path": "/api/orders?user={{account.A.id}}"
+            }
+          },
+          "expect": { "jsonPath": "$.length", "delta": 1 }
+        }
+      ],
+      "symptoms": { "selectors": [".error-banner"] }
+    }
+  ]
+}

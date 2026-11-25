@@ -76,6 +76,7 @@ export default defineConfig({
         'claude-code/canary-savant/scripts/**/*.mjs',
         'claude-code/canary-blackhawk/scripts/**/*.mjs',
         'claude-code/canary-cassandra/scripts/**/*.mjs',
+        'claude-code/canary-cry/scripts/*.mjs',
         'claude-code/canary-katana/scripts/**/*.mjs',
         'claude-code/canary-unquarantine/scripts/**/*.mjs',
         // Top-level only (`*.mjs`, not `**`): the ported cli/run_types/

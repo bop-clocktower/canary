@@ -82,7 +82,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-clocktower`          | shipped  | 610   | Run-history gap analysis                                                   |
 | `canary-company-knowledge`   | shipped  | —     | Scaffold the org-specific `.canary/company.json` pointer file              |
 | `canary-critical-areas`      | shipped  | —     | Risk-based test prioritisation                                             |
-| `canary-cry`                 | reserved | 608   | Pre-launch exploratory "try to break it" sweep                             |
+| `canary-cry`                 | shipped  | 608   | Pre-launch exploratory "try to break it" sweep                             |
 | `canary-edge-case-discovery` | shipped  | —     | Edge-case surfacing across six categories                                  |
 | `canary-fail-fast`           | shipped  | —     | Loud, early failure surfacing for Playwright runs                          |
 | `canary-failure-impact`      | shipped  | —     | Downstream blast radius of an undetected failure                           |
