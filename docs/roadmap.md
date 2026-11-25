@@ -25,7 +25,7 @@ last_manual_edit: 2026-11-24T20:33:52.210Z
 
 - **Status:** backlog
 - **Spec:** —
-- **Summary:** Ongoing curated batches of real-world function examples with multi-framework test parity, used to exercise and demo canary's generation/analysis. Batches 1–10 shipped (latest: topological-task-order, percentile-nearest-rank — batch 10, catalog now 21 examples: 10 pytest / 11 vitest); batch 6's below-the-cut pool is EXHAUSTED — its last two (truncate-grapheme [framework-parity risk], cron-next-fire [unbounded parsing surface]) are standing hard rejects, so every further batch needs fresh ideation, as batch 10 did. Continue adding batches; numeric examples must pin integer/fractional input contracts (soundness S4) to stay sound. (refs: docs/ideation/realworld-function-batch*.md; docs/changes/realworld-functions-batch10/)
+- **Summary:** Ongoing curated batches of real-world function examples with multi-framework test parity, used to exercise and demo canary's generation/analysis. Batches 1–11 shipped (latest: path-normalizer-posix — batch 11, the batch-10 pool's recorded next-up; catalog now 22 examples: 10 pytest / 12 vitest); the batch-6 AND batch-10 below-the-cut pools are both EXHAUSTED (every remaining candidate was cut for overlap or is a standing hard reject), so batch 12 needs fresh ideation. Continue adding batches; numeric examples must pin integer/fractional input contracts (soundness S4) to stay sound. (refs: docs/ideation/realworld-function-batch*.md; docs/changes/realworld-functions-batch10/; docs/changes/realworld-functions-batch11/)
 - **Blockers:** —
 - **Plan:** —
 - **Priority:** P3
