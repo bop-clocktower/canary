@@ -222,7 +222,7 @@ describe('blank lines around a healed line', () => {
     ]);
     const lines = source.split('\n');
     for (const c of result.changes) {
-      expect(lines[c.line - 1].startsWith(c.before)).toBe(true);
+      expect(lines[c.line - 1]?.startsWith(c.before)).toBe(true);
     }
   });
 
