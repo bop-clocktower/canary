@@ -7,29 +7,41 @@
   "reproducingTest": "ts/test/install-siren.test.ts",
   "reproducingTests": [
     "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > reports an unset core.hooksPath and names the fix",
-    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > reports a core.hooksPath that is not .githooks",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > reports a core.hooksPath that is not .githooks, as a fixed classification",
     "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > reports a stale .git/hooks/pre-commit from a worktree, via the common git dir",
     "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > falls back to the working directory when CLAUDE_PROJECT_DIR is unset",
-    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > says it cannot verify outside a git checkout, never stays quiet",
-    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > says it cannot verify a checkout with no tracked .githooks/pre-commit"
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > says it cannot verify when the convention is present but git cannot read the checkout",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > never echoes a repo-controlled core.hooksPath into agent context",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > never echoes the checkout path into agent context",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > does not run a repo-configured core.fsmonitor command",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > compares the old-style copy with the COMMITTED hook, not the working tree"
   ],
   "guardTests": [
     "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > is silent about hooks when core.hooksPath is .githooks and no stale copy exists",
     "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > is silent about an old-style copy identical to the tracked hook",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > is silent in a plain directory that does not use the convention",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > is silent in a checkout with no tracked .githooks/pre-commit",
     "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > auto-sets nothing: git config is unchanged after a run"
   ],
-  "redAtBase": "Tests 6 failed | 80 passed of 86 with the suite run against the base hook (07256a2c); all 86 pass with the change. The 3 guard tests pass at base by design: they pin the no-false-positive and no-write behavior.",
+  "redAtBase": "Against the base hook (07256a2c), the first suite gave Tests 6 failed | 80 passed (86). After the security review, the hardened suite run against the first-pass hook (007719ed) gave Tests 9 failed | 5 passed in the #1240 describe: every security finding was red first. With the change, all 91 tests in the file pass.",
+  "securityReview": [
+    "Prompt injection: findings are fixed text. No core.hooksPath value, path or file content from the repo reaches the output. Red-first tests use a newline-plus-instruction hooksPath and an instruction-named checkout dir.",
+    "Untrusted git: every git call runs with -c core.fsmonitor=false and GIT_OPTIONAL_LOCKS=0. Confirmed exploitable at 007719ed: a repo-local core.fsmonitor command ran on siren start. A checkout not owned by the current user ([ -O ]) gets no git after rev-parse; git's safe.directory already refuses such repos at rev-parse. The ownership branch is untested, marked canary:allow-untested, because a test cannot create a dir owned by another user without root.",
+    "Validation differential: the old-style copy is compared with HEAD:.githooks/pre-commit via cat-file. A working tree that differs from HEAD is its own finding.",
+    "Scope: an untracked .githooks/pre-commit is silent. Cannot verify only when the convention is present: a .githooks/pre-commit on disk that git cannot read, a checkout owned by someone else, or a hook tracked but not in HEAD."
+  ],
   "closingKeyword": "Closes",
-  "closingKeywordReason": "The session siren now reports an unset or non-.githooks core.hooksPath and a drifted .git/hooks/pre-commit, naming the fix, and says 'cannot verify' when the check cannot run; covered red-first.",
+  "closingKeywordReason": "The session siren now reports an unset or non-.githooks core.hooksPath and a drifted .git/hooks/pre-commit, naming the fix. It treats the checkout as untrusted, and it says 'cannot verify' only when the convention is present but cannot be read. Covered red-first.",
   "assumptions": [
-    "Human-confirmed (Q5a): report only, never auto-set; strict compare against `.githooks`; each finding names `git config core.hooksPath .githooks`; a check that cannot run says it cannot verify.",
+    "Human-confirmed (Q5a): report only, never auto-set; strict compare against `.githooks`; each core.hooksPath finding names `git config core.hooksPath .githooks`.",
+    "Orchestrator-relayed security review (supersedes the Q5a 'cannot verify' rule for the no-tracked-hook case): a repo without a tracked .githooks/pre-commit is silent. 'Cannot verify' is only for a repo where the convention is present but unreadable.",
     "The siren is machine-global (~/.claude/hooks), so the checkout under test is the session's: CLAUDE_PROJECT_DIR, falling back to the working directory.",
     "Strict compare accepts `.githooks` and `.githooks/` only. An absolute path to a .githooks dir (the maintainer's clone has one) is reported, because in a worktree it runs the main checkout's copy, not the branch's. The finding's fix clears it.",
-    "Default taken: the stale-copy finding also tells you to move the copy aside (mv to .stale). With core.hooksPath already .githooks, `git config` alone would never clear it, and this file treats a remedy that cannot clear its finding as a bug.",
-    "Default taken: a missing .git/hooks/pre-commit, or one identical to the tracked hook, is not a finding.",
+    "Default taken: the stale-copy remedy also moves the copy aside (mv to .stale). The remedy is fixed text that resolves the path with `git rev-parse --git-common-dir` at the user's prompt, so no repo-derived path is emitted.",
+    "Default taken: a missing .git/hooks/pre-commit, or one identical to the committed hook, is not a finding.",
+    "Default taken: the working-tree-differs-from-HEAD finding fires while someone is editing .githooks/pre-commit on a branch. That is informational and is accepted as requested by the review.",
     "Global and system git config are honored, as git honors them; tests isolate them with GIT_CONFIG_GLOBAL and GIT_CONFIG_NOSYSTEM.",
-    "Every non-canary session where this hook is wired gets the 'no tracked .githooks/pre-commit — cannot verify' finding, following the human decision that a check that cannot run never stays quiet. Flagged for follow-up, not changed here.",
-    "The hook stays bash 3.2 compatible (verified with /bin/bash 3.2.57) and avoids `rev-parse --path-format` (git 2.31+)."
+    "The hook stays bash 3.2 compatible (the suite runs /bin/bash 3.2.57) and avoids `rev-parse --path-format` (git 2.31+)."
   ],
   "base": "07256a2c"
 }

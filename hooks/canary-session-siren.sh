@@ -438,34 +438,66 @@ fi
 #
 #    Report only. The siren writes no git config: a hook that edits config at
 #    session start would be a silent install step, the thing #1240 indicts.
-#    A check that cannot run says so; it never reads as a pass.
-HOOK_REPO="${CLAUDE_PROJECT_DIR:-$PWD}"
-HOOK_FIX="git config core.hooksPath .githooks"
-if ! HOOK_TOP=$(git -C "$HOOK_REPO" rev-parse --show-toplevel 2>/dev/null) || [ -z "$HOOK_TOP" ]; then
-  FINDINGS+=("cannot verify the pre-commit hook setup: $HOOK_REPO is not a git checkout — whether commits run the tracked .githooks/pre-commit is unverifiable")
-elif ! git -C "$HOOK_TOP" ls-files --error-unmatch .githooks/pre-commit >/dev/null 2>&1; then
-  FINDINGS+=("cannot verify the pre-commit hook setup: $HOOK_TOP has no tracked .githooks/pre-commit — whether commits run the shared hook is unverifiable")
-else
-  HOOKS_PATH=$(git -C "$HOOK_TOP" config --get core.hooksPath 2>/dev/null)
-  if [ -z "$HOOKS_PATH" ]; then
-    FINDINGS+=("core.hooksPath is unset in $HOOK_TOP, so commits run .git/hooks/pre-commit (a stale copy, or nothing) instead of the tracked .githooks/pre-commit — in that checkout, run: $HOOK_FIX")
-  elif [ "${HOOKS_PATH%/}" != ".githooks" ]; then
-    FINDINGS+=("core.hooksPath is $(shq "$HOOKS_PATH"), not .githooks, in $HOOK_TOP, so commits may not run the tracked .githooks/pre-commit — in that checkout, run: $HOOK_FIX")
+#
+#    Scope: a repo that does not track .githooks/pre-commit does not follow the
+#    convention, so it is silent, like "no config = silent". "Cannot verify" is
+#    only for a repo where the convention IS present and cannot be read.
+#
+#    The tree is untrusted: this runs at every SessionStart in whatever
+#    directory is open, and its text becomes agent context. So:
+#      - every finding is fixed text. No config value, path or file content
+#        from the repo reaches the output (prompt injection);
+#      - git runs with core.fsmonitor off and no optional locks, because a
+#        repo-local core.fsmonitor is a command git would execute;
+#      - a checkout not owned by this user gets no git at all;
+#      - hook copies are compared with the COMMITTED blob, not the working
+#        tree, which the repo could edit to match a planted copy.
+hook_git() { GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$HOOK_TOP" "$@"; }
+check_precommit_setup() {
+  local repo="${CLAUDE_PROJECT_DIR:-$PWD}" fix="git config core.hooksPath .githooks"
+  local unverifiable="cannot verify the pre-commit hook setup: the session checkout has a .githooks/pre-commit"
+  local hooks_path common old_hook
+  if ! HOOK_TOP=$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$repo" rev-parse --show-toplevel 2>/dev/null) || [ -z "$HOOK_TOP" ]; then
+    [ -f "$repo/.githooks/pre-commit" ] &&
+      FINDINGS+=("$unverifiable, but git cannot read the directory as a checkout — whether commits run it is unverifiable")
+    return 0
+  fi
+  if [ ! -O "$HOOK_TOP" ]; then
+    # canary:allow-untested a test cannot create a checkout owned by another user without root
+    [ -f "$HOOK_TOP/.githooks/pre-commit" ] &&
+      FINDINGS+=("$unverifiable, but the checkout is not owned by the current user, so the siren runs no git in it — whether commits run it is unverifiable")
+    return 0
+  fi
+  hook_git ls-files --error-unmatch .githooks/pre-commit >/dev/null 2>&1 || return 0
+  if ! hook_git cat-file -e HEAD:.githooks/pre-commit 2>/dev/null; then
+    FINDINGS+=("$unverifiable that is tracked but not committed at HEAD, so there is no committed copy to compare with — unverifiable")
+    return 0
+  fi
+  hooks_path=$(hook_git config --get core.hooksPath 2>/dev/null)
+  if [ -z "$hooks_path" ]; then
+    FINDINGS+=("core.hooksPath is unset in the session checkout, so commits run .git/hooks/pre-commit (a stale copy, or nothing) instead of the tracked .githooks/pre-commit — in that checkout, run: $fix")
+  elif [ "${hooks_path%/}" != ".githooks" ]; then
+    FINDINGS+=("core.hooksPath is set to a value other than .githooks in the session checkout, so commits may not run the tracked .githooks/pre-commit — inspect it with git config --get core.hooksPath; in that checkout, run: $fix")
+  fi
+  if ! hook_git cat-file blob HEAD:.githooks/pre-commit | cmp -s - "$HOOK_TOP/.githooks/pre-commit"; then
+    FINDINGS+=("the working-tree .githooks/pre-commit in the session checkout differs from the committed one at HEAD, so commits run uncommitted hook code — review it: git diff HEAD -- .githooks/pre-commit")
   fi
   # --git-common-dir prints a path relative to the -C directory unless it is
   # elsewhere; resolve it here rather than lean on --path-format (git 2.31+).
-  HOOK_COMMON=$(git -C "$HOOK_TOP" rev-parse --git-common-dir 2>/dev/null)
-  case "$HOOK_COMMON" in
+  common=$(hook_git rev-parse --git-common-dir 2>/dev/null)
+  case "$common" in
   /*) ;;
-  *) HOOK_COMMON="$HOOK_TOP/$HOOK_COMMON" ;;
+  *) common="$HOOK_TOP/$common" ;;
   esac
-  OLD_HOOK="$HOOK_COMMON/hooks/pre-commit"
+  old_hook="$common/hooks/pre-commit"
   # Only a copy that differs is a finding; none at all, or an identical one, is
   # not. It runs whenever core.hooksPath is unset, so the path fix alone leaves
   # it armed: the remedy also moves it aside.
-  if [ -e "$OLD_HOOK" ] && ! cmp -s "$OLD_HOOK" "$HOOK_TOP/.githooks/pre-commit"; then
-    FINDINGS+=("$OLD_HOOK differs from the tracked .githooks/pre-commit — it is what commits run whenever core.hooksPath is unset; in $HOOK_TOP, run: $HOOK_FIX && mv $(shq "$OLD_HOOK") $(shq "$OLD_HOOK.stale")")
+  if [ -e "$old_hook" ] && ! hook_git cat-file blob HEAD:.githooks/pre-commit | cmp -s - "$old_hook"; then
+    FINDINGS+=("the old-style hooks/pre-commit in the session checkout's common git dir differs from the committed .githooks/pre-commit — it is what commits run whenever core.hooksPath is unset; in that checkout, run: $fix && mv \"\$(git rev-parse --git-common-dir)/hooks/pre-commit\" \"\$(git rev-parse --git-common-dir)/hooks/pre-commit.stale\"")
   fi
-fi
+}
+HOOK_TOP=""
+check_precommit_setup
 
 emit_and_exit
