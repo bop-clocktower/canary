@@ -88,13 +88,52 @@ const refusal = (exit, reason) => ({
   results: [],
 });
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
+
 /** Why a loaded checkpoint cannot be resumed as `runId`, or null. */
 function unusable(checkpoint, runId) {
   if (checkpoint?.format !== CHECKPOINT_FORMAT) {
     return `run ${runId}: checkpoint.json is not ${CHECKPOINT_FORMAT}`;
   }
-  if (checkpoint.runId !== runId || !Array.isArray(checkpoint.results)) {
+  const whole =
+    checkpoint.runId === runId &&
+    Array.isArray(checkpoint.results) &&
+    typeof checkpoint.manifestSha === 'string' &&
+    SHA256_HEX.test(checkpoint.manifestSha) &&
+    isCount(checkpoint.total);
+  if (!whole) {
     return `run ${runId}: checkpoint.json belongs to another run or is damaged`;
+  }
+  return null;
+}
+
+const isResult = (r) =>
+  r !== null &&
+  typeof r === 'object' &&
+  typeof r.id === 'string' &&
+  typeof r.verdict === 'string' &&
+  Array.isArray(r.fingerprints) &&
+  r.fingerprints.every((f) => typeof f === 'string');
+
+/**
+ * The checkpoint decides which scenarios are SKIPPED, so it is not trusted as
+ * written: a damaged or hand-edited result that marks an unrun scenario done
+ * would make a resumed run silently never test it. Every result must be
+ * well-formed, unique, and a scenario of the rebuilt matrix (checked after
+ * the sha matches, so that matrix is the one the checkpoint was written for).
+ */
+function untrustedResults(checkpoint, scenarioIds) {
+  const known = new Set(scenarioIds);
+  const seen = new Set();
+  for (const r of checkpoint.results) {
+    if (!isResult(r) || !known.has(r.id) || seen.has(r.id)) {
+      return `run ${checkpoint.runId}: checkpoint.json holds a result that is malformed, repeated, or not in the rebuilt matrix`;
+    }
+    seen.add(r.id);
+  }
+  if (checkpoint.results.length > checkpoint.total) {
+    return `run ${checkpoint.runId}: checkpoint.json holds more results than its total`;
   }
   return null;
 }
@@ -138,6 +177,8 @@ export function planResume({
   if (bad !== null) return refusal(EXIT_USAGE, bad);
   const unsafe = shaRefusal(checkpoint, rebuiltSha, confirm);
   if (unsafe !== null) return refusal(EXIT_REFUSED, unsafe);
+  const untrusted = untrustedResults(checkpoint, scenarioIds);
+  if (untrusted !== null) return refusal(EXIT_USAGE, untrusted);
   const done = new Set(checkpoint.results.map((r) => r.id));
   const remaining = scenarioIds.filter((id) => !done.has(id));
   return { exit: null, reason: null, remaining, results: checkpoint.results };

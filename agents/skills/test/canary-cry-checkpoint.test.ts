@@ -198,6 +198,87 @@ describe('planResume (SC18)', () => {
     expect(resume({ checkpoint: otherRun }).exit).toBe(2);
     expect(resume({ checkpoint: { format: CHECKPOINT_FORMAT } }).exit).toBe(2);
   });
+
+  // A checkpoint is on-disk state that decides which scenarios are SKIPPED. A
+  // damaged or hand-edited one that marks unrun scenarios done would make a
+  // resumed run silently never test them -- a false green -- so every result
+  // must be well-formed and name a scenario of the rebuilt matrix, or the
+  // resume is refused (exit 2) rather than trusted.
+  type Tamper = [string, (cp: any) => void];
+  const tampers: Tamper[] = [
+    [
+      'an id the rebuilt matrix does not have',
+      (cp) => {
+        cp.results[0].id = 'f9:p:i1:sz';
+      },
+    ],
+    [
+      'a non-string id',
+      (cp) => {
+        cp.results[0].id = 7;
+      },
+    ],
+    [
+      'a result that is not an object',
+      (cp) => {
+        cp.results[0] = 'f1:p:i1:sa';
+      },
+    ],
+    [
+      'a missing verdict',
+      (cp) => {
+        delete cp.results[0].verdict;
+      },
+    ],
+    [
+      'non-string fingerprints',
+      (cp) => {
+        cp.results[0].fingerprints = [1];
+      },
+    ],
+    [
+      'fingerprints that are not an array',
+      (cp) => {
+        cp.results[0].fingerprints = 'x';
+      },
+    ],
+    [
+      'the same id twice',
+      (cp) => {
+        cp.results[1] = { ...cp.results[0] };
+      },
+    ],
+    [
+      'more results than its total',
+      (cp) => {
+        cp.total = 1;
+      },
+    ],
+    [
+      'a total that is not a non-negative integer',
+      (cp) => {
+        cp.total = -1;
+      },
+    ],
+    [
+      'a manifestSha that is not sha256 hex',
+      (cp) => {
+        cp.manifestSha = 'abc';
+      },
+    ],
+  ];
+
+  it.each(tampers)(
+    'a checkpoint with %s is refused, exit 2',
+    (_label, tamper) => {
+      const checkpoint = JSON.parse(JSON.stringify(afterScenarios(2)));
+      tamper(checkpoint);
+      const plan = resume({ checkpoint });
+      expect(plan.exit).toBe(2);
+      expect(plan.reason).toMatch(/checkpoint\.json/);
+      expect(plan.remaining).toEqual([]);
+    },
+  );
 });
 
 describe('deadline -> checkpoint -> resume -> convergence, end to end (pure)', () => {
