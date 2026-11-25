@@ -262,4 +262,46 @@ describe('guardian workflow', () => {
     const raw = readFileSync(WORKFLOW, 'utf-8');
     expect(raw).not.toContain('secrets.');
   });
+
+  // #1568 item 1: a survivor proves a test ran and passed against the mutant,
+  // not that the line was "covered". Since #486 slice 2 the job runs Stryker
+  // on the lines this PR adds, so the warning may -- and should -- say so.
+  it('the survivors warning claims no coverage and states the diff scope', () => {
+    const block = runBlocks(load()).find(
+      (b) => b.includes('guardian mutation') && b.includes('--report-out'),
+    );
+    expect(block, 'no step runs guardian mutation').toBeDefined();
+    const warning = block!
+      .split('\n')
+      .find((l) => l.includes('title=Surviving mutants'));
+    expect(warning, 'no rc=1 survivors warning').toBeDefined();
+    expect(warning).not.toMatch(/\bcovered\b/i);
+    expect(warning).toMatch(/did not fail/);
+    expect(warning).toMatch(/lines this PR adds/i);
+  });
+
+  // Stryker runs the PR's own tests, so the step doing it must hold no token;
+  // only a step that runs nothing (--post-report) may post the sticky.
+  it('keeps the token out of the step that runs the PR’s tests under Stryker', () => {
+    const steps = (load().jobs?.['mutation']?.steps ?? []) as Array<
+      Step & { env?: Record<string, string> }
+    >;
+    const run = steps.find((s) => s.run?.includes('--report-out'));
+    const post = steps.find((s) => s.run?.includes('--post-report'));
+    expect(run, 'no mutation run step').toBeDefined();
+    expect(post, 'no posting step').toBeDefined();
+    expect(run!.env?.['GITHUB_TOKEN']).toBeUndefined();
+    expect(run!.run).not.toContain('--post-comment');
+    expect(post!.env?.['GITHUB_TOKEN']).toBeDefined();
+    expect(post!.run).toContain('--post-comment');
+  });
+
+  it('fails the posting step on a poster crash, not on a verdict code', () => {
+    const post = (load().jobs?.['mutation']?.steps ?? []).find((s) =>
+      s.run?.includes('--post-report'),
+    );
+    expect(post!.run).toMatch(
+      /case "\$rc" in 0\|1\|3\) exit 0 ;; \*\) exit "\$rc"/,
+    );
+  });
 });

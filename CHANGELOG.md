@@ -14,6 +14,259 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary guardian mutation` now runs Stryker on the lines a PR adds (#486,
+  #1380).** Before this, the advisory `mutation` job could only abstain behind
+  the stryker-js#6210 guard. Now it pins `@stryker-mutator/*` 10.1.1 (which
+  fixed #6210) and mutates only added lines under `ts/src`, capped at 150
+  mutants as a disclosed, deterministic line sample. It uses the `forks` pool,
+  so no suite is excluded any more, and gives Stryker 7 minutes. A crash or
+  timeout still writes an abstained `mutation-report.json` with Stryker's error
+  line. The report is upserted as its own sticky comment
+  (`<!-- canary-guardian-mutation -->`), posted from a step that never runs the
+  PR's tests. Still advisory until the ADR 0038 exit criterion is met.
+
+### Fixed
+
+- **The perf ratchet's per-finding delta works again.** Harness CLI 14 prints an
+  info-level `File is imported by N files` finding that
+  `scripts/lib/perf-findings.mjs` could not classify. One unclassifiable finding
+  made the whole report unparseable, so since the CLI 14.1.1 adoption (#1640)
+  every PR's delta silently fell back to a bare count:
+  `delta OK by count ... no allowance was applied`. Every `deltaAllowances`
+  entry and the magnitude-growth warning were dark. The rule is now classified
+  (`fan-in`), so allowances apply by name again.
+
+- **canary-cassandra no longer reads a `//` or `/*` inside a regex literal as a
+  comment.** This is a regression from #1697. The JS comment tokenizer had no
+  regex arm, so a line such as
+  `expect('a/b'.replace(/[//]/g, '') + makeStore()).toBe(1)` lost everything
+  after the `//`, the call included, and gave a false VAC-002. The tokenizer now
+  steps over regex literals with the shared `regexLiteralEnd`, so division
+  (`a / b // note`) and a real trailing comment after a regex are still
+  comments. Python is unchanged.
+
+- **A misconfigured guardian sticky identity no longer stacks comments silently
+  (#1685).** Logins were compared exactly, so a `CANARY_GUARDIAN_LOGIN` in
+  different case or with a leading `@` missed the sticky its own token wrote,
+  and a library caller's empty login matched an empty author. Logins now compare
+  case-insensitively with a leading `@` ignored, and an empty login falls back
+  to `github-actions[bot]`. When a new comment's author would not be adopted on
+  the next run, guardian and `canary briefing` warn on stderr with the login to
+  set. The identity rules moved to `ts/src/guardian/identity.ts`.
+
+- **The session siren no longer calls a marketplace directory with no `.git`
+  missing (#1692).** Check 3 reported "marketplace checkout missing" whenever
+  `$MKT/.git` was absent, even though the directory was there. It now says the
+  directory is present but not a git clone, with the remedy to remove the stale
+  directory or re-clone. A truly absent directory keeps the old message.
+
+- **The guardian mutation report no longer turns an allow-mutant reason or a
+  mutator name into links or mentions (#1680).** The reason written after
+  `// canary:allow-mutant` and the mutator name of a survivor were escaped for
+  Markdown structure but not for GitHub autolinks, so a `#12`, an `@user` or a
+  URL in them still linked an issue or notified a stranger in the PR comment.
+  Both are now inert code spans, like the test names and abstain reason since
+  #1673. The reason now reads in monospace; a backtick inside it stays in the
+  same span.
+
+- **Cassandra VAC-002 no longer counts a comment as invoking the target
+  (#1681).** The verdict read the raw test body, and a body runs to the next
+  declaration, so it also owned the comment above the next test. Prose naming a
+  target or a one-level helper (since #1672 that includes common words such as
+  `template`, `root` or `store`) passed a test that never invoked anything —
+  `expect(hookSpawns).toBe(0)` was one. The verdict now reads the same
+  comment-stripped lines the other rules read. Expect more VAC-002 findings and
+  abstentions on a first scan: on canary's own `ts/test` the count went from 165
+  to 176 findings and from 270 to 275 abstentions. A bare code mention of a
+  value binding still counts as invoked.
+
+- **Cassandra VAC-002 no longer counts a trailing `//` comment or a `/* */` span
+  as invoking the target (#1691).** The #1681 fix dropped only lines that start
+  with `//`, `#` or `*`, and the `@covers` walk kept its own `/*` check, so
+  `x(); // makeStore` and `/* makeStore */` still read as code. Both now use one
+  quote-aware definition of a comment: a `//` inside a string such as
+  `'http://x'` is content, not a comment. The definition is language-aware: in a
+  Python body only a quote-aware `#` opens a comment, so `10 // target(5)`
+  (floor division) still invokes `target`, and a trailing `# target(1)` no
+  longer counts as invoking it. On canary's own `ts/test` the finding count is
+  unchanged at 215; two tests whose body ran into a `/** ... */` opener naming
+  the target now abstain (577 to 579 skipped).
+
+- **Cassandra exempts every skip form, not just a test's own `.skip` (#1686).**
+  A vacuous test inside `describe.skip(...)` or `xdescribe(...)` never runs, yet
+  it drew VAC-001/VAC-002 and counted as checked; it is now a skip like any
+  `.skip` test. `xit`, `xtest`, `it.skip.each` and `test.skip.each` were not
+  read as declarations at all, so a parked body ran on into the real test above
+  it and its VAC-001 landed on that test's name; they are now declarations, and
+  skipped. The test enumerator is shared, so `LINT-006` exempts the same forms
+  and the test inventory lists `xit`/`xtest`/`.skip.each` tests. The skip reason
+  now reads
+  `declared skipped (.skip, xit/xtest, or inside describe.skip/xdescribe): ...`.
+
+- **The session siren no longer calls an ahead or diverged marketplace clone
+  "behind origin", and says when it could not check the clone at all (#1682).**
+  Checks 0 and 3 read any difference between the clone's HEAD and origin's tip
+  as "behind" and named `git pull --ff-only`. On a clone with a local commit
+  that pull prints "Already up to date", so the finding could never clear, and
+  check 0 withheld the hook install remedy for good. Both checks now test
+  ancestry. Only a clone that is truly behind (or has not fetched origin's tip
+  yet) gets the pull remedy. An ahead or diverged clone is reported as "differs
+  from origin (ahead)" or "(diverged)". Check 3 points it at a `git log` to
+  inspect, and check 0 keeps the install remedy with a caveat that it installs
+  the clone's extra commits too. Check 0 also stopped folding "origin could not
+  be asked" and "no `.git`" into "heads equal". It now reports
+  `clone freshness unverifiable: git ls-remote origin HEAD <reason>`, or the
+  no-`.git` equivalent, instead of dropping the reason.
+
+- **Cassandra no longer reports VAC findings on `.skip` tests, and no longer
+  counts them as checked (#1669).** Since #1665 the test enumerator reads
+  `.skip` declarations, so `vacuity-check` began scanning bodies it had never
+  seen: `expect(1).toBe(1)` in a parked `test.skip` drew a VAC-001. A skipped
+  test never runs, so it cannot pass vacuously, and LINT-006 already exempts it
+  on the same grounds. The choice was (a), exempt, over (b), keep scanning
+  because the test is still vacuous once un-skipped: a finding nobody can act on
+  until the test is un-skipped is noise, and the un-skip puts it back in the
+  scan. The exemption keeps the denominator honest: each skipped test leaves
+  `checked` and is listed as a skip
+  (`declared skipped (...): it never runs ...`), so a file whose only tests are
+  skipped abstains instead of passing. The exempt forms are a test's own `.skip`
+  (and `.skip.each`), `xit`/`xtest`, and every test inside a
+  `describe.skip`/`xdescribe` block (#1686).
+
+- **The mission-briefing charter comment no longer stacks a new copy on every
+  run when the token is not `github-actions[bot]` (#1678).**
+  `canary briefing --comment` found its own sticky by author, and only
+  `github-actions[bot]` could match, so an App installation token or a PAT
+  posted a fresh charter on every run, the same bug guardian had. Briefing now
+  reads guardian's own `CANARY_GUARDIAN_LOGIN` / `CANARY_GUARDIAN_APP_SLUG` with
+  the same meaning, since both comments are normally posted by the same token,
+  so one setting covers both. With both unset nothing changes.
+
+- **Guardian's sticky comment no longer stacks a new copy on every run when the
+  token is not `github-actions[bot]` (#1352).** Guardian finds its own sticky by
+  author (#931), and only `github-actions[bot]` could match, so a job posting
+  with a GitHub App installation token or a PAT never found the comment it wrote
+  and posted another one. Two optional environment variables now name the
+  author: `CANARY_GUARDIAN_LOGIN` replaces the `github-actions[bot]` default,
+  and `CANARY_GUARDIAN_APP_SLUG` adds a match for a `Bot` acting through that
+  GitHub App. `pr-check --post-comment` and `precision` both read them. An empty
+  or whitespace-only value counts as unset. A comment is adopted only when its
+  author matches the configured login, or is a `Bot` acting through the
+  configured App; any other comment carrying the marker is never adopted. With
+  both unset nothing changes.
+
+- **The guardian mutation report no longer turns test names into links or
+  mentions, and no longer posts its abstain reason raw (#1673).** A covering
+  test name is now an inert code span, like the excluded test paths already
+  were, so a `#123`, an `@user` or a URL inside a name stays text in the PR
+  comment instead of linking an issue or notifying a stranger. The abstain
+  reason, which can carry a report path and a parse error verbatim, is now one
+  code span too, collapsed to a single line and cut to at most 200 characters
+  with an ellipsis.
+
+- **The session siren no longer calls a differing hook copy "older", and never
+  refreshes the hooks from a stale clone (#1670).** Check 0 compares the
+  installed hook with the marketplace clone's copy byte for byte, which shows
+  only that they differ, so the finding now says "differs from". When the copies
+  differ it also asks origin (the same capped `ls-remote` check 3 makes): if the
+  clone is behind origin, it reports that with a "pull the clone first" remedy
+  and no longer offers `install-siren.mjs --install-hooks`, which would have
+  overwritten a newer installed copy with the stale one. An unreachable origin
+  keeps the install remedy and claims nothing about the clone.
+
+- **canary-blackhawk `BH003` no longer flags a `toLocale*()` call that cannot
+  read the host time zone, and its exemption only accepts a string-literal zone
+  that nothing later overrides (#1659, refs PR #1657).** A numeric-literal
+  receiver (`(5000).toLocaleString('en-US')`, `5000n.toLocaleString()`) is
+  exempt, and so is a call whose own options object pins `timeZone` to a string
+  literal. The pin must be a top-level `timeZone: '<literal>'` in the object
+  passed as the call's options (second) argument — an object in the locales
+  slot, `d.toLocaleString({ timeZone: 'UTC' })`, is ignored by JS and stays
+  flagged — and the literal must be the last zone source in that object:
+  `{ ...opts, timeZone: 'UTC' }` is exempt, while
+  `{ timeZone: 'UTC', ...opts }`, a later `timeZone` key and a later computed
+  key stay flagged. Any non-literal value (`tz`, `process.env.TZ`, `undefined`,
+  the `{ timeZone }` shorthand) and a pin inside a comment, a string, a nested
+  call or a ternary branch stay flagged too, as does a numeric literal after a
+  call such as `foo?.(1)`, `make<Date>(0)`, `fn!(0)` or `new Date (0)`.
+- **The session siren now reports when its own installed copy is stale
+  (#1632).** `install-siren.mjs` installs the hooks into `~/.claude/hooks/` as
+  copies, and updating the marketplace or the plugin does not refresh them, so a
+  merged siren fix never reached the machine and the old copy kept firing
+  findings whose remedies could not clear them. The hook now compares itself
+  with the marketplace clone's `hooks/` copy. When they differ, it reports one
+  finding in place of the old logic's findings, with a remedy that clears it:
+  `node <clone>/scripts/install-siren.mjs --install-hooks`, a new mode that
+  refreshes only the hook copies. `--verify` no longer prints `healthy` above
+  `DIVERGENT` lines; a healthy scheduler with a stale hook copy now reads
+  `hooks-not-current`.
+- **Cassandra VAC-002 reads a module-scope `let` that is reassigned later
+  (#1672).** `let mod; beforeAll(async () => { mod = await import('../x') })`
+  left `mod` unresolved, so when the file had any other relative import, a test
+  calling `mod.save()` drew a false VAC-002. A plain assignment anywhere in the
+  file (a hook is the common case, not a requirement) now binds the name when it
+  reaches the target: a relative `import(` or `require(` (also `.default`) makes
+  it a handle, and a right-hand side that names an imported binding makes it a
+  one-level helper. Any other assignment leaves the name unresolved: a direct
+  call of it abstains (#1170); a method call on it is still judged.
+- **The release workflow's `Move latest tag` step names a rejected push instead
+  of blaming a race (#1504).** An auth failure, a network failure or a tag
+  ruleset refusal used to log "latest moved on origin", retry, and fail with
+  "latest kept moving". After a rejected push the step now re-reads origin; only
+  a `latest` that actually moved is a race. Otherwise git's own error goes into
+  `::error::` and the step stops without retrying. The step now pins
+  `shell: bash`, so a failed `git ls-remote` stops it rather than parsing to an
+  empty lease.
+- **The guardian mutation report no longer overclaims or crashes as survivors
+  (#1568).** The survivors warning no longer says tests "covered these added
+  lines". An abstention whose only survivors were suppressed names the
+  suppression instead of claiming nothing was covered. A malformed `coveredBy`
+  or `testFiles` entry abstains (exit 3) instead of throwing (exit 1, which
+  reads as survivors). Paths, mutators, replacements, test names and suppression
+  reasons are escaped in the Markdown, so a backtick, such as a StringLiteral
+  mutant's empty template literal, cannot break out of a code span.
+- **`review-test` and `vacuity-check` see every way of declaring a test
+  (#1312).** `it.only`/`test.skip`, a backtick title (``it(`b`, ...)``) and
+  Python `async def test_*` were not recognised, so the test above absorbed the
+  missed one's body and borrowed its assertions: an assertion-free test escaped
+  LINT-006 and the VAC rules. They are now enumerated (a template title is
+  reported as written, `${...}` included). A declaration on a comment line is no
+  longer read as a test, and a `.skip` test is exempt from LINT-006 since it
+  never runs. The test inventory and `vacuity-check`'s `checked` count include
+  the newly seen tests.
+- **`canary history migrate` no longer drops untimestamped v1 runs (#1298).** An
+  entry with no timestamp took the current second as its run id. Two such
+  entries for one commit collided, the store kept only one, and the command
+  still printed `Migrated 2 runs`. Those ids are now a hash of the entry's
+  content, so they are unique and stay the same on every run. `Migrated N` now
+  counts only the runs actually written. Ids the store already holds, and
+  repeats within the file, are reported as skipped. Untimestamped entries
+  migrated by an earlier version carry clock-based ids, so re-migrating that
+  file adds them again under the new ids.
+- **A test's flake identity is now its file plus its name (#1350).** The `flaky`
+  commands (`queryFlaky`) and ci-ready's flakiness check keyed on the test name
+  alone. A test that always passed in one file and a same-named test that always
+  failed in another were read as one alternating flake. ci-ready adds the file
+  to the name only when two files share a name, so other reasons read as before.
+- **cassandra VAC-002 reads subprocess helpers and every `await import`
+  binding.** A test that runs a repo script through a same-file helper (an arrow
+  wrapped onto two lines, or a `function`) passing the script path to
+  `execFileSync`/`spawnSync`/`fork`, or that loads its target as
+  `(await import(x)).default`, `.named`, a destructured import assigned in a
+  hook, or through a wrapper like `const importRoute = () => import(x)`, is no
+  longer reported as never invoking its target (#1365). A helper that only
+  launches a bare command, or mentions a file name outside the launch arguments,
+  is still not read as a target.
+- **Cassandra reads a `@covers` annotation above a wrapped `.only`, `.skip` or
+  backtick-titled declaration (#1666).** When a test title wraps onto the next
+  line, the annotation walk must start at the `it`/`test` keyword, and the
+  keyword search knew only a bare `it(`/`test(` with a `'`/`"` title. For the
+  other forms the walk started at the title line, stopped at `it.only(` as code,
+  and dropped the annotation, so a wrong `@covers` went unchecked and the test
+  fell back to import inference.
+
 ## [9.7.0] - 2026-11-21
 
 ### Added
@@ -312,10 +565,10 @@ under the project's former name) are documented in the
   recorded" instead of "no covering test", which claimed a coverage gap nobody
   measured, and a line under the headline counts such survivors and points at
   `coverageAnalysis: perTest`. This completes the counting rule that shipped in
-  v9.4.0 (#1302). Consumers upgrading across it should expect those survivors to
-  stay `survived`, so `noCoverage` drops, `survived` can rise, and a run that
-  used to exit 0 can now exit 1. The disclosure itself changes report text only:
-  no verdict, exit code or `mutation-report.json` field moves.
+  v9.4.0 (#1302). Consumers upgrading across v9.4.0 should expect those
+  survivors to stay `survived`, so `noCoverage` drops, `survived` can rise, and
+  a run that used to exit 0 can now exit 1. The disclosure itself changes report
+  text only: no verdict, exit code or `mutation-report.json` field moves.
 - **`canary-ci-ready`'s flakiness check reads the `canary-unquarantine` audit's
   classes (#1459)** instead of judging issue state by hand. Blocked counts as
   verified; candidate, stale and unledgered are flagged; unlinked fails; and

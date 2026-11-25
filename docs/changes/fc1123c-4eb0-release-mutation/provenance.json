@@ -1,0 +1,43 @@
+{
+  "issues": [1504, 1568],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/release-advance-latest.test.ts::reports a non-race rejection with the push error, not as a race, and does not retry",
+    "ts/test/release-advance-latest.test.ts::pins shell: bash, so a failed pipeline stage fails the step",
+    "ts/test/release-advance-latest.test.ts::stops, not leasing on \"latest does not exist\", when origin cannot be read",
+    "ts/test/release-advance-latest.test.ts::reports a rejected push it cannot re-check as an error, not a race",
+    "ts/test/guardian-workflow.test.ts::the survivors warning claims neither coverage nor diff scope",
+    "ts/test/guardian-mutation.test.ts::names the suppression, not a coverage gap that did not happen",
+    "ts/test/guardian-mutation.test.ts::still names the no-coverage mutants beside the suppressed ones",
+    "ts/test/guardian-cli-mutation.test.ts::abstains (exit 3) on a string coveredBy instead of crashing",
+    "ts/test/guardian-cli-mutation.test.ts::abstains (exit 3) on an object coveredBy instead of crashing",
+    "ts/test/guardian-cli-mutation.test.ts::abstains (exit 3) on a testFiles entry without a tests list instead of crashing",
+    "ts/test/guardian-mutation.test.ts::keeps backticks in the path, mutator, replacement and test name inert",
+    "ts/test/guardian-mutation.test.ts::escapes the path and reason of a suppressed survivor",
+    "ts/test/guardian-cli-mutation.test.ts::abstains (exit 3) on a missing mutatorName instead of crashing",
+    "ts/test/guardian-cli-mutation.test.ts::abstains (exit 3) on a numeric replacement instead of crashing",
+    "ts/test/guardian-cli-mutation.test.ts::abstains (exit 3) on a numeric test name instead of crashing",
+    "ts/test/guardian-mutation.test.ts::keeps an empty or multi-line replacement on one readable line",
+    "ts/test/guardian-mutation.test.ts::escapes the excluded test paths in the disclosure line"
+  ],
+  "redAtBase": {
+    "1504": "AssertionError: expected '::warning::latest moved on origin whi\u2026' to match /::error::[^\\n]*ruleset says no to lat\u2026/ (1 failed | 20 passed). The shell-pin follow-up's 4 tests failed against the first fix commit's release.yml (4 failed | 20 passed).",
+    "1568": "8 failed | 76 passed, e.g. AssertionError: expected 'threw: TypeError: (mutant.coveredBy ?\u2026' to be 3; expected 'no mutant was covered by any test, so\u2026' not to match /covered by any test/; Received \"- `ts/src/a`b.ts:10` String`Literal \u2192 ```` \u2014 ran but did not fail: renders `x` safely\"; the workflow line still said 'Tests covered these added lines'"
+  },
+  "assumptions": [
+    "#1504: a rejected push is a race only when origin's latest differs from the lease read before the guard; an unchanged latest means the rejection had another cause (auth, network, ruleset), which a retry cannot clear, so the step stops after one attempt.",
+    "#1504: the issue's 'Awareness only' section (the guard ranks by tags on origin, not by releases that published) is out of scope and unchanged.",
+    "#1504: pinning `shell: bash` (bash -eo pipefail) came from the fleet's commit security review. The unset default is `bash -e`, so the old one-line `LEASE=$(git ls-remote | awk)` swallowed a failed ls-remote. The test now runs the step with the flags its `shell` implies.",
+    "#1568 item 3 also covers a `testFiles` entry without a `tests` list: the same mapping loop threw the same way (reproduced red), so it is the same bug, not new scope.",
+    "#1568 item 4: reachability was confirmed by reasoning, not by a live Stryker run (#486 still blocks the runner). Stryker's StringLiteral mutator replaces a template literal with an empty one, so a replacement of two backticks is an ordinary survivor.",
+    "#1568: the helpers live in a new ts/src/guardian/mutation-text.ts, declared in both entropy.entryPoints and performance.entryPoints, because mutation-report.ts was at 299/300 lines and the change took it to 317.",
+    "#1568 provenance nit: re-measured in a scratch worktree at 16a8ad2e with #1547's two test files. 4 of 7 fail; 'stops counting a survivor once the author suppressed it' passes at base. #1577 tracks the same correction, so it is referenced, not closed, here.",
+    "#1568 CHANGELOG nit: the 'across it' line has already shipped in the 9.7.0 section. Only its referent was clarified to 'across v9.4.0'; the meaning is unchanged.",
+    "Review-assist (harness-code-review) found that the new escaping called string methods on fields nothing validated (missing mutatorName, numeric replacement, numeric test name), so those were new exit-1 crashes. Reproduced red (3 failed), then fixed by validating those fields as strings in the shape check. Taken from the same review's nits: an empty replacement renders as '(empty)', and newlines collapse to a space. Left as follow-up nits: GitHub autolinks (@name, #N) in test names, and raw abstainReason text (a report path and an error message). The excludedTests disclosure was raised by both the review and the fleet's commit security review (MEDIUM). It was reproduced red, then fixed by rendering each path with mdCode."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "#1504: the suggested change and the test gap are both done; the 'Awareness only' section is explicitly out of scope per the issue's own framing. #1568: all four gaps are fixed with red-first tests and all three nits are corrected, which is the issue's 'Done when'. #1577 gets Refs only.",
+  "run": "fc1123c",
+  "base": "caf8984bbc52b0cd6d3844b7446206b6767143c0"
+}

@@ -26,6 +26,8 @@ the design rationale.
   [Fidelity labels](#fidelity-labels)).
 - **Renders findings** ranked by severity onto a sticky PR comment (upsert by
   marker `<!-- canary-pr-guardian -->`, so re-runs replace rather than stack).
+  The marker counts only on a comment guardian's own identity wrote; see
+  [Sticky-comment identity](#sticky-comment-identity).
 - **Emits a harness analysis** (`--emit-analysis`) so the result surfaces inside
   the harness gate flow rather than as an orphaned parallel comment.
 - **Authors tests** at the desk (in-session / pre-commit) when a runtime exists.
@@ -260,6 +262,43 @@ Keep the job id `guardian` if the check is required, since that is the check
 name a required-checks ruleset matches. The
 [canary-setup-harness skill](../../agents/skills/claude-code/canary-setup-harness/SKILL.md)
 gives the same adaptation as its "Wire up `guardian.yml`" step.
+
+#### Sticky-comment identity
+
+Guardian updates its sticky comment in place by finding a comment that starts
+with the marker **and** was written by guardian's own identity. It never trusts
+the marker alone, because a human can paste it (#931). The default identity is
+`github-actions[bot]`, the author of a `GITHUB_TOKEN` post. If the job posts
+with another token, set the matching identity on the step, or every run stacks a
+new comment ([#1352]):
+
+| Variable                   | Effect                                                                                                          |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `CANARY_GUARDIAN_LOGIN`    | Replaces the `github-actions[bot]` default. Use the PAT user's login, or a GitHub App's `<slug>[bot]` login.    |
+| `CANARY_GUARDIAN_APP_SLUG` | Adds a match for a `Bot` author acting through the GitHub App with this slug (`performed_via_github_app.slug`). |
+
+Both are optional and unset by default, which keeps the `github-actions[bot]`
+behavior. An empty or whitespace-only value counts as unset. A comment is
+adopted only when its author matches the configured login, or is a `Bot` acting
+through the configured App; any other comment carrying the marker is never
+adopted. Logins compare case-insensitively, and a leading `@` is ignored
+([#1685]). `canary guardian precision` reads stickies under the same identity,
+so set the variables on that workflow too. `canary briefing --comment` honors
+the same two variables for its charter comment ([#1678]), so set them on a
+briefing step that posts with the same token.
+
+Setting `CANARY_GUARDIAN_LOGIN` means the old `github-actions[bot]` sticky is no
+longer adopted, so the first run after you set it posts one extra comment. Every
+later run updates that new comment in place. You can delete the old one by hand.
+
+If guardian posts a comment that its configured identity would not adopt, it
+warns on stderr and in the step summary with the login to configure, such as
+`posted as ci-service-user; set CANARY_GUARDIAN_LOGIN=ci-service-user`. Without
+that setting, every run would add another comment.
+
+[#1352]: https://github.com/bop-clocktower/canary/issues/1352
+[#1678]: https://github.com/bop-clocktower/canary/issues/1678
+[#1685]: https://github.com/bop-clocktower/canary/issues/1685
 
 ### At-desk check and authoring (the `preCommit` surface)
 

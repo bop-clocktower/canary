@@ -204,3 +204,41 @@ All three need a runner that actually kills mutants.
   own test, and by the job staying advisory until the D5 evidence window runs.
 - **Excluded thread-unsafe tests inflate the false-survivor rate** once the
   runner works, which is the F5 risk the spec now records as A2.
+
+## Addendum (2026-11-24): slice 2, the run itself
+
+stryker-js#6210 was fixed in `@stryker-mutator/vitest-runner` 10.1.1
+(2026-10-23), which also accepts `vitest.pool: 'forks'`. A re-spike on
+`applySuppressions` (`pr-check.ts:922-949`) reported 21 killed and 6 survived,
+where the 2026-09-17 spike saw 10/10 false survivors. Slice 2 turns the run on
+and closes #1380 gaps 1-3 (gap 4 already shipped with #1306). It follows the
+signed-off spec; these are the places it had to choose:
+
+- **Tasks 1-2 rebuilt** in `ts/src/guardian/mutation-scope.ts`
+  (`mutationTargets`, `mutateEntries`, `sampleLines`). The cap is applied to
+  whole lines, counted up front with Stryker's own `Instrumenter`, because
+  Stryker can only be told line ranges. Uncapped, the diff's own ranges go to
+  Stryker unchanged; capped, each kept line runs to the end of its longest
+  mutant. A first real run with line-only ranges dropped every multi-line mutant
+  and reported "sampled 5 of 8" with nothing capped.
+- **`forks` pool, so A2 is retired for canary's own run:** no suite is excluded
+  and the report says so. `threadUnsafeTests` survives behind `--pool threads`
+  for a supplied `--report`.
+- **`inPlace`.** Stryker's sandbox copies only `ts/`, and suites that read
+  repo-root files fail its dry run there. Target files are snapshotted and
+  restored byte for byte after any run (`ts/src/guardian/mutation-run.ts`).
+- **Pins land now** (the 2026-09-17 assumption deferred them): core,
+  vitest-runner and instrumenter at exactly 10.1.1. `typed-rest-client`'s exact
+  `qs@6.15.1` is overridden to the tree's existing 6.16.1; `minimatch ~10.2`
+  (moderate, dev-only) stays, because fixing it needs a major-version override.
+- **Rendering.** Each survivor names at most three covering tests and counts the
+  rest; the full list stays in the artifact. The spec's "grouped by the test
+  that should have killed them" is not done: on a real run one survivor had ~20
+  covering tests, so grouping by test repeats every survivor ~20 times.
+- **Least privilege.** The run step has no token; a separate step posts the
+  sticky from the artifact with `--post-report`.
+- **Acceptance SC-1** was run by hand on `migrator.ts:2288-2301` (#484's
+  `if (force)` block). 8/8 killed as-is. With the three tests that check the
+  overwritten content weakened, the `install()` removal at line 2296 survived
+  and named exactly those three tests. Today's suite guards #484 three ways
+  (`migrator.test.ts` twice, `canary-migrate-cli.test.ts` once).

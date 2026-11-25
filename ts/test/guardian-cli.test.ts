@@ -24,6 +24,7 @@ import {
   WatchInterruptError,
   blobBaseFromEnv,
   defaultDeps,
+  identityFromEnv,
   isForkContext,
   prContextFromEnv,
   readPrDiff,
@@ -1676,5 +1677,31 @@ describe('author-plan diff sources and config warning', () => {
     expect(git.calls).toContainEqual(['diff', '--staged']);
     const data = JSON.parse(res.stdout);
     expect(data.checked).toBe(1);
+  });
+});
+
+// One definition shared by guardian and briefing (#1690 review): the two CLIs
+// promise the variables mean the same thing, so they must read them identically.
+describe('identityFromEnv', () => {
+  it('is empty when neither variable is set', () => {
+    expect(identityFromEnv({})).toEqual({});
+  });
+
+  it('reads and trims both variables', () => {
+    expect(
+      identityFromEnv({
+        CANARY_GUARDIAN_LOGIN: ' my-app[bot] ',
+        CANARY_GUARDIAN_APP_SLUG: ' my-app ',
+      }),
+    ).toEqual({ login: 'my-app[bot]', appSlug: 'my-app' });
+  });
+
+  it('treats blank as unset, never as an empty login', () => {
+    expect(
+      identityFromEnv({
+        CANARY_GUARDIAN_LOGIN: '   ',
+        CANARY_GUARDIAN_APP_SLUG: '',
+      }),
+    ).toEqual({});
   });
 });

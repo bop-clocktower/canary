@@ -49,6 +49,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -132,6 +133,7 @@ import {
   coverageExemptMatcher,
   renderFindings,
   scopeDiff,
+  COMMENT_CHAR_BUDGET,
 } from './pr-check.js';
 import { isRecord } from './diff-coverage/types.js';
 import {
@@ -140,6 +142,9 @@ import {
   runnerCompatibility,
   threadUnsafeTests,
 } from './mutation.js';
+import { MutationEngine, defaultMutationEngine } from './mutation-engine.js';
+import { runMutation } from './mutation-run.js';
+import { withinCommentBudget } from './mutation-text.js';
 import {
   abstainedReport,
   applyMutantSuppressions,
@@ -150,7 +155,9 @@ import {
 import { buildWeakTestFindings } from './weak-test.js';
 import {
   GitHubClient,
+  GuardianIdentity,
   RestGitHubClient,
+  STICKY_MARKER,
   degradationAnnotation,
   upsertStickyComment,
 } from './pr-comment.js';
@@ -241,10 +248,16 @@ export interface GuardianDeps {
     prNumber: number,
     token: string,
   ): GitHubClient;
-  buildAdjudicationSource(repo: string, token: string): AdjudicationSource;
+  buildAdjudicationSource(
+    repo: string,
+    token: string,
+    identity: GuardianIdentity,
+  ): AdjudicationSource;
   buildBranchProtectionClient(repo: string, token: string): BranchProtection;
   makeAgentTier(): AgentTier;
   sleep(secs: number): Promise<void>;
+  /** Stryker's instrumenter and process (#486 slice 2); faked in tests. */
+  mutationEngine: MutationEngine;
 }
 
 /**
@@ -313,12 +326,13 @@ export function defaultDeps(): GuardianDeps {
     runGh: spawnGh,
     buildCommentClient: (repo, prNumber, token) =>
       new RestGitHubClient(repo, prNumber, token),
-    buildAdjudicationSource: (repo, token) =>
-      new GitHubAdjudicationSource(repo, token),
+    buildAdjudicationSource: (repo, token, identity) =>
+      new GitHubAdjudicationSource(repo, token, {}, identity),
     buildBranchProtectionClient: (repo, token) =>
       new RestBranchProtectionClient(repo, token),
     makeAgentTier: () => new InSessionAgentTier(),
     sleep: (secs) => new Promise((resolve) => setTimeout(resolve, secs * 1000)),
+    mutationEngine: defaultMutationEngine,
   };
 }
 
@@ -430,6 +444,21 @@ export function isForkContext(env: NodeJS.ProcessEnv): boolean {
   const raw = env['CANARY_GUARDIAN_IS_FORK'];
   if (raw === undefined) return false;
   return raw.trim() !== '0';
+}
+
+/**
+ * Who guardian's sticky comment is authored by (#1352), read at the CLI edge
+ * so the core stays pure. `CANARY_GUARDIAN_LOGIN` replaces the
+ * `github-actions[bot]` default (a PAT, or an App's `<slug>[bot]`);
+ * `CANARY_GUARDIAN_APP_SLUG` adds the App-bot match. Blank means unset.
+ * Exported as the one definition briefing also reads (#1678), so the two
+ * comments always agree on what the variables mean.
+ */
+export function identityFromEnv(env: NodeJS.ProcessEnv): GuardianIdentity {
+  // Blank is unset: '' must never become a login that matches a ghost author.
+  const login = env['CANARY_GUARDIAN_LOGIN']?.trim();
+  const appSlug = env['CANARY_GUARDIAN_APP_SLUG']?.trim();
+  return { ...(login ? { login } : {}), ...(appSlug ? { appSlug } : {}) };
 }
 
 /** Append `notice` to the `$GITHUB_STEP_SUMMARY` file when set (no-op else). */
@@ -1200,7 +1229,11 @@ async function precisionCmd(
   const since = new Date(Date.now() - opts.days * 86_400_000)
     .toISOString()
     .slice(0, 10);
-  const source = deps.buildAdjudicationSource(opts.repo, token);
+  const source = deps.buildAdjudicationSource(
+    opts.repo,
+    token,
+    identityFromEnv(deps.env),
+  );
   const { evidence, scanned } = await collectEvidence(source, since);
   const report = deriveReport(evidence, scanned);
   deps.out(
@@ -1241,8 +1274,17 @@ async function postStickyComment(
   // GITHUB_TOKEN (#1445); the client never sends an empty bearer.
   const token = deps.env['GITHUB_TOKEN'] ?? '';
   const client = deps.buildCommentClient(ctx[0], ctx[1], token);
-  const res = await upsertStickyComment(client, body);
-  if (res.action === 'degraded' && res.notice) {
+  const res = await upsertStickyComment(
+    client,
+    body,
+    STICKY_MARKER,
+    identityFromEnv(deps.env),
+  );
+  if (res.action === 'degraded' && res.notice && res.comment_id !== null) {
+    // #1685: the comment landed, but under an author the next run won't adopt.
+    deps.err(degradationAnnotation(res.notice));
+    appendStepSummary(deps.env, res.notice);
+  } else if (res.action === 'degraded' && res.notice) {
     deps.out(degradationAnnotation(res.notice));
     appendStepSummary(deps.env, res.notice);
     // #1467: the comment was the verdict's only reader-facing surface, so a
@@ -1389,7 +1431,25 @@ interface MutationOptions {
   runnerVersion?: string;
   vitestVersion?: string;
   json?: boolean;
+  diff?: string;
+  postComment?: boolean;
+  postReport?: string;
+  pool: string;
+  timeoutMs: string;
 }
+
+/**
+ * The mutation job's own sticky marker (#1380 gap 1). It is a separate job
+ * from `pr-check`, so sharing guardian's comment would let one job overwrite
+ * the other's verdict (plan assumption, 2026-09-17).
+ */
+export const MUTATION_MARKER = '<!-- canary-guardian-mutation -->';
+
+/**
+ * Stryker's wall-clock budget: 7 of the job's 10 minutes (D7), leaving room
+ * for `npm ci`, the build and the upload.
+ */
+const DEFAULT_MUTATION_TIMEOUT_MS = 7 * 60 * 1000;
 
 /** Read an installed package's version from `node_modules`; `null` if absent. */
 function installedVersion(repoRoot: string, pkg: string): string | null {
@@ -1409,14 +1469,45 @@ function installedVersion(repoRoot: string, pkg: string): string | null {
 
 /**
  * A `files` entry `mapStrykerReport` can walk: a `mutants` array whose every
- * mutant carries `location.start`. Anything else would throw mid-mapping, and
+ * mutant carries `location.start` and a string `mutatorName`, plus, if any, a
+ * string `replacement` and a string-array `coveredBy` (#1568). Anything else would throw mid-mapping, and
  * an uncaught throw exits 1 -- which ADR 0009 reads as "survivors".
  */
 function isMappableStrykerFile(file: unknown): boolean {
   const mutants = isRecord(file) ? file['mutants'] : undefined;
   return (
     Array.isArray(mutants) &&
-    mutants.every((m) => isRecord(m) && hasStart(m['location']))
+    mutants.every(
+      (m) =>
+        isRecord(m) &&
+        hasStart(m['location']) &&
+        typeof m['mutatorName'] === 'string' &&
+        ['undefined', 'string'].includes(typeof m['replacement']) &&
+        (m['coveredBy'] === undefined || isStringArray(m['coveredBy'])),
+    )
+  );
+}
+
+const isStringArray = (v: unknown): boolean =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+/** `testFiles` is optional, but each entry it has must list its tests. */
+function hasMappableTestFiles(report: Record<string, unknown>): boolean {
+  const testFiles = report['testFiles'];
+  if (testFiles === undefined) return true;
+  return (
+    isRecord(testFiles) &&
+    Object.values(testFiles).every(
+      (f) =>
+        isRecord(f) &&
+        Array.isArray(f['tests']) &&
+        f['tests'].every(
+          (t) =>
+            isRecord(t) &&
+            typeof t['id'] === 'string' &&
+            typeof t['name'] === 'string',
+        ),
+    )
   );
 }
 
@@ -1435,6 +1526,7 @@ function mappedStrykerReport(
   path: string,
   repoRoot: string,
   excluded: string[],
+  run?: RunProvenance,
 ): MutationReport {
   let parsed: unknown;
   try {
@@ -1455,14 +1547,51 @@ function mappedStrykerReport(
   if (!Object.values(parsed['files']).every(isMappableStrykerFile)) {
     return abstainedReport(
       `the stryker report at ${path} has a file entry without a "mutants" ` +
-        'list of located mutants',
+        'list of located, named mutants with string fields',
       excluded,
     );
   }
-  const mapped = mapStrykerReport(parsed as unknown as StrykerReport, {
+  if (!hasMappableTestFiles(parsed)) {
+    return abstainedReport(
+      `the stryker report at ${path} has a "testFiles" entry without a ` +
+        '"tests" list of string ids and names',
+      excluded,
+    );
+  }
+  const report = parsed as unknown as StrykerReport;
+  if (run !== undefined) report.files = prefixPaths(report.files, 'ts/');
+  const mapped = mapStrykerReport(report, {
     excludedTests: excluded,
+    ...(run === undefined ? {} : { generated: run.generated }),
   });
-  return applyMutantSuppressions(mapped, mutatedSources(mapped, repoRoot));
+  const suppressed = applyMutantSuppressions(
+    mapped,
+    mutatedSources(mapped, repoRoot),
+  );
+  return run === undefined
+    ? suppressed
+    : { ...suppressed, durationMs: run.durationMs };
+}
+
+/** What canary's own run adds to a report it maps (D5 evidence, SC-7). */
+interface RunProvenance {
+  generated: number;
+  durationMs: number;
+}
+
+/**
+ * Re-key a report Stryker wrote from `ts/` onto repo-relative paths. Without
+ * this every finding reads `src/...`, and suppressions -- resolved against the
+ * repo root -- silently never match.
+ */
+function prefixPaths<T>(
+  files: Record<string, T>,
+  prefix: string,
+): Record<string, T> {
+  // Null-prototype: a Stryker path is report text (`__proto__`, `constructor`).
+  const out: Record<string, T> = Object.create(null);
+  for (const [path, file] of Object.entries(files)) out[prefix + path] = file;
+  return out;
 }
 
 /**
@@ -1491,30 +1620,166 @@ function mutatedSources(
   return sources;
 }
 
+const VERDICTS = ['survivors', 'all-killed', 'abstained'];
+const COUNTS = [
+  'generated',
+  'sampled',
+  'untested',
+  'killed',
+  'survived',
+  'noCoverage',
+  'timeout',
+] as const;
+
+function isFinding(v: unknown): boolean {
+  return (
+    isRecord(v) &&
+    typeof v['path'] === 'string' &&
+    typeof v['line'] === 'number' &&
+    typeof v['mutator'] === 'string' &&
+    typeof v['replacement'] === 'string' &&
+    typeof v['status'] === 'string' &&
+    isStringArray(v['coveredBy'])
+  );
+}
+
+const isSuppressed = (s: unknown): boolean =>
+  isRecord(s) && isFinding(s['finding']) && typeof s['reason'] === 'string';
+
+/** The verdict, its reason and the tallies the headline prints. */
+function hasMutationHeadline(v: Record<string, unknown>): boolean {
+  return (
+    VERDICTS.includes(v['verdict'] as string) &&
+    ['undefined', 'string'].includes(typeof v['abstainReason']) &&
+    COUNTS.every((k) => typeof v[k] === 'number')
+  );
+}
+
+/** Every field `renderMutationReport` reads, with the type it reads it as. */
+function isMutationReport(v: unknown): v is MutationReport {
+  return (
+    isRecord(v) &&
+    hasMutationHeadline(v) &&
+    Array.isArray(v['findings']) &&
+    v['findings'].every(isFinding) &&
+    Array.isArray(v['suppressed']) &&
+    v['suppressed'].every(isSuppressed) &&
+    isStringArray(v['excludedTests'])
+  );
+}
+
 /**
- * Abstain, saying which of the two reasons applies.
+ * Load a report `--report-out` saved, for the posting step (`--post-report`).
  *
- * While `@stryker-mutator/vitest-runner` cannot kill a mutant on vitest 5
- * (stryker-js#6210) the reason names that issue; with a runner that could, the
- * reason is that this slice ships the scope, the mapping and the exit contract
- * but not the run itself (fork F6 on #486). Neither is a pass.
+ * That file sits in a workspace the PR's own tests just ran in, so it is read
+ * as untrusted: anything malformed abstains rather than crashing, because an
+ * uncaught throw exits 1 and ADR 0009 reads 1 as "survivors".
  */
-function guardAbstention(
+function savedMutationReport(path: string): MutationReport {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (error) {
+    return abstainedReport(
+      `the mutation report at ${path} could not be read: ${(error as Error).message}`,
+      [],
+    );
+  }
+  return isMutationReport(parsed)
+    ? parsed
+    : abstainedReport(
+        `the mutation report at ${path} could not be read: not a guardian mutation report`,
+        [],
+      );
+}
+
+/** `--timeout-ms`, falling back to the D7 default on anything not positive. */
+function mutationTimeout(raw: string): number {
+  const ms = Number(raw);
+  return Number.isInteger(ms) && ms > 0 ? ms : DEFAULT_MUTATION_TIMEOUT_MS;
+}
+
+/**
+ * Run Stryker on the PR's added lines and map what it reports (#486 slice 2).
+ *
+ * The runner guard comes first, so an install that cannot kill a mutant
+ * (stryker-js#6210) abstains without reading a diff. The run uses the `forks`
+ * pool, so no suite is excluded and the disclosure says so.
+ */
+async function runOnDiff(
   opts: MutationOptions,
-  excluded: string[],
-): MutationReport {
-  const runner =
+  deps: GuardianDeps,
+): Promise<MutationReport> {
+  const runnerVersion =
     opts.runnerVersion ??
     installedVersion(opts.repoRoot, '@stryker-mutator/vitest-runner');
-  const vitest =
+  const vitestVersion =
     opts.vitestVersion ?? installedVersion(opts.repoRoot, 'vitest');
-  const verdict = runnerCompatibility(runner, vitest);
-  return abstainedReport(
-    verdict.compatible
-      ? 'no --report given and the mutation run is not wired yet (#486)'
-      : verdict.reason!,
-    excluded,
+  const verdict = runnerCompatibility(runnerVersion, vitestVersion);
+  if (!verdict.compatible) return abstainedReport(verdict.reason!, []);
+
+  const diff = readPrDiff(opts.diff ?? null, deps);
+  const result = await runMutation(
+    {
+      tsRoot: join(opts.repoRoot, 'ts'),
+      units: scopeDiff(diff.text),
+      runnerVersion,
+      vitestVersion,
+      timeoutMs: mutationTimeout(opts.timeoutMs),
+    },
+    deps.mutationEngine,
   );
+  if (result.restored.length > 0) {
+    deps.err(
+      degradationAnnotation(
+        `guardian mutation: Stryker left ${result.restored.map((p) => `ts/${p}`).join(', ')} mutated; restored the pre-run contents`,
+      ),
+    );
+  }
+  if (result.kind === 'abstained') return abstainedReport(result.reason, []);
+  try {
+    return mappedStrykerReport(result.reportPath, opts.repoRoot, [], {
+      generated: result.generated,
+      durationMs: result.durationMs,
+    });
+  } finally {
+    rmSync(dirname(result.reportPath), { recursive: true, force: true });
+  }
+}
+
+/**
+ * Upsert the mutation sticky (#1380 gap 1). An abstention is posted too, so a
+ * survivor comment from an earlier push cannot outlive the run that replaced
+ * it. A failed post degrades loudly; the report is already in the job log.
+ */
+async function postMutationComment(
+  report: MutationReport,
+  deps: GuardianDeps,
+): Promise<void> {
+  const body = withinCommentBudget(
+    `${MUTATION_MARKER}\n${renderMutationReport(report)}`,
+    COMMENT_CHAR_BUDGET,
+  );
+  const ctx = prContextFromEnv(deps.env);
+  if (ctx === null) {
+    deps.out(`guardian: no PR context in env ${EM_DASH} comment not posted.`);
+    return;
+  }
+  const client = deps.buildCommentClient(
+    ctx[0],
+    ctx[1],
+    deps.env['GITHUB_TOKEN'] ?? '',
+  );
+  const res = await upsertStickyComment(
+    client,
+    body,
+    MUTATION_MARKER,
+    identityFromEnv(deps.env),
+  );
+  if (res.action === 'degraded' && res.notice) {
+    deps.err(degradationAnnotation(res.notice));
+    appendStepSummary(deps.env, res.notice);
+  }
 }
 
 /**
@@ -1522,17 +1787,28 @@ function guardAbstention(
  *
  * Exit codes follow ADR 0009: 0 all-killed, 1 survivors, 3 abstained. Every
  * path through here ends in a report that states its denominator and discloses
- * the suites a mutation run has to exclude.
+ * any suites the run excluded.
  *
- * The report covers whatever the supplied Stryker run covered; it is not
- * narrowed to the diff. Calling it diff-scoped would overstate it.
+ * Without `--report` it runs Stryker on the diff's added lines. With one, it
+ * maps whatever that run covered -- not narrowed to the diff -- and discloses
+ * the thread-unsafe suites only when told the run used the `threads` pool.
  */
-function mutationCmd(opts: MutationOptions, deps: GuardianDeps): void {
-  const excluded = threadUnsafeTests(join(opts.repoRoot, 'ts'));
+async function mutationCmd(
+  opts: MutationOptions,
+  deps: GuardianDeps,
+): Promise<void> {
   const report =
-    opts.report === undefined
-      ? guardAbstention(opts, excluded)
-      : mappedStrykerReport(opts.report, opts.repoRoot, excluded);
+    opts.postReport !== undefined
+      ? savedMutationReport(opts.postReport)
+      : opts.report === undefined
+        ? await runOnDiff(opts, deps)
+        : mappedStrykerReport(
+            opts.report,
+            opts.repoRoot,
+            opts.pool === 'threads'
+              ? threadUnsafeTests(join(opts.repoRoot, 'ts'))
+              : [],
+          );
 
   if (opts.reportOut !== undefined) {
     mkdirSync(dirname(opts.reportOut), { recursive: true });
@@ -1548,6 +1824,7 @@ function mutationCmd(opts: MutationOptions, deps: GuardianDeps): void {
       ? ensureAscii(JSON.stringify(report, null, 2))
       : renderMutationReport(report),
   );
+  if (opts.postComment) await postMutationComment(report, deps);
   throw new CliExitError(mutationExitCode(report));
 }
 interface PrCheckOptions {
@@ -2207,18 +2484,45 @@ export function createGuardianCommand(
     .command('mutation')
     .description(
       'Advisory mutation report: which mutated lines a test covers but would ' +
-        'not fail on, over whatever the supplied Stryker run covered. ' +
+        "not fail on. Runs Stryker on the diff's added lines under ts/src " +
+        '(capped at 150 mutants), or maps a supplied report. ' +
         'Exit 0 all-killed, 1 survivors, 3 abstained.',
     )
     .option(
+      '--diff <diff>',
+      "Diff file, '-' for stdin, or omit for the PR diff in CI (else `git diff`).",
+    )
+    .option(
       '--report <path>',
-      'A StrykerJS JSON report to map. Without it the command reports what it ' +
-        'WOULD run and abstains, because the mutation run itself is not wired ' +
-        'yet (see --runner-version).',
+      'Map an existing StrykerJS JSON report instead of running Stryker. ' +
+        'It is not narrowed to the diff.',
+    )
+    .addOption(
+      new Option(
+        '--pool <pool>',
+        "The vitest pool the --report run used; 'threads' discloses the suites it had to exclude.",
+      )
+        .choices(['forks', 'threads'])
+        .default('forks'),
     )
     .option(
       '--report-out <path>',
       'Write the guardian mutation report as JSON (the CI artifact).',
+    )
+    .option(
+      '--post-comment',
+      'Upsert the report as its own sticky PR comment (separate from pr-check).',
+    )
+    .option(
+      '--post-report <path>',
+      'Re-emit a report --report-out saved, running nothing: lets CI post from ' +
+        "a step that never ran the PR's tests.",
+    )
+    .addOption(
+      new Option(
+        '--timeout-ms <ms>',
+        'Wall-clock budget for the Stryker run.',
+      ).default(String(DEFAULT_MUTATION_TIMEOUT_MS)),
     )
     .addOption(new Option('--repo-root <dir>', 'Repository root.').default('.'))
     .addOption(
@@ -2234,8 +2538,8 @@ export function createGuardianCommand(
       ).hideHelp(),
     )
     .option('--json', 'Emit the mutation report as JSON.')
-    .action((opts: MutationOptions) => {
-      mutationCmd(opts, deps);
+    .action(async (opts: MutationOptions) => {
+      await mutationCmd(opts, deps);
     });
 
   program

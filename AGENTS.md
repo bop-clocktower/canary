@@ -523,8 +523,25 @@ authenticated session with no API key required.
 not fail on. A mutant nothing notices is a _surviving mutant_, and it is
 concrete evidence of a weak assertion, which is what coverage cannot see.
 
-The report covers whatever the Stryker run it maps covered; `--report` is not
-narrowed to the diff, so it is not described as diff-scoped.
+Without `--report` it runs Stryker itself, on the lines the PR adds under
+`ts/src` (the guardian's own diff resolution: `--diff`, else the PR diff in CI,
+else `git diff`). `--report <path>` instead maps an existing Stryker run, and is
+not narrowed to the diff.
+
+- **The run.** Pinned `@stryker-mutator/{core,vitest-runner,instrumenter}`
+  10.1.1, `coverageAnalysis: perTest`, the vitest `forks` pool (so no suite is
+  excluded), `inPlace` (Stryker's sandbox copies only `ts/`, which breaks suites
+  that read repo-root files), and `StringLiteral`/`ObjectLiteral` excluded (spec
+  D8). Every target file is snapshotted first and restored byte for byte if a
+  killed run leaves it mutated.
+- **The cap.** At most 150 runnable mutants per PR (D7), counted up front with
+  Stryker's own instrumenter and cut as a deterministic (path, line) prefix of
+  whole lines; a capped report says `sampled N of M`. Stryker gets 7 of the
+  job's 10 minutes (`--timeout-ms`).
+- **The comment.** `--post-comment` upserts its own sticky
+  (`<!-- canary-guardian-mutation -->`), separate from pr-check's, kept under
+  the comment size budget. CI runs the PR's tests in a step with no token and
+  posts from `mutation-report.json` in a separate step (`--post-report`).
 
 - **Advisory, on purpose.** The `mutation` job in `guardian.yml` never fails a
   PR on survivors, and it is listed under `advisory` in
@@ -534,9 +551,10 @@ narrowed to the diff, so it is not described as diff-scoped.
 - **Exit codes** follow ADR 0009: `0` every sampled mutant was killed, `1`
   survivors, `3` abstained.
 - **Abstention is not a pass.** Zero mutants, no mutant that ran a test (every
-  one untested), no mutant covered by any test, an unreadable report, or a
-  runner that cannot kill reports `abstained` with the reason. It never renders
-  "0 survived".
+  one untested), no mutant covered by any test, an unreadable report, a diff
+  with nothing to mutate under `ts/src`, Stryker crashing or timing out, or a
+  runner that cannot kill reports `abstained` with the reason, and still writes
+  `--report-out`. It never renders "0 survived".
 - **A timeout is not a kill.** Timeouts are excluded from the killed numerator,
   so a run that killed nothing and only timed out abstains rather than reporting
   `all-killed`; every non-abstained report renders its timeout count, zero
@@ -551,18 +569,18 @@ narrowed to the diff, so it is not described as diff-scoped.
   the field only under `coverageAnalysis: perTest`, so its absence means
   attribution was not recorded. The survivor counts in `survived` and drives
   exit 1, its line says so, and one line under the headline counts such
-  survivors and points at `perTest`. Only an explicit `coveredBy: []` is
-  `no-coverage`.
+  survivors and points at `perTest`. Only Stryker's `NoCoverage` status, or a
+  `Survived` mutant with an explicit `coveredBy: []`, is `no-coverage`.
 - **Author obligation.** For each survivor, either strengthen a test until it
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,
   exactly like `canary:allow-untested`.
-- **It currently abstains everywhere, and says so.**
-  `@stryker-mutator/vitest-runner` 10.0.0 runs zero tests per mutant on vitest
-  5, so every covered mutant would read "survived" (upstream `stryker-js#6210`).
-  The command refuses to print that. Details and the second constraint -- suites
-  using `process.chdir` cannot run in Stryker's worker-thread pool, and every
-  report discloses which ones were excluded -- are in
+- **The runner guard stays.** `@stryker-mutator/vitest-runner` 10.0.0 runs zero
+  tests per mutant on vitest 5, so every covered mutant would read "survived"
+  (upstream `stryker-js#6210`, fixed in 10.1.x). Any install at or below 10.0.0
+  still abstains rather than print that. A `--report` from a `threads`-pool run
+  can pass `--pool threads` to disclose the `process.chdir` suites such a run
+  had to exclude. Details are in
   `docs/changes/486-diff-scoped-mutation-testing/`.
 
 ## Integration with Harness
@@ -642,6 +660,18 @@ workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@14'` — rath
 than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
 silent CI break with nothing to roll back to.
+
+**Fetch retry (#1533).** Because the pin floats, CI is among the first to pull a
+just-published release, and the registry can 404 that release's new transitive
+tarballs for a short while. Every step that only _fetches_ the CLI (the
+`npm install -g`, and each `Resolve harness CLI version` probe) runs through
+`scripts/retry-fetch.mjs`: 3 attempts, 10 s then 30 s apart, a `::warning::` for
+every failed attempt, and red after the last. A check is never retried.
+`harness-architecture.yml` resolves the version and warms the exact version
+first, so `check-deps` and `validate` each run once. The one exception is
+`refresh-arch-baseline.yml`, which retries inline with the same contract: its
+tree is the PR head, and a branch older than #1533 has no helper.
+`ts/test/harness-cli-fetch-retry.test.ts` enforces all of it.
 
 Bumping the major is a **three-step sequence**, in this order (#545, #547):
 
@@ -1205,7 +1235,7 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 14 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 83 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place, then 27 shipped rows archived by the
   2026-09-14 `roadmap-groom --check-issues` reconciliation, then 11 more
@@ -1213,11 +1243,19 @@ Two related facts worth not rediscovering:
   `canary-batwoman` linked to #749 and 5 shipped rows archived on 2026-09-29,
   then the canary QA site row linked to #1151 on 2026-10-05, then the
   canary-huntress row (#617, closed `NOT_PLANNED` by ADR 0021) archived on
-  2026-10-16, then the canary-blackalice row linked to #1524 on 2026-10-28,
-  then the TestTracker quarantine-ledger row linked to #1321 on 2026-11-06. The
-  count is of LINKED rows, and every row in the roadmap is linked, so
-  `--check-issues` abstains on none of them — and `Priority`, serialized in that
-  same extended group, is populated on every one of them.
+  2026-10-16, then the canary-blackalice row linked to #1524 on 2026-10-28, then
+  the TestTracker quarantine-ledger row linked to #1321 on 2026-11-06, then four
+  Intake rows linked to #1637/#1636/#1632/#1267 by issue-fleet on 2026-11-23
+  (ADR 0043), then 55 Intake rows backfilled on 2026-11-23 for every open
+  `route:roadmap` issue that had none (#1437, ADR 0043), then 5 shipped rows
+  (#1321/#1437/#1438/#1636/#1637) archived on 2026-11-23, then the Intake row
+  linked to #1659 by issue-fleet on 2026-11-23, then five Intake rows linked to
+  #1666/#1669/#1670/#1672/#1673 by issue-fleet on 2026-11-23, then four Intake
+  rows linked to #1682/#1680/#1681/#1678 by issue-fleet on 2026-11-24, then five
+  Intake rows linked to #1685/#1686/#1691/#1692/#1693 by issue-fleet on
+  2026-11-24. The count is of LINKED rows, and every row in the roadmap is
+  linked, so `--check-issues` abstains on none of them — and `Priority`,
+  serialized in that same extended group, is populated on every one of them.
 - **The `route:*` label vocabulary is canary's half of the `issue-fleet`
   contract (#1071, ADR 0034).** `issue-fleet` computes a route per triaged issue
   and has nowhere to put it; the skill is vendored under
@@ -1233,15 +1271,20 @@ Two related facts worth not rediscovering:
   the vocabulary (it only ever CREATES);
   `node scripts/route-queue.mjs report [--json]` prints the denominator — routed
   / unroutable / untriaged / conflicted, which sum to the examined count — and
-  exits **3** on a zero denominator. **The report never passes `--label` to
-  `gh issue list`**: that filter lags writes and under-reports (seen twice
-  during the #1071 triage run), so the denominator is read off each issue's own
-  labels. `ts/test/route-labels.test.ts` asserts the flag's absence from
-  recorded `gh` argv, not just that the count looked right. Two route labels on
-  one issue is reported as `conflicted` and never auto-resolved.
+  exits **3** on a zero denominator. It also lists the `route:roadmap` issues
+  with no `**External-ID:** github:<owner>/<repo>#N` row in `docs/roadmap.md`
+  (ADR 0043, #1438; JSON `unrowedRoadmap`). That count is advisory and never
+  changes the exit code; an unreadable roadmap, an unknown repo, or zero rows
+  for this repo prints `could not check` (JSON `null`), never 0. **The report
+  never passes `--label` to `gh issue list`**: that filter lags writes and
+  under-reports (seen twice during the #1071 triage run), so the denominator is
+  read off each issue's own labels. `ts/test/route-labels.test.ts` asserts the
+  flag's absence from recorded `gh` argv, not just that the count looked right.
+  Two route labels on one issue is reported as `conflicted` and never
+  auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 14 rows
+  effectively blind gate that reported a real number nobody read. All 83 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless
@@ -1751,11 +1794,12 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
   before they reach CI.
 - Re-runs `node scripts/security_ledger.mjs` and restages its outputs only when
   the commit stages a ledger input (`.harness/security/timeline.json`,
-  `.harness/security/supply-chain.json`, `docs/SECURITY_LEDGER.md`, or the script
-  itself). Unrelated commits leave the ledger alone; CI (`harness-security.yml`)
-  is its canonical writer (#1446). The ledger's supply-chain line comes from the
-  sidecar `scripts/supply_chain_audit.mjs` writes, and reads "not measured" when
-  nothing was audited (#1436). It informs and gates nothing.
+  `.harness/security/supply-chain.json`, `docs/SECURITY_LEDGER.md`, or the
+  script itself). Unrelated commits leave the ledger alone; CI
+  (`harness-security.yml`) is its canonical writer (#1446). The ledger's
+  supply-chain line comes from the sidecar `scripts/supply_chain_audit.mjs`
+  writes, and reads "not measured" when nothing was audited (#1436). It informs
+  and gates nothing.
 
 Then install the Python test dependency (pytest) into the `python3` on your
 `PATH` — the same interpreter the tests spawn:

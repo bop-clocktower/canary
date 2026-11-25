@@ -976,3 +976,57 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
 - **Plan:** —
 - **Priority:** P1
 - **External-ID:** github:bop-clocktower/canary#1465
+
+### TestTracker quarantine state from the katana ledger
+
+- **Status:** done
+- **Spec:** docs/changes/fc1106-1321-quarantine-ledger/proposal.md
+- **Summary:** `--quarantine-ledger <path>` on the ingest reporter and `canary testtracker push`: a skipped result matching a katana ledger row by `(file, test)` is tagged `quarantined` + `quarantine:<issue>` within the existing ingest contract; unmatched rows are reported; release is implicit. The dashboard must read the tag before it means "quarantined" in its UI.
+- **Blockers:** —
+- **Plan:** docs/changes/fc1106-1321-quarantine-ledger/plans/
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1321
+
+### php audit reports its checked-package count and fails on zero
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** `canary php audit` prints no checked-package count on a pass, so a run that checked zero packages (empty or unread lockfile, wrong cwd) reads green; print the count on a pass, fail on zero naming the lockfile, and pin both cases with a test.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#1637
+
+### blackhawk BH003 stops flagging Number#toLocaleString
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** BH003-local-timezone flags every `.toLocaleString(` call, including numeric literals with a pinned locale that have no time-zone dependence; add a `keep` that drops numeric-literal receivers and calls whose options pin a `timeZone`, while still flagging dates formatted without one.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1636
+
+### backfill roadmap rows for route:roadmap issues
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Give every open `route:roadmap` issue that predates ADR 0043 a roadmap row linked by External-ID, so roadmap-pilot's scorer can rank the whole build queue.
+- **Blockers:** —
+- **Plan:** docs/changes/fc1123b-1437-backfill-intake-rows/plans/
+- **Assignee:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#1437
+
+### route-queue reports routed issues with no roadmap row
+
+- **Status:** done
+- **Spec:** docs/changes/1438-route-queue-unrowed-report/proposal.md
+- **Summary:** `scripts/route-queue.mjs report` counts routed and unroutable issues but not `route:roadmap` issues with no External-ID row; report that count so ADR 0043 stays held.
+- **Blockers:** —
+- **Plan:** docs/changes/1438-route-queue-unrowed-report/plans/
+- **Assignee:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#1438

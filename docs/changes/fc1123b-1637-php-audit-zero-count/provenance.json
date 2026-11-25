@@ -1,0 +1,24 @@
+{
+  "issues": [1637],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/php-audit.test.ts::canary php audit > passes a clean lockfile, counting prod + dev packages (#1637)",
+    "ts/test/php-audit.test.ts::canary php audit abstains instead of passing > zero packages names the lockfile path it read (#1637)",
+    "ts/test/php-audit.test.ts::canary php audit abstains instead of passing > a missing lockfile names the path it tried to read (#1637)"
+  ],
+  "assumptions": [
+    "The issue's core symptom (no count on a pass; a 0-package run reads green) does not reproduce on origin/main aac86e35: since #1466 (v9.5.0) a pass prints `All N run package check(s) passed` and a 0-package or missing lockfile already exits 3. The fix therefore closes the remaining gaps named by the human forks F4/F5 only.",
+    "F5 (a): only `canary php audit` changes its pass line, to `✓ 0 finding(s) across N checked`. The shared gateOutcome summary line and `canary php floor` are untouched. No job-summary line is written.",
+    "F4 (a): the existing abstain path (skipped entry + EXIT_ABSTAINED) is reused; the only change is that the skipped entry's `name` is now the resolved composer.lock path instead of the project directory.",
+    "JSON compatibility: no key is added or removed; `checked`, `findings`, `skipped`, `abstained` keep their shape. The one value change is `skipped[].name` for lockfile abstentions (dir -> dir/composer.lock).",
+    "Composer-run abstentions (`name: 'composer audit'`) keep their name; they are about the composer run, not the lockfile."
+  ],
+  "closingKeywords": {
+    "1637": "Closes"
+  },
+  "closingKeywordWhy": "Human authorized `Closes #<item>` for this batch's own issue; the PR delivers the issue's acceptance (pass logs a count > 0; zero/missing lockfile exits 3 naming the lockfile; tests pin both).",
+  "run": "fc1123b",
+  "fleet": "roadmap-fleet",
+  "baseSha": "aac86e35"
+}

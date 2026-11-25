@@ -17,6 +17,8 @@
 // JS has no verbose-regex flag, so patterns are compact literals documented by
 // the comment above them.
 
+import { localeCallIsPinned } from './locale-pin.mjs';
+
 export const SEVERITIES = ['high', 'medium', 'low'];
 
 // Frozen-clock idioms. Their presence anywhere in a file suppresses every
@@ -154,6 +156,21 @@ function delayIsPositive(match) {
   });
 }
 
+/**
+ * BH003 guard (#1636): keep unless every BH003 match from the first one on is
+ * pinned. The scanner hands over only the first match on a line, so a later
+ * unpinned call (`(5).toLocaleString() + d.toLocaleString()`) must still keep.
+ */
+function localTzUnpinned(match) {
+  const line = match.input ?? '';
+  const re = new RegExp(LOCAL_TZ.source, 'g');
+  re.lastIndex = match.index;
+  for (let m = re.exec(line); m !== null; m = re.exec(line)) {
+    if (!localeCallIsPinned(line, m)) return true;
+  }
+  return false;
+}
+
 /** BH004 guard: keep only when the compared datetime carries no timezone token. */
 function naiveDatetime(match) {
   const line = match.input ?? '';
@@ -206,7 +223,7 @@ export const RULES = [
       'differs between a developer laptop and a UTC CI runner',
     pattern: LOCAL_TZ,
     clockDependent: false,
-    keep: null,
+    keep: localTzUnpinned,
     php: { pattern: PHP_LOCAL_TZ, keep: null },
   },
   {

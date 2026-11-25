@@ -120,7 +120,9 @@ not backfill any rows.
   `scripts/route-queue.mjs report` counts routed, unroutable, untriaged and
   conflicted issues. It does not count `route:roadmap` issues that have no
   `External-ID:` row. That count would make the gap visible on every run.
-  Follow-up.
+  Follow-up. Done in #1438: the report now lists those issues. The count is
+  advisory, and it prints `could not check` rather than 0 when the roadmap has
+  no rows.
 
 ### Assumptions made
 

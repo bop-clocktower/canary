@@ -774,8 +774,10 @@ describe('the entropy ratchet CI wiring (#744)', () => {
     expect(yaml).toMatch(/id:\s*harness-cli/);
     // A hardcoded version here would defeat the point entirely: it would agree
     // with the baseline forever while the scan floated away from both.
+    // #1533: the probe runs through the bounded fetch retry; what it probes
+    // is still the floating pin.
     expect(yaml).toMatch(
-      /resolved="\$\(npx --yes -p "\$HARNESS_CLI" harness --version/,
+      /resolved="\$\(node scripts\/retry-fetch\.mjs --expect-semver -- npx --yes -p "\$HARNESS_CLI" harness --version/,
     );
   });
 

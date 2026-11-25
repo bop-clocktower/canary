@@ -76,7 +76,144 @@ origin_tip() {
   return 1
 }
 
+# How the clone's HEAD relates to ORIGIN_TIP once the two differ (#1682).
+# Inequality is not ordering: only an ancestor is "behind", the one case
+# `pull --ff-only` is guaranteed to clear. Prints one of:
+#   behind    MKT_HEAD is an ancestor of origin's tip
+#   unfetched origin's tip is not in the clone, so the clone cannot contain
+#             it (behind, or diverged); a pull fetches it, then either
+#             fast-forwards or refuses loudly, so it never no-ops
+#   ahead     origin's tip is an ancestor of MKT_HEAD (a pull is a no-op)
+#   diverged  neither is an ancestor of the other (a pull cannot ff)
+#   unknown   the clone's HEAD could not be read
+clone_relation() {
+  if [ "$MKT_HEAD" = "unknown" ]; then
+    echo unknown
+  elif ! git -C "$MKT" cat-file -e "$ORIGIN_TIP^{commit}" 2>/dev/null; then
+    echo unfetched
+  elif git -C "$MKT" merge-base --is-ancestor "$MKT_HEAD" "$ORIGIN_TIP" 2>/dev/null; then
+    echo behind
+  elif git -C "$MKT" merge-base --is-ancestor "$ORIGIN_TIP" "$MKT_HEAD" 2>/dev/null; then
+    echo ahead
+  else
+    echo diverged
+  fi
+}
+
+# Healthy: stay silent. Findings: yell into both the UI and model context.
+# Always exits, so check 0 can stop the hook before the later checks run.
+emit_and_exit() {
+  if [ "${#FINDINGS[@]}" -eq 0 ]; then
+    exit 0
+  fi
+
+  # The one place this hook can actually speak. If python3 is missing or the
+  # heredoc fails, every finding computed above is discarded and the hook
+  # exits 0 — which Claude Code reads as "healthy". A siren that cannot sound
+  # is worse than no siren, so the emit is checked and there is a plain-text
+  # fallback.
+  if ! python3 - "${FINDINGS[@]}" <<'EOF'
+import json, sys
+findings = sys.argv[1:]
+lines = "\n".join(f"  - {f}" for f in findings)
+msg = f"CANARY SIREN — {len(findings)} tooling-rot finding(s):\n{lines}"
+print(json.dumps({
+    "systemMessage": msg,
+    "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": (
+            "HEADLINE ALERT (canary session siren): the canary toolchain on this machine is degraded. "
+            "Per the 'distrust green until vetted' rule, surface this to the user in your FIRST message "
+            "and treat fixing it as outranking new work.\n" + msg
+        ),
+    },
+}))
+EOF
+  then
+    # No JSON channel. Say it on stderr rather than vanishing.
+    {
+      echo "CANARY SIREN — ${#FINDINGS[@]} finding(s), and python3 was unavailable to"
+      echo "emit them as hook JSON, so this session was NOT told:"
+      for f in "${FINDINGS[@]}"; do echo "  - $f"; done
+    } >&2
+    exit 1
+  fi
+  exit 0
+}
+
 FINDINGS=()
+
+# 0. This hook against the marketplace's copy of itself (#1632).
+#    install-siren.mjs installs hooks into ~/.claude/hooks/ as COPIES, and
+#    neither `claude plugin marketplace update` nor a plugin reinstall touches
+#    them. So a merged siren fix never reaches the machine until someone
+#    reinstalls, and meanwhile the stale copy keeps firing findings from the
+#    logic the fix replaced, with remedies that cannot clear them (#1599
+#    outlived its own merge this way). The compare itself is a local byte
+#    compare; only a differing copy goes on to ask origin (below).
+#    When the copies differ, every check below may be other logic too, so
+#    this finding REPLACES them rather than joining them.
+#
+#    A byte compare says the copies DIFFER, not which is newer (#1670). The
+#    hooks may have come from a dev checkout ahead of a clone that is itself
+#    behind origin, and then `--install-hooks` from that clone would overwrite
+#    the newer copy with a stale one. So check 3's clone-freshness call runs
+#    here too (same capped ls-remote, no extra call: the hook exits after),
+#    and a behind clone is reported with "pull the clone first" in place of
+#    the install remedy. Only a clone that is truly behind gets that (#1682):
+#    an ahead or diverged clone cannot be cleared by a pull, so it keeps the
+#    install remedy with a caveat. An origin that cannot be asked, or a clone
+#    with no .git, keeps the install remedy and says freshness is unverifiable
+#    rather than going quiet about it.
+SELF="${BASH_SOURCE[0]:-}"
+MKT_SELF="$MKT/hooks/$(basename "${SELF:-canary-session-siren.sh}")"
+if [ -d "$MKT" ]; then # an absent clone is check 3's finding
+  if [ -z "$SELF" ] || [ ! -r "$SELF" ] || [ ! -r "$MKT_SELF" ]; then
+    FINDINGS+=("cannot compare this siren hook with the marketplace copy (${SELF:-unknown path} vs $MKT_SELF) — whether it is current is unverifiable")
+  elif ! cmp -s "$SELF" "$MKT_SELF"; then
+    DIFFERS="siren hook differs from the marketplace copy ($SELF vs $MKT_SELF), so its other checks may not match the marketplace's and were skipped"
+    MKT_HEAD=$(git -C "$MKT" rev-parse --verify -q HEAD 2>/dev/null || echo "unknown")
+    INSTALL="node $(shq "$MKT/scripts/install-siren.mjs") --install-hooks"
+    # Three separate outcomes, never folded into one && chain: a clone that
+    # cannot be checked is an abstention to state, not "heads equal" (#1682).
+    if [ ! -d "$MKT/.git" ]; then
+      FINDINGS=(
+        "$DIFFERS — run: $INSTALL"
+        "clone freshness unverifiable: $MKT has no .git, so whether its hooks match origin cannot be checked — install from it only if you know it is current"
+      )
+    elif ! origin_tip; then
+      FINDINGS=(
+        "$DIFFERS — run: $INSTALL"
+        "clone freshness unverifiable: git ls-remote origin HEAD $LS_REMOTE_WHY for $MKT — install from it only if you know it is current"
+      )
+    elif [ "$MKT_HEAD" = "$ORIGIN_TIP" ]; then
+      FINDINGS=("$DIFFERS — run: $INSTALL")
+    else
+      REL=$(clone_relation)
+      case "$REL" in
+      behind | unfetched)
+        FINDINGS=(
+          "bop-clocktower marketplace clone is behind origin (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}), so it is not a safe source for the siren hooks — pull the clone first, run: git -C $(shq "$MKT") pull --ff-only"
+          "$DIFFERS — once the clone is at origin, the next session compares again"
+        )
+        ;;
+      ahead | diverged)
+        FINDINGS=(
+          "bop-clocktower marketplace clone differs from origin ($REL) (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}) — a pull cannot bring it to origin; inspect: git -C $(shq "$MKT") log --oneline ${ORIGIN_TIP:0:12}..HEAD"
+          "$DIFFERS — the clone has commits origin does not have, so this installs them too; run: $INSTALL"
+        )
+        ;;
+      *)
+        FINDINGS=(
+          "$DIFFERS — run: $INSTALL"
+          "clone freshness unverifiable: $MKT has no readable HEAD to compare with origin @${ORIGIN_TIP:0:7} — install from it only if you know it is current"
+        )
+        ;;
+      esac
+    fi
+    emit_and_exit
+  fi
+fi
 
 # 1. Plugin must be installed AND enabled (the June failure: flat files
 #    bypassed the plugin system entirely, so nothing tracked versions).
@@ -105,12 +242,28 @@ fi
 if [ -d "$MKT/.git" ]; then
   if origin_tip; then
     MKT_HEAD=$(git -C "$MKT" rev-parse --verify -q HEAD 2>/dev/null || echo "unknown")
+    # Inequality is not ordering (#1682): only a clone a pull can clear is
+    # "behind"; an ahead or diverged one gets no remedy that no-ops.
     if [ "$MKT_HEAD" != "$ORIGIN_TIP" ]; then
-      FINDINGS+=("bop-clocktower marketplace clone is behind origin (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}) — run: git -C $(shq "$MKT") pull --ff-only")
+      REL=$(clone_relation)
+      case "$REL" in
+      behind | unfetched)
+        FINDINGS+=("bop-clocktower marketplace clone is behind origin (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}) — run: git -C $(shq "$MKT") pull --ff-only")
+        ;;
+      ahead | diverged)
+        FINDINGS+=("bop-clocktower marketplace clone differs from origin ($REL) (clone @${MKT_HEAD:0:7}, origin @${ORIGIN_TIP:0:7}) — a pull cannot bring it to origin; inspect: git -C $(shq "$MKT") log --oneline ${ORIGIN_TIP:0:12}..HEAD")
+        ;;
+      *)
+        FINDINGS+=("bop-clocktower marketplace clone has no readable HEAD to compare with origin @${ORIGIN_TIP:0:7} — freshness unverifiable")
+        ;;
+      esac
     fi
   else
     FINDINGS+=("git ls-remote origin HEAD $LS_REMOTE_WHY for $MKT — marketplace freshness and installed-plugin staleness unverifiable")
   fi
+elif [ -d "$MKT" ]; then
+  # Present but not a clone (#1692): naming it missing points at the wrong fix.
+  FINDINGS+=("bop-clocktower marketplace directory at $MKT is present but not a git clone — remove the stale directory or re-clone")
 else
   FINDINGS+=("bop-clocktower marketplace checkout missing at $MKT")
 fi
@@ -189,39 +342,4 @@ else
   fi
 fi
 
-# Healthy: stay silent. Findings: yell into both the UI and model context.
-if [ "${#FINDINGS[@]}" -eq 0 ]; then
-  exit 0
-fi
-
-# The one place this hook can actually speak. If python3 is missing or the
-# heredoc fails, every finding computed above is discarded and the hook exits
-# 0 — which Claude Code reads as "healthy". A siren that cannot sound is worse
-# than no siren, so the emit is checked and there is a plain-text fallback.
-if ! python3 - "${FINDINGS[@]}" <<'EOF'
-import json, sys
-findings = sys.argv[1:]
-lines = "\n".join(f"  - {f}" for f in findings)
-msg = f"CANARY SIREN — {len(findings)} tooling-rot finding(s):\n{lines}"
-print(json.dumps({
-    "systemMessage": msg,
-    "hookSpecificOutput": {
-        "hookEventName": "SessionStart",
-        "additionalContext": (
-            "HEADLINE ALERT (canary session siren): the canary toolchain on this machine is degraded. "
-            "Per the 'distrust green until vetted' rule, surface this to the user in your FIRST message "
-            "and treat fixing it as outranking new work.\n" + msg
-        ),
-    },
-}))
-EOF
-then
-  # No JSON channel. Say it on stderr rather than vanishing.
-  {
-    echo "CANARY SIREN — ${#FINDINGS[@]} finding(s), and python3 was unavailable to"
-    echo "emit them as hook JSON, so this session was NOT told:"
-    for f in "${FINDINGS[@]}"; do echo "  - $f"; done
-  } >&2
-  exit 1
-fi
-exit 0
+emit_and_exit

@@ -1,0 +1,73 @@
+{
+  "issues": [1666, 1669, 1672],
+  "route": "bug",
+  "stages": ["debugging"],
+  "members": [
+    {
+      "issue": 1666,
+      "scope": "item 1 (jsDeclarationStart); item 2 is the same decision as #1669 and is resolved by that member",
+      "commits": [
+        "77ec807f (red test)",
+        "53db62ed (fix)",
+        "764a10c2 (changelog)"
+      ],
+      "reproducingTests": [
+        "ts/test/vacuity-scanner.test.ts::reads @covers above %s whose title wraps"
+      ],
+      "redAtBase": "npx vitest run test/vacuity-scanner.test.ts -t 'whose title wraps' -> Tests 4 failed | 133 skipped (137) at 448969ff"
+    },
+    {
+      "issue": 1669,
+      "scope": "option (a): exempt .skip blocks; they leave checked and are listed as skips",
+      "commits": [
+        "612a4f34 (red test)",
+        "a5b6d31d (fix + CHANGELOG + SKILL.md)"
+      ],
+      "reproducingTests": [
+        "ts/test/vacuity-scanner.test.ts::reports no VAC finding on a vacuous .skip test",
+        "ts/test/vacuity-scanner.test.ts::takes a .skip test out of `checked` and lists it as a skip",
+        "ts/test/vacuity-scanner.test.ts::abstains on a file whose only tests are .skip, rather than passing",
+        "ts/test/vacuity-scanner.test.ts::reports nothing on the unquarantine fixture whose .skip test is vacuous"
+      ],
+      "redAtBase": "npx vitest run test/vacuity-scanner.test.ts -> Tests 4 failed | 138 passed (142) at 448969ff + member 1"
+    },
+    {
+      "issue": 1672,
+      "scope": "fork F6 (a): covered inside the clump; bounded change, not dropped",
+      "commits": [
+        "18b3ed07 (red test)",
+        "96fdd095 (fix + CHANGELOG + SKILL.md)"
+      ],
+      "reproducingTests": [
+        "ts/test/vacuity-scanner.test.ts::reads %s as the target",
+        "ts/test/vacuity-scanner.test.ts::resolves a file whose only first-party reach is the hook import"
+      ],
+      "redAtBase": "npx vitest run test/vacuity-scanner.test.ts -t 1672 -> Tests 6 failed | 2 passed | 142 skipped (150) at 448969ff + members 1-2"
+    }
+  ],
+  "reproducingTests": [
+    "ts/test/vacuity-scanner.test.ts::reads @covers above %s whose title wraps",
+    "ts/test/vacuity-scanner.test.ts::reports no VAC finding on a vacuous .skip test",
+    "ts/test/vacuity-scanner.test.ts::takes a .skip test out of `checked` and lists it as a skip",
+    "ts/test/vacuity-scanner.test.ts::abstains on a file whose only tests are .skip, rather than passing",
+    "ts/test/vacuity-scanner.test.ts::reports nothing on the unquarantine fixture whose .skip test is vacuous",
+    "ts/test/vacuity-scanner.test.ts::reads %s as the target",
+    "ts/test/vacuity-scanner.test.ts::resolves a file whose only first-party reach is the hook import"
+  ],
+  "redAtBase": "each member's red test commit fails at its parent; base 448969ff (see members[].redAtBase)",
+  "assumptions": [
+    "F5 = (a): one PR, one closing keyword per issue (Closes #1666, Closes #1669, Closes #1672). #1666 item 2 is the #1669 decision, so this PR resolves both items of #1666.",
+    "#1669 decision (a), exempt, delegated to the build. A .skip test never runs and cannot pass vacuously; LINT-006 exempts it on the same grounds. It leaves `checked` and gets one skip entry ('declared .skip: ...'), so a file whose only tests are .skip abstains rather than passing.",
+    ".only tests run and stay scanned.",
+    "#1672 F6 = (a): covered in the clump. A hook assignment to a module-scope uninitialised let binds the name only when it reaches the target (relative import(/require( makes a handle; a right-hand side naming a direct target makes a one-level helper). Any other assignment leaves the name unresolved, so #1170's abstention still holds.",
+    "outOfBandHandles now also reads a relative require( argument, for every same-file declaration, not only hook assignments. This can only add handles, which makes VAC-002 quieter, never noisier.",
+    "Hook assignments are matched one line at a time. The first line of a right-hand side Prettier wraps across lines IS read (e.g. `template = buildGitTemplate('...', (d) => {` binds `template` as a one-level helper); only the continuation lines are not read.",
+    "JS_PLAIN_ASSIGN matches a plain assignment anywhere in the file, not only inside a beforeEach/beforeAll hook, so a non-hook assignment can also bind a name. Tracked in #1681.",
+    "Dogfood delta (vacuity-check, base vs head): ts/test VAC-002 170 -> 165, skipped 575 -> 572, checked unchanged (5574); agents/skills/test checked 1747 -> 1738 (9 .skip tests), VAC-001 1 -> 0 (the reservations.spec.js fixture). Three former 'deeper' abstentions in branch-prune/refresh-baseline-push-job now read as invoked, because `root = copyGitTemplate(...)` is a one-level helper exactly as the `const` form already is.",
+    "Disclosed after review: the VAC-002 drop of 5 (170 -> 165) is 4 correct parity fixes (ts/test/parity.test.ts:107, :120, :129, :135) plus 1 FALSE NEGATIVE at ts/test/refresh-baseline-push-job.test.ts:220. That test's body is only `expect(hookSpawns).toBe(0)`, but helperVerdict (ts/src/core/vacuity-scanner.ts:996-1006) reads the raw body including comments; its trailing comment mentions `template`, which is now a one-level helper name, so the test reads as invoking the target. The comment-mention root cause predates this PR; this PR only made `template` a resolvable name. Tracked in #1681. (Source: base 448969ff vs head c8690dea scan over 439 test files.)"
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "All three members are fixed in this PR with reproducing tests; #1666 item 2 is resolved by the #1669 member, so #1666 is fully resolved.",
+  "run": "fc1123d",
+  "base": "448969ff"
+}

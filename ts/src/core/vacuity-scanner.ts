@@ -43,7 +43,9 @@
  * The issue rules out every quiet answer (a threshold, a mute, a widened blanket
  * skip) on the grounds that a suppressed inference and a passing check must not
  * look alike, so the fix is to WIDEN WHAT THE INFERENCE CAN SEE and leave the
- * rule's authority untouched.
+ * rule's authority untouched. #1365 extended the same reading to a same-file
+ * declaration whose own body launches a script or imports a relative module
+ * (see `outOfBandHandles`).
  *
  * A skip is PER RULE, not per test: `VAC-001` needs no target and always runs,
  * so a test whose target is unresolvable is still genuinely `checked` and stays
@@ -75,6 +77,7 @@ import {
   frameworkForPath,
   type TestBlock,
 } from './static-linter.js';
+import { regexLiteralEnd } from './js-literals.js';
 import { blankStringContent } from './string-literals.js';
 
 /** How the target under test was resolved. Mirrors the guardian's ladder. */
@@ -409,6 +412,70 @@ function reachesOutOfBandTarget(rawBody: string): boolean {
   return JS_BARE_DYNAMIC_IMPORT.test(rawBody);
 }
 
+/**
+ * Same-file declarations whose OWN body reaches first-party code out of band --
+ * each is a handle on the target, exactly as an import binding is (#1365).
+ *
+ * #705 read only the one-line forms, `const cli = '<script literal>'` and
+ * `const x = await import('./y.js')`, and a consumer monorepo writes neither:
+ *
+ * - a subprocess helper Prettier wraps onto a second line, or a `function`
+ *   helper, launching a script written inline at the call;
+ * - `(await import('./y.js')).default` / `.named`, where a `(` precedes the
+ *   `import`, and `({ a } = await import('./y.js'))` assigned in a hook;
+ * - a wrapper, `const importRoute = () => import('../route.js')`. Binding the
+ *   WRAPPER is enough: `const { POST } = await importRoute()` then reaches it
+ *   as an ordinary one-level helper, at module scope or inside the test.
+ *
+ * The evidence is a string literal, so it is read from the ORIGINAL source at
+ * the blanked declaration's offsets (blanking preserves them). It is stricter
+ * than {@link reachesOutOfBandTarget}'s per-test read, because a handle also
+ * makes a file with no import resolvable, and so arms VAC-002 for every OTHER
+ * test in it: the script literal must be an ARGUMENT of the launch, and the
+ * relative specifier an argument of a real `import(` or (#1672) `require(`
+ * call. A helper that runs `git ls-files` and then filters on `'.d.ts'` is not
+ * a handle (measured on canary's own `typecheck-denominator.test.ts`), and a
+ * bare command (`spawnSync('git', ...)`) never is.
+ */
+function outOfBandHandles(source: string, decls: LocalDecl[]): Set<string> {
+  const names = new Set<string>();
+  for (const d of decls) {
+    const raw = source.slice(d.start, d.start + d.body.length);
+    const reaches =
+      callArguments(d.body, raw, LAUNCH_CALLS).some((a) =>
+        SCRIPT_PATH_LITERAL.test(a),
+      ) ||
+      [DYNAMIC_IMPORT_CALLS, REQUIRE_CALLS].some((re) =>
+        callArguments(d.body, raw, re).some((a) =>
+          RELATIVE_SPECIFIER_ARG.test(a),
+        ),
+      );
+    if (reaches) for (const n of d.names) names.add(n);
+  }
+  return names;
+}
+
+const LAUNCH_CALLS = new RegExp(SUBPROCESS_LAUNCH.source, 'g');
+const DYNAMIC_IMPORT_CALLS = /(?<![\w$.])import\s*\(/g;
+const REQUIRE_CALLS = /(?<![\w$.])require\s*\(/g;
+const RELATIVE_SPECIFIER_ARG = /^\(\s*['"`]\./;
+
+/**
+ * The raw argument text, `(` included, of every call `re` finds in `code`.
+ *
+ * The call is found in the BLANKED copy, so a call written inside a fixture
+ * string is never seen (review of #1667: `"... await import('./m.js')"` made
+ * its holder a handle); only the argument literal is read from `raw`.
+ */
+function callArguments(code: string, raw: string, re: RegExp): string[] {
+  re.lastIndex = 0;
+  return [...code.matchAll(re)].map((m) => {
+    const open = m.index! + m[0].length - 1;
+    const close = closingParen(code, open);
+    return raw.slice(open, close < 0 ? raw.length : close);
+  });
+}
+
 /** Names imported from first-party (relative) modules. */
 function importedTargets(code: string, python: boolean): Set<string> {
   return python ? pythonImportedTargets(code) : jsImportedTargets(code);
@@ -592,9 +659,11 @@ function oneLevelHelpers(decls: LocalDecl[], direct: Set<string>): Set<string> {
 
 /**
  * `let parse;` / `let parse: Parser;` -- a module-scope name with no
- * initializer, typically assigned later in a hook by a plain assignment no
- * declaration pattern bounds. Its body cannot be resolved, so a test that calls
- * it abstains (#1170) rather than being judged on a helper nobody read.
+ * initializer, typically assigned later (usually in a hook) by a plain
+ * assignment. Unless
+ * that assignment reaches the target (see `reachingHookAssigns`, #1672), its
+ * body cannot be resolved, so a test that calls it abstains (#1170) rather
+ * than being judged on a helper nobody read.
  */
 const JS_UNINITIALIZED_DECL =
   /(?:^|\n)[^\S\n]*(?:let|var)\s+([A-Za-z_$][\w$]*)\s*(?::(?:[^=;\n]|=>)+)?;/g;
@@ -609,10 +678,48 @@ function unresolvedNames(code: string, decls: LocalDecl[]): Set<string> {
   return names;
 }
 
+/**
+ * `mod = await import('../x')`, assigning a module-scope `let mod;` (#1672).
+ * The match is a plain assignment ANYWHERE in the file -- a hook is the common
+ * case, but a test body or a helper counts the same; it is not scoped to hooks
+ * (#1681). Only an assignment that REACHES the target binds the name: a
+ * relative `import(`/`require(` makes a handle (added to `direct`), and a
+ * right-hand side naming a direct target makes a one-level helper. Any other
+ * stays unresolved, so #1170's abstention still holds.
+ */
+const JS_PLAIN_ASSIGN =
+  /(?<![\w$.])([A-Za-z_$][\w$]*)[^\S\n]*=(?![=>])[^\S\n]*([^;\n]+)/g;
+
+function reachingHookAssigns(
+  source: string,
+  code: string,
+  decls: LocalDecl[],
+  direct: Set<string>,
+): LocalDecl[] {
+  const pending = unresolvedNames(code, decls);
+  const assigns: LocalDecl[] = [];
+  JS_PLAIN_ASSIGN.lastIndex = 0;
+  for (const m of code.matchAll(JS_PLAIN_ASSIGN)) {
+    if (!pending.has(m[1]!)) continue;
+    const body = m[2]!;
+    assigns.push({
+      names: [m[1]!],
+      body,
+      start: m.index! + m[0].length - body.length,
+    });
+  }
+  for (const n of outOfBandHandles(source, assigns)) direct.add(n);
+  return assigns.filter(
+    (d) => direct.has(d.names[0]!) || mentionsAny(d.body, direct),
+  );
+}
+
 /** One same-file declaration: the names it binds and the text it owns. */
 interface LocalDecl {
   names: string[];
   body: string;
+  /** Offset of `body` in the file, so the unblanked text can be read. */
+  start: number;
 }
 
 function localDecls(code: string, python: boolean): LocalDecl[] {
@@ -627,7 +734,7 @@ function localDecls(code: string, python: boolean): LocalDecl[] {
     if (names.length === 0) continue;
     const start = m.index! + m[0].length;
     const end = declEnd(code, matches, i, depth);
-    decls.push({ names, body: code.slice(start, end) });
+    decls.push({ names, body: code.slice(start, end), start });
   }
   if (!python) decls.push(...destructuredAssignDecls(code));
   return decls;
@@ -644,7 +751,10 @@ function destructuredAssignDecls(code: string): LocalDecl[] {
       .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
     // The RHS alone is the body here: unlike a declaration, an assignment
     // does not own the text that follows it.
-    if (names.length > 0) decls.push({ names, body: m[2] ?? '' });
+    // The RHS is the last thing before the closing `)`.
+    const body = m[2] ?? '';
+    const start = m.index! + m[0].length - 1 - body.length;
+    if (names.length > 0) decls.push({ names, body, start });
   }
   return decls;
 }
@@ -672,9 +782,106 @@ function bodyLines(code: string, source: string, block: TestBlock): BodyLine[] {
     .map((text, i) => ({ text, raw: raw[i] ?? text, line: first + i }));
 }
 
-function isComment(line: string): boolean {
-  const s = line.trim();
-  return s.startsWith('#') || s.startsWith('//') || s.startsWith('*');
+type Span = [number, number];
+
+/**
+ * The comment spans of one line, half-open -- the ONE definition of a comment
+ * that the verdict filter and the annotation walk share (#1691).
+ *
+ * Quote-aware either way: a comment opener inside a closed string is content.
+ * Callers pass blanked text, where that is already true, but the definition
+ * must not depend on it.
+ *
+ * - Python: only `#` opens a comment, running to the end of the line. `//` is
+ *   floor division and `/*` is not a token, so reading the JS forms blanked
+ *   `10 // target(5)` down to `10` -- a false VAC-002.
+ * - JS/TS: a line that starts with `#` or `*` is all comment (the middle of a
+ *   block). Otherwise a `//` runs to the end and a `/* ... *\/` span is cut
+ *   out, so `x(); // makeStore` no longer reads as naming `makeStore`.
+ */
+function commentSpans(line: string, python: boolean): Span[] {
+  const s = line.trimStart();
+  if (!python && (s.startsWith('#') || s.startsWith('*'))) {
+    return [[line.length - s.length, line.length]];
+  }
+  if (!python) return jsCommentSpans(line);
+  const spans: Span[] = [];
+  for (const m of line.matchAll(PY_STRING_OR_COMMENT)) {
+    if (m[0].startsWith('#')) spans.push([m.index, m.index + m[0].length]);
+  }
+  return spans;
+}
+
+/**
+ * The JS walk: a regex literal is stepped over before the token is tried, so
+ * a `//` or `/*` in `/[//]/g` is regex content, not a comment that swallows
+ * the rest of the line. Blanking leaves regex content intact, so this is the
+ * only place that can tell them apart. `regexLiteralEnd` decides division vs
+ * regex from the previous significant character, so `a / b // c` still ends
+ * in a comment.
+ */
+function jsCommentSpans(line: string): Span[] {
+  const spans: Span[] = [];
+  for (let i = 0; i < line.length;) {
+    const regexEnd = regexLiteralEnd(line, i);
+    if (regexEnd !== null) {
+      i = regexEnd;
+      continue;
+    }
+    STRING_OR_COMMENT.lastIndex = i;
+    const m = STRING_OR_COMMENT.exec(line);
+    if (m === null) {
+      i += 1;
+      continue;
+    }
+    if (m[0].startsWith('/')) spans.push([i, i + m[0].length]);
+    i += m[0].length;
+  }
+  return spans;
+}
+
+/**
+ * One token AT the cursor (sticky): an escape, a closed string (skipped, so
+ * its `//` is content), or a comment -- `//` to the end, `/*` to its close or
+ * the end.
+ */
+const STRING_OR_COMMENT =
+  /\\.|(['"`])(?:\\.|(?!\1)[^\\])*\1|\/\/.*|\/\*.*?(?:\*\/|$)/y;
+
+/** The Python form of {@link STRING_OR_COMMENT}: `#` to the end is a comment. */
+const PY_STRING_OR_COMMENT = /\\.|(['"])(?:\\.|(?!\1)[^\\])*\1|#.*/g;
+
+/** `line` with every comment span replaced by spaces, length preserved. */
+function blankSpans(line: string, spans: Span[]): string {
+  let out = line;
+  for (const [start, end] of spans) {
+    out = out.slice(0, start) + ' '.repeat(end - start) + out.slice(end);
+  }
+  return out;
+}
+
+/** Is `line` nothing but comment (blank lines are not comments)? */
+function isComment(line: string, python: boolean): boolean {
+  return (
+    line.trim() !== '' &&
+    blankSpans(line, commentSpans(line, python)).trim() === ''
+  );
+}
+
+/**
+ * The body lines the rules read: comment-only lines dropped, and comment spans
+ * blanked out of the rest -- from `raw` too, at the same offsets, so VAC-001
+ * never compares a comment tail (#1691).
+ */
+function codeLines(lines: BodyLine[], python: boolean): BodyLine[] {
+  return lines.flatMap((l) => {
+    if (isComment(l.text, python)) return [];
+    const spans = commentSpans(l.text, python);
+    if (spans.length === 0) return [l];
+    return [
+      { ...l, text: blankSpans(l.text, spans), raw: blankSpans(l.raw, spans) },
+    ];
+  });
 }
 
 /** The text inside a balanced `expect(...)`, or null. */
@@ -834,14 +1041,15 @@ function scanBlock(
   outOfBand: boolean,
 ): VacuityFinding[] {
   const { code, source, path: file, python, inference } = ctx;
-  const lines = bodyLines(code, source, block).filter(
-    (l) => !isComment(l.text),
-  );
+  const lines = codeLines(bodyLines(code, source, block), python);
   const reaching = inference?.reaching ?? null;
   const targets = annotated !== null ? new Set([annotated]) : reaching;
+  // The verdict reads the comment-stripped lines, not `block.body`: a body
+  // runs to the next declaration, so the raw text also owns the comment above
+  // the NEXT test, and prose naming a target is not an invocation (#1681).
   const invoked =
     annotated === null && !outOfBand
-      ? helperVerdict(block.body, inference)
+      ? helperVerdict(lines.map((l) => l.text).join('\n'), inference)
       : 'invoked';
   if (invoked === 'deeper' || invoked === 'unresolved') {
     // Abstain, counted: the helper chain is too deep or too opaque to judge,
@@ -1265,8 +1473,12 @@ function resolveTargets(
   python: boolean,
 ): TargetInference | null {
   const direct = importedTargets(source, python);
-  if (direct.size === 0) return null;
   const decls = localDecls(code, python);
+  if (!python) {
+    for (const n of outOfBandHandles(source, decls)) direct.add(n);
+    decls.push(...reachingHookAssigns(source, code, decls, direct));
+  }
+  if (direct.size === 0) return null;
   return {
     direct,
     reaching: closeOverLocals(decls, direct),
@@ -1340,6 +1552,11 @@ function annotationFor(
   return matches.at(-1)?.[1] ?? null;
 }
 
+const TITLE_QUOTES = ["'", '"', '`'];
+/** The keyword opening a wrapped declaration: `.only`/`.skip` (#1666), `xit`/`xtest` (#1686). */
+const DECLARATION_KEYWORD =
+  /\b(?:x?(?:it|test)|(?:it|test)\.(?:only|skip))\s*\(\s*$/;
+
 /**
  * Offset of the `it`/`test` keyword opening a JS declaration, or of the body
  * start when it cannot be found. Python needs none of this: `def test_x(` is
@@ -1348,25 +1565,46 @@ function annotationFor(
  * A title wrapped onto its own line (`it(\n  'name',`) puts `bodyStart` a line
  * below the keyword, and the walk in {@link annotationFor} must begin at the
  * keyword's line or it stops at `it(` as code. The name holds no quote, so the
- * character before `bodyStart` is the closing quote and the previous one of the
- * same kind opens it; the search before that is bounded so a file of many
- * tests stays linear.
+ * character before `bodyStart` is the closing quote (`'`, `"` or a backtick)
+ * and the previous one of the same kind opens it; the search before that is
+ * bounded so a file of many tests stays linear.
  */
 function jsDeclarationStart(code: string, block: TestBlock): number {
   const quote = code[block.bodyStart - 1]!;
-  if (quote !== "'" && quote !== '"') return block.bodyStart;
+  if (!TITLE_QUOTES.includes(quote)) return block.bodyStart;
   const open = code.lastIndexOf(quote, block.bodyStart - 2);
   if (open < 0) return block.bodyStart;
   const from = Math.max(0, open - 80);
-  const kw = code.slice(from, open).search(/\b(?:it|test)\s*\(\s*$/);
+  const kw = code.slice(from, open).search(DECLARATION_KEYWORD);
   return kw < 0 ? block.bodyStart : from + kw;
 }
 
 /** Can `line` sit between a test's annotation and its declaration? */
 function attachesToDeclaration(line: string, python: boolean): boolean {
   const s = line.trim();
-  if (s === '' || s.startsWith('/*') || isComment(s)) return true;
+  if (s === '' || isComment(s, python)) return true;
   return python && s.startsWith('@');
+}
+
+const SKIP_REASON =
+  'declared skipped (.skip, xit/xtest, or inside describe.skip/xdescribe): it never runs, so it cannot pass vacuously (LINT-006 exempts it too)';
+
+/**
+ * All but skipped blocks (#1669; every skip form since #1686): those never
+ * run, so they cannot pass vacuously, but they are not checked clean either --
+ * each is recorded in `skipped`, so a file of only skipped tests abstains
+ * instead of passing.
+ */
+function runnableBlocks(
+  blocks: TestBlock[],
+  path: string,
+  skipped: SkipEntry[],
+): TestBlock[] {
+  for (const b of blocks) {
+    if (b.skipped)
+      skipped.push({ name: skipLabel('VAC', path, b), reason: SKIP_REASON });
+  }
+  return blocks.filter((b) => !b.skipped);
 }
 
 /**
@@ -1407,11 +1645,12 @@ export function scanVacuity(path: string): VacuityResult {
     sourceLines: source.split('\n'),
     helperAbstentions: [],
   };
-  const findings = scanAllBlocks(ctx, blocks, skipped);
+  const runnable = runnableBlocks(blocks, path, skipped);
+  const findings = scanAllBlocks(ctx, runnable, skipped);
   skipped.push(...ctx.helperAbstentions);
 
   const result: VacuityResult = {
-    checked: blocks.length,
+    checked: runnable.length,
     findings,
   };
   if (skipped.length > 0) result.skipped = skipped;

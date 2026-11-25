@@ -381,6 +381,14 @@ describe('threadUnsafeTests', () => {
       'test/b.test.ts',
     ]);
   });
+
+  it('lists nothing, without throwing, for a root with no src or test dir', () => {
+    // Only `--pool threads` reaches this since #486 slice 2, on a supplied
+    // report whose repo root may not be a canary checkout at all.
+    expect(
+      threadUnsafeTests(mkdtempSync(join(tmpdir(), 'canary-mutation-'))),
+    ).toEqual([]);
+  });
 });
 
 // bug-fleet A5: Stryker omits `coveredBy` unless coverageAnalysis is
@@ -433,7 +441,7 @@ describe('unattributed survivor disclosure (ADR 0037 F1)', () => {
     expect(disclosure).toBeLessThan(lines.indexOf('3 survived:'));
     // The attributed survivor beside them still names its test.
     expect(lines.join('\n')).toContain(
-      'ran but did not fail: suppression strips the reason',
+      'ran but did not fail: `suppression strips the reason`',
     );
   });
 
@@ -479,7 +487,7 @@ describe('unattributed survivor disclosure (ADR 0037 F1)', () => {
         ],
       }),
     );
-    expect(text).toContain('pr-check.ts:2`: equivalent');
+    expect(text).toContain('pr-check.ts:2`: `equivalent`');
     expect(text).not.toContain(POINTER);
   });
 });
@@ -656,5 +664,282 @@ describe('bug-fleet A5: non-tested stryker statuses', () => {
   it('adds no untested line to an abstention with untested = 0', () => {
     const text = renderMutationReport(abstainedReport('why', NO_EXCLUSIONS));
     expect(text).not.toContain(UNTESTED_LINE);
+  });
+});
+
+// #1568 item 2: a survivor proves a test ran against it, so once every
+// survivor is suppressed the abstention must not claim nothing was covered.
+describe('abstain reason when only suppressed survivors remain (#1568)', () => {
+  const SUPPRESSED = {
+    'ts/src/guardian/pr-check.ts': [
+      'const a = 1; // canary:allow-mutant equivalent mutant',
+    ],
+  };
+
+  it('names the suppression, not a coverage gap that did not happen', () => {
+    const mapped = applyMutantSuppressions(
+      mapStrykerReport(
+        report([{ line: 1, status: 'Survived', coveredBy: ['t1'] }]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+      SUPPRESSED,
+    );
+    expect(mapped.verdict).toBe('abstained');
+    expect(mapped.abstainReason).not.toMatch(/covered by any test/);
+    expect(mapped.abstainReason).toMatch(
+      /1 survivor\(s\) .*canary:allow-mutant/,
+    );
+  });
+
+  it('still names the no-coverage mutants beside the suppressed ones', () => {
+    const mapped = applyMutantSuppressions(
+      mapStrykerReport(
+        report([
+          { line: 1, status: 'Survived', coveredBy: ['t1'] },
+          { line: 2, status: 'NoCoverage' },
+        ]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+      SUPPRESSED,
+    );
+    expect(mapped.verdict).toBe('abstained');
+    expect(mapped.abstainReason).toMatch(/canary:allow-mutant/);
+    expect(mapped.abstainReason).toMatch(/1 had no covering test/);
+  });
+});
+
+// #1568 item 4: report text went into Markdown raw. Stryker's StringLiteral
+// mutator turns a template literal into an empty one, so a replacement of
+// two backticks is an ordinary survivor, and it closed the code span early.
+describe('renderMutationReport escapes report text (#1568)', () => {
+  it('keeps backticks in the path, mutator, replacement and test name inert', () => {
+    const r = report(
+      [
+        {
+          line: 10,
+          status: 'Survived',
+          coveredBy: ['t1'],
+          mutator: 'String`Literal',
+          replacement: '``',
+        },
+      ],
+      'ts/src/a`b.ts',
+    );
+    r.testFiles!['ts/test/a.test.ts']!.tests[0]!.name = 'renders `x` safely';
+    const text = renderMutationReport(
+      mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+    );
+    const line = text.split('\n').find((l) => l.startsWith('- '));
+    expect(line).toBe(
+      '- ``ts/src/a`b.ts:10`` ``String`Literal`` \u{2192} ``` `` ``` ' +
+        '\u{2014} ran but did not fail: ``renders `x` safely``',
+    );
+  });
+
+  it('keeps an empty or multi-line replacement on one readable line', () => {
+    const text = renderMutationReport(
+      mapStrykerReport(
+        report([
+          { line: 1, status: 'Survived', coveredBy: ['t1'], replacement: '' },
+          {
+            line: 2,
+            status: 'Survived',
+            coveredBy: ['t1'],
+            replacement: '{\n# x\n}',
+          },
+        ]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+    );
+    expect(text).toContain('\u{2192} (empty) \u{2014}');
+    expect(text).toContain('\u{2192} `{ # x }` \u{2014}');
+    expect(text).not.toMatch(/^# x/m);
+  });
+
+  it('escapes the excluded test paths in the disclosure line', () => {
+    const text = renderMutationReport(
+      abstainedReport('why', ['test/a`b.test.ts', 'test/[x](y)\n# z.test.ts']),
+    );
+    expect(text).toContain('``test/a`b.test.ts``, `test/[x](y) # z.test.ts`');
+    expect(text).not.toMatch(/^# z/m);
+  });
+
+  it('escapes the path and reason of a suppressed survivor', () => {
+    const mapped = applyMutantSuppressions(
+      mapStrykerReport(
+        report([{ line: 1, status: 'Survived', coveredBy: ['t1'] }], 'a`b.ts'),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+      { 'a`b.ts': ['x; // canary:allow-mutant `y` is equivalent'] },
+    );
+    expect(renderMutationReport(mapped)).toContain(
+      '- suppressed ``a`b.ts:1``: `` `y` is equivalent ``',
+    );
+  });
+});
+
+// #1673: a test name and an abstain reason are untrusted text too. GitHub
+// autolinks `#N`, `@user` and bare URLs in plain Markdown (a stray issue link,
+// a notification to a stranger), but never inside a code span.
+describe('renderMutationReport neutralizes autolinks (#1673)', () => {
+  const HOSTILE = 'fixes #123 for @octocat see https://evil.example';
+
+  const survivorLine = (name: string): string => {
+    const r = report([{ line: 7, status: 'Survived', coveredBy: ['t1'] }]);
+    r.testFiles!['ts/test/a.test.ts']!.tests[0]!.name = name;
+    const text = renderMutationReport(
+      mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+    );
+    return text.split('\n').find((l) => l.startsWith('- '))!;
+  };
+
+  it('renders a hostile test name as a code span', () => {
+    const line = survivorLine(HOSTILE);
+    expect(line.endsWith(`ran but did not fail: \`${HOSTILE}\``)).toBe(true);
+  });
+
+  it('keeps a test name with a backtick inside one code span', () => {
+    expect(survivorLine('renders `x` for #9')).toMatch(
+      /ran but did not fail: ``renders `x` for #9``$/,
+    );
+  });
+
+  it('keeps a multi-line test name on one line, inside the span', () => {
+    const text = (() => {
+      const r = report([{ line: 7, status: 'Survived', coveredBy: ['t1'] }]);
+      r.testFiles!['ts/test/a.test.ts']!.tests[0]!.name =
+        'first line @octocat\n# heading';
+      return renderMutationReport(
+        mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+      );
+    })();
+    expect(text).toContain(
+      'ran but did not fail: `first line @octocat # heading`',
+    );
+    expect(text).not.toMatch(/^# heading/m);
+  });
+
+  it('names at most three covering tests per survivor and counts the rest (slice 2)', () => {
+    // A real run attributes ~20 tests to one guardian survivor; listing all of
+    // them on every survivor buried the report. The artifact keeps them all.
+    const r = report([
+      {
+        line: 7,
+        status: 'Survived',
+        coveredBy: ['t1', 't2', 't3', 't4', 't5'],
+      },
+    ]);
+    const text = renderMutationReport(
+      mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+    );
+    expect(text).toContain(
+      'ran but did not fail: `suppression strips the reason`; ' +
+        '`suppression keeps the finding`; `t3` and 2 more',
+    );
+    expect(text).not.toContain('`t4`');
+  });
+
+  it('joins several covering test names as separate code spans', () => {
+    const r = report([
+      { line: 7, status: 'Survived', coveredBy: ['t1', 't2'] },
+    ]);
+    expect(
+      renderMutationReport(
+        mapStrykerReport(r, { excludedTests: NO_EXCLUSIONS }),
+      ),
+    ).toContain(
+      'ran but did not fail: `suppression strips the reason`; ' +
+        '`suppression keeps the finding`',
+    );
+  });
+
+  // The CLI builds this reason from a report path plus the parse error.
+  const HOSTILE_ERROR =
+    'the stryker report at /tmp/@octocat/report.json could not be read: ' +
+    'Unexpected token in JSON\n  see #9 and [docs](https://evil.example)\n' +
+    '# not a heading ' +
+    'x'.repeat(250);
+
+  const abstainLine = (reason: string): string =>
+    renderMutationReport(abstainedReport(reason, NO_EXCLUSIONS)).split(
+      '\n',
+    )[1]!;
+
+  it('renders the abstain reason as one code span, not raw Markdown', () => {
+    const line = abstainLine(HOSTILE_ERROR);
+    const span = /^Abstained \u{2014} `([^`]*)`\. This is not a pass\.$/u.exec(
+      line,
+    );
+    expect(span).not.toBeNull();
+    expect(span![1]).toMatch(
+      /^the stryker report at \/tmp\/@octocat\/report\.json could not be read: Unexpected token in JSON see #9 and \[docs\]\(https:\/\/evil\.example\) # not a heading x+/,
+    );
+    expect(
+      renderMutationReport(abstainedReport(HOSTILE_ERROR, NO_EXCLUSIONS)),
+    ).not.toMatch(/^# not a heading/m);
+  });
+
+  it('truncates a long abstain reason to 200 characters with an ellipsis', () => {
+    const span = /`([^`]*)`/.exec(abstainLine(HOSTILE_ERROR))![1]!;
+    expect(span).toHaveLength(200);
+    expect(span.endsWith('\u{2026}')).toBe(true);
+  });
+
+  it('leaves a short abstain reason whole, with no ellipsis', () => {
+    expect(abstainLine('no diff')).toBe(
+      'Abstained \u{2014} `no diff`. This is not a pass.',
+    );
+  });
+
+  it('keeps a backtick in the abstain reason inert', () => {
+    expect(abstainLine('bad `files` map')).toBe(
+      'Abstained \u{2014} ``bad `files` map``. This is not a pass.',
+    );
+  });
+});
+
+// #1680: the allow-mutant reason is prose the PR author writes, and the
+// mutator name comes from the report JSON. mdText escaped their Markdown
+// structure but left `#N`, `@user` and URLs to autolink; both now render as
+// code spans, like the test names and abstain reason (#1673).
+describe('renderMutationReport neutralizes autolinks in reasons and mutators (#1680)', () => {
+  const HOSTILE = '@someuser #12 https://evil.example';
+
+  const suppressedLine = (reason: string): string => {
+    const mapped = applyMutantSuppressions(
+      mapStrykerReport(
+        report([{ line: 1, status: 'Survived', coveredBy: ['t1'] }], 'a.ts'),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+      { 'a.ts': [`x; // canary:allow-mutant ${reason}`] },
+    );
+    return renderMutationReport(mapped)
+      .split('\n')
+      .find((l) => l.startsWith('- suppressed'))!;
+  };
+
+  it('renders a hostile allow-mutant reason as one code span', () => {
+    expect(suppressedLine(HOSTILE)).toBe(
+      `- suppressed \`a.ts:1\`: \`${HOSTILE}\``,
+    );
+  });
+
+  it('keeps a backtick in the allow-mutant reason inside one code span', () => {
+    expect(suppressedLine('`y` is equivalent, see #12')).toBe(
+      '- suppressed `a.ts:1`: `` `y` is equivalent, see #12 ``',
+    );
+  });
+
+  it('renders a hostile mutator name as a code span', () => {
+    const text = renderMutationReport(
+      mapStrykerReport(
+        report([
+          { line: 3, status: 'Survived', coveredBy: ['t1'], mutator: HOSTILE },
+        ]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+    );
+    const line = text.split('\n').find((l) => l.startsWith('- '))!;
+    expect(line).toContain(` \`${HOSTILE}\` \u{2192} `);
   });
 });

@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 
+import { commentEnd, literalEnd } from './js-literals.js';
 import { isJsxPath, maskJsxText } from './jsx-text.js';
 import { blankStringContent } from './string-literals.js';
 
@@ -55,12 +56,31 @@ const BARE_PLAYWRIGHT_CALL =
 // reported line landed above the test, and the inflated indent made the
 // "next def at the same indent" body boundary un-matchable, so the body ran to
 // end-of-file and could borrow a later test's assert (#633).
-const TEST_FN_PY = /^([ \t]*)def (test_\w+)\s*\(/gm;
+// `async def test_*` (pytest-asyncio, anyio) is a test too: missing it let the
+// test above run on through its body and borrow its `assert` (#1312).
+const TEST_FN_PY = /^([ \t]*)(?:async[ \t]+)?def (test_\w+)\s*\(/gm;
 // `d` (hasIndices) so the NAME can be read back out of the ORIGINAL source.
 // The scanner matches against string-blanked source, where the name itself has
 // been blanked away; blanking is length-preserving precisely so these offsets
 // still address the untouched text (#590).
-const TEST_FN_JS = /(?:^|\s)(?:it|test)\s*\(\s*['"]([^'"]*)['"]/dgm;
+//
+// #1312: a `.only`/`.skip` modifier and a backtick title are declarations as
+// well. An unmatched one is worse than unscanned -- the test above absorbs its
+// body and borrows its assertions. The title is group 2, closed by the SAME
+// quote that opened it (group 1). A template's `${...}` survives blanking as
+// code, so its title is recovered verbatim (`b ${n}`) rather than evaluated.
+//
+// #1686: `xit`/`xtest` and `it.skip.each(table)('title', ...)` are declarations
+// too, for the same reason -- unmatched, a parked body ran on into the real test
+// above and its VAC-001 landed on that test's name. The `.each` table is matched
+// lazily, bounded, and never across a `;`, so a title-less table cannot reach a
+// later statement's `)('...`.
+const TEST_FN_JS =
+  /(?:^|\s)(?:x(?:it|test)|(?:it|test)(?:\.(?:only|skip))?|(?:it|test)\.skip\.each\s*\([^;]{0,2000}?\))\s*\(\s*(['"`])((?:(?!\1)[\s\S])*)\1/dgm;
+/** A declaration that is itself skipped: `xit`/`xtest`, or a `.skip` form. */
+const SKIPPED_DECL = /^\s*(?:x|\w+\.skip\b)/;
+/** A suite whose every test is skipped (#1686): its call's `(` ends the match. */
+const SKIPPED_SUITE = /(?<![\w.$])(?:describe\.skip|xdescribe)\s*\(/g;
 export const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // What makes a Python test NON-vacuous for LINT-006: `assert`/`pytest.raises`,
 // plus unittest's `self.assertEqual(...)` family -- `\bassert\b` has no word
@@ -684,6 +704,23 @@ export interface TestBlock {
   body: string;
   /** Byte offset of `body` in the source it was sliced from. */
   bodyStart: number;
+  /**
+   * Never runs, so it cannot pass vacuously: its own `.skip` (or `.skip.each`),
+   * `xit`/`xtest`, or inside a `describe.skip`/`xdescribe` block (#1686).
+   */
+  skipped?: boolean;
+}
+
+/**
+ * Is the JS declaration whose keyword sits at `kw` inside a comment? Line-based,
+ * like `isComment`: a `//` earlier on the line, or a line opening `/*` or `*`
+ * (a JSDoc body). Strings are already blanked, so a `//` in one is gone. Needed
+ * once backtick titles counted (#1312): prose such as "the test (`x`)" is
+ * common in comments, and a phantom declaration truncates the real body above.
+ */
+function inLineComment(code: string, kw: number): boolean {
+  const prefix = code.slice(code.lastIndexOf('\n', kw - 1) + 1, kw);
+  return prefix.includes('//') || /^\s*(?:\/\*|\*)/.test(prefix);
 }
 
 /**
@@ -716,7 +753,7 @@ export function enumerateTests(
       // indent. An exact-indent match let a method test run on past its class
       // into a later module-level test and borrow that test's assertion.
       const nextFn = rest.match(
-        new RegExp(`^[ \\t]{0,${indent}}(?:def|class)\\b`, 'm'),
+        new RegExp(`^[ \\t]{0,${indent}}(?:async[ \\t]+def|def|class)\\b`, 'm'),
       );
       out.push({
         name: m[2]!,
@@ -727,7 +764,10 @@ export function enumerateTests(
     }
     return out;
   }
-  const decls = [...code.matchAll(TEST_FN_JS)];
+  const suites = skippedSuiteSpans(code);
+  const decls = [...code.matchAll(TEST_FN_JS)].filter(
+    (m) => !inLineComment(code, m.index! + (/^\s/.test(m[0]) ? 1 : 0)),
+  );
   for (let i = 0; i < decls.length; i += 1) {
     const m = decls[i]!;
     const start = m.index!;
@@ -736,17 +776,68 @@ export function enumerateTests(
     // The coordinate comes from the NAME's offset, not the match's: TEST_FN_JS
     // opens with `(?:^|\s)`, which CONSUMES the character before `it`/`test` --
     // for any test not on line 1 that is the previous line's newline (#633).
-    const nameStart = m.indices?.[1]?.[0] ?? start;
+    const nameStart = m.indices?.[2]?.[0] ?? start;
     out.push({
-      name: m.indices?.[1]
-        ? source.slice(m.indices[1][0], m.indices[1][1])
-        : m[1]!,
+      name: m.indices?.[2]
+        ? source.slice(m.indices[2][0], m.indices[2][1])
+        : m[2]!,
       line: lineOf(code, nameStart),
       body: code.slice(bodyStart, bodyEnd),
       bodyStart,
+      ...(isSkippedDecl(m[0], start, suites) ? { skipped: true } : {}),
     });
   }
   return out;
+}
+
+/**
+ * Skipped by its own form, or declared inside a `describe.skip`/`xdescribe`
+ * call (#1686): either way it never runs, so it cannot pass vacuously.
+ */
+function isSkippedDecl(
+  decl: string,
+  at: number,
+  suites: Array<[number, number]>,
+): boolean {
+  return SKIPPED_DECL.test(decl) || suites.some(([o, c]) => at > o && at < c);
+}
+
+/**
+ * The `(`..`)` span of every `describe.skip(...)`/`xdescribe(...)` call. A call
+ * whose `)` cannot be found contributes nothing: its tests stay scanned, as
+ * before #1686, rather than everything after it silently leaving the scan.
+ */
+function skippedSuiteSpans(code: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  for (const m of code.matchAll(SKIPPED_SUITE)) {
+    if (inLineComment(code, m.index)) continue;
+    const open = m.index + m[0].length - 1;
+    const close = closingParenOf(code, open);
+    if (close >= 0) spans.push([open, close]);
+  }
+  return spans;
+}
+
+/**
+ * The `)` balancing the `(` at `open` in string-blanked code, or -1. Comments
+ * and string, template and regex literals are stepped over, so a paren in one
+ * (`/\(/`, `// (`) cannot unbalance the count.
+ */
+function closingParenOf(code: string, open: number): number {
+  let depth = 0;
+  let last = -1;
+  for (let i = open; i < code.length; i += 1) {
+    const end = commentEnd(code, i) ?? literalEnd(code, i, last);
+    if (end !== null) {
+      i = end - 1;
+      continue;
+    }
+    const c = code[i]!;
+    if (c === '(') depth += 1;
+    else if (c === ')' && (depth -= 1) === 0) return i;
+    if (!/\s/.test(c)) last = i;
+  }
+  return -1;
 }
 
 function scanAssertionFreePy(code: string, file: string): LintFinding[] {
@@ -777,7 +868,7 @@ function scanAssertionFreeJs(
   // Bodies are bounded by the NEXT declaration -- see `enumerateTests`, which
   // now owns that logic and its bug history (#590, #633) for both languages.
   for (const t of enumerateTests(code, source, false)) {
-    if (!ASSERT_JS.test(t.body)) {
+    if (!t.skipped && !ASSERT_JS.test(t.body)) {
       out.push(
         mk(
           file,

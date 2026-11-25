@@ -1,0 +1,22 @@
+{
+  "issues": [1685],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": {
+    "file": "ts/test/guardian-sticky-identity-normalize.test.ts",
+    "name": "sticky identity is compared after normalising (#1685) > a configured login %j still finds the sticky its token wrote; a post the identity would never adopt is reported (#1685) > degrades with the login to configure when the author would not match"
+  },
+  "redBeforeFix": "On origin/main 2f6817f9 the new file ran 6 failed | 2 passed: case/@ logins stacked 2 stickies (expected 1), login '' adopted the empty-author ghost, an unadoptable post returned action 'created' with no notice, and the CLI wrote nothing to stderr. The briefing guard test added after it was red too (kind 'degraded'). Reverting normalizeLogin/misidentifiedNotice after the fix: 7 failed | 2 passed; restored: 9 passed.",
+  "assumptions": [
+    "Human answer F1: isAuthoredBy, DEFAULT_LOGIN and a new normalizeLogin (lower-case, strip one leading @, `||` not `??`) extracted to ts/src/guardian/identity.ts; pr-comment.ts imports it (299 -> 293 lines) and re-exports the GuardianIdentity type for existing importers.",
+    "Human answer F1: identity.ts declared in both entryPoints lists of harness.config.json (entropy and performance).",
+    "Human answer F2: after createComment, a created comment whose author isAuthoredBy rejects yields action 'degraded' with comment_id set and notice 'guardian: sticky comment posted as X; set CANARY_GUARDIAN_LOGIN=X or the next run stacks a new comment'. The CLI prints it as a ::warning:: on stderr plus the step summary, and does not reprint the body (the comment landed).",
+    "Default: a created comment with no user.login (RestGitHubClient returns {} for a non-object body) gives no notice; there is no author to judge.",
+    "Default: an empty author login is never matched, even against the default identity.",
+    "Default: canary briefing (also an upsertStickyComment caller) keeps a landed-but-misidentified charter as kind 'posted' and warns on stderr, instead of the false 'charter printed to stdout instead' degraded path.",
+    "Human answer finding 3: docs/guides/pr-guardian.md says setting CANARY_GUARDIAN_LOGIN stops adopting the old github-actions[bot] sticky, so the first run posts one extra comment."
+  ],
+  "closingKeyword": "Closes",
+  "fleet": "roadmap-fleet",
+  "runId": "fc1124c-w4"
+}

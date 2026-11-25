@@ -88,10 +88,20 @@ describe('guardian mutation abstain guard: installed-version probe', () => {
 
   it('lets --runner-version override the probe while vitest is still read', async () => {
     // No runner manifest on disk: only the flag can make this compatible, and
-    // only the probed vitest 5.0.4 can make the verdict reach "not wired".
+    // only the probed vitest 5.0.4 can get the run past the guard -- to the
+    // instrumenter, which this bare root does not have (#486 slice 2).
     const root = rootWith({ vitest: '{"version":"5.0.4"}' });
-    expect(await abstainReason(root, ['--runner-version', '11.0.0'])).toBe(
-      'no --report given and the mutation run is not wired yet (#486)',
+    mkdirSync(join(root, 'ts', 'src'), { recursive: true });
+    writeFileSync(join(root, 'ts', 'src', 'a.ts'), 'export const a = 1;\n');
+    const diff = join(root, 'pr.diff');
+    writeFileSync(
+      diff,
+      'diff --git a/ts/src/a.ts b/ts/src/a.ts\n--- a/ts/src/a.ts\n+++ b/ts/src/a.ts\n@@ -0,0 +1 @@\n+export const a = 1;\n',
+    );
+    expect(
+      await abstainReason(root, ['--runner-version', '11.0.0', '--diff', diff]),
+    ).toBe(
+      'the Stryker instrumenter could not be loaded, so no mutant was counted',
     );
   });
 });

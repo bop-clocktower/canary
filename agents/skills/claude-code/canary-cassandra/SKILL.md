@@ -133,6 +133,19 @@ reaching its target — but `VAC-003` stays dark for it and says so in the skip
 list, because "did an assertion observe the target" needs a symbol that a
 subprocess boundary does not provide (#705).
 
+The same evidence makes a **same-file declaration** a handle when its own body
+carries it (#1365): a subprocess helper — arrow or `function`, wrapped across
+lines or not — that launches a script written inline, a binding such as
+`const Route = (await import('../route')).default` (`.default`, `.named`, or a
+destructured `({ save } = await import('./store.js'))` in a hook), and an import
+wrapper, `const importRoute = () => import('../route.js')`, so that
+`const { POST } = await importRoute()` reaches the target one helper level deep.
+A module-scope `let` reassigned later is read the same way (#1672). The
+assignment is matched anywhere in the file, not only in a hook (#1681):
+`let mod; beforeAll(async () => { mod = await import('../x') })` binds `mod` as
+a handle (a relative `require(` counts too), and `store = makeStore()` binds
+`store` as a one-level helper of the imported `makeStore`.
+
 **Same-file helpers count one level deep** (#1170). A test that calls a helper
 defined in the same file — an arrow, a `function` declaration, or a
 `const`-bound function expression, wrapped across lines or not — invokes the
@@ -144,9 +157,15 @@ const parse = (...argv: string[]) => parseArgv(['node', 'cli', ...argv]); // the
 
 Deeper than that — a helper that reaches the target only through another helper
 — or a helper whose body cannot be resolved (declared with no initializer and
-assigned in a hook), and `VAC-002` **abstains** for that test: no finding, a
-`skipped` entry with the reason, and a count. It is never passed in silence. A
-helper that does not reach the target at all is still a `VAC-002`.
+assigned later to something that reaches no target), and `VAC-002` **abstains**
+for that test: no finding, a `skipped` entry with the reason, and a count. It is
+never passed in silence. A helper that does not reach the target at all is still
+a `VAC-002`.
+
+**A comment is not an invocation** (#1681). VAC-002 reads the test body with its
+comment lines removed, so a comment naming the target or a one-level helper —
+including the comment above the next test, which the body would otherwise own —
+does not count as the test invoking it.
 
 To upgrade a finding from inferred to annotated, add the annotation above the
 test:
@@ -177,6 +196,14 @@ itself, so:
 - **A test whose target sits behind a helper chain** → the same, plus a count:
   `vac002_abstained` in the `--json` summary (always present, `0` included) and
   an `N test(s) abstained on VAC-002` line in text output.
+
+- **A skipped test** → not scanned and not counted in `checked`, but listed as a
+  skip (`declared skipped (...): it never runs, so it cannot pass vacuously`)
+  (#1669, #1686). The exempt forms are a test's own `.skip` (and `.skip.each`),
+  `xit`/`xtest`, and every test inside a `describe.skip`/`xdescribe` block. It
+  never runs, so it cannot pass vacuously, and `LINT-006` exempts it too.
+  Un-skipping it puts it back in the scan. A file whose only tests are skipped
+  checks zero tests and abstains. `.only` tests run, so they are scanned.
 
 `checked` in the JSON payload is the number of **tests** read, not files. Always
 read it before believing a zero.
@@ -209,10 +236,16 @@ with no denominator is not a result.
 
 - **A VAC-001 finding is never a false positive.** It is a comparison of a value
   with itself. Fix the test.
-- **A large VAC-002 count on first run usually means dynamic imports.** Tests
-  that `await import(...)` their target have no static import for the inference
-  to read. Annotate them, or accept the tier and move on — do not rewrite the
-  suite to satisfy a heuristic.
+- **A large VAC-002 count on first run usually means an unread binding form.**
+  The dynamic-import and subprocess forms above are read. So is a plain
+  reassignment of a module-scope `let`, anywhere in the file (#1672), when it
+  reaches the target: `mod = await import('../x')`,
+  `mod = (await import('../x')).default`, `mod = require('../x')`, or a
+  right-hand side that names an imported binding (`store = makeStore()`). A
+  reassignment that reaches nothing the scanner can read leaves the name
+  unresolved: a direct call of it abstains on VAC-002 rather than being flagged;
+  a method call on it is still judged. Annotate what remains, or accept the tier
+  and move on — do not rewrite the suite to satisfy a heuristic.
 - **An E2E suite that still shows many VAC-002 findings** is not being detected
   as browser-driver context — check that it imports its driver package or uses a
   `page`/`browser`/`driver` fixture, and read the

@@ -18,6 +18,8 @@
  * still be able to say how many tests it read.
  */
 
+import { fileURLToPath } from 'node:url';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { gateOutcome } from '../src/core/gate-result.js';
@@ -322,6 +324,29 @@ describe('VAC-002 — the declared target is never invoked', () => {
     expect(f[0]!.message).toContain('migrate');
   });
 
+  // #1666 item 1. A wrapped title puts `bodyStart` a line below the keyword,
+  // and the `@covers` walk must start at the keyword's line or it stops at
+  // `it.only(` as code and drops the annotation -- a false green, because the
+  // wrong `@covers` then goes unchecked. The keyword search knew only bare
+  // `it(`/`test(` with a `'`/`"` title.
+  it.each([
+    ['an .only declaration', `it.only(\n  'claims to migrate',\n`],
+    ['a test.only declaration', `test.only(\n  "claims to migrate",\n`],
+    ['a backtick title', `it(\n  \`claims to migrate\`,\n`],
+    ['an .only backtick title', `test.only(\n  \`claims to migrate\`,\n`],
+  ])('reads @covers above %s whose title wraps', (_label, opening) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `// @covers migrate\n` +
+        opening +
+        `  () => { expect(save(1)).toBe(1); },\n);\n`,
+    );
+    const f = r.findings.filter((x) => x.rule === 'VAC-002');
+    expect(f).toHaveLength(1);
+    expect(f[0]!.fidelity).toBe('annotated');
+  });
+
   it('clears an annotated target that IS invoked', () => {
     const r = scan(
       'a.test.ts',
@@ -479,6 +504,490 @@ describe('VAC-002 — targets the import inference could not see (#705)', () => 
         `it('round-trips', () => { expect(run(1)).toBe(2); });\n`,
     );
     expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+});
+
+// #1365. #705's subprocess and dynamic-import readers still missed the shapes a
+// consumer monorepo writes, and mutation proved every flagged test live. The
+// common cause: the target is reached through a same-file DECLARATION whose own
+// body launches a first-party script or imports a relative module, and only the
+// one-line `const x = '<script literal>'` and `const x = await import(...)`
+// forms were read. A first-party testkit import keeps the target set non-empty
+// in most fixtures here, because an empty set makes VAC-002 abstain rather than
+// fire -- the false positive needs a resolvable set that misses the real target.
+describe('VAC-002 — subprocess helpers and await-import bindings (#1365)', () => {
+  const KIT = `import { it, expect } from 'vitest';\nimport { tmpDir } from './testkit.js';\n`;
+
+  it('reads a Prettier-wrapped execFileSync helper as a handle on its script', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `const run = (args) =>\n` +
+        `  execFileSync(process.execPath, ['scripts/check-foo.mjs', ...args], {\n` +
+        `    encoding: 'utf8',\n` +
+        `  });\n` +
+        `it('exits 1 when the workflows directory is empty', () => {\n` +
+        `  expect(() => run(['--dir', 'x'])).toThrow();\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('reads a spawnSync helper written as a function declaration', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `function run(args) {\n` +
+        `  return spawnSync(process.execPath, ['scripts/check-foo.mjs', ...args]);\n` +
+        `}\n` +
+        `it('exits 0', () => { expect(run([]).status).toBe(0); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('reads a fork helper', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { fork } from 'node:child_process';\n` +
+        `const start = () => fork('scripts/worker.mjs', ['--once']);\n` +
+        `it('forks', () => { expect(start().connected).toBe(true); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('checks a subprocess-only file instead of abstaining on it', () => {
+    // No first-party import at all: the helper IS the target, so the file
+    // is no longer "target unresolvable" and VAC-002 actually runs.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `function run(args) {\n` +
+        `  return execFileSync(process.execPath, ['scripts/check-foo.mjs', ...args]);\n` +
+        `}\n` +
+        `it('runs', () => { expect(run([])).toBe(''); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+    expect(r.skipped ?? []).toEqual([]);
+  });
+
+  it('still flags a test that never calls the subprocess helper', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `function run(args) {\n` +
+        `  return spawnSync(process.execPath, ['scripts/check-foo.mjs', ...args]);\n` +
+        `}\n` +
+        `it('adds', () => { expect(1 + 1).toBe(2); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('does not treat a helper that spawns a bare command as a handle', () => {
+    // The #705 discriminator holds: `git` is not a repo path.
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `function tag() {\n` +
+        `  return spawnSync('git', ['tag']);\n` +
+        `}\n` +
+        `it('tags', () => { expect(tag().status).toBe(0); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('does not read a file-name literal outside the launch as a script', () => {
+    // From canary's own tree: `git ls-files` piped into a `.d.ts` filter. The
+    // launch and the literal sit in one helper but the literal is not an
+    // ARGUMENT of the launch, so the file has no target and stays abstained.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `function sources() {\n` +
+        `  return execFileSync('git', ['ls-files', root], { encoding: 'utf8' })\n` +
+        `    .split('\\n')\n` +
+        `    .filter((f) => !f.endsWith('.d.ts'));\n` +
+        `}\n` +
+        `it('reads config', () => { expect(cfg().strict).toBe(true); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('does not read an import written inside a fixture string as a handle', () => {
+    // Review of #1667: the declaration's evidence was read over its whole raw
+    // body, string content included, so a source fixture made `FIX` a target
+    // and silenced the real VAC-002 below it.
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const FIX = "const m = await import('./m.js')";\n` +
+        `it('b', () => { expect(FIX.length).toBe(3); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('does not read a glob passed to a bare command as a script', () => {
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { execFileSync } from 'node:child_process';\n` +
+        `function tracked() {\n` +
+        `  return execFileSync('git', ['ls-files', '--', 'ts/test/*.ts']);\n` +
+        `}\n` +
+        `it('reads config', () => { expect(cfg().strict).toBe(true); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds `(await import(x)).default`', () => {
+    const r = scan(
+      'a.test.tsx',
+      `import { it, expect } from 'vitest';\n` +
+        `const Route = (await import('../health-tracker')).default;\n` +
+        `const { formatSyncTime } = await import('../health-tracker');\n` +
+        `it('heads the section', () => {\n` +
+        `  render(<Route />);\n` +
+        `  expect(screen.getByText('THIS PHONE')).toBeTruthy();\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds `(await import(x)).named`', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const save = (await import('./store.js')).save;\n` +
+        `it('saves', () => { expect(save(1)).toBe(1); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds a destructured dynamic import assigned in a hook', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `let save;\n` +
+        `beforeAll(async () => {\n` +
+        `  ({ save } = await import('./store.js'));\n` +
+        `});\n` +
+        `it('saves', () => { expect(save(1)).toBe(1); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds names loaded through a same-file import wrapper', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const importRoute = () => import('../route.js');\n` +
+        `it('posts', async () => {\n` +
+        `  const { POST } = await importRoute();\n` +
+        `  expect((await POST(req)).status).toBe(200);\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds a wrapper-loaded name destructured at module scope', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const importRoute = () => import('../route.js');\n` +
+        `const { POST } = await importRoute();\n` +
+        `it('posts', async () => { expect((await POST(req)).status).toBe(200); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('still flags a test that ignores the dynamically imported target', () => {
+    const r = scan(
+      'a.test.ts',
+      KIT +
+        `const Route = (await import('../health-tracker')).default;\n` +
+        `it('adds', () => { expect(1 + 1).toBe(2); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+});
+
+// #1672. A module-scope `let` that a hook reassigns is the subject's handle in
+// a common suite shape -- `let mod; beforeAll(async () => { mod = await
+// import('../x') })`. No declaration pattern bounds the assignment, so with
+// another relative import in the file the test calling `mod.save()` drew a
+// false VAC-002 (`mod.save(` is not a call of `mod`, so it did not even
+// abstain). An assignment that REACHES the target binds the name; one that
+// does not leaves it unresolved, so #1170's abstention still holds.
+describe('VAC-002 — a module-scope let a hook reassigns (#1672)', () => {
+  const HEAD3 =
+    `import { it, expect, beforeAll, beforeEach } from 'vitest';\n` +
+    `import { tmpDir, makeStore } from './testkit.js';\n` +
+    `let mod;\n`;
+  const TEST3 = `it('saves', () => { expect(mod.save(1)).toBe(1); });\n`;
+
+  it.each([
+    [
+      'a dynamic import in beforeAll',
+      `beforeAll(async () => {\n  mod = await import('../store.js');\n});\n`,
+    ],
+    [
+      'a .default dynamic import in beforeEach',
+      `beforeEach(async () => {\n  mod = (await import('./store.js')).default;\n});\n`,
+    ],
+    [
+      'a require in beforeEach',
+      `beforeEach(() => {\n  mod = require('../store.js');\n});\n`,
+    ],
+    [
+      'a plain assignment of an imported binding',
+      `beforeEach(() => {\n  mod = makeStore;\n});\n`,
+    ],
+    [
+      'a call of an imported binding',
+      `beforeEach(() => {\n  mod = makeStore(tmpDir());\n});\n`,
+    ],
+  ])('reads %s as the target', (_label, hook) => {
+    const r = scan('a.test.ts', HEAD3 + hook + TEST3);
+    expect(rules(r.findings)).not.toContain('VAC-002');
+    expect(r.helperAbstained ?? 0).toBe(0);
+  });
+
+  it('resolves a file whose only first-party reach is the hook import', () => {
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect, beforeAll } from 'vitest';\n` +
+        `let mod;\n` +
+        `beforeAll(async () => {\n  mod = await import('../store.js');\n});\n` +
+        TEST3,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+    expect(r.skipped ?? []).toEqual([]);
+  });
+
+  it('still reports a test whose hook-assigned name reaches nothing', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD3 + `beforeEach(() => {\n  mod = { save: (n) => n };\n});\n` + TEST3,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('ignores an assignment to a property or a comparison', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD3 +
+        `beforeEach(() => {\n  cfg.mod = makeStore();\n  if (mod == makeStore) {}\n});\n` +
+        TEST3,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+});
+
+// #1681. VAC-002 read the RAW test body, comments included -- and a body runs
+// to the next declaration, so it also owned the comment above the NEXT test.
+// Once #1672 bound common words (`template`, `root`, `store`) as target names,
+// prose saying "not the template's" counted as invoking the target, and a test
+// whose only line was `expect(hookSpawns).toBe(0)` passed in silence. The
+// verdict now reads the comment-stripped body, the same lines every other rule
+// reads.
+describe('VAC-002 — a comment is not an invocation (#1681)', () => {
+  const HEAD4 =
+    `import { it, expect, beforeEach } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let template;\n` +
+    `let hookSpawns = 0;\n` +
+    `beforeEach(() => {\n  template = makeStore();\n});\n`;
+  const vac002Tests = (r: ReturnType<typeof scan>) =>
+    r.findings.filter((f) => f.rule === 'VAC-002').map((f) => f.test);
+
+  it.each([
+    [
+      'a one-level name',
+      `it('counts', () => {\n  // the template's copy\n  expect(hookSpawns).toBe(0);\n});\n`,
+    ],
+    [
+      'a direct import',
+      `it('counts', () => {\n  // makeStore is not called here\n  expect(hookSpawns).toBe(0);\n});\n`,
+    ],
+  ])('reports a test whose only mention of %s is a comment', (_l, test) => {
+    const r = scan('a.test.ts', HEAD4 + test);
+    expect(vac002Tests(r)).toEqual(['counts']);
+  });
+
+  it('does not credit a test with the comment above the next one', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD4 +
+        `it('counts', () => {\n  expect(hookSpawns).toBe(0);\n});\n\n` +
+        `// a push lands here, not the template's\n` +
+        `it('pushes', () => {\n  expect(template.push()).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual(['counts']);
+  });
+
+  // Pinned, NOT changed by #1681: a value binding (not a function) counts as
+  // invoked on a bare mention in code, e.g. `join(root, 'wt')`.
+  it('still counts a bare code mention of a hook-assigned value', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD4 + `it('uses', () => {\n  expect(use(template)).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+    expect(r.helperAbstained ?? 0).toBe(0);
+  });
+
+  // The `deeper` -> `invoked` transition #1679 introduced: a test that reaches
+  // the target only through a two-level helper chain abstains, but naming a
+  // hook-assigned value in code lifts it to `invoked`.
+  it('lifts a two-level helper chain to invoked via a hook-assigned value', () => {
+    const chain =
+      `const raw = () => makeStore();\n` + `const helper = () => raw();\n`;
+    const deeper = scan(
+      'a.test.ts',
+      HEAD4 + chain + `it('t', () => {\n  expect(helper()).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(deeper)).toEqual([]);
+    expect(deeper.helperAbstained).toBe(1);
+    const lifted = scan(
+      'a.test.ts',
+      HEAD4 +
+        chain +
+        `it('t', () => {\n  expect(helper(template)).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(lifted)).toEqual([]);
+    expect(lifted.helperAbstained ?? 0).toBe(0);
+  });
+
+  it('does not lift a two-level chain on a comment mention', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD4 +
+        `const raw = () => makeStore();\n` +
+        `const helper = () => raw();\n` +
+        `it('t', () => {\n  // see template\n  expect(helper()).toBe(1);\n});\n`,
+    );
+    expect(r.helperAbstained).toBe(1);
+  });
+});
+
+// #1691. #1681 only stripped lines that START with `//`, `#` or `*`, and the
+// annotation walk had its own `/*` check, so the two disagreed and a comment
+// AFTER code, or a `/* ... */` line, still counted as naming the target.
+describe('VAC-002 — a trailing or block comment is not an invocation (#1691)', () => {
+  const HEAD =
+    `import { it, expect } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let hookSpawns = 0;\n`;
+  const vac002Tests = (r: ReturnType<typeof scan>) =>
+    r.findings.filter((f) => f.rule === 'VAC-002').map((f) => f.test);
+
+  it.each([
+    ['a trailing // comment', `  expect(hookSpawns).toBe(0); // makeStore\n`],
+    [
+      'a /* */ line',
+      `  /* makeStore() is not called */\n  expect(hookSpawns).toBe(0);\n`,
+    ],
+    [
+      'a trailing /* */ span',
+      `  expect(hookSpawns /* makeStore */).toBe(0);\n`,
+    ],
+  ])('reports a test whose only mention is %s', (_l, body) => {
+    const r = scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`);
+    expect(vac002Tests(r)).toEqual(['counts']);
+  });
+
+  // The negative: `//` inside a string is content, not a comment, so a call
+  // written after one on the same line still counts.
+  it('still counts a call that follows a // inside a string', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `it('fetches', () => {\n  expect(get('http://x', makeStore())).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+  });
+
+  it('still counts a call that follows a closed /* */ span', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `it('calls', () => {\n  /* setup */ expect(makeStore()).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+  });
+
+  // Python has its own comment syntax: `//` is floor division and `/*` is not
+  // a token, so only a quote-aware `#` opens a comment. Reading the JS forms in
+  // a Python body blanked `10 // target(5)` down to `10` -- a false VAC-002.
+  describe('in a Python body', () => {
+    const PY_HEAD = `from store import target\n\n`;
+    const pyTest = (body: string) =>
+      vac002Tests(scan('test_a.py', PY_HEAD + `def test_t():\n${body}`));
+
+    it('keeps a call that follows `//` floor division', () => {
+      expect(pyTest(`    assert 10 // target(5) == 2\n`)).toEqual([]);
+    });
+
+    it('still counts a call that a trailing `#` comment follows', () => {
+      expect(pyTest(`    assert target(1) == 2  # the happy path\n`)).toEqual(
+        [],
+      );
+    });
+
+    it('reports a test whose only mention is a trailing `#` comment', () => {
+      expect(
+        pyTest(`    value = 1\n    assert value == 1  # target(1)\n`),
+      ).toEqual(['test_t']);
+    });
+
+    it('does not read a `#` inside a string as a comment', () => {
+      expect(pyTest(`    assert f('#', target(1)) == 1\n`)).toEqual([]);
+    });
+  });
+});
+
+// Follow-up to #1697. The JS comment tokenizer had no regex-literal arm, and
+// blanking leaves a regex's content intact, so an unescaped `//` or `/*` in a
+// character class opened a "comment" that swallowed the rest of the line --
+// and the call after it -- for a false VAC-002.
+describe('VAC-002 — a // or /* inside a regex literal is not a comment', () => {
+  const HEAD =
+    `import { it, expect } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let hookSpawns = 0;\n`;
+  const vac002Tests = (body: string) =>
+    scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`)
+      .findings.filter((f) => f.rule === 'VAC-002')
+      .map((f) => f.test);
+
+  it.each([
+    ['a // in a character class', `/[//]/g`],
+    ['a /* in a character class', `/[/*]/g`],
+  ])('still counts a call that follows %s', (_l, regex) => {
+    expect(
+      vac002Tests(
+        `  expect('a/b'.replace(${regex}, '') + makeStore()).toBe(1);\n`,
+      ),
+    ).toEqual([]);
+  });
+
+  // The guards: skipping regex literals must not turn a real comment into code.
+  it('still reads a // after division as a comment', () => {
+    expect(
+      vac002Tests(`  expect(hookSpawns / 2 // makeStore()\n  ).toBe(0);\n`),
+    ).toEqual(['counts']);
+  });
+
+  it('still reads a trailing // after a regex literal as a comment', () => {
+    expect(
+      vac002Tests(`  expect(/[//]/.test('x')).toBe(false); // makeStore(1)\n`),
+    ).toEqual(['counts']);
   });
 });
 
@@ -1124,6 +1633,133 @@ it('c', () => { render(<List />); expect(screen.getByText('y')).toBeVisible(); }
 // advanced past line 1 and the scan spun forever. A sync loop cannot be timed
 // out in-process, so a budget on the walk's own primitive turns the hang into
 // a red assertion instead of a stuck worker.
+// #1669, option (a). A `.skip` test never runs, so it cannot pass vacuously --
+// LINT-006 already exempts it. Since #1665 the enumerator reads `.skip`, so VAC
+// began scanning bodies it never saw and reported them as findings. Exempting
+// them must not read as "checked clean" either: a skipped test leaves the
+// denominator and is disclosed as a skip with its reason.
+describe('a .skip test is exempt, and disclosed, not checked (#1669)', () => {
+  it('reports no VAC finding on a vacuous .skip test', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('saves', () => { expect(save(1)).toBe(1); });\n` +
+        `it.skip('parked', () => { expect(1).toBe(1); });\n` +
+        `test.skip('parked too', () => { expect(true).toBe(true); });\n`,
+    );
+    expect(r.findings).toEqual([]);
+  });
+
+  it('takes a .skip test out of `checked` and lists it as a skip', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('saves', () => { expect(save(1)).toBe(1); });\n` +
+        `it.skip('parked', () => { expect(1).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(1);
+    const skip = r.skipped?.find((s) => s.name.includes('(parked)'));
+    expect(skip?.reason).toMatch(/\.skip/);
+  });
+
+  it('abstains on a file whose only tests are .skip, rather than passing', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it.skip('parked', () => { expect(save(1)).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(0);
+    expect(gateOutcome(r, 'advisory').abstained).toBe(true);
+  });
+
+  it('still scans an .only test, which does run', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it.only('focused', () => { expect(1).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(1);
+    expect(rules(r.findings)).toContain('VAC-001');
+  });
+
+  it('reports nothing on the unquarantine fixture whose .skip test is vacuous', () => {
+    const fixture = fileURLToPath(
+      new URL(
+        '../../agents/skills/test/fixtures/unquarantine/suite/tests/orders/reservations.spec.js',
+        import.meta.url,
+      ),
+    );
+    const r = scanVacuity(fixture);
+    expect(r.findings).toEqual([]);
+    expect(r.checked).toBe(0);
+    expect(r.skipped).toHaveLength(3);
+  });
+});
+
+// #1686. Only a declaration's OWN `.skip` marked a test skipped, so a vacuous
+// `it` inside `describe.skip`/`xdescribe` -- which never runs -- drew VAC
+// findings and counted as checked. And `xit`, `xtest` and `.skip.each` were not
+// declarations at all, so their body ran on into the real test above and its
+// VAC-001 landed on that test's name.
+describe('every skip form is exempt, and disclosed (#1686)', () => {
+  const REAL = `it('real', () => { expect(save(1)).toBe(1); });\n`;
+  const skippedNames = (r: ReturnType<typeof scan>) =>
+    (r.skipped ?? []).map((s) => s.name);
+
+  it.each([
+    ['describe.skip', 'describe.skip'],
+    ['xdescribe', 'xdescribe'],
+  ])('skips every test inside a %s block', (_l, kw) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        REAL +
+        `${kw}('parked suite', () => {\n` +
+        `  it('parked', () => { expect(1).toBe(1); });\n` +
+        `  it('parked too', () => { expect(true).toBe(true); });\n` +
+        `});\n`,
+    );
+    expect(r.findings).toEqual([]);
+    expect(r.checked).toBe(1);
+    expect(skippedNames(r).filter((n) => n.includes('(parked'))).toHaveLength(
+      2,
+    );
+  });
+
+  it('still scans a test after the skipped block closes', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `describe.skip('parked suite', () => {\n` +
+        `  it('parked', () => { expect(save(1)).toBe(1); });\n` +
+        `});\n` +
+        `it('after', () => { expect(1).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(1);
+    expect(r.findings.map((f) => [f.rule, f.test])).toContainEqual([
+      'VAC-001',
+      'after',
+    ]);
+  });
+
+  it.each([
+    ['xit', `xit('parked', () => { expect(1).toBe(1); });\n`],
+    ['xtest', `xtest('parked', () => { expect(1).toBe(1); });\n`],
+    [
+      'it.skip.each',
+      `it.skip.each([[1], [2]])('parked %s', () => { expect(1).toBe(1); });\n`,
+    ],
+    [
+      'test.skip.each',
+      `test.skip.each([[1]])('parked %s', () => { expect(1).toBe(1); });\n`,
+    ],
+  ])('recognises %s as a skipped declaration', (_l, decl) => {
+    const r = scan('a.test.ts', IMPORTS + REAL + decl);
+    // Before #1686 the parked body ran into `real`, and VAC-001 landed there.
+    expect(r.findings).toEqual([]);
+    expect(r.checked).toBe(1);
+    expect(skippedNames(r).some((n) => n.includes('(parked'))).toBe(true);
+  });
+});
+
 describe('a file that starts with a blank line', () => {
   it('scans to a result instead of hanging', () => {
     const real = String.prototype.lastIndexOf;

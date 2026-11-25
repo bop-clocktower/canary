@@ -1,0 +1,24 @@
+{
+  "issues": [],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": {
+    "file": "ts/test/vacuity-scanner.test.ts",
+    "names": [
+      "VAC-002 — a // or /* inside a regex literal is not a comment > still counts a call that follows a // in a character class",
+      "VAC-002 — a // or /* inside a regex literal is not a comment > still counts a call that follows a /* in a character class",
+      "VAC-002 — a // or /* inside a regex literal is not a comment > still reads a // after division as a comment",
+      "VAC-002 — a // or /* inside a regex literal is not a comment > still reads a trailing // after a regex literal as a comment"
+    ]
+  },
+  "baseSha": "5459d98b",
+  "redBeforeFix": "vitest -t 'inside a regex literal' on origin/main source (5459d98b): 2 failed | 2 passed. Both character-class repros (/[//]/g and /[/*]/g before makeStore()) gave a false VAC-002 (expected [], got ['counts']). The two guards (a // after division, a trailing // after a regex) passed, as they must: the old tokenizer over-reads comments, so it cannot fail them. They are there to catch an over-correction. Green with the fix: 176/176 in the file, 7780 passed | 3 skipped across the suite.",
+  "assumptions": [
+    "Regression from #1697 (cbd0de19). On 9898ab9d, before #1697, the repro gave no VAC-002, because comment stripping then only looked at lines that start with //, # or *.",
+    "Fix scope: only the JS branch of commentSpans. It now walks the line and steps over a regex literal with the shared regexLiteralEnd from js-literals.ts, as string-literals.ts already does, before it tries the string/comment token (now a sticky regex). The Python branch is unchanged.",
+    "regexLiteralEnd works per line, so at the start of a line (no previous significant character) it treats a / as an expression start. A continuation line that begins with division and has a second / later on the line could be misread as a regex. That would hide a comment, not invent one. Not addressed; out of scope.",
+    "Out of scope: the three other comment quirks tracked in issue 1704.",
+    "Dogfood measurement on canary's own ts/test (367 files, 5628 tests checked): findings 215 -> 215 and skipped 579 -> 579. The finding set is identical between base and fix."
+  ],
+  "closingKeyword": null
+}

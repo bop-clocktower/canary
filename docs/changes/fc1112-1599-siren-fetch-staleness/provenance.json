@@ -17,7 +17,7 @@
     "Clone-behind remedy is `git -C '<clone>' pull --ff-only` (verified by a test that runs it verbatim and re-runs the siren). `claude plugin marketplace update` is no longer named because its effect on the clone cannot be tested here.",
     "Check 4b now compares the installed gitCommitSha against origin's live HEAD rather than @{upstream}/origin/HEAD; its remedy is prefixed 'once the clone is at origin' because reinstall copies from the clone.",
     "GIT_SSH_COMMAND is not overridden (would clobber a user's core.sshCommand); GIT_TERMINAL_PROMPT=0 and stdin </dev/null plus the timeout bound any prompt.",
-    "No other copies of the hook exist: scripts/install-siren.mjs symlinks hooks/canary-session-siren.sh; .claude-plugin/hooks.json does not ship it."
+    "No other copies of the hook exist in the repo: scripts/install-siren.mjs copies hooks/canary-session-siren.sh into ~/.claude/hooks/ (a regular file, not a symlink), and .claude-plugin/hooks.json does not ship it."
   ],
   "closingKeywords": {
     "1599": "Closes"

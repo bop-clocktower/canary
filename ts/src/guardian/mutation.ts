@@ -111,6 +111,11 @@ export interface MutationReport {
    * without this list overstates what the run actually checked.
    */
   excludedTests: string[];
+  /**
+   * Wall-clock time of canary's own Stryker run, absent on a mapped
+   * `--report`. The D5 p90 budget is computed from it (SC-7).
+   */
+  durationMs?: number;
 }
 
 /** The subset of Stryker's JSON report schema this module consumes. */

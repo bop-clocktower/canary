@@ -251,6 +251,9 @@ jobs:
       # `ts/test/release-advance-latest.test.ts` runs this script against a
       # local bare remote, including a racing second run.
       - name: Move latest tag
+        # Pinned so the step runs `bash -eo pipefail`; the unset default is
+        # `bash -e`, under which a failed pipeline takes its last stage's status.
+        shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_SHA: ${{ github.sha }}
@@ -259,7 +262,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2; do
-            LEASE="$(git ls-remote origin refs/tags/latest | awk '$2 == "refs/tags/latest" { print $1 }')"
+            # Read, then parse: a failed ls-remote must stop the step, never
+            # parse to an empty lease that reads as "latest does not exist".
+            if ! LS="$(git ls-remote origin refs/tags/latest)"; then
+              echo "::error::could not read latest from origin; latest not moved"
+              exit 1
+            fi
+            LEASE="$(printf '%s\n' "$LS" | awk '$2 == "refs/tags/latest" { print $1 }')"
             git fetch --force --tags --quiet origin
             if ! HIGHEST="$(git tag --list 'v*' | node scripts/highest-stable-tag.mjs)"; then
               echo "::error::could not rank the stable release tags; latest not moved"
@@ -271,9 +280,25 @@ jobs:
               exit 0
             fi
             git tag -fa latest "$RELEASE_SHA" -m "latest → ${RELEASE_TAG}"
-            if git push --force-with-lease="refs/tags/latest:${LEASE}" origin refs/tags/latest; then
+            if PUSH_ERR="$(git push --force-with-lease="refs/tags/latest:${LEASE}" origin refs/tags/latest 2>&1)"; then
               echo "Moved latest → ${RELEASE_TAG} (${RELEASE_SHA})"
               exit 0
+            fi
+            # A rejected push is a lost race only if origin's latest actually
+            # moved off the lease. Anything else (auth, network, a tag ruleset)
+            # will not clear on retry, so name it with git's own error (#1504).
+            PUSH_ERR="${PUSH_ERR//'%'/%25}"
+            PUSH_ERR="${PUSH_ERR//$'\r'/}"
+            PUSH_ERR="${PUSH_ERR//$'\n'/%0A}"
+            if ! LS="$(git ls-remote origin refs/tags/latest)"; then
+              echo "::error::push of latest → ${RELEASE_TAG} was rejected and origin could not be re-read: ${PUSH_ERR}"
+              exit 1
+            fi
+            NOW="$(printf '%s\n' "$LS" | awk '$2 == "refs/tags/latest" { print $1 }')"
+            if [ "$NOW" = "$LEASE" ]; then
+              echo "::error::push of latest → ${RELEASE_TAG} was rejected, and latest did not move on origin, so this is not a race: ${PUSH_ERR}"
+              echo "Did NOT move latest → ${RELEASE_TAG}: origin rejected the push (not a race). See the job log." >> "$SUMMARY"
+              exit 1
             fi
             echo "::warning::latest moved on origin while this run was deciding (attempt ${attempt}/2); re-checking"
           done

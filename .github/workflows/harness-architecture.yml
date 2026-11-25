@@ -71,5 +71,25 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - run: npx --yes -p "$HARNESS_CLI" harness check-deps
-      - run: npx --yes -p "$HARNESS_CLI" harness validate
+      # #1533: fetching is separated from checking. `npx` both fetched the
+      # CLI and ran check-deps, so a registry 404 on a just-published
+      # transitive tarball read as a red check-deps (run 45224318526). This
+      # step resolves the float once (as harness-quality.yml does, #1248) and
+      # warms the npx cache for that exact version, retrying only the fetch.
+      # check-deps and validate then run ONCE each, never retried: a retry
+      # there would turn a real failure into a pass.
+      - name: Resolve harness CLI version
+        id: harness-cli
+        run: |
+          resolved="$(node scripts/retry-fetch.mjs --expect-semver -- npx --yes -p "$HARNESS_CLI" harness --version \
+            | tail -n 1 | tr -d '[:space:]')"
+          if ! printf '%s' "$resolved" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "Could not resolve a version from '$HARNESS_CLI' (got '$resolved')." >&2
+            exit 1
+          fi
+          echo "Resolved $HARNESS_CLI to $resolved"
+          HARNESS_CLI_EXACT="${HARNESS_CLI%@*}@$resolved"
+          node scripts/retry-fetch.mjs -- npx --yes -p "$HARNESS_CLI_EXACT" harness --version >/dev/null
+          echo "HARNESS_CLI_EXACT=$HARNESS_CLI_EXACT" >> "$GITHUB_ENV"
+      - run: npx --yes -p "$HARNESS_CLI_EXACT" harness check-deps
+      - run: npx --yes -p "$HARNESS_CLI_EXACT" harness validate

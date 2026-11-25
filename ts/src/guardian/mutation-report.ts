@@ -19,6 +19,13 @@ import {
   SuppressedMutant,
   unattributedSurvivorLines,
 } from './mutation.js';
+import {
+  coveringTests,
+  excludedLine,
+  mdCode,
+  mdReason,
+  noKillReason,
+} from './mutation-text.js';
 
 /** The `// canary:allow-mutant <reason>` marker, mirroring allow-untested. */
 const SUPPRESS_MUTANT_RE = /(?:\/\/|#)\s*canary:allow-mutant\s+(.+)/;
@@ -97,7 +104,7 @@ function verdictFor(
         report.timeout > 0
           ? `no mutant was killed and ${report.timeout} timed out, so the ` +
             'run verified nothing'
-          : 'no mutant was covered by any test, so nothing could be killed',
+          : noKillReason(report),
     };
   }
   return { verdict: report.survived > 0 ? 'survivors' : 'all-killed' };
@@ -218,20 +225,10 @@ export function mutationExitCode(report: MutationReport): number {
 function suppressionLines(report: MutationReport): string[] {
   return report.suppressed.map(
     (entry) =>
-      `- suppressed \`${entry.finding.path}:${entry.finding.line}\`: ` +
-      `${entry.reason}`,
-  );
-}
-
-/** The disclosure line every report carries, abstentions included. */
-function excludedLine(report: MutationReport): string {
-  if (report.excludedTests.length === 0) {
-    return 'No test files were excluded from the mutation run.';
-  }
-  return (
-    `${report.excludedTests.length} test file(s) excluded from the mutation ` +
-    `run (they cannot run in Stryker's worker-thread pool), so a mutant only ` +
-    `these would kill reads as survived: ${report.excludedTests.join(', ')}`
+      `- suppressed ${mdCode(`${entry.finding.path}:${entry.finding.line}`)}: ` +
+      // A code span: the reason is the PR author's prose, and GitHub
+      // autolinks `#N`, `@user` and URLs anywhere else (#1680).
+      mdCode(entry.reason),
   );
 }
 
@@ -263,7 +260,8 @@ export function renderMutationReport(report: MutationReport): string {
   const lines = ['### Mutation'];
   if (report.verdict === 'abstained') {
     lines.push(
-      `Abstained ${'\u{2014}'} ${report.abstainReason ?? 'no reason given'}. ` +
+      `Abstained ${'\u{2014}'} ` +
+        `${report.abstainReason === undefined ? 'no reason given' : mdReason(report.abstainReason)}. ` +
         'This is not a pass.',
     );
     // ADR 0037 F2: another abstain reason must not hide untested mutants.
@@ -280,14 +278,13 @@ export function renderMutationReport(report: MutationReport): string {
     for (const finding of report.findings.filter(
       (f) => f.status === 'survived',
     )) {
-      const covering =
-        finding.coveredBy.length > 0
-          ? finding.coveredBy.join('; ')
-          : 'attribution not recorded';
+      // Code spans: GitHub autolinks `#N`, `@user` and URLs in a test name
+      // anywhere else (#1673).
       lines.push(
-        `- \`${finding.path}:${finding.line}\` ${finding.mutator} ` +
-          `${'\u{2192}'} \`${finding.replacement}\` ${'\u{2014}'} ran but did ` +
-          `not fail: ${covering}`,
+        `- ${mdCode(`${finding.path}:${finding.line}`)} ` +
+          `${mdCode(finding.mutator)} ${'\u{2192}'} ` +
+          `${mdCode(finding.replacement)} ${'\u{2014}'} ran but did not fail: ` +
+          coveringTests(finding.coveredBy),
       );
     }
   }

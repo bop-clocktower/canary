@@ -1,0 +1,58 @@
+Generate Vitest unit tests for a path-containment function.
+
+Signature:
+    function resolveWithin(base: string, target: string): string
+
+The function resolves a relative POSIX path against a base directory and
+returns the normalized absolute result, refusing any result that lands
+outside the base. It is the check that stands between a user-supplied file
+name and a path traversal.
+
+Rules:
+  - `base` must be an absolute path (starts with "/") that is already
+    normalized: no "." or ".." segments. A trailing "/" is ignored, and "/"
+    alone is a valid base. Anything else throws a RangeError.
+  - `target` must be a relative path (does not start with "/"). An absolute
+    target throws a RangeError — it would discard the base entirely.
+  - Either path containing a NUL character ("\0") throws a RangeError.
+  - Split on "/". Empty segments (from "//" or a trailing "/") and "."
+    segments are dropped. A ".." segment removes the previous segment; at the
+    filesystem root it does nothing, because "/.." is "/".
+  - Containment is judged on the FINAL path only, and SEGMENT by segment: the
+    result is inside `base` when its leading segments equal all of base's
+    segments. A plain string-prefix check is wrong — "/srv/app-evil" starts
+    with the string "/srv/app" but is not inside it.
+  - A path that leaves the base and comes back ("../app/x" against
+    "/srv/app") is accepted, because only the final path is judged.
+  - A result outside `base` throws an Error whose message contains
+    "escapes base". The base itself counts as inside.
+  - The result is "/" followed by the segments joined with "/", with no
+    trailing slash. The function is pure.
+
+Cover these cases (hand-verified against the rules, base "/srv/app" unless
+stated):
+  1. Plain descent — resolveWithin("/srv/app", "docs/readme.md")
+     -> "/srv/app/docs/readme.md"
+  2. "." and empty segments collapse — resolveWithin("/srv/app", "./a//b/./c")
+     -> "/srv/app/a/b/c"
+  3. ".." inside the base — resolveWithin("/srv/app", "a/b/../c")
+     -> "/srv/app/a/c"
+  4. Back to the base exactly, which is inside —
+     resolveWithin("/srv/app", "a/b/../..") -> "/srv/app"
+  5. One ".." too many escapes — resolveWithin("/srv/app", "a/b/../../..")
+     -> throws "escapes base" (the result would be "/srv")
+  6. The prefix trap — resolveWithin("/srv/app", "../app-evil/x")
+     -> throws "escapes base" (the result "/srv/app-evil/x" shares the
+     string prefix "/srv/app", so a startsWith check wrongly accepts it)
+  7. Leave and come back — resolveWithin("/srv/app", "../app/x")
+     -> "/srv/app/x"
+  8. Empty target and trailing slashes — resolveWithin("/srv/app", "")
+     -> "/srv/app"; resolveWithin("/srv/app/", "x") -> "/srv/app/x";
+     resolveWithin("/srv/app", "a/b/") -> "/srv/app/a/b"
+  9. Root base: ".." stops at the root — resolveWithin("/", "../../etc")
+     -> "/etc" (nothing can escape "/")
+  10. Malformed input throws RangeError — an absolute target
+      resolveWithin("/srv/app", "/etc/passwd"); a relative base
+      resolveWithin("srv/app", "x"); an unnormalized base
+      resolveWithin("/srv/../app", "x"); and a NUL byte
+      resolveWithin("/srv/app", "a\0b")

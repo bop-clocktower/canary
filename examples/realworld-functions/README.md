@@ -33,6 +33,7 @@ committed — run `/canary-write-test` in Claude Code to produce fresh output.
 | [luhn-card-validator](luhn-card-validator/)                             | Unit | Pytest    | Luhn checksum validation — doubling-reduction, malformed-input reject, minimal 2-digit edge case        |
 | [topological-task-order](topological-task-order/)                       | Unit | Pytest    | Dependency ordering with a pinned lexicographic tiebreak — cycle and unknown-prerequisite rejection     |
 | [percentile-nearest-rank](percentile-nearest-rank/)                     | Unit | Vitest    | Nearest-rank percentile — pinned estimator, exact integer rank arithmetic, exact-multiple discontinuity |
+| [path-normalizer-posix](path-normalizer-posix/)                         | Unit | Vitest    | POSIX path containment — segment-wise check (the startsWith prefix trap), base-boundary off-by-one      |
 
 ## How these differ from the top-level examples
 

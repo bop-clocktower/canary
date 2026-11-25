@@ -1,0 +1,23 @@
+{
+  "issues": [1670],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTests": [
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > never calls a differing hook copy older — a byte compare cannot tell (#1670)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > never offers a stale clone as the source of a hook refresh (#1670)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > keeps the install remedy, and claims nothing fresh, when origin is unreachable (#1670)",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh skew check — executed, not read > names a remedy that, run verbatim, clears the stale-hook finding (#1632)"
+  ],
+  "redAtBase": "Tests 5 failed | 54 passed (59) — 'siren hook differs from the marketplace copy' not found / no 'pull the clone first' (red commit f9c812bf on base 448969ff)",
+  "assumptions": [
+    "Fork F4 = (a), chosen by the human: check 0 says 'differs from', never 'older'; when it fires, check 3's ls-remote still runs; a clone behind origin gets the stale-clone finding with a 'pull the clone first' remedy and no --install-hooks remedy; a current clone keeps the reworded install remedy; an unreachable origin keeps today's behavior (reworded) and claims nothing about the clone.",
+    "On a behind clone, check 0 emits two findings: the clone-behind finding (pull remedy) and the differs finding, which says the next session compares again once the clone is at origin. It names no install command, so nothing in the message can install from the stale clone.",
+    "The ls-remote call is the existing origin_tip under the existing CANARY_SIREN_LS_REMOTE_TIMEOUT ceiling. check 0 exits the hook, so no session makes the call twice.",
+    "The developer-only case from the issue (running the hook from a repo checkout on a branch trips check 0) is out of scope and left unchanged.",
+    "No doc or SKILL text quoted the 'older than the marketplace copy' wording; only the hook and its tests did."
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "Both gaps in #1670 (wording, and suppression of the stale-clone finding) are fixed and covered by the suggested stale-clone / newer-install test; the developer-only note is explicitly out of scope per the dispatch brief.",
+  "run": "fc1123d",
+  "base": "448969ff"
+}
