@@ -426,6 +426,53 @@ agents/skills/test/fixtures/cry-app/          # local fixture app with a planted
 .github/workflows/cry-e2e.yml                 # advisory, path-filtered, real Chromium
 ```
 
+Module map, as shipped:
+
+- Offline, deterministic (Tier-0 closure):
+  - [cli.mjs](../../../agents/skills/claude-code/canary-cry/scripts/cli.mjs):
+    argument parsing and wiring for every command.
+  - [schema.mjs](../../../agents/skills/claude-code/canary-cry/scripts/schema.mjs),
+    [schema-core.mjs](../../../agents/skills/claude-code/canary-cry/scripts/schema-core.mjs),
+    [schema-targets.mjs](../../../agents/skills/claude-code/canary-cry/scripts/schema-targets.mjs):
+    the flows and targets schemas.
+  - [patterns.mjs](../../../agents/skills/claude-code/canary-cry/scripts/patterns.mjs)
+    and
+    [matrix.mjs](../../../agents/skills/claude-code/canary-cry/scripts/matrix.mjs):
+    the abuse-pattern catalog and the ranked matrix.
+  - [gate.mjs](../../../agents/skills/claude-code/canary-cry/scripts/gate.mjs)
+    and
+    [manifest.mjs](../../../agents/skills/claude-code/canary-cry/scripts/manifest.mjs):
+    the target refusal, the manifest and its sha.
+  - [render.mjs](../../../agents/skills/claude-code/canary-cry/scripts/render.mjs):
+    all text output.
+- The executor, loaded by one lazy `import()` after the sha matches:
+  - [execute.mjs](../../../agents/skills/claude-code/canary-cry/scripts/execute.mjs):
+    orchestrates a confirmed run.
+  - [codegen.mjs](../../../agents/skills/claude-code/canary-cry/scripts/codegen.mjs):
+    the Playwright config and one spec per scenario.
+  - [rundir.mjs](../../../agents/skills/claude-code/canary-cry/scripts/rundir.mjs):
+    run-dir file I/O.
+  - [playwright.mjs](../../../agents/skills/claude-code/canary-cry/scripts/playwright.mjs):
+    resolves the target's `@playwright/test`, runs the preflight, and spawns
+    Playwright.
+  - [verdict.mjs](../../../agents/skills/claude-code/canary-cry/scripts/verdict.mjs)
+    and
+    [findings.mjs](../../../agents/skills/claude-code/canary-cry/scripts/findings.mjs):
+    the per-scenario verdicts and `findings.json`.
+- The runtime, copied into every run dir and loaded by the generated specs:
+  - [cry-runtime.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/cry-runtime.mjs):
+    the entry point.
+  - [session.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/session.mjs):
+    accounts, sign-in, and the cross-account leak check.
+  - [abuse.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/abuse.mjs):
+    the six patterns.
+  - [steps.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/steps.mjs):
+    flow steps.
+  - [guard.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/guard.mjs):
+    the egress lockdown and the UI signals.
+  - [probes.mjs](../../../agents/skills/claude-code/canary-cry/scripts/runtime/probes.mjs):
+    the state probes.
+
 ## Integration Points
 
 ### Entry Points
