@@ -1,8 +1,9 @@
 // verdict-text -- when a katana run abstains, and how it says so in text.
 //
-// A run is `{scanned, degraded, deletions, verdict}`: whether the diff had any
-// text, whether critical-area data was missing, what was captured, and what
-// alarm.assess returned.
+// A run is `{scanned, degraded, deletions, verdict, freshness}`: whether the
+// diff had any text, whether critical-area data was missing, what was
+// captured, what alarm.assess returned, and how old the map is (null when
+// there is no map, #1325).
 
 import { DEGRADED_NOTICE } from './alarm.mjs';
 
@@ -26,6 +27,25 @@ const zeroAreasLine = (n) =>
   `${ABSTAINED_LINE} The critical-areas file lists 0 areas, so none of ` +
   `${n} deletion(s) could be checked against one.`;
 
+// #1325: a map past its age limit, or with no age to check, cannot vouch that
+// an area added since would have alarmed.
+const untrustedMap = (run) =>
+  run.freshness != null && run.freshness.status !== 'fresh';
+
+const staleMapLine = ({ generated, ageDays, maxAgeDays }) =>
+  `\u{26A0} critical-areas map is stale: generated ${generated}, ${ageDays} ` +
+  `day(s) ago, past the ${maxAgeDays}-day limit (--max-age-days). Areas ` +
+  'added or reshaped since cannot alarm; regenerate it with ' +
+  '`canary critical-areas`.';
+
+const unverifiedMapLine = ({ why }) =>
+  `\u{26A0} Cannot verify critical-areas map freshness: ${why}. ` +
+  'Regenerate it with `canary critical-areas`.';
+
+const untrustedMapAbstainLine =
+  '\u{26A0} Abstained \u{2014} katana scored this diff against a map it ' +
+  'cannot vouch is current, so 0 alarms is not a pass.';
+
 const atStakeCount = (verdict) =>
   verdict.notAssessed.filter((n) => n.atStake).length;
 
@@ -42,7 +62,29 @@ const zeroAreas = (run) =>
 export const abstains = (run) =>
   !run.scanned ||
   zeroAreas(run) ||
-  (run.verdict.findings.length === 0 && atStakeCount(run.verdict) > 0);
+  (run.verdict.findings.length === 0 &&
+    (atStakeCount(run.verdict) > 0 || untrustedMap(run)));
+
+/** `N deletion(s) captured`, plus the area denominator and map age (#1325). */
+function summaryLine(run) {
+  const head = `${run.deletions.length} deletion(s) captured`;
+  const f = run.freshness;
+  if (!f) return `${head}.`;
+  const age =
+    f.ageDays === null
+      ? 'map of unknown age'
+      : `map ${f.ageDays} day(s) old (limit ${f.maxAgeDays})`;
+  return `${head}; checked against ${run.verdict.total} critical area(s) from a ${age}.`;
+}
+
+function freshnessLines(run) {
+  if (!untrustedMap(run)) return [];
+  return [
+    run.freshness.status === 'stale'
+      ? staleMapLine(run.freshness)
+      : unverifiedMapLine(run.freshness),
+  ];
+}
 
 /**
  * The area denominator (#1242), printed whenever any area is not assessed so
@@ -73,7 +115,7 @@ export function renderText(run) {
     );
   }
   const { findings } = run.verdict;
-  const lines = [`${run.deletions.length} deletion(s) captured.`];
+  const lines = [summaryLine(run), ...freshnessLines(run)];
   if (run.degraded) lines.push(DEGRADED_NOTICE);
   if (zeroAreas(run)) lines.push(zeroAreasLine(run.deletions.length));
   for (const f of findings) {
@@ -84,5 +126,7 @@ export function renderText(run) {
   lines.push(...renderAreas(run.verdict));
   const atStake = atStakeCount(run.verdict);
   if (!findings.length && atStake) lines.push(notAssessedLine(atStake));
+  else if (!findings.length && untrustedMap(run))
+    lines.push(untrustedMapAbstainLine);
   return lines.join('\n');
 }

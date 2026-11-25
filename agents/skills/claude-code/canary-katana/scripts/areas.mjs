@@ -74,7 +74,44 @@ export function loadCriticalAreas(filePath) {
       `critical-area file malformed: ${fileErrors.join('; ')}`,
     );
   }
-  return { available: true, areas: [...data.areas], problems, reason: '' };
+  return {
+    available: true,
+    areas: [...data.areas],
+    problems,
+    reason: '',
+    generated: data.generated,
+  };
+}
+
+// --- freshness (#1325) -------------------------------------------------------
+//
+// A map is a snapshot: an area added or reshaped after `generated` can never
+// alarm, so a stale map turns "0 findings" into a claim nobody checked.
+
+export const DEFAULT_MAX_AGE_DAYS = 30;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How current a map is, judged against an injected clock. `unknown` (with a
+ * `why`) when `generated` is missing, not a date, or more than a day in the
+ * future: freshness that cannot be verified is reported, never assumed. Under
+ * a day ahead is clock skew and reads as age 0.
+ * @returns {{status: 'fresh'|'stale'|'unknown', ageDays: number|null,
+ *            maxAgeDays: number, generated: unknown, why?: string}}
+ */
+export function mapFreshness(generated, now, maxAgeDays) {
+  const base = { generated: generated ?? null, maxAgeDays };
+  const unknown = (why) => ({ ...base, status: 'unknown', ageDays: null, why });
+  if (generated === undefined || generated === null) {
+    return unknown('it has no `generated` field');
+  }
+  const at = typeof generated === 'string' ? Date.parse(generated) : NaN;
+  if (Number.isNaN(at)) return unknown('its `generated` is not a date');
+  const elapsed = now.getTime() - at;
+  if (elapsed < -DAY_MS) return unknown('its `generated` is in the future');
+  const ageDays = Math.max(0, Math.floor(elapsed / DAY_MS));
+  return { ...base, status: ageDays > maxAgeDays ? 'stale' : 'fresh', ageDays };
 }
 
 const basename = (p) => toPosix(p).split('/').pop() || '';

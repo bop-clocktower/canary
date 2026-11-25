@@ -13,6 +13,12 @@ import * as diffscan from '../claude-code/canary-katana/scripts/diffscan.mjs';
 import * as alarm from '../claude-code/canary-katana/scripts/alarm.mjs';
 import { main } from '../claude-code/canary-katana/scripts/cli.mjs';
 
+// #1325: katana checks the map's `generated` against a clock. The fixtures
+// carry a fresh stamp and every run a frozen clock, so these findings are
+// tested on their own terms (map age is canary-katana-freshness's subject).
+const GENERATED = '2026-07-20T00:00:00Z';
+const FIXTURE_NOW = () => new Date('2026-07-21T00:00:00Z');
+
 const tmps: string[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
@@ -31,7 +37,7 @@ function repo(files: Record<string, string>, areas: Area[]) {
     fs.writeFileSync(p, text);
   }
   const areasPath = path.join(tmp, 'critical-areas.json');
-  fs.writeFileSync(areasPath, JSON.stringify({ areas }));
+  fs.writeFileSync(areasPath, JSON.stringify({ generated: GENERATED, areas }));
   return { tmp, areasPath };
 }
 
@@ -94,7 +100,10 @@ function cli(
 ) {
   const { tmp, areasPath } = repo(files, areas ?? []);
   if (areas === null)
-    fs.writeFileSync(areasPath, JSON.stringify({ areas: [] }));
+    fs.writeFileSync(
+      areasPath,
+      JSON.stringify({ generated: GENERATED, areas: [] }),
+    );
   const df = path.join(tmp, 'changes.diff');
   fs.writeFileSync(df, diff);
   const out: string[] = [];
@@ -104,16 +113,19 @@ function cli(
   vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
     out.push(a.join(' '));
   });
-  const code = main([
-    '--repo',
-    tmp,
-    '--diff-file',
-    df,
-    '--no-write',
-    '--critical-areas',
-    areasPath,
-    ...flags,
-  ]);
+  const code = main(
+    [
+      '--repo',
+      tmp,
+      '--diff-file',
+      df,
+      '--no-write',
+      '--critical-areas',
+      areasPath,
+      ...flags,
+    ],
+    { now: FIXTURE_NOW },
+  );
   return { code, text: out.join('\n') };
 }
 

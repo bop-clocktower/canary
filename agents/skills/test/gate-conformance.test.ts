@@ -118,6 +118,15 @@ const ROWS: SkillGateRow[] = [
       ]),
   },
   {
+    // #1325: a scanned diff and a valid map, but the map carries no
+    // `generated` stamp, so katana cannot tell how much has changed since it
+    // was written. Clock-free on purpose: "undated" holds at any wall time.
+    command: 'canary-katana (undated critical-areas map)',
+    forbid: ['0 deletion(s) captured.'],
+    run: (base) => run(katanaMain, undatedMapArgs(base)),
+    strict: (base) => run(katanaMain, [...undatedMapArgs(base), '--strict']),
+  },
+  {
     // The store exists and parses; it simply holds no run for the branch. That
     // is the shape that matters here -- a missing store is an error (exit 1),
     // but a real store with zero rows for `main` is the one an operator would
@@ -311,6 +320,32 @@ function emptyDiff(base: string): string {
   const file = path.join(base, 'empty.diff');
   fs.writeFileSync(file, '', 'utf-8');
   return file;
+}
+
+/** katana argv over a one-line diff and a map with no `generated` stamp. */
+function undatedMapArgs(base: string): string[] {
+  const diff = path.join(base, 'change.diff');
+  fs.writeFileSync(
+    diff,
+    'diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n' +
+      '@@ -1,1 +1,1 @@\n-a\n+b\n',
+    'utf-8',
+  );
+  const map = path.join(base, 'critical-areas.json');
+  fs.writeFileSync(
+    map,
+    JSON.stringify({ areas: [{ path: 'src/billing.ts', risk_score: 0.9 }] }),
+    'utf-8',
+  );
+  return [
+    '--repo',
+    base,
+    '--diff-file',
+    diff,
+    '--no-write',
+    '--critical-areas',
+    map,
+  ];
 }
 
 /** A valid flows.json that declares no flow: zero scenarios to schedule. */

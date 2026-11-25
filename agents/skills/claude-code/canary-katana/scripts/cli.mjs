@@ -7,8 +7,9 @@
 // marks high-risk.
 //
 // Advisory by default (always exit 0). `--strict` exits 1 only on a real alarm,
-// and 3 (abstained, ADR 0009) on an empty diff or when the diff touched a
-// critical area katana cannot assess (#1242, #1253). A degraded run (no
+// and 3 (abstained, ADR 0009) on an empty diff, when the diff touched a
+// critical area katana cannot assess (#1242, #1253), or when the map is older
+// than --max-age-days or its age cannot be verified (#1325). A degraded run (no
 // critical-area data) stays exit 0 even under `--strict` -- a gate that fails
 // on missing data gets muted, and a muted gate is worse than none.
 //
@@ -25,6 +26,7 @@ import {
 import * as diffscan from './diffscan.mjs';
 import * as alarm from './alarm.mjs';
 import { assess, notAssessedToDict } from './alarm.mjs';
+import { DEFAULT_MAX_AGE_DAYS, mapFreshness } from './areas.mjs';
 import * as ledger from './ledger.mjs';
 import { abstains, renderText } from './verdict-text.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
@@ -33,7 +35,8 @@ const PREFIX = 'canary-katana:';
 
 const USAGE =
   'usage: canary-katana [-h] [--repo PATH] [--diff-file PATH] [--ledger PATH]\n' +
-  '                     [--critical-areas PATH] [--json] [--strict] [--no-write]\n' +
+  '                     [--critical-areas PATH] [--max-age-days N] [--json]\n' +
+  '                     [--strict] [--no-write]\n' +
   '\n' +
   'Quarantine deleted and newly-skipped tests into an append-only ledger with\n' +
   'provenance, and alarm when a removal drops the last coverage of a critical\n' +
@@ -45,10 +48,12 @@ const USAGE =
   '  --diff-file PATH       read the diff from a file instead of git\n' +
   '  --ledger PATH          ledger location (default: <repo>/.canary/quarantine.json)\n' +
   '  --critical-areas PATH  critical-areas.json used to raise alarms\n' +
+  '  --max-age-days N       warn when that map is older than N days (default:\n' +
+  `                         ${DEFAULT_MAX_AGE_DAYS}); its \`generated\` stamp is the age\n` +
   '  --json                 emit machine-readable output instead of human text\n' +
   '  --strict               exit 1 on a real alarm, 3 when abstained (empty diff,\n' +
-  '                         or a touched area katana cannot assess); degraded\n' +
-  '                         runs stay 0\n' +
+  '                         a touched area katana cannot assess, or a stale or\n' +
+  '                         undated map); degraded runs stay 0\n' +
   '  --no-write             do not append to the ledger (read-only run)';
 
 /**
@@ -70,8 +75,9 @@ export const CLI_SPEC = {
     '--diff-file': { key: 'diffFile' },
     '--ledger': { key: 'ledger' },
     '--critical-areas': { key: 'criticalAreas' },
+    '--max-age-days': { key: 'maxAgeDays', type: 'int' },
   },
-  defaults: { repo: '.' },
+  defaults: { repo: '.', maxAgeDays: DEFAULT_MAX_AGE_DAYS },
 };
 
 const parseArgs = createParser(CLI_SPEC);
@@ -147,10 +153,29 @@ function jsonPayload(run, ledgerPath) {
       assessed: verdict.total - verdict.notAssessed.length,
       not_assessed: verdict.notAssessed.map(notAssessedToDict),
     },
+    // #1325: how old the map scored against is; absent when there is no map.
+    ...(run.freshness ? { map: freshnessToDict(run.freshness) } : {}),
   };
 }
 
-export function main(argv = []) {
+const freshnessToDict = (f) => ({
+  generated: f.generated,
+  age_days: f.ageDays,
+  max_age_days: f.maxAgeDays,
+  freshness: f.status,
+});
+
+/** A zero or negative limit would call every map stale: a typo, not intent. */
+const maxAgeError = (n) =>
+  n >= 1 ? null : `argument --max-age-days: must be at least 1, got ${n}`;
+
+/**
+ * @param {string[]} argv
+ * @param {{now?: () => Date}} [deps] tests inject the clock the map's age is
+ *   measured against
+ */
+export function main(argv = [], deps = {}) {
+  const now = deps.now ?? (() => new Date());
   const { opts: args, help, error } = parseArgs(argv);
 
   // FIRST, before loadDiff and before any ledger write: a usage request or a
@@ -159,8 +184,9 @@ export function main(argv = []) {
     console.log(USAGE);
     return 0;
   }
-  if (error) {
-    console.error(formatUsageError(CLI_SPEC.prog, error));
+  const usage = error ?? maxAgeError(args.maxAgeDays);
+  if (usage) {
+    console.error(formatUsageError(CLI_SPEC.prog, usage));
     return EXIT_USAGE;
   }
 
@@ -188,7 +214,16 @@ export function main(argv = []) {
 
   const areas = alarm.loadCriticalAreas(args.criticalAreas);
   const verdict = assess(deletions, areas, repo, diff);
-  const run = { scanned, degraded: !areas.available, deletions, verdict };
+  const freshness = areas.available
+    ? mapFreshness(areas.generated, now(), args.maxAgeDays)
+    : null;
+  const run = {
+    scanned,
+    degraded: !areas.available,
+    deletions,
+    verdict,
+    freshness,
+  };
 
   if (args.json) {
     console.log(JSON.stringify(jsonPayload(run, ledgerPath), null, 2));
