@@ -118,6 +118,39 @@ describe('validateTargets', () => {
     expect(errorsAfter(mutate)).toContain(expected);
   });
 
+  // The gate understands an exact host or a leading `*.` and nothing else. Any
+  // other wildcard would be compared as a literal string and so never match:
+  // a prodHosts entry that fails OPEN. Rejecting the shape here (exit 2) is
+  // what keeps the gate's prod refusal honest (#608 P2).
+  it.each([
+    'api-*.example.com',
+    '*example.com',
+    'shop.*.example.com',
+    'https://shop.example.com',
+    'shop.example.com/path',
+    'shop example.com',
+    '*',
+  ])('rejects host pattern %j in prodHosts and in hosts', (pattern) => {
+    const message =
+      'must be an exact host or *.<domain> (no other wildcard, scheme or path)';
+    expect(errorsAfter((d) => (d.prodHosts = [pattern]))).toEqual([
+      `$.prodHosts[0]: ${message}`,
+    ]);
+    expect(errorsAfter((d) => (d.targets.staging.hosts = [pattern]))).toEqual([
+      `${staging}.hosts[0]: ${message}`,
+    ]);
+  });
+
+  it.each(['shop.example.com', '*.example.com', 'localhost:3000', '127.0.0.1'])(
+    'accepts host pattern %j',
+    (pattern) => {
+      expect(errorsAfter((d) => (d.prodHosts = [pattern]))).toEqual([]);
+      expect(errorsAfter((d) => (d.targets.staging.hosts = [pattern]))).toEqual(
+        [],
+      );
+    },
+  );
+
   it('cross-checks auth flow names against flows.json when given its ids', () => {
     expect(errorsAfter(() => {}, new Set(['login', 'logout']))).toEqual([]);
     expect(errorsAfter(() => {}, new Set(['checkout']))).toEqual([

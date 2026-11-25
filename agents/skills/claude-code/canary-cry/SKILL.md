@@ -10,9 +10,11 @@ description:
   the deterministic half. `validate` checks the declared .canary/cry/flows.json
   and targets.json and names the JSON path of every error; `matrix` emits the
   ranked scenario matrix (flows x abuse patterns, cut to a whisper, shout or
-  scream budget) with no network and no agent. Live runs against an allowlisted
-  non-prod target arrive in later phases. NOT input fuzzing and NOT targeted bug
-  pursuit (that is canary-huntress).
+  scream budget) with no network and no agent; `run --live` gates a target
+  (non-prod only, no override) and prints the hash-bound manifest a live run
+  must be confirmed against. Execution against the target arrives in a later
+  phase. NOT input fuzzing and NOT targeted bug pursuit (that is
+  canary-huntress).
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -26,17 +28,19 @@ a bad state, not a pixel out of place.
 
 This phase ships the **Tier-0 half** by the definition in
 [ADR 0015](../../../../docs/knowledge/decisions/0015-skill-capability-vocabulary.md):
-`validate` and `matrix` are deterministic, need no network and call no agent.
-The live tier (`run`, `report`) arrives in later phases behind the
+`validate` and `matrix` are deterministic, need no network and call no agent. It
+also ships the first half of the live tier: `run --live` applies the
 confirmed-manifest gate of
-[ADR 0046](../../../../docs/knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md).
-Until then both exit 2 with `not yet supported` rather than doing something
-smaller under the same name. The full design is
+[ADR 0046](../../../../docs/knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md)
+and prints the manifest a run must be confirmed against. The executor that
+actually drives the target, and `report`, arrive in later phases; until then
+nothing is ever sent, and `report` exits 2 with `not yet supported` rather than
+doing something smaller under the same name. The full design is
 [the canary-cry spec](../../../../docs/changes/canary-cry/proposal.md).
 
-When live runs land, this limit holds for every one of them and is printed in
-every manifest: server-side side effects (email, webhooks, payments) are NOT
-intercepted by canary-cry.
+This limit holds for every live run and is printed in every manifest:
+server-side side effects (email, webhooks, payments) are NOT intercepted by
+canary-cry.
 
 ## Quick start
 
@@ -50,6 +54,7 @@ canary skills run canary-cry -- --help
 canary skills run canary-cry -- validate
 canary skills run canary-cry -- matrix --amplitude whisper
 canary skills run canary-cry -- matrix --target staging --amplitude shout --json
+canary skills run canary-cry -- run --live staging
 ```
 
 Start from the examples in this skill:
@@ -152,6 +157,56 @@ catalog, ranked and cut to a budget.
 `scream` lists every round up to the ceiling. Stopping early after two barren
 rounds is a property of a live run, not of the matrix.
 
+## `run`
+
+```text
+canary-cry run --live NAME [--flows PATH] [--targets PATH] [--seed N]
+               [--confirm SHA] [--strict]
+```
+
+The two-step gate in front of any live run
+([ADR 0046](../../../../docs/knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md)).
+Checks run in this order, and each one stops the run:
+
+1. **Inputs.** Both files must validate (exit 2).
+2. **Target gate** (exit 4, `canary-cry: refused: ...`). The target must be
+   listed in `targets.json`, declare an `environment` of `local`, `dev`,
+   `staging` or `preview` (exactly), and neither its `baseURL` host nor any
+   `hosts` entry may overlap a `prodHosts` pattern. Overlap errs toward
+   refusing: `*.example.com` also covers `example.com`, a port or trailing dot
+   does not hide a host, and a wildcard `hosts` entry is refused when it could
+   reach a prod host. There is no override flag. This check runs before any
+   credential is read.
+
+   A host pattern, in `prodHosts` or `hosts`, is an exact host (optionally with
+   a port) or `*.<domain>`. Anything else (`api-*.example.com`, a scheme, a
+   path) is a schema error (exit 2) caught by `validate`, because the gate would
+   read an unsupported wildcard literally and it would never match.
+
+3. **Accounts** (exit 2). Every account the target declares must name an env var
+   that holds a JSON object. The error names the variable, never its value.
+4. **Matrix.** Zero scenarios prints `ABSTAINED: zero scenarios` and writes
+   nothing (exit 3 under `--strict`).
+
+Without `--confirm`, `run --live` writes `manifest.json` to
+`runs/<UTC stamp>-<sha8>/` beside the flows file (`.canary/cry/runs/` by
+default), prints the manifest and its `manifest-sha`, and sends **no request**
+to the target. The manifest lists every scheduled scenario, the flows it drives
+in full (plus the target's sign-in and sign-out flows), the fixtures, every
+write step, every probe **verbatim** (a shell probe's argv included), the egress
+hosts, the account env var **names**, the amplitude and seed, and the
+server-side limit line. `manifest-sha` is the sha256 of its sorted-key JSON.
+
+With `--confirm SHA`, the manifest is **rebuilt from the files** (never read
+back from the run dir) and its sha compared. A mismatch is exit 4: something
+that would run has changed since the manifest was read, so re-run without
+`--confirm` and read the new one. In this phase a matching sha still sends
+nothing: there is no executor yet, so it exits 2 `not yet supported` and says
+nothing was sent.
+
+`run` executes `--amplitude whisper` only for now; `shout` and `scream` exit 2
+`not yet supported` (the `matrix` command accepts all three).
+
 ## Abuse patterns
 
 | Pattern            | Core | Weight | Applies to                                                  | Intensity 1 / 2 / 3                                   |
@@ -165,21 +220,25 @@ rounds is a property of a live run, not of the matrix.
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Success. Advisory by default: an abstained matrix still exits 0 without `--strict`.                                                          |
-| `2`  | Usage or input error: an unknown flag or command, `run`/`report` (not yet supported), a file not found or not valid JSON, or a schema error. |
-| `3`  | `--strict` and the matrix abstained (zero scenarios).                                                                                        |
+| Code | Meaning                                                                                                                                                                                                                                                     |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success. Advisory by default: an abstained matrix still exits 0 without `--strict`.                                                                                                                                                                         |
+| `2`  | Usage or input error: an unknown flag or command, `report` or a not-yet-runnable amplitude (not yet supported), a file not found or not valid JSON, a schema error, an unset or non-object account env var, or a confirmed `run` this phase cannot execute. |
+| `3`  | `--strict` and the matrix abstained (zero scenarios).                                                                                                                                                                                                       |
+| `4`  | Refused by a safety gate (ADR 0046): an unlisted target, a disallowed environment, a `prodHosts` match, or a `manifest-sha` mismatch. Exit 4 means nothing else.                                                                                            |
 
 Exit 1 today means only an unexpected exception (a crash, not a finding). Exit 1
-for `--strict` and a state-verified corruption, and exit 4 (refused by a safety
-gate, ADR 0046), belong to `run` and arrive with it; giving the crash its own
-code is [issue 1716](https://github.com/bop-clocktower/canary/issues/1716).
+for `--strict` and a state-verified corruption arrives with the executor; giving
+the crash its own code is
+[issue 1716](https://github.com/bop-clocktower/canary/issues/1716).
 
 ## Limits in this phase
 
-- No live run, no report: `run` and `report` exit 2 `not yet supported`.
+- No live execution and no report: a confirmed `run` and `report` exit 2
+  `not yet supported`, and nothing is ever sent to a target.
 - `{{unique.<kind>}}` is checked for syntax only; the kinds are fixed with the
   runtime that generates them.
-- Account references in flows are not yet checked against a target's accounts.
-  That check needs the env vars, so it belongs to the live gate.
+- Account references in flows (`{{account.<K>.<field>}}`) are not yet checked
+  against a target's accounts or against the fields in an account's env var. The
+  gate checks only that each declared account's env var holds a JSON object;
+  resolving the references belongs to the executor that fills them.

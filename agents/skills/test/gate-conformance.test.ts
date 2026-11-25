@@ -196,6 +196,14 @@ const ROWS: SkillGateRow[] = [
     strict: (base) =>
       run(cryMain, ['matrix', '--flows', emptyFlows(base), '--strict']),
   },
+  {
+    // The same empty matrix on the live path (#608 P2): a run that would
+    // drive nothing must not print a manifest an operator could confirm.
+    command: 'canary-cry run --live (zero scenarios)',
+    forbid: ['manifest-sha'],
+    run: (base) => run(cryMain, cryRunArgs(base)),
+    strict: (base) => run(cryMain, [...cryRunArgs(base), '--strict']),
+  },
 ];
 
 /** A valid profile plus a results file whose flows no fault ever touched. */
@@ -278,6 +286,29 @@ function emptyFlows(base: string): string {
   const file = path.join(base, 'flows.json');
   fs.writeFileSync(file, JSON.stringify({ version: 1, flows: [] }));
   return file;
+}
+
+/** `run --live` over an empty flows file and a non-prod target with no accounts. */
+function cryRunArgs(base: string): string[] {
+  const targets = path.join(base, 'targets.json');
+  const target = {
+    baseURL: 'http://localhost:3000',
+    environment: 'local',
+    hosts: ['localhost'],
+  };
+  fs.writeFileSync(
+    targets,
+    JSON.stringify({ version: 1, prodHosts: [], targets: { local: target } }),
+  );
+  return [
+    'run',
+    '--live',
+    'local',
+    '--flows',
+    emptyFlows(base),
+    '--targets',
+    targets,
+  ];
 }
 
 describe('gate conformance registry -- skill layer (#508)', () => {

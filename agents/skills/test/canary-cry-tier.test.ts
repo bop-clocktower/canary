@@ -11,9 +11,11 @@
  * model-SDK modules anywhere in it, plus the network globals that need no
  * import at all.
  *
- * Later phases add `run`, which needs a browser and a child process. It must
- * arrive through a lazy dynamic import of a separate run module, so this
- * closure stays the Tier-0 one. Dynamic imports are LISTED, never skipped:
+ * P2's `run --live` (gate + manifest) is in this closure on purpose: it must
+ * decide a refusal and print a manifest with no way to reach the target, and
+ * this test is what proves it. The executor (P3) needs a browser and a child
+ * process; it must arrive through a lazy dynamic import of a separate module,
+ * so this closure stays the offline one. Dynamic imports are LISTED, never skipped:
  * the day one lands in the closure this test fails and forces that review.
  */
 import fs from 'node:fs';
@@ -97,6 +99,9 @@ describe('canary-cry Tier-0 import closure (SC6)', () => {
         'claude-code/canary-cry/scripts/schema-targets.mjs',
         'claude-code/canary-cry/scripts/matrix.mjs',
         'claude-code/canary-cry/scripts/patterns.mjs',
+        'claude-code/canary-cry/scripts/render.mjs',
+        'claude-code/canary-cry/scripts/gate.mjs',
+        'claude-code/canary-cry/scripts/manifest.mjs',
         'lib/parse-args.mjs',
         'lib/contracts/critical-areas.mjs',
       ]),

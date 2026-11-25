@@ -17,6 +17,20 @@ const ENV_RE = /^[A-Z_][A-Z0-9_]*$/;
 const ACCOUNT_RE = /^[A-Za-z0-9_]+$/;
 const SESSION_KEY_RE = /^(cookie|localStorage|sessionStorage):\S+$/;
 const TARGET_KEYS = ['baseURL', 'environment', 'hosts', 'accounts', 'auth'];
+// The only host patterns the live gate understands: an exact host (with an
+// optional port) or a leading `*.`. Any other wildcard would be compared as a
+// literal and never match -- a prodHosts entry that fails OPEN -- so its
+// shape is rejected here, at the desk, instead (#608 P2).
+const HOST_PATTERN_RE = /^(\*\.)?[^*\s/:]+(:\d+)?$/;
+const HOST_PATTERN_ERROR =
+  'must be an exact host or *.<domain> (no other wildcard, scheme or path)';
+
+function checkHostPattern(value, path, errors) {
+  if (!needText(value, path, errors)) return;
+  if (!HOST_PATTERN_RE.test(value)) {
+    errors.push(`${path}: ${HOST_PATTERN_ERROR}`);
+  }
+}
 
 function checkBaseUrl(value, path, errors) {
   let url = null;
@@ -75,7 +89,7 @@ function checkTarget(name, target, path, errors, flowIds) {
   // gate's rule (exit 4), so a schema check must not pre-empt it as exit 2.
   needText(target.environment, at(path, 'environment'), errors);
   eachItem(target.hosts, at(path, 'hosts'), errors, true, (h, p) =>
-    needText(h, p, errors),
+    checkHostPattern(h, p, errors),
   );
   if (target.accounts !== undefined) {
     checkAccounts(target.accounts, at(path, 'accounts'), errors);
@@ -98,7 +112,9 @@ export function validateTargets(doc, flowIds = null) {
   unknownKeys(doc, ['version', 'prodHosts', 'targets'], '$', errors);
   if (doc.version !== 1) errors.push('$.version: must be 1');
   if (Array.isArray(doc.prodHosts)) {
-    doc.prodHosts.forEach((h, i) => needText(h, at('$.prodHosts', i), errors));
+    doc.prodHosts.forEach((h, i) =>
+      checkHostPattern(h, at('$.prodHosts', i), errors),
+    );
   } else {
     errors.push('$.prodHosts: must be an array (it may be empty)');
   }
