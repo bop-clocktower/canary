@@ -1,9 +1,10 @@
 // canary-cry report -- Tier-0 (#608 P5; spec "Outputs (scripts/report.mjs)").
-// `cry report <run-id>` reads a run dir's findings.json and writes report.md:
-// every verdict ranked corrupted, symptom, clean, abstain, then by score,
-// each with the standalone replay command of its own spec. Deterministic, no
-// network, no agent: it is in the static closure of cli.mjs (SC6), and the
-// same findings.json always gives byte-identical output.
+// `cry report <run-id>` reads a run dir's findings.json and writes report.md
+// (its text and ranking are report-text.mjs): every verdict ranked
+// corrupted, symptom, clean, abstain, then by score, each with the standalone
+// replay command of its own spec. Deterministic, no network, no agent: it is
+// in the static closure of cli.mjs (SC6), and the same findings.json always
+// gives byte-identical output.
 //
 // It trusts nothing it reads back. The run-id is checked against the run-id
 // shape BEFORE it becomes a path, and every scenario's replay command is
@@ -15,23 +16,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { isRunId } from './checkpoint.mjs';
-import { fileStem } from './codegen.mjs';
-import { exitCode } from './findings.mjs';
-import { ABSTAINED_LINE } from './render.mjs';
+import { reportOf, specOf } from './report-text.mjs';
 
 const FINDINGS_FORMAT = 'canary.cry-findings/1';
-const REPORT_FORMAT = 'canary.cry-report/1';
-const REPLAY = 'npx playwright test -c playwright.config.mjs';
-
-/** Fidelity first: state-verified breach, observed signal, verified clean. */
-const RANK = { corrupted: 0, symptom: 1, clean: 2, abstain: 3 };
+const VERDICTS = new Set(['corrupted', 'symptom', 'clean', 'abstain']);
 const STATUSES = new Set(['ok', 'abstained', 'partial']);
 /** `<flow>:<pattern>:i<n>:s<step>`, each part an ID_RE id. */
 const SCENARIO_ID =
   /^[a-z0-9][a-z0-9-]*:[a-z0-9][a-z0-9-]*:i\d:s[a-z0-9][a-z0-9-]*$/;
-const SHELL_SAFE = /^[A-Za-z0-9_./:@%+=,-]+$/;
-
-const specOf = (id) => `specs/${fileStem(id)}.spec.mjs`;
 const isObject = (v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -45,7 +37,7 @@ const DOC_CHECKS = [
 
 const SCENARIO_CHECKS = [
   ['id', (s) => SCENARIO_ID.test(s.id), 'not a scenario id'],
-  ['verdict', (s) => Object.hasOwn(RANK, s.verdict), 'not a verdict'],
+  ['verdict', (s) => VERDICTS.has(s.verdict), 'not a verdict'],
   ['score', (s) => Number.isFinite(s.score), 'not a number'],
   ['repro.spec', (s) => s.repro?.spec === specOf(s.id), 'not its own spec'],
   ['fingerprints', (s) => Array.isArray(s.fingerprints), 'not a list'],
@@ -100,115 +92,9 @@ function loadFindings(flowsFile, runId) {
   return why === null ? { error: null, dir, doc } : damaged(why);
 }
 
-const byRank = (a, b) =>
-  RANK[a.verdict] - RANK[b.verdict] ||
-  b.score - a.score ||
-  (a.id < b.id ? -1 : 1);
-
-function countsOf(scenarios) {
-  const counts = { corrupted: 0, symptom: 0, clean: 0, abstain: 0 };
-  for (const s of scenarios) counts[s.verdict] += 1;
-  return counts;
-}
-
-/** The report as data: what --json prints and report.md renders. */
-function buildReport(doc, dir) {
-  const ranked = [...doc.scenarios].sort(byRank).map((s, i) => ({
-    rank: i + 1,
-    id: s.id,
-    verdict: s.verdict,
-    fidelity: s.fidelity ?? null,
-    reason: s.reason ?? null,
-    score: s.score,
-    fingerprints: s.fingerprints,
-    invariants: s.invariants,
-    replay: `${REPLAY} ${specOf(s.id)}`,
-  }));
-  return {
-    format: REPORT_FORMAT,
-    run: doc.run,
-    status: doc.status,
-    reason: doc.reason ?? null,
-    counts: countsOf(doc.scenarios),
-    stop: doc.stop ?? null,
-    blockedEgress: doc.blockedEgress,
-    dir,
-    report: path.join(dir, 'report.md'),
-    ranked,
-  };
-}
-
-const shellArg = (text) =>
-  SHELL_SAFE.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`;
-const json = (v) => JSON.stringify(v);
-
-function statusLines(r) {
-  if (r.status === 'abstained') {
-    return [`- status: ABSTAINED: ${r.reason}`, '', ABSTAINED_LINE];
-  }
-  if (r.status === 'partial') return [`- status: ${r.reason}`];
-  return ['- status: ok', ...(r.stop?.line ? [`- ${r.stop.line}`] : [])];
-}
-
-function headerLines(r) {
-  const { run, counts: c } = r;
-  const egress = r.blockedEgress.length
-    ? [`- blocked egress (aborted): ${r.blockedEgress.join(', ')}`]
-    : [];
-  return [
-    `# canary-cry report: ${run.id}`,
-    '',
-    `- target: \`${run.target}\` (${run.environment}) ${run.baseURL}`,
-    `- amplitude ${run.amplitude}, seed ${run.seed}, manifest-sha ${run.manifestSha}`,
-    `- corrupted ${c.corrupted}, symptom ${c.symptom}, clean ${c.clean}, abstain ${c.abstain}`,
-    ...egress,
-    ...statusLines(r),
-    '',
-  ];
-}
-
-const invariantLine = (inv) =>
-  inv.error !== undefined
-    ? `- ${inv.id}: probe failed: ${inv.error}`
-    : `- ${inv.id}: before ${json(inv.before)} -> after ${json(inv.after)} ` +
-      `(expect ${json(inv.expect)})`;
-
-function entryLines(e) {
-  const label =
-    e.verdict === 'abstain'
-      ? `abstain: ${e.reason}`
-      : `${e.verdict}${e.fidelity ? ` (${e.fidelity})` : ''}`;
-  return [
-    `## ${e.rank}. ${label}: \`${e.id}\``,
-    '',
-    `- score ${e.score}`,
-    ...e.fingerprints.map((fp) => `- fingerprint \`${fp}\``),
-    ...e.invariants
-      .filter((inv) => inv.breached === true || inv.error !== undefined)
-      .map(invariantLine),
-    `- replay: \`${e.replay}\``,
-    '',
-  ];
-}
-
-/** report.md: deterministic, a trailing newline, ranked as `ranked` is. */
-function renderReport(r) {
-  const body = r.ranked.length
-    ? [
-        `Replay a scenario from its run dir (\`cd ${shellArg(r.dir)}\`), on ` +
-          "the target project's Playwright:",
-        '',
-        ...r.ranked.flatMap(entryLines),
-      ]
-    : ['No scenario ran.', ''];
-  return [...headerLines(r), ...body].join('\n');
-}
-
 /**
  * `cry report <run-id> [--json] [--strict]`: writes report.md into the run
- * dir and returns what to print, or `{errors}` (exit 2). The exit code is
- * findings.mjs's `exitCode`, so report and the run that wrote findings.json
- * never disagree on --strict.
+ * dir and returns what to print, or `{errors}` (exit 2).
  * @param {{flows: string, json: boolean, strict: boolean}} opts
  * @param {string | undefined} runId
  * @returns {{errors: string[]} | {errors: null, text: string, exit: number}}
@@ -216,9 +102,13 @@ function renderReport(r) {
 export function runReport(opts, runId) {
   const loaded = loadFindings(opts.flows, runId);
   if (loaded.error !== null) return { errors: [loaded.error] };
-  const report = buildReport(loaded.doc, loaded.dir);
-  const md = renderReport(report);
-  fs.writeFileSync(report.report, md);
+  const file = path.join(loaded.dir, 'report.md');
+  const { report, md, exit } = reportOf(loaded.doc, {
+    dir: loaded.dir,
+    file,
+    strict: opts.strict,
+  });
+  fs.writeFileSync(file, md);
   const text = opts.json ? JSON.stringify(report, null, 2) : md.trimEnd();
-  return { errors: null, text, exit: exitCode(report, opts.strict) };
+  return { errors: null, text, exit };
 }

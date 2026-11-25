@@ -121,6 +121,7 @@ describe('canary-cry Tier-0 import closure (SC6)', () => {
         'claude-code/canary-cry/scripts/checkpoint.mjs',
         // #608 P5: report, and the pure exit-code judge it shares with run.
         'claude-code/canary-cry/scripts/report.mjs',
+        'claude-code/canary-cry/scripts/report-text.mjs',
         'claude-code/canary-cry/scripts/findings.mjs',
         'lib/parse-args.mjs',
         'lib/contracts/critical-areas.mjs',

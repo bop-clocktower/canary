@@ -298,42 +298,39 @@ afterEach(() => {
 });
 
 /** A real report.mjs --json document, over a findings.json buildFindings wrote. */
+/** A one-scenario findings.json, written by the real buildFindings. */
+function oneScenarioFindings() {
+  const scenario = {
+    id: 'checkout:multi-submit:i1:spay',
+    flow: 'checkout',
+    pattern: 'multi-submit',
+    intensity: 1,
+    step: 'pay',
+    score: 25,
+  };
+  const clean = {
+    verdict: 'clean',
+    reason: null,
+    fidelity: 'state-verified',
+    fingerprints: [],
+    invariants: [],
+    signals: [],
+    blockedEgress: [],
+    error: null,
+  };
+  return buildFindings({
+    run: { id: RUN_ID },
+    manifest: { scenarios: [scenario] },
+    observations: new Map([['checkout.multi-submit.i1.spay', clean]]),
+  });
+}
+
 function realReport(): any {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canary-cry-docs-'));
   tmps.push(dir);
   const runDir = path.join(dir, 'runs', RUN_ID);
   fs.mkdirSync(runDir, { recursive: true });
-  const id = 'checkout:multi-submit:i1:spay';
-  const doc = buildFindings({
-    run: { id: RUN_ID },
-    manifest: {
-      scenarios: [
-        {
-          id,
-          flow: 'checkout',
-          pattern: 'multi-submit',
-          intensity: 1,
-          step: 'pay',
-          score: 25,
-        },
-      ],
-    },
-    observations: new Map([
-      [
-        'checkout.multi-submit.i1.spay',
-        {
-          verdict: 'clean',
-          reason: null,
-          fidelity: 'state-verified',
-          fingerprints: [],
-          invariants: [],
-          signals: [],
-          blockedEgress: [],
-          error: null,
-        },
-      ],
-    ]),
-  });
+  const doc = oneScenarioFindings();
   fs.writeFileSync(path.join(runDir, 'findings.json'), JSON.stringify(doc));
   const out: string[] = [];
   vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {

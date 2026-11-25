@@ -497,11 +497,12 @@ a quiet clean:
     `--strict` uses `findings.mjs`'s `exitCode`, the function a confirmed run
     exits with, so the two never disagree: 1 on a `corrupted`, else 3 for
     `ABSTAINED` or `PARTIAL`, else 0.
-  - `report.mjs` is in the Tier-0 closure (SC6), statically imported by
-    `cli.mjs`; it brings the pure `findings.mjs`, `verdict.mjs` and
-    `codegen.mjs` into the closure with it (each import-free or importing only
-    pure modules, which the tier test checks). The one dynamic import is still
-    `cli.mjs -> ./execute.mjs`.
+  - `report.mjs` (reading and checking) and `report-text.mjs` (ranking and text,
+    pure: split so neither crosses the coupling threshold) are in the Tier-0
+    closure (SC6), statically imported by `cli.mjs`; they bring the pure
+    `findings.mjs`, `verdict.mjs` and `codegen.mjs` into the closure with them
+    (each import-free or importing only pure modules, which the tier test
+    checks). The one dynamic import is still `cli.mjs -> ./execute.mjs`.
   - The SKILL.md agent layer (drafting `flows.json`, composition, the gate
     pause, MCP triage) is enforced against the code by `canary-cry-docs.test.ts`
     (SC20): the subcommand sections from the `--help` choice list, the limit
@@ -577,7 +578,10 @@ Module map, as shipped:
     `run`'s argument rules, a new run dir, and a run read back for `--resume`
     (P4).
   - [report.mjs](../../../agents/skills/claude-code/canary-cry/scripts/report.mjs):
-    `report`, a run's `findings.json` ranked into `report.md` (P5).
+    `report`, a run's `findings.json` checked and ranked into `report.md` (P5),
+    with
+    [report-text.mjs](../../../agents/skills/claude-code/canary-cry/scripts/report-text.mjs):
+    the report's ranking and text, pure.
 - The executor, loaded by one lazy `import()` after the sha matches:
   - [execute.mjs](../../../agents/skills/claude-code/canary-cry/scripts/execute.mjs):
     orchestrates a confirmed run.

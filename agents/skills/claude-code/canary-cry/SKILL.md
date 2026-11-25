@@ -101,7 +101,12 @@ the engine reads only the file.
   `equals: v` when the after-value is `v` or is unchanged from the before-value.
   A partial write (between `0` and `n`) or a double write (`2n`) is still
   `corrupted`. A refusal is read from the account's state only: a write the app
-  files as a guest's, never under the account, counts as refused.
+  files as a guest's, never under the account, counts as refused. A clean
+  refusal only clears the invariant: if the app also shows a UI signal while
+  refusing (a declared symptom selector such as an error banner left visible),
+  the scenario is a `symptom`, by decision, not an open question. The state is
+  fine and the signal is real; whether the banner is the right UX is the human's
+  call when triaging.
 - Template values: `{{account.<K>.<field>}}`, `{{fixture.<name>}}` (from the
   top-level `fixtures` map) and `{{unique.<kind>}}`.
 - Ids are lowercase letters, digits and `-`. A `:` is never legal: it separates
