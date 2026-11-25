@@ -423,6 +423,28 @@ describe('guardian mutation --post-comment (#1380 gap 1)', () => {
     expect(fake.comments[0]!.body).toContain('could not be read');
   });
 
+  it('says so instead of posting when there is no PR context', async () => {
+    const { root, diff } = repo();
+    const res = await invokeGuardian(args(root, diff, ['--post-comment']), {
+      deps: { mutationEngine: engine([{ line: 1, status: 'Killed' }]) },
+    });
+    expect(res.stdout).toContain('no PR context in env');
+    expect(res.code).toBe(0);
+  });
+
+  it('degrades loudly when the token cannot write, keeping the verdict', async () => {
+    const { root, diff } = repo();
+    const res = await invokeGuardian(args(root, diff, ['--post-comment']), {
+      env: CI_ENV,
+      deps: {
+        buildCommentClient: () => new FakeGitHubClient({ deny_writes: true }),
+        mutationEngine: engine([{ line: 1, status: 'Survived' }]),
+      },
+    });
+    expect(res.stderr).toContain('HTTP 403');
+    expect(res.code).toBe(1);
+  });
+
   it('keeps the comment under the size budget and points at the artifact', async () => {
     const { root, diff } = repo();
     const fake = new FakeGitHubClient();

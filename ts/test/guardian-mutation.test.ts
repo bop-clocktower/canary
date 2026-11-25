@@ -381,6 +381,14 @@ describe('threadUnsafeTests', () => {
       'test/b.test.ts',
     ]);
   });
+
+  it('lists nothing, without throwing, for a root with no src or test dir', () => {
+    // Only `--pool threads` reaches this since #486 slice 2, on a supplied
+    // report whose repo root may not be a canary checkout at all.
+    expect(
+      threadUnsafeTests(mkdtempSync(join(tmpdir(), 'canary-mutation-'))),
+    ).toEqual([]);
+  });
 });
 
 // bug-fleet A5: Stryker omits `coveredBy` unless coverageAnalysis is

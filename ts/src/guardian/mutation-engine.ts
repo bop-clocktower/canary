@@ -45,20 +45,26 @@ export interface MutationEngine {
   ): StrykerOutcome;
 }
 
-/** A no-op logger the instrumenter accepts; it only warns on parse problems. */
+const off = (): boolean => false;
+const ignore = (): void => undefined;
+
+/**
+ * A no-op logger the instrumenter accepts; it only logs on parse problems,
+ * which surface as a thrown error the caller already turns into an abstention.
+ */
 const quietLogger = {
-  isTraceEnabled: () => false,
-  isDebugEnabled: () => false,
-  isInfoEnabled: () => false,
-  isWarnEnabled: () => false,
-  isErrorEnabled: () => false,
-  isFatalEnabled: () => false,
-  trace: () => undefined,
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-  fatal: () => undefined,
+  isTraceEnabled: off,
+  isDebugEnabled: off,
+  isInfoEnabled: off,
+  isWarnEnabled: off,
+  isErrorEnabled: off,
+  isFatalEnabled: off,
+  trace: ignore,
+  debug: ignore,
+  info: ignore,
+  warn: ignore,
+  error: ignore,
+  fatal: ignore,
 };
 
 interface InstrumentedMutant {
