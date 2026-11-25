@@ -1,0 +1,12 @@
+{
+  "reason": "Mutation testing slice 2 (#486, #1380): the Stryker run itself. Measured with `harness check-arch` (CLI 14.1.1) against merge base main f2fc7378, where both regressions are 0. module-size 58852->59906 (+1054) is the feature: ts/src/guardian/mutation-scope.ts (diff scope + the D7 line-prefix cap), mutation-run.ts (plan, run, snapshot/restore, abstentions) and mutation-engine.ts (Stryker's instrumenter and process), plus the run, --post-report and sticky paths of `canary guardian mutation` in guardian/cli.ts. coupling 67->69 is the two new violation ids below, the same two findings the perf ratchet allows by name in .harness/perf-baseline.json deltaAllowances: mutation-run.ts (0.875, a 1-importer orchestrator) and mutation-engine.ts (0.75, five of six imports are node builtins). Both are leaf halves of a split made because a single 386-line mutation-run.ts tripped the 300-line rule; re-merging trades the coupling findings for a file-length one. isMutationReport's complexity-11 finding from the first draft was fixed in code, not allowed.",
+  "categories": {
+    "coupling": 69,
+    "module-size": 59906
+  },
+  "violationIds": [
+    "5d3e2db679712e5e2c362be8bf7fe807f74d4ec4c84045e06413243362c747b3",
+    "33cae3ae3b8e9698b81473433676e203c19e72d7e4d28d440d58160fc0677ae9"
+  ],
+  "createdFrom": "f2fc7378"
+}

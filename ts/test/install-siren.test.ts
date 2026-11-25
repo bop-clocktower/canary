@@ -1222,6 +1222,66 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     expect(msg).toContain('no .git');
   });
 
+  /**
+   * #1693: point the clone's HEAD at a ref that does not exist. The repo stays
+   * valid, so origin still answers ls-remote, but `rev-parse HEAD` fails —
+   * the one state that reaches the `*)` (unknown) arm. A fully corrupt HEAD
+   * would not: git would stop treating the directory as a repo at all.
+   */
+  const unreadableHead = (): void => {
+    writeFileSync(
+      join(mkt, '.git', 'HEAD'),
+      'ref: refs/heads/no-such-branch\n',
+    );
+  };
+
+  it('check 3 states freshness as unverifiable for a clone with no readable HEAD (#1693)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    unreadableHead();
+    const msg = findings('9.5.0');
+    expect(msg).toContain(
+      `bop-clocktower marketplace clone has no readable HEAD to compare with the latest release v9.5.0 @${mktHead.slice(0, 7)} — freshness unverifiable`,
+    );
+    expect(msg).not.toContain('behind the latest release');
+  });
+
+  it('check 0 states freshness as unverifiable for a clone with no readable HEAD (#1693)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    const hook = installedHook();
+    shipNewerHook();
+    unreadableHead();
+    const msg = runInstalled(hook);
+    expect(msg).toContain('differs from the marketplace copy');
+    expect(msg).toContain('--install-hooks');
+    expect(msg).toMatch(
+      /clone freshness unverifiable: .+ has no readable HEAD to compare with the latest release v9\.5\.0 @[0-9a-f]{7}/,
+    );
+    expect(msg).not.toContain('behind the latest release');
+  });
+
+  it('names a marketplace dir with no .git as present but not a clone (#1692)', () => {
+    // The directory is there, so "checkout missing" sends the reader looking
+    // for something that exists; the remedy is a re-clone, not a first clone.
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    rmSync(join(mkt, '.git'), { recursive: true, force: true });
+    const msg = findings('9.5.0');
+    expect(msg).toContain(
+      `bop-clocktower marketplace directory at ${mkt} is present but not a git clone`,
+    );
+    expect(msg).toContain('remove the stale directory or re-clone');
+    expect(msg).not.toContain('checkout missing');
+  });
+
+  it('keeps the checkout-missing finding when the marketplace dir is absent (#1692)', () => {
+    writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
+    rmSync(mkt, { recursive: true, force: true });
+    const msg = findings('9.5.0');
+    expect(msg).toContain(
+      `bop-clocktower marketplace checkout missing at ${mkt}`,
+    );
+    expect(msg).not.toContain('not a git clone');
+  });
+
   it('is silent about itself when the installed copy matches the marketplace (#1632)', () => {
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     // Other checks (launchd, say) may still speak in a sandbox; this one

@@ -20,6 +20,7 @@ import {
   unattributedSurvivorLines,
 } from './mutation.js';
 import {
+  coveringTests,
   excludedLine,
   mdCode,
   mdReason,
@@ -277,17 +278,13 @@ export function renderMutationReport(report: MutationReport): string {
     for (const finding of report.findings.filter(
       (f) => f.status === 'survived',
     )) {
-      const covering =
-        finding.coveredBy.length > 0
-          ? // A code span: GitHub autolinks `#N`, `@user` and URLs in a
-            // test name anywhere else (#1673).
-            finding.coveredBy.map(mdCode).join('; ')
-          : 'attribution not recorded';
+      // Code spans: GitHub autolinks `#N`, `@user` and URLs in a test name
+      // anywhere else (#1673).
       lines.push(
         `- ${mdCode(`${finding.path}:${finding.line}`)} ` +
           `${mdCode(finding.mutator)} ${'\u{2192}'} ` +
           `${mdCode(finding.replacement)} ${'\u{2014}'} ran but did not fail: ` +
-          covering,
+          coveringTests(finding.coveredBy),
       );
     }
   }

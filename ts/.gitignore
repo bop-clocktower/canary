@@ -2,3 +2,7 @@
 node_modules
 dist/
 coverage/
+# The Stryker vitest runner's per-worker setup files (#486). The mutation run
+# removes the ones it created; this catches a run killed before it could.
+stryker-setup-*.js
+.stryker-tmp/

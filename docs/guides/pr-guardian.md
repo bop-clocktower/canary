@@ -281,13 +281,24 @@ Both are optional and unset by default, which keeps the `github-actions[bot]`
 behavior. An empty or whitespace-only value counts as unset. A comment is
 adopted only when its author matches the configured login, or is a `Bot` acting
 through the configured App; any other comment carrying the marker is never
-adopted. `canary guardian precision` reads stickies under the same identity, so
-set the variables on that workflow too. `canary briefing --comment` honors the
-same two variables for its charter comment ([#1678]), so set them on a briefing
-step that posts with the same token.
+adopted. Logins compare case-insensitively, and a leading `@` is ignored
+([#1685]). `canary guardian precision` reads stickies under the same identity,
+so set the variables on that workflow too. `canary briefing --comment` honors
+the same two variables for its charter comment ([#1678]), so set them on a
+briefing step that posts with the same token.
+
+Setting `CANARY_GUARDIAN_LOGIN` means the old `github-actions[bot]` sticky is no
+longer adopted, so the first run after you set it posts one extra comment. Every
+later run updates that new comment in place. You can delete the old one by hand.
+
+If guardian posts a comment that its configured identity would not adopt, it
+warns on stderr and in the step summary with the login to configure, such as
+`posted as ci-service-user; set CANARY_GUARDIAN_LOGIN=ci-service-user`. Without
+that setting, every run would add another comment.
 
 [#1352]: https://github.com/bop-clocktower/canary/issues/1352
 [#1678]: https://github.com/bop-clocktower/canary/issues/1678
+[#1685]: https://github.com/bop-clocktower/canary/issues/1685
 
 ### At-desk check and authoring (the `preCommit` surface)
 

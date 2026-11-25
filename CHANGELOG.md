@@ -14,6 +14,19 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary guardian mutation` now runs Stryker on the lines a PR adds (#486,
+  #1380).** Before this, the advisory `mutation` job could only abstain behind
+  the stryker-js#6210 guard. Now it pins `@stryker-mutator/*` 10.1.1 (which
+  fixed #6210) and mutates only added lines under `ts/src`, capped at 150
+  mutants as a disclosed, deterministic line sample. It uses the `forks` pool,
+  so no suite is excluded any more, and gives Stryker 7 minutes. A crash or
+  timeout still writes an abstained `mutation-report.json` with Stryker's error
+  line. The report is upserted as its own sticky comment
+  (`<!-- canary-guardian-mutation -->`), posted from a step that never runs the
+  PR's tests. Still advisory until the ADR 0038 exit criterion is met.
+
 ### Fixed
 
 - **The session siren alerts on a new release, not on every commit to `main`
@@ -27,6 +40,39 @@ under the project's former name) are documented in the
   README's install line) is told to run `claude plugin marketplace update`,
   since `pull --ff-only` cannot move a detached HEAD. Trade-off: a clone with
   local commits on top of the release is no longer flagged.
+
+- **The perf ratchet's per-finding delta works again.** Harness CLI 14 prints an
+  info-level `File is imported by N files` finding that
+  `scripts/lib/perf-findings.mjs` could not classify. One unclassifiable finding
+  made the whole report unparseable, so since the CLI 14.1.1 adoption (#1640)
+  every PR's delta silently fell back to a bare count:
+  `delta OK by count ... no allowance was applied`. Every `deltaAllowances`
+  entry and the magnitude-growth warning were dark. The rule is now classified
+  (`fan-in`), so allowances apply by name again.
+
+- **canary-cassandra no longer reads a `//` or `/*` inside a regex literal as a
+  comment.** This is a regression from #1697. The JS comment tokenizer had no
+  regex arm, so a line such as
+  `expect('a/b'.replace(/[//]/g, '') + makeStore()).toBe(1)` lost everything
+  after the `//`, the call included, and gave a false VAC-002. The tokenizer now
+  steps over regex literals with the shared `regexLiteralEnd`, so division
+  (`a / b // note`) and a real trailing comment after a regex are still
+  comments. Python is unchanged.
+
+- **A misconfigured guardian sticky identity no longer stacks comments silently
+  (#1685).** Logins were compared exactly, so a `CANARY_GUARDIAN_LOGIN` in
+  different case or with a leading `@` missed the sticky its own token wrote,
+  and a library caller's empty login matched an empty author. Logins now compare
+  case-insensitively with a leading `@` ignored, and an empty login falls back
+  to `github-actions[bot]`. When a new comment's author would not be adopted on
+  the next run, guardian and `canary briefing` warn on stderr with the login to
+  set. The identity rules moved to `ts/src/guardian/identity.ts`.
+
+- **The session siren no longer calls a marketplace directory with no `.git`
+  missing (#1692).** Check 3 reported "marketplace checkout missing" whenever
+  `$MKT/.git` was absent, even though the directory was there. It now says the
+  directory is present but not a git clone, with the remedy to remove the stale
+  directory or re-clone. A truly absent directory keeps the old message.
 
 - **The guardian mutation report no longer turns an allow-mutant reason or a
   mutator name into links or mentions (#1680).** The reason written after
@@ -47,6 +93,29 @@ under the project's former name) are documented in the
   abstentions on a first scan: on canary's own `ts/test` the count went from 165
   to 176 findings and from 270 to 275 abstentions. A bare code mention of a
   value binding still counts as invoked.
+
+- **Cassandra VAC-002 no longer counts a trailing `//` comment or a `/* */` span
+  as invoking the target (#1691).** The #1681 fix dropped only lines that start
+  with `//`, `#` or `*`, and the `@covers` walk kept its own `/*` check, so
+  `x(); // makeStore` and `/* makeStore */` still read as code. Both now use one
+  quote-aware definition of a comment: a `//` inside a string such as
+  `'http://x'` is content, not a comment. The definition is language-aware: in a
+  Python body only a quote-aware `#` opens a comment, so `10 // target(5)`
+  (floor division) still invokes `target`, and a trailing `# target(1)` no
+  longer counts as invoking it. On canary's own `ts/test` the finding count is
+  unchanged at 215; two tests whose body ran into a `/** ... */` opener naming
+  the target now abstain (577 to 579 skipped).
+
+- **Cassandra exempts every skip form, not just a test's own `.skip` (#1686).**
+  A vacuous test inside `describe.skip(...)` or `xdescribe(...)` never runs, yet
+  it drew VAC-001/VAC-002 and counted as checked; it is now a skip like any
+  `.skip` test. `xit`, `xtest`, `it.skip.each` and `test.skip.each` were not
+  read as declarations at all, so a parked body ran on into the real test above
+  it and its VAC-001 landed on that test's name; they are now declarations, and
+  skipped. The test enumerator is shared, so `LINT-006` exempts the same forms
+  and the test inventory lists `xit`/`xtest`/`.skip.each` tests. The skip reason
+  now reads
+  `declared skipped (.skip, xit/xtest, or inside describe.skip/xdescribe): ...`.
 
 - **The session siren no longer calls an ahead or diverged marketplace clone
   "behind origin", and says when it could not check the clone at all (#1682).**
@@ -71,9 +140,12 @@ under the project's former name) are documented in the
   on the same grounds. The choice was (a), exempt, over (b), keep scanning
   because the test is still vacuous once un-skipped: a finding nobody can act on
   until the test is un-skipped is noise, and the un-skip puts it back in the
-  scan. The exemption keeps the denominator honest: each `.skip` test leaves
-  `checked` and is listed as a skip (`declared .skip: it never runs ...`), so a
-  file whose only tests are `.skip` abstains instead of passing.
+  scan. The exemption keeps the denominator honest: each skipped test leaves
+  `checked` and is listed as a skip
+  (`declared skipped (...): it never runs ...`), so a file whose only tests are
+  skipped abstains instead of passing. The exempt forms are a test's own `.skip`
+  (and `.skip.each`), `xit`/`xtest`, and every test inside a
+  `describe.skip`/`xdescribe` block (#1686).
 
 - **The mission-briefing charter comment no longer stacks a new copy on every
   run when the token is not `github-actions[bot]` (#1678).**
@@ -149,8 +221,8 @@ under the project's former name) are documented in the
   file (a hook is the common case, not a requirement) now binds the name when it
   reaches the target: a relative `import(` or `require(` (also `.default`) makes
   it a handle, and a right-hand side that names an imported binding makes it a
-  one-level helper. Any other assignment leaves the name unresolved, so the
-  #1170 abstention still applies to it.
+  one-level helper. Any other assignment leaves the name unresolved: a direct
+  call of it abstains (#1170); a method call on it is still judged.
 - **The release workflow's `Move latest tag` step names a rejected push instead
   of blaming a race (#1504).** An auth failure, a network failure or a tag
   ruleset refusal used to log "latest moved on origin", retry, and fail with

@@ -876,6 +876,121 @@ describe('VAC-002 — a comment is not an invocation (#1681)', () => {
   });
 });
 
+// #1691. #1681 only stripped lines that START with `//`, `#` or `*`, and the
+// annotation walk had its own `/*` check, so the two disagreed and a comment
+// AFTER code, or a `/* ... */` line, still counted as naming the target.
+describe('VAC-002 — a trailing or block comment is not an invocation (#1691)', () => {
+  const HEAD =
+    `import { it, expect } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let hookSpawns = 0;\n`;
+  const vac002Tests = (r: ReturnType<typeof scan>) =>
+    r.findings.filter((f) => f.rule === 'VAC-002').map((f) => f.test);
+
+  it.each([
+    ['a trailing // comment', `  expect(hookSpawns).toBe(0); // makeStore\n`],
+    [
+      'a /* */ line',
+      `  /* makeStore() is not called */\n  expect(hookSpawns).toBe(0);\n`,
+    ],
+    [
+      'a trailing /* */ span',
+      `  expect(hookSpawns /* makeStore */).toBe(0);\n`,
+    ],
+  ])('reports a test whose only mention is %s', (_l, body) => {
+    const r = scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`);
+    expect(vac002Tests(r)).toEqual(['counts']);
+  });
+
+  // The negative: `//` inside a string is content, not a comment, so a call
+  // written after one on the same line still counts.
+  it('still counts a call that follows a // inside a string', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `it('fetches', () => {\n  expect(get('http://x', makeStore())).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+  });
+
+  it('still counts a call that follows a closed /* */ span', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `it('calls', () => {\n  /* setup */ expect(makeStore()).toBe(1);\n});\n`,
+    );
+    expect(vac002Tests(r)).toEqual([]);
+  });
+
+  // Python has its own comment syntax: `//` is floor division and `/*` is not
+  // a token, so only a quote-aware `#` opens a comment. Reading the JS forms in
+  // a Python body blanked `10 // target(5)` down to `10` -- a false VAC-002.
+  describe('in a Python body', () => {
+    const PY_HEAD = `from store import target\n\n`;
+    const pyTest = (body: string) =>
+      vac002Tests(scan('test_a.py', PY_HEAD + `def test_t():\n${body}`));
+
+    it('keeps a call that follows `//` floor division', () => {
+      expect(pyTest(`    assert 10 // target(5) == 2\n`)).toEqual([]);
+    });
+
+    it('still counts a call that a trailing `#` comment follows', () => {
+      expect(pyTest(`    assert target(1) == 2  # the happy path\n`)).toEqual(
+        [],
+      );
+    });
+
+    it('reports a test whose only mention is a trailing `#` comment', () => {
+      expect(
+        pyTest(`    value = 1\n    assert value == 1  # target(1)\n`),
+      ).toEqual(['test_t']);
+    });
+
+    it('does not read a `#` inside a string as a comment', () => {
+      expect(pyTest(`    assert f('#', target(1)) == 1\n`)).toEqual([]);
+    });
+  });
+});
+
+// Follow-up to #1697. The JS comment tokenizer had no regex-literal arm, and
+// blanking leaves a regex's content intact, so an unescaped `//` or `/*` in a
+// character class opened a "comment" that swallowed the rest of the line --
+// and the call after it -- for a false VAC-002.
+describe('VAC-002 — a // or /* inside a regex literal is not a comment', () => {
+  const HEAD =
+    `import { it, expect } from 'vitest';\n` +
+    `import { makeStore } from './testkit.js';\n` +
+    `let hookSpawns = 0;\n`;
+  const vac002Tests = (body: string) =>
+    scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`)
+      .findings.filter((f) => f.rule === 'VAC-002')
+      .map((f) => f.test);
+
+  it.each([
+    ['a // in a character class', `/[//]/g`],
+    ['a /* in a character class', `/[/*]/g`],
+  ])('still counts a call that follows %s', (_l, regex) => {
+    expect(
+      vac002Tests(
+        `  expect('a/b'.replace(${regex}, '') + makeStore()).toBe(1);\n`,
+      ),
+    ).toEqual([]);
+  });
+
+  // The guards: skipping regex literals must not turn a real comment into code.
+  it('still reads a // after division as a comment', () => {
+    expect(
+      vac002Tests(`  expect(hookSpawns / 2 // makeStore()\n  ).toBe(0);\n`),
+    ).toEqual(['counts']);
+  });
+
+  it('still reads a trailing // after a regex literal as a comment', () => {
+    expect(
+      vac002Tests(`  expect(/[//]/.test('x')).toBe(false); // makeStore(1)\n`),
+    ).toEqual(['counts']);
+  });
+});
+
 describe('VAC-003 — every assertion asserts absence', () => {
   // The canary-katana case from #486: `expect(existsSync(ledger)).toBe(false)`
   // was free, because the buggy code exited before the write. An all-absence
@@ -1576,6 +1691,72 @@ describe('a .skip test is exempt, and disclosed, not checked (#1669)', () => {
     expect(r.findings).toEqual([]);
     expect(r.checked).toBe(0);
     expect(r.skipped).toHaveLength(3);
+  });
+});
+
+// #1686. Only a declaration's OWN `.skip` marked a test skipped, so a vacuous
+// `it` inside `describe.skip`/`xdescribe` -- which never runs -- drew VAC
+// findings and counted as checked. And `xit`, `xtest` and `.skip.each` were not
+// declarations at all, so their body ran on into the real test above and its
+// VAC-001 landed on that test's name.
+describe('every skip form is exempt, and disclosed (#1686)', () => {
+  const REAL = `it('real', () => { expect(save(1)).toBe(1); });\n`;
+  const skippedNames = (r: ReturnType<typeof scan>) =>
+    (r.skipped ?? []).map((s) => s.name);
+
+  it.each([
+    ['describe.skip', 'describe.skip'],
+    ['xdescribe', 'xdescribe'],
+  ])('skips every test inside a %s block', (_l, kw) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        REAL +
+        `${kw}('parked suite', () => {\n` +
+        `  it('parked', () => { expect(1).toBe(1); });\n` +
+        `  it('parked too', () => { expect(true).toBe(true); });\n` +
+        `});\n`,
+    );
+    expect(r.findings).toEqual([]);
+    expect(r.checked).toBe(1);
+    expect(skippedNames(r).filter((n) => n.includes('(parked'))).toHaveLength(
+      2,
+    );
+  });
+
+  it('still scans a test after the skipped block closes', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `describe.skip('parked suite', () => {\n` +
+        `  it('parked', () => { expect(save(1)).toBe(1); });\n` +
+        `});\n` +
+        `it('after', () => { expect(1).toBe(1); });\n`,
+    );
+    expect(r.checked).toBe(1);
+    expect(r.findings.map((f) => [f.rule, f.test])).toContainEqual([
+      'VAC-001',
+      'after',
+    ]);
+  });
+
+  it.each([
+    ['xit', `xit('parked', () => { expect(1).toBe(1); });\n`],
+    ['xtest', `xtest('parked', () => { expect(1).toBe(1); });\n`],
+    [
+      'it.skip.each',
+      `it.skip.each([[1], [2]])('parked %s', () => { expect(1).toBe(1); });\n`,
+    ],
+    [
+      'test.skip.each',
+      `test.skip.each([[1]])('parked %s', () => { expect(1).toBe(1); });\n`,
+    ],
+  ])('recognises %s as a skipped declaration', (_l, decl) => {
+    const r = scan('a.test.ts', IMPORTS + REAL + decl);
+    // Before #1686 the parked body ran into `real`, and VAC-001 landed there.
+    expect(r.findings).toEqual([]);
+    expect(r.checked).toBe(1);
+    expect(skippedNames(r).some((n) => n.includes('(parked'))).toBe(true);
   });
 });
 

@@ -974,6 +974,33 @@ describe('perf-ratchet structural allowances (#850)', () => {
     expect(out).toMatch(/delta OK/);
   });
 
+  // Harness CLI 14 prints an info-level fan-in finding. Unclassified, it made
+  // parseFindings return null for EVERY report, so every PR fell back to the
+  // count comparison and no allowance applied: "delta OK by count ... no
+  // allowance was applied" on every run since the CLI 14.1.1 adoption (#1640).
+  it('classifies the CLI 14 fan-in finding, so allowances still apply', () => {
+    const FAN_IN = 'File is imported by 21 files (threshold: 20)';
+    writeBaseline({
+      deltaAllowances: [
+        {
+          rule: 'coupling',
+          path: 'ts/src/**/cli.ts',
+          why: 'a CLI wiring module triggers the coupling rule by definition',
+        },
+      ],
+    });
+    const base: [string, string][] = [...BASE, ['ts/src/core/x.ts', FAN_IN]];
+    writeFileSync(
+      report,
+      reportText(HEAD_ROOT, [...base, ['ts/src/history/cli.ts', COUPLING]]),
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, base));
+    const { status, out } = runDelta();
+    expect(out).not.toMatch(/by count/);
+    expect(out).toMatch(/1 allowed, 0 blocking/);
+    expect(status).toBe(0);
+  });
+
   it('still fails a genuinely new finding, and names the file', () => {
     writeBaseline();
     writeFileSync(

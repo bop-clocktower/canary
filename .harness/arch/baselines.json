@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-24T18:53:45.235Z",
+  "updatedAt": "2026-11-25T01:14:28.880Z",
   "updatedFrom": "527c9a841099a3301473500e6296aed7d471d8b2",
   "metrics": {
     "circular-deps": {
@@ -95,7 +95,7 @@
       ]
     },
     "coupling": {
-      "value": 67,
+      "value": 69,
       "violationIds": []
     },
     "forbidden-imports": {
@@ -103,7 +103,7 @@
       "violationIds": []
     },
     "module-size": {
-      "value": 58852,
+      "value": 59901,
       "violationIds": [
         "0ce917cfa1195435f48f1a62370fee6d7161d2c77ce70c2ef30109ac3fda89de",
         "9d97cc82b1f999dff3ab991a7e5684bfc82b57d778639978efc29cca6a17b287",
