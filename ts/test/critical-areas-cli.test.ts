@@ -869,7 +869,7 @@ describe('canary critical-areas', () => {
       const res = await run();
       expect(res.code).toBe(0);
       expect(res.stdout).toContain(
-        'Dropped symbols for paths that are not a tracked file in HEAD: src.',
+        'Dropped symbols for paths that are not a tracked file in HEAD: "src".',
       );
       expect(res.stdout).not.toContain('no longer in HEAD');
     });
@@ -878,22 +878,26 @@ describe('canary critical-areas', () => {
       // ESC + CSI colour, BEL, a newline that could forge a line, DEL, and
       // the 8-bit C1 CSI: each would reach the operator's terminal raw.
       const hostile = 'gone/\u001b[31mred\u0007\nfake\u007f\u009b2J.ts';
-      const shown = 'gone/\\x1b[31mred\\x07\\x0afake\\x7f\\x9b2J.ts';
-      const RAW_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
+      const shown = '"gone/\\x1b[31mred\\x07\\x0afake\\x7f\\x9b2J.ts"';
+      // Any control, format (bidi, zero-width, BOM), unassigned or private
+      // code point, or a Unicode line/paragraph separator, left raw.
+      const RAW_CONTROL = /[\p{C}\p{Zl}\p{Zp}]/u;
+      const NOT_TRACKED =
+        'Dropped symbols for paths that are not a tracked file in HEAD: ';
 
       const droppedLines = (stdout: string): string[] =>
         stdout.split('\n').filter((l) => l.startsWith('Dropped symbols'));
+      const rawLines = (stdout: string): string[] =>
+        stdout.split('\n').filter((l) => RAW_CONTROL.test(l));
 
       it('escapes them in the not-tracked line', async () => {
         ranked(root);
         plant([{ path: hostile, symbols: ['charge'] }]);
         const res = await run();
         expect(res.code).toBe(0);
-        expect(res.stdout).not.toMatch(RAW_CONTROL);
+        expect(rawLines(res.stdout)).toEqual([]);
         expect(res.stdout).not.toContain('\nfake');
-        expect(droppedLines(res.stdout)).toEqual([
-          `Dropped symbols for paths that are not a tracked file in HEAD: ${shown}.`,
-        ]);
+        expect(droppedLines(res.stdout)).toEqual([`${NOT_TRACKED}${shown}.`]);
       });
 
       it('escapes them in the rejected-list line', async () => {
@@ -901,18 +905,53 @@ describe('canary critical-areas', () => {
         plant([{ path: hostile, symbols: ['ab'] }]);
         const res = await run();
         expect(res.code).toBe(0);
-        expect(res.stdout).not.toMatch(RAW_CONTROL);
+        expect(rawLines(res.stdout)).toEqual([]);
         const lines = droppedLines(res.stdout);
         expect(lines).toHaveLength(1);
         expect(lines[0]).toContain(`under 3 letters or digits): ${shown}.`);
       });
 
-      it('leaves a printable non-ASCII path as it is', async () => {
+      it('escapes bidi, zero-width, BOM and line-separator code points', async () => {
+        ranked(root);
+        const sneaky = 'gone/‮evil⁦x⁩​‏﻿ y .ts';
+        plant([{ path: sneaky, symbols: ['charge'] }]);
+        const res = await run();
+        expect(rawLines(res.stdout)).toEqual([]);
+        expect(droppedLines(res.stdout)).toEqual([
+          `${NOT_TRACKED}"gone/\\u{202e}evil\\u{2066}x\\u{2069}\\u{200b}\\u{200f}\\u{feff}\\u{2028}y\\u{2029}.ts".`,
+        ]);
+      });
+
+      it('tells a literal backslash apart from an escaped control', async () => {
+        ranked(root);
+        plant([
+          { path: 'gone/\\x1b.ts', symbols: ['charge'] },
+          { path: 'gone/\u001b.ts', symbols: ['charge'] },
+        ]);
+        const res = await run();
+        expect(droppedLines(res.stdout)).toEqual([
+          `${NOT_TRACKED}"gone/\\\\x1b.ts", "gone/\\x1b.ts".`,
+        ]);
+      });
+
+      it('cannot forge an extra entry with a comma or a quote', async () => {
+        ranked(root);
+        plant([
+          { path: 'gone/a.ts, gone/b.ts', symbols: ['charge'] },
+          { path: 'gone/"q".ts', symbols: ['charge'] },
+        ]);
+        const res = await run();
+        expect(droppedLines(res.stdout)).toEqual([
+          `${NOT_TRACKED}"gone/a.ts, gone/b.ts", "gone/\\"q\\".ts".`,
+        ]);
+      });
+
+      it('leaves a printable non-ASCII path readable', async () => {
         ranked(root);
         plant([{ path: 'gone/café.ts', symbols: ['charge'] }]);
         const res = await run();
         expect(droppedLines(res.stdout)).toEqual([
-          'Dropped symbols for paths that are not a tracked file in HEAD: gone/café.ts.',
+          `${NOT_TRACKED}"gone/café.ts".`,
         ]);
       });
     });
