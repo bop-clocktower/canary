@@ -230,18 +230,28 @@ writes) and states its age next to the area denominator on the summary line:
 
 ```text
 0 deletion(s) captured; checked against 12 critical area(s) from a map 85 day(s) old (limit 30).
-⚠ critical-areas map is stale: generated 2026-09-01T00:00:00Z, 85 day(s) ago, past the 30-day limit (--max-age-days). Areas added or reshaped since cannot alarm; regenerate it with `canary critical-areas`.
+⚠ critical-areas map is stale: generated 2026-09-01T00:00:00.000Z, 85 day(s) ago, past the 30-day limit (--max-age-days). Areas added or reshaped since cannot alarm; regenerate it with `canary critical-areas`.
 ⚠ Abstained — katana scored this diff against a map it cannot vouch is current, so 0 alarms is not a pass.
 ```
 
 A map older than `--max-age-days` (default `30`, whole days; exactly the limit
-is still fresh) is **stale**. A map whose `generated` is missing, not a date, or
-more than a day in the future cannot be checked at all, and says
+is still fresh) is **stale**. `generated` must be strict ISO-8601: a calendar
+date (`2026-09-01`, read as UTC) or a date-time with an explicit offset
+(`2026-09-01T00:00:00Z`, `…+02:00`), which is what `canary critical-areas`
+writes. Looser forms a JavaScript engine might still parse (`Nov 1 2026`,
+`2026/11/01`, a date-time without an offset) are not accepted, so every reader
+agrees on what the map says. The warning prints the parsed instant, never the
+raw field. A map whose `generated` is missing, not strict ISO-8601, or more than
+a day in the future cannot be checked at all, and says
 `⚠ Cannot verify critical-areas map freshness: …` with `map of unknown age` on
 the summary line. Either way the run still assesses every area and still alarms;
 under `--strict` a run with no finding exits `3` (abstained), not `0`. A real
 alarm outranks the abstention and exits `1`. A degraded run (no map) has no age
 to check and is unchanged.
+
+The age check is a staleness heuristic, not a trust boundary. Anyone who can
+edit the map can also edit the gate, so katana does not cross-check `generated`
+against the file's git history.
 
 ## The ledger
 

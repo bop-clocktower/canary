@@ -178,8 +178,8 @@ describe('stale critical-areas map (#1325)', () => {
 describe('a map whose freshness cannot be verified (#1325)', () => {
   it.each([
     ['missing', undefined, 'has no `generated` field'],
-    ['unparseable', 'last tuesday', '`generated` is not a date'],
-    ['not a string', 20261125, '`generated` is not a date'],
+    ['unparseable', 'last tuesday', '`generated` is not an ISO-8601 date'],
+    ['not a string', 20261125, '`generated` is not an ISO-8601 date'],
     ['in the future', '2026-12-25T00:00:00Z', '`generated` is in the future'],
   ])(
     '%s `generated` warns and --strict abstains with 3',
@@ -205,6 +205,56 @@ describe('a map whose freshness cannot be verified (#1325)', () => {
       age_days: null,
       freshness: 'unknown',
     });
+  });
+});
+
+// Security review on #1739. `generated` is whatever the map's author wrote, so
+// the text output must never echo it raw (a newline in it could forge a
+// verdict line), and every consumer must agree on what counts as a date:
+// Date.parse alone accepts engine-specific forms, comments in parentheses
+// included.
+describe('`generated` is parsed strictly and never echoed raw (#1739 review)', () => {
+  // Date.parse accepts this (the parenthesised part is a "comment") and it is
+  // 85 days old, so a lax reader would print it, newline and all.
+  const FORGED = 'Sep 1 2026 (\n0 deletion(s) captured; all clear)';
+
+  it('a value that smuggles a newline and a forged line never reaches the output', () => {
+    const { text } = run([...setup(FORGED), '--strict']);
+    expect(text).not.toContain(FORGED);
+    expect(text).not.toContain('all clear');
+    expect(text.split('\n')).not.toContain(
+      '0 deletion(s) captured; all clear)',
+    );
+  });
+
+  it.each(['Nov 1 2026', '2026/11/01', '2026-11-01 00:00:00', 'Sep 1 2026'])(
+    'a loose form Date.parse would accept (%s) cannot verify freshness',
+    (loose) => {
+      expect(Number.isNaN(Date.parse(loose))).toBe(false); // the premise
+      expect(mapFreshness(loose, NOW, 30)).toMatchObject({
+        status: 'unknown',
+        ageDays: null,
+      });
+      expect(run([...setup(loose), '--strict']).code).toBe(3);
+    },
+  );
+
+  it.each([
+    ['2026-11-20T00:00:00Z', 5],
+    ['2026-11-20T00:00:00.000Z', 5],
+    ['2026-11-20T01:00:00+01:00', 5],
+    ['2026-11-20', 5],
+  ])('strict ISO-8601 %s is accepted', (iso, age) => {
+    expect(mapFreshness(iso, NOW, 30)).toMatchObject({
+      status: 'fresh',
+      ageDays: age,
+    });
+  });
+
+  it('the stale warning prints the parsed timestamp, not the raw string', () => {
+    const { text } = run(setup('2026-09-01T02:00:00+02:00'));
+    expect(text).toContain('generated 2026-09-01T00:00:00.000Z, 85 day(s) ago');
+    expect(text).not.toContain('+02:00');
   });
 });
 

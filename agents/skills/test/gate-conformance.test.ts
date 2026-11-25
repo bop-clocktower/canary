@@ -78,6 +78,11 @@ interface SkillGateRow {
   command: string;
   /** Success copy that must NEVER appear on a zero denominator. */
   forbid: string[];
+  /**
+   * The CLI's own abstention copy, which MUST appear. Optional: rows whose
+   * abstention is the generic "abstained" line need nothing more (#1739).
+   */
+  require?: string[];
   /** Build the zero-denominator fixture and run the real CLI (advisory). */
   run: (base: string) => { code: number; stdout: string };
   /** The same fixture under `--strict`, which must inherit exit 3. */
@@ -122,7 +127,12 @@ const ROWS: SkillGateRow[] = [
     // `generated` stamp, so katana cannot tell how much has changed since it
     // was written. Clock-free on purpose: "undated" holds at any wall time.
     command: 'canary-katana (undated critical-areas map)',
-    forbid: ['0 deletion(s) captured.'],
+    // A dated map's summary says how old it is; an undated one never may.
+    forbid: ['day(s) old (limit'],
+    require: [
+      'Cannot verify critical-areas map freshness',
+      'from a map of unknown age',
+    ],
     run: (base) => run(katanaMain, undatedMapArgs(base)),
     strict: (base) => run(katanaMain, [...undatedMapArgs(base), '--strict']),
   },
@@ -385,6 +395,9 @@ describe('gate conformance registry -- skill layer (#508)', () => {
       expect(res.stdout.toLowerCase()).toContain('abstained');
       for (const text of row.forbid) {
         expect(res.stdout).not.toContain(text);
+      }
+      for (const text of row.require ?? []) {
+        expect(res.stdout).toContain(text);
       }
       // Advisory by default: the line is loud, the exit is not (D3).
       expect(res.code).toBe(0);

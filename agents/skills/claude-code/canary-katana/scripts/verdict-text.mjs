@@ -32,8 +32,9 @@ const zeroAreasLine = (n) =>
 const untrustedMap = (run) =>
   run.freshness != null && run.freshness.status !== 'fresh';
 
-const staleMapLine = ({ generated, ageDays, maxAgeDays }) =>
-  `\u{26A0} critical-areas map is stale: generated ${generated}, ${ageDays} ` +
+// `at`, never the raw `generated`: the stamp is author-written text (#1739).
+const staleMapLine = ({ at, ageDays, maxAgeDays }) =>
+  `\u{26A0} critical-areas map is stale: generated ${at}, ${ageDays} ` +
   `day(s) ago, past the ${maxAgeDays}-day limit (--max-age-days). Areas ` +
   'added or reshaped since cannot alarm; regenerate it with ' +
   '`canary critical-areas`.';
