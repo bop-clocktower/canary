@@ -263,6 +263,19 @@ used for ranking; the values above are the P1 values in `patterns.mjs`, and
   reaches the target until `--confirm <sha>` equals a **freshly rebuilt**
   manifest's sha; mismatch → exit 4.
 - Without `--confirm`, `run --live` writes only the local run dir.
+- **As shipped in P2:**
+  - The run dir is `runs/<run-id>/` beside the flows file, which is
+    `.canary/cry/runs/` with the default paths.
+  - The manifest carries each driven flow in full (plus the target's
+    `auth.signIn` / `auth.signOut` flows) and the `fixtures` map, so every value
+    a run would type into the target is covered by the sha.
+  - Overlap with `prodHosts` errs toward refusing. A `*.x` pattern also covers
+    `x`. Ports and trailing dots are ignored. A wildcard `hosts` entry is
+    refused when it could reach a prod host.
+  - The gate runs before any account env var is read.
+  - Until P3 there is no executor, so a **matching** `--confirm` exits 2
+    `not yet supported` and sends nothing. Exit 4 stays reserved for a safety
+    refusal.
 
 ### Codegen and runtime (`scripts/codegen.mjs`, `scripts/runtime/cry-runtime.mjs`)
 

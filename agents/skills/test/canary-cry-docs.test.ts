@@ -1,6 +1,6 @@
 /**
- * canary-cry's SKILL.md says what the P1 code does (#608 P1; the full SC20
- * check lands with `run` and `report` in P5).
+ * canary-cry's SKILL.md says what the shipped code does (#608 P1, P2; the full
+ * SC20 check lands with `report` in P5).
  *
  * The pattern table and the budget table are copies of data the code owns
  * (patterns.mjs, matrix.mjs AMPLITUDES), so they are read back against it: a
@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { ALLOWED_ENVIRONMENTS } from '../claude-code/canary-cry/scripts/gate.mjs';
 import { AMPLITUDES } from '../claude-code/canary-cry/scripts/matrix.mjs';
 import { PATTERNS } from '../claude-code/canary-cry/scripts/patterns.mjs';
 
@@ -35,17 +36,28 @@ const cells = (line: string | undefined) =>
     .slice(1, -1)
     .map((c) => c.trim());
 
-describe('canary-cry SKILL.md (P1)', () => {
-  it.each(['validate', 'matrix'])('has a section for `%s`', (command) => {
-    expect(SKILL_MD).toMatch(new RegExp(`^## \`${command}\``, 'm'));
-  });
+describe('canary-cry SKILL.md (P1, P2)', () => {
+  it.each(['validate', 'matrix', 'run'])(
+    'has a section for `%s`',
+    (command) => {
+      expect(SKILL_MD).toMatch(new RegExp(`^## \`${command}\``, 'm'));
+    },
+  );
 
-  it.each(['0', '2', '3'])('has an exit-code row for %s', (code) => {
+  it.each(['0', '2', '3', '4'])('has an exit-code row for %s', (code) => {
     expect(row(`\`${code}\``), `exit ${code}`).toBeDefined();
   });
 
   it('documents the abstention line verbatim', () => {
     expect(PROSE).toContain('ABSTAINED: zero scenarios');
+  });
+
+  it('lists the allowed environments the gate enforces, exactly', () => {
+    expect(PROSE).toContain(
+      `${ALLOWED_ENVIRONMENTS.slice(0, -1)
+        .map((e) => `\`${e}\``)
+        .join(', ')} or \`${ALLOWED_ENVIRONMENTS.at(-1)}\``,
+    );
   });
 
   it('states the server-side limit line verbatim', () => {
