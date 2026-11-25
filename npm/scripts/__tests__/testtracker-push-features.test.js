@@ -310,3 +310,37 @@ test('the Playwright catalog unions features when one title spans projects', asy
   assert.equal(payload.collected.length, 1);
   assert.deepEqual(payload.collected[0].features, ['cart', 'checkout']);
 });
+
+// --- review-assist (#1649): positive control and the documented bare-string form
+
+test('a malformed CANARY_INGEST_FEATURE_MAP alone warns "sending no features" and still pushes', async () => {
+  // Positive control for the silencing test above: without it, a warning that
+  // was never emitted would make "silenced" pass vacuously.
+  const env = { ...PUSH_ENV, CANARY_INGEST_FEATURE_MAP: '{broken' };
+  const { code, payload, err, logs } = await push([fixture('vitest.xml')], [], {
+    env,
+  });
+  assert.equal(code, 0);
+  assert.match(err + logs.join('\n'), /sending no features/);
+  assert.equal('features' in row(payload, titleOf(payload, /adds/)), false);
+});
+
+test('the featureMap option takes a bare string as one slug, as the env map does', () => {
+  const { resolveConfig } = reporterModule;
+  const c = resolveConfig(
+    { suite: 's', featureMap: { 'src/billing/**': 'billing' } },
+    {},
+  );
+  assert.deepEqual(c.featureMap, { 'src/billing/**': ['billing'] });
+  assert.deepEqual(
+    reporterModule.resolveFeatures([], 'src/billing/a.ts', c.featureMap),
+    ['billing'],
+  );
+});
+
+test('a featureMap option with a non-string slug warns and sends no features', () => {
+  const { resolveConfig } = reporterModule;
+  const c = resolveConfig({ suite: 's', featureMap: { 'tests/**': [1] } }, {});
+  assert.deepEqual(c.featureMap, {});
+  assert.match(c.configWarnings.join('\n'), /feature map must be/);
+});

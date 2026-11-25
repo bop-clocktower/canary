@@ -43,20 +43,35 @@ export function parseFeatureMap(
   warnings: string[],
 ): Record<string, string[]> {
   if (!raw) return {};
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const map: Record<string, string[]> = {};
-      for (const [glob, v] of Object.entries(parsed)) {
-        if (typeof v === 'string') map[glob] = [v];
-        else if (Array.isArray(v) && v.every((x) => typeof x === 'string'))
-          map[glob] = v;
-        else throw new Error('bad value');
-      }
-      return map;
-    }
+    parsed = JSON.parse(raw);
   } catch {
-    /* fall through to the warning below */
+    parsed = undefined;
+  }
+  return featureMapFrom(parsed, warnings);
+}
+
+/**
+ * A feature map from a parsed value — the env JSON or the `featureMap` option,
+ * which a plain-JS config can fill with anything. Same rule for both: a bare
+ * string is one slug (never split into characters), anything else that is not
+ * a string array is a warning and no map.
+ */
+export function featureMapFrom(
+  value: unknown,
+  warnings: string[],
+): Record<string, string[]> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const map: Record<string, string[]> = {};
+    let valid = true;
+    for (const [glob, v] of Object.entries(value)) {
+      if (typeof v === 'string') map[glob] = [v];
+      else if (Array.isArray(v) && v.every((x) => typeof x === 'string'))
+        map[glob] = v;
+      else valid = false;
+    }
+    if (valid) return map;
   }
   warnings.push(
     'the feature map must be a JSON object of glob → slug or [slugs], e.g. {"src/billing/**":["billing"]}; sending no features.',

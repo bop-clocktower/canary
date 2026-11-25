@@ -1,5 +1,5 @@
 // Ingest reporter: options, env resolution and area mapping.
-import { parseFeatureMap } from "./entry/features.js";
+import { featureMapFrom, parseFeatureMap } from "./entry/features.js";
 import { checkGlobs, globToRegExp } from "./entry/globs.js";
 
 /**
@@ -33,7 +33,7 @@ export interface IngestReporterOptions {
    * dashboard reads as "the suite said nothing", not "covers no feature";
    * map a glob to `[]` to say the second.
    */
-  featureMap?: Record<string, string[]>;
+  featureMap?: Record<string, string | string[]>;
   /**
    * The suite's test level (e.g. `unit`, `integration`, `contract`, `e2e`),
    * sent as the run's `level`. Passed through unvalidated: the dashboard owns
@@ -163,7 +163,9 @@ export function resolveConfig(
     areaMap: checkAreaMap(opts.areaMap ?? parseAreaMap(read("areaMap"), configWarnings), configWarnings),
     featureMap: checkGlobs(
       "featureMap",
-      opts.featureMap ?? parseFeatureMap(read("featureMap"), configWarnings),
+      opts.featureMap !== undefined
+        ? featureMapFrom(opts.featureMap, configWarnings)
+        : parseFeatureMap(read("featureMap"), configWarnings),
       configWarnings,
     ),
     level: opts.level || read("level") || undefined,
