@@ -78,6 +78,16 @@ it later; the human confirms it, and the engine reads only the file.
   `argv` array, run with `execFile`, never a shell string). `expect` is
   `{ "jsonPath"?: "$...", "delta": n }` or `{ "equals": value }`. A probe that
   writes invalidates its own before/after comparison.
+- `delta` is `after - before` for **one** completion of the flow, and `equals`
+  is the value after it. For most patterns an invariant passes only on exactly
+  that. A pattern marked **May refuse** in the pattern table (`token-expiry`,
+  which clears the session before the write) is one a correct app answers by
+  refusing the flow, so it also passes on a clean refusal: `delta: n` passes
+  when the change is `0` or `n`, and `equals: v` when the after-value is `v` or
+  is unchanged from the before-value. A partial write (between `0` and `n`) or a
+  double write (`2n`) is still `corrupted`. A refusal is read from the account's
+  state only: a write the app files as a guest's, never under the account,
+  counts as refused.
 - Template values: `{{account.<K>.<field>}}`, `{{fixture.<name>}}` (from the
   top-level `fixtures` map) and `{{unique.<kind>}}`.
 - Ids are lowercase letters, digits and `-`. A `:` is never legal: it separates
@@ -292,14 +302,14 @@ canary-test-reporter.
 
 ## Abuse patterns
 
-| Pattern            | Core | Weight | Applies to                                                  | Intensity 1 / 2 / 3                                   |
-| ------------------ | ---- | ------ | ----------------------------------------------------------- | ----------------------------------------------------- |
-| `multi-submit`     | yes  | 5      | each step with `writes`                                     | 2x @ no throttle / 3x @ 400 ms / 5x @ 3 s             |
-| `abandon-midflow`  | yes  | 4      | each `writes` step that is not the last step                | back / reload / context.close()                       |
-| `stale-optimistic` | no   | 4      | each step with `awaitResponse`                              | delay past UI timeout / fake 500 / drop               |
-| `duplicate-tab`    | no   | 3      | each step with `writes`                                     | 2 / 3 / 3 tabs racing                                 |
-| `token-expiry`     | no   | 3      | the first `writes` step, on a target with session keys      | before the write / between writes / before every step |
-| `shared-machine`   | no   | 5      | the last step, on a target with accounts A and B and `auth` | sign-out / sign-out + back / no sign-out              |
+| Pattern            | Core | Weight | Applies to                                                  | Intensity 1 / 2 / 3                                   | May refuse |
+| ------------------ | ---- | ------ | ----------------------------------------------------------- | ----------------------------------------------------- | ---------- |
+| `multi-submit`     | yes  | 5      | each step with `writes`                                     | 2x @ no throttle / 3x @ 400 ms / 5x @ 3 s             | no         |
+| `abandon-midflow`  | yes  | 4      | each `writes` step that is not the last step                | back / reload / context.close()                       | no         |
+| `stale-optimistic` | no   | 4      | each step with `awaitResponse`                              | delay past UI timeout / fake 500 / drop               | no         |
+| `duplicate-tab`    | no   | 3      | each step with `writes`                                     | 2 / 3 / 3 tabs racing                                 | no         |
+| `token-expiry`     | no   | 3      | the first `writes` step, on a target with session keys      | before the write / between writes / before every step | yes        |
+| `shared-machine`   | no   | 5      | the last step, on a target with accounts A and B and `auth` | sign-out / sign-out + back / no sign-out              | no         |
 
 ## Exit codes
 
@@ -319,9 +329,6 @@ canary-test-reporter.
   reachable from `run` once `shout` and `scream` can run (a later phase), with
   their rounds and convergence.
 - No `report` command yet; `findings.json` and the run's text are the output.
-- `token-expiry` at intensity 1 reports `corrupted` when the app correctly
-  refuses the unauthenticated write, because `delta` means exactly one
-  completion of the flow. Read its findings with that in mind.
 - A cross-account leak compares only account A's values of 3 or more characters
   that B does not share; a shorter or shared value would match by accident.
 - Probes must be **read-only**: a probe that writes invalidates its own

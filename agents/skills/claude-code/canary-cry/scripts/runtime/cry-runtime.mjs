@@ -39,14 +39,19 @@ async function measure(observers, invariants) {
 }
 
 /** One checked invariant: before/after values and whether it was breached. */
-function judge(id, before, after) {
+function judge(id, before, after, options) {
   const { inv } = before;
   const base = { id, expect: inv.expect };
   const failed = before.reading.error ?? after.reading.error;
   if (failed !== undefined) return { ...base, error: failed };
   const b = before.reading.value;
   const a = after.reading.value;
-  return { ...base, before: b, after: a, ...checkExpect(inv.expect, b, a) };
+  return {
+    ...base,
+    before: b,
+    after: a,
+    ...checkExpect(inv.expect, b, a, options),
+  };
 }
 
 /** Deep-redact a recorded value: no account value reaches an artifact. */
@@ -67,8 +72,10 @@ async function drive(s, scenario) {
     await s.settle();
     for (const page of s.pages) await s.symptoms(page);
     const after = await measure(observers, scenario.invariants);
+    // A token-expiry scenario may pass on a clean refusal (#1720).
+    const options = { mayRefuse: scenario.mayRefuse === true };
     const invariants = [...before].map(([id, b]) =>
-      judge(id, b, after.get(id)),
+      judge(id, b, after.get(id), options),
     );
     return { brokenAt: null, invariants };
   } catch (exc) {

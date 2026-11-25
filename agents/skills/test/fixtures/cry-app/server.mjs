@@ -9,8 +9,14 @@
 //   - shared-machine: sign-in remembers the FIRST user's email in
 //     localStorage and the cart shows it, so the next user on the machine
 //     sees it (a cross-account-leak symptom)
+//   - token-expiry: a cart remembers the user who opened it, and an address
+//     saved with no session is filed under that owner, while the payment is
+//     a guest's. An expired session half-completes the owner's checkout: one
+//     row of the two (#1720; token-expiry -> corrupted)
 // `variant: 'fixed'` guards the buttons, makes both writes idempotent per
-// cart, and stores the current user's email.
+// cart, stores the current user's email, and never files a write made with no
+// session under any account: a correct app refusing an unauthenticated write,
+// as far as the account's state can tell.
 //
 // Every page also loads a pixel from egress.cry-e2e.invalid, a host no
 // target declares, so the egress lockdown has something to abort (SC13).
@@ -115,6 +121,12 @@ function store(state, table, user, cart, row) {
   rows.push({ ...row, user, cart });
 }
 
+/** Buggy: a write with no session is filed under the cart's owner. */
+function addressOwner(state, ctx) {
+  if (state.fixed || ctx.user !== 'guest') return ctx.user;
+  return state.owners.get(ctx.cart) ?? 'guest';
+}
+
 function makeHandler(state) {
   const routes = {
     'GET /': () => [200, page('<p>cry fixture</p>')],
@@ -122,6 +134,7 @@ function makeHandler(state) {
     'GET /logout': () => [200, logoutPage()],
     'GET /cart': (ctx) => {
       const cart = ctx.cart ?? `c${(state.carts += 1)}`;
+      if (ctx.user !== 'guest') state.owners.set(cart, ctx.user);
       return [
         200,
         cartPage(state.fixed),
@@ -157,7 +170,8 @@ function makeHandler(state) {
     },
     'POST /api/addresses': async (ctx) => {
       const body = await readBody(ctx.req);
-      store(state, 'addresses', ctx.user, ctx.cart, { line: body.line });
+      const user = addressOwner(state, ctx);
+      store(state, 'addresses', user, ctx.cart, { line: body.line });
       return [200, { ok: true }];
     },
     'GET /api/orders': (ctx) => [
@@ -167,6 +181,11 @@ function makeHandler(state) {
     'GET /api/addresses': (ctx) => [
       200,
       state.addresses.filter((a) => a.user === ctx.query),
+    ],
+    // Both rows of one checkout: a whole completion adds 2, a refusal 0.
+    'GET /api/checkout': (ctx) => [
+      200,
+      [...state.addresses, ...state.orders].filter((r) => r.user === ctx.query),
     ],
   };
   return async (req, res) => {
@@ -199,6 +218,7 @@ export function startApp({ variant = 'buggy', users, port = 0 }) {
     sessions: new Map(),
     tokens: 0,
     carts: 0,
+    owners: new Map(),
     orders: [],
     addresses: [],
   };

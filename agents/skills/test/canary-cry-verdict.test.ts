@@ -35,6 +35,50 @@ describe('checkExpect', () => {
     expect(checkExpect(exp, before, after)).toEqual(want);
   });
 
+  // #1720: a pattern whose abuse a correct app answers by refusing the flow
+  // (token-expiry) passes when the app refused cleanly OR completed exactly
+  // once. A partial or a double write is still a breach.
+  it.each<[string, any, unknown, unknown, boolean]>([
+    ['refused: no change', { delta: 2 }, 5, 5, false],
+    ['completed exactly once', { delta: 2 }, 5, 7, false],
+    ['a partial write', { delta: 2 }, 5, 6, true],
+    ['a double write', { delta: 2 }, 5, 9, true],
+    ['a negative change', { delta: 2 }, 5, 4, true],
+    ['equals: completed', { equals: 'paid' }, 'open', 'paid', false],
+    ['equals: refused, unchanged', { equals: 'paid' }, 'open', 'open', false],
+    ['equals: neither', { equals: 'paid' }, 'open', 'void', true],
+    [
+      'equals: refused, key order',
+      { equals: 1 },
+      { a: 1, b: 2 },
+      { b: 2, a: 1 },
+      false,
+    ],
+  ])('mayRefuse, %s', (_, exp, before, after, breached) => {
+    expect(checkExpect(exp, before, after, { mayRefuse: true })).toEqual({
+      breached,
+    });
+  });
+
+  it.each<[string, any, unknown, unknown]>([
+    ['delta', { delta: 1 }, 3, 3],
+    ['equals', { equals: 'paid' }, 'open', 'open'],
+  ])(
+    'without mayRefuse, an unchanged %s value is still a breach',
+    (_, exp, before, after) => {
+      expect(checkExpect(exp, before, after)).toEqual({ breached: true });
+      expect(checkExpect(exp, before, after, { mayRefuse: false })).toEqual({
+        breached: true,
+      });
+    },
+  );
+
+  it('mayRefuse does not excuse a delta over a non-number', () => {
+    expect(checkExpect({ delta: 1 }, '0', 1, { mayRefuse: true })).toEqual({
+      error: 'delta needs numbers, got string before and number after',
+    });
+  });
+
   it('a delta over a non-number is an error, never a guess', () => {
     expect(checkExpect({ delta: 1 }, '0', 1)).toEqual({
       error: 'delta needs numbers, got string before and number after',

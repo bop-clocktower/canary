@@ -94,6 +94,20 @@ describe('budgets (SC2)', () => {
     expect(m.scenarios).toHaveLength(128);
   });
 
+  // #1720: the refusal semantics are the catalog's, carried on every scenario
+  // so the manifest the operator confirms shows how each one is judged.
+  it("carries each scenario's pattern mayRefuse flag", () => {
+    const m = buildMatrix({
+      flows: flows10(),
+      amplitude: 'shout',
+      seed: 0,
+      target: FULL_TARGET,
+    });
+    for (const s of m.scenarios) {
+      expect([s.id, s.mayRefuse]).toEqual([s.id, s.pattern === 'token-expiry']);
+    }
+  });
+
   it('scream is every flow x every pattern x i1..i3, never past the ceiling', () => {
     const m = buildMatrix({
       flows: flows10(),

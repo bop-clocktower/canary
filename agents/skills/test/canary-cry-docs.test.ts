@@ -31,15 +31,17 @@ const SKILL_MD = fs.readFileSync(
 // matched with its whitespace collapsed.
 const PROSE = SKILL_MD.replace(/\s+/g, ' ');
 
-const row = (first: string) =>
-  SKILL_MD.split('\n').find((l) =>
-    new RegExp(`^\\|\\s*${first}\\s*\\|`).test(l),
-  );
 const cells = (line: string | undefined) =>
   (line ?? '')
     .split('|')
     .slice(1, -1)
     .map((c) => c.trim());
+// The table row whose first cell is `first`, compared as a literal string: no
+// regex is built from data, so a label never needs escaping.
+const row = (first: string) =>
+  SKILL_MD.split('\n').find(
+    (l) => l.trimStart().startsWith('|') && cells(l)[0] === first,
+  );
 
 describe('canary-cry SKILL.md (P1, P2, P3)', () => {
   it.each(['validate', 'matrix', 'run'])(
@@ -72,11 +74,12 @@ describe('canary-cry SKILL.md (P1, P2, P3)', () => {
   });
 
   it.each(PATTERNS.map((p) => [p.id, p]))(
-    'lists pattern %s with its catalog weight and core flag',
+    'lists pattern %s with its catalog weight, core and mayRefuse flags',
     (id, p: any) => {
-      const [, core, weight] = cells(row(`\`${id}\``));
+      const [, core, weight, , , mayRefuse] = cells(row(`\`${id}\``));
       expect(weight, id).toBe(String(p.weight));
       expect(core, id).toBe(p.core ? 'yes' : 'no');
+      expect(mayRefuse, id).toBe(p.mayRefuse ? 'yes' : 'no');
     },
   );
 
@@ -118,7 +121,7 @@ describe('canary-cry SKILL.md: a confirmed run (P3)', () => {
     ['probe-failed', { invariants: [{ id: '<invariant>', error: 'x' }] }],
   ])('has a verdict row for %s, worded as the code reports it', (_, over) => {
     const first = label(over);
-    expect(row(first.replace(/[()]/g, '\\$&')), first).toBeDefined();
+    expect(row(first), first).toBeDefined();
   });
 
   it.each(['no-observation', 'runtime-error'])(
@@ -149,6 +152,11 @@ describe('canary-cry SKILL.md: a confirmed run (P3)', () => {
       observations: new Map(),
     });
     expect(PROSE).toContain(`"format": "${doc.format}"`);
+  });
+
+  it('no longer lists the token-expiry false positive as a known limit (#1720)', () => {
+    expect(PROSE).not.toContain('correctly refuses the unauthenticated write');
+    expect(PROSE).toContain('passes on a clean refusal');
   });
 
   it('shows the standalone replay command', () => {

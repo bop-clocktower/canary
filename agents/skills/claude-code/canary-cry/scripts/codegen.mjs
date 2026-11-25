@@ -34,6 +34,7 @@ export function scenarioPayload(manifest, scenario) {
     file: fileStem(scenario.id),
     flow: scenario.flow,
     pattern: scenario.pattern,
+    mayRefuse: scenario.mayRefuse === true,
     intensity: scenario.intensity,
     step: scenario.step,
     seed: manifest.seed,

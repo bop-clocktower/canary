@@ -10,6 +10,16 @@
 // (docs/changes/canary-cry/plans/2026-11-25-canary-cry-p1-plan.md): a pattern
 // that corrupts state or leaks across accounts outranks one that only strains
 // session handling.
+//
+// `mayRefuse` says how a correct app is expected to answer the abuse (#1720).
+// false: it still completes the flow exactly once, so every invariant must
+// show exactly its declared `delta` / `equals`. true: a correct app may
+// instead REFUSE the flow, so an invariant also passes when nothing changed
+// -- but a partial or a double write is still a breach. Only token-expiry
+// sets it: it clears the session before the write, and a correct app rejects
+// an unauthenticated write. abandon-midflow re-enters and completes the flow,
+// and the races (multi-submit, stale-optimistic, duplicate-tab) and
+// shared-machine all finish it once, so a refusal there is a real finding.
 
 /** The highest intensity any pattern runs at (spec D5: the ceiling). */
 export const INTENSITY_CEILING = 3;
@@ -21,6 +31,7 @@ const pattern = (spec) =>
 export const PATTERNS = Object.freeze([
   pattern({
     id: 'multi-submit',
+    mayRefuse: false,
     core: true,
     weight: 5,
     anchor: 'write',
@@ -29,6 +40,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'abandon-midflow',
+    mayRefuse: false,
     core: true,
     weight: 4,
     anchor: 'write-not-last',
@@ -37,6 +49,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'stale-optimistic',
+    mayRefuse: false,
     core: false,
     weight: 4,
     anchor: 'await-response',
@@ -45,6 +58,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'duplicate-tab',
+    mayRefuse: false,
     core: false,
     weight: 3,
     anchor: 'write',
@@ -53,6 +67,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'token-expiry',
+    mayRefuse: true,
     core: false,
     weight: 3,
     anchor: 'first-write',
@@ -61,6 +76,7 @@ export const PATTERNS = Object.freeze([
   }),
   pattern({
     id: 'shared-machine',
+    mayRefuse: false,
     core: false,
     weight: 5,
     anchor: 'last-step',

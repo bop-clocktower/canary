@@ -94,7 +94,13 @@ function flowScenarios(flow, patterns, areas) {
   for (const pattern of patterns) {
     for (const step of ANCHORS[pattern.anchor](flow)) {
       const score = flow.risk * pattern.weight + boost;
-      out.push({ flow: flow.id, pattern: pattern.id, step: step.id, score });
+      out.push({
+        flow: flow.id,
+        pattern: pattern.id,
+        mayRefuse: pattern.mayRefuse,
+        step: step.id,
+        score,
+      });
     }
   }
   return out;
@@ -119,6 +125,7 @@ function atIntensity(chosen, n) {
       id: `${s.flow}:${s.pattern}:i${n}:s${s.step}`,
       flow: s.flow,
       pattern: s.pattern,
+      mayRefuse: s.mayRefuse,
       intensity: n,
       step: s.step,
       score: s.score,
