@@ -141,10 +141,10 @@ async function hold(s, page, spec) {
 /** Clear the target's session keys on `page`, as an expired token would. */
 async function expire(s, page) {
   for (const key of s.scenario.auth.sessionKeys) {
-    const [store, name] = [
-      key.slice(0, key.indexOf(':')),
-      key.slice(key.indexOf(':') + 1),
-    ];
+    // `cookie:session`, `localStorage:token`, `sessionStorage:token`.
+    const colon = key.indexOf(':');
+    const store = key.slice(0, colon);
+    const name = key.slice(colon + 1);
     if (store === 'cookie') await page.context().clearCookies({ name });
     else {
       await page.evaluate(([st, k]) => window[st].removeItem(k), [store, name]);
