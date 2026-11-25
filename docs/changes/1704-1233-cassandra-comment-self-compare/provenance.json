@@ -1,0 +1,61 @@
+{
+  "issues": [1704, 1233],
+  "route": "bug",
+  "stages": ["debugging"],
+  "members": {
+    "1704": {
+      "commit": "db7d7064",
+      "closingKeyword": "Refs",
+      "closingKeywordWhy": "Items 1-3 of #1704 (the three human-confirmed shapes) are fixed. Item 4 (a line-start `/` misread as a regex, new with #1705) was not in the confirmed scope, so #1704 stays open to track it.",
+      "reproducingTest": {
+        "files": [
+          "ts/test/vacuity-scanner.test.ts",
+          "ts/test/string-literals.test.ts"
+        ],
+        "names": [
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > counts a call on a private field initialiser as an invocation",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > counts a call on a leading-* expression continuation as an invocation",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > reads the middle line of a multi-line /* */ as comment",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > reads a /** */ block line that opens with * as comment",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > counts a call that follows the close of a multi-line block",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > in a Python body > counts a call inside an f-string replacement field",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > in a Python body > counts a call inside an rf-string replacement field",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > in a Python body > counts a call inside a triple-quoted F-string replacement field",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > in a Python body > does not count a {{ }} escape as a replacement field",
+          "VAC-002 — the comment model reads three code shapes correctly (#1704) > in a Python body > still blanks a plain string that names the target",
+          "blankStringContent > keeps python f-string fields as code: %s (8 cases)",
+          "blankStringContent > keeps fields of a triple-quoted f-string across lines"
+        ]
+      },
+      "redBeforeFix": "With src/core/string-literals.ts and src/core/vacuity-scanner.ts reverted to 07256a2c: 12 failed | 202 passed across the two test files. Green with the fix: 214/214. Probe on the 07256a2c dist reproduced all three shapes from the issue before any code change."
+    },
+    "1233": {
+      "commit": "49f6d5ea",
+      "closingKeyword": "Closes",
+      "reproducingTest": {
+        "files": ["ts/test/vacuity-scanner.test.ts"],
+        "names": [
+          "VAC-001 — identical calls are two evaluations, not one value (#1233) > does not flag %s (10 JS call/new/tagged-template cases)",
+          "VAC-001 — identical calls are two evaluations, not one value (#1233) > does not flag two identical awaited values",
+          "VAC-001 — identical calls are two evaluations, not one value (#1233) > still flags the same binding or literal %s",
+          "VAC-001 — identical calls are two evaluations, not one value (#1233) > does not flag the pytest form %s",
+          "VAC-001 — identical calls are two evaluations, not one value (#1233) > still flags the pytest form on the same member path"
+        ]
+      },
+      "redBeforeFix": "With src/core/vacuity-scanner.ts reverted to its parent: 14 failed | 187 passed in the file. Green with the fix: 201/201."
+    }
+  },
+  "assumptions": [
+    "#1704: only the three shapes the human confirmed (items 1-3) are in scope. Item 4 (a line-start `/` read as a regex, from #1705) and its nits are not fixed, so the PR uses `Refs #1704` and the issue stays open for item 4. The one nit that cost nothing, saying in the `jsCommentSpans` doc comment that the regex decision is made per line, is done.",
+    "#1704: the upward `@covers` walk (attachesToDeclaration) keeps accepting a JS line that starts with `*`. Walking up through a `/** ... */` block meets the `*` lines before the opener and cannot see block state. The comment model used by the verdict no longer has that rule.",
+    "#1704: the f-string fix is in the shared `blankStringContent`, not in the scanner, because the blanker is where the field is lost. The static linter and test inventory therefore also read Python f-string fields as code. A format spec after `:` is read as code too.",
+    "#1704: the #1691 CHANGELOG wording ('a `/* */` span') is accurate after this fix, because multi-line blocks are now handled, so it was not reworded.",
+    "#1704: an unterminated `/*` in a test body makes the rest of that body comment, which is how the language reads it.",
+    "#1233: the scanner has no advisory channel (`severity` is `critical | warning` only), so per the human decision a call-vs-call match is dropped, not downgraded.",
+    "#1233: 'evaluation' means a call (`f(`, `f?.(`, `f!(`), a tagged template, `new` or `await`, matched on the blanked sides so a `(` inside a string does not count. Computed member access (`o[0]`) and parenthesised grouping (`(a).b`) are still bindings, and literals (`[]`, `'x'`) still count as self-comparisons.",
+    "#1233: the existing #1076 and #1171 tests that pinned 'identical calls are VAC-001' were inverted to the new contract, which the human decision supersedes.",
+    "Measured on canary's own ts/test: VAC-002 176 and VAC-003 39 unchanged, skipped 590 unchanged, VAC-001 1 -> 0 (gen-data-emit-vitest 'is byte-identical across runs')."
+  ],
+  "fleet": "roadmap-fleet",
+  "run": "fc1125"
+}
