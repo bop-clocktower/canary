@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 // canary-cry -- pre-launch "try to break it" sweep of ordinary user flows.
 //
-// Phase 1 (#608 P1) ships the Tier-0 half: deterministic, no network, no agent.
+// P1 shipped the Tier-0 half (deterministic, no network, no agent); P2 adds
+// the live gate in front of anything that could reach a target.
 //
 //   validate  check .canary/cry/flows.json and targets.json; every error names
 //             the JSON path at fault
 //   matrix    the ranked scenario matrix: flows x the abuse-pattern catalog,
 //             cut to an --amplitude budget; same input, byte-identical --json
+//   run       --live <t>: gate the target, print the manifest + its sha
 //
-// `run` and `report` arrive in later phases and exit 2 "not yet supported"
-// until then, rather than doing something smaller under the same name.
-//
-// Exit codes: 0 ok (advisory), 2 usage or schema error, 3 --strict and the
-// matrix abstained (zero scenarios), 1 an unexpected exception (issue 1716
-// gives it its own code). 1 for corruption and 4 (ADR 0046: refused by a
-// safety gate) belong to `run`.
+// `report` exits 2 "not yet supported" until its phase, rather than doing
+// something smaller under the same name. Exit codes: 0 ok (advisory), 2 usage
+// or input error, 3 --strict and the matrix abstained, 4 refused by a safety
+// gate (ADR 0046), 1 an unexpected exception (issue 1716).
 //
 // Invoked via `canary skills run canary-cry -- <command> [options]`.
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 import {
   createParser,
@@ -27,46 +27,27 @@ import {
 } from '../../../lib/parse-args.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
 import { validateCriticalAreas } from '../../../lib/contracts/critical-areas.mjs';
+import { gateLive } from './gate.mjs';
+import { manifestFileText, planRun } from './manifest.mjs';
+import { AMPLITUDES, buildMatrix, matrixJson } from './matrix.mjs';
+import {
+  renderManifest,
+  renderMatrix,
+  renderRunAbstained,
+  USAGE,
+} from './render.mjs';
 import { readJsonFile } from './schema-core.mjs';
 import { loadFlows, loadTargets } from './schema.mjs';
-import { AMPLITUDES, buildMatrix, matrixJson } from './matrix.mjs';
 
 const PROG = 'canary-cry';
 const EXIT_ABSTAINED = 3;
-
-// #508 convention line, written as escapes so this source stays ASCII (the
-// same wording as ts/src/core/gate-result.ts and the other skill CLIs).
-const ABSTAINED_LINE =
-  '\u{26A0} Abstained \u{2014} verified zero items; this is not a pass.';
+const EXIT_REFUSED = 4;
+const LATER_PHASE = '(a later phase of #608)';
+/** The amplitudes `run` can execute today; `matrix` knows all three. */
+const RUNNABLE = new Set(['whisper']);
 
 const DEFAULT_AREAS = '.canary/critical-areas.json';
-const LATER = new Set(['run', 'report']);
-
-const USAGE =
-  'usage: canary-cry [-h] {validate,matrix} [--flows PATH] [--targets PATH]\n' +
-  '                  [--target NAME] [--critical-areas PATH]\n' +
-  '                  [--amplitude {whisper,shout,scream}] [--seed N]\n' +
-  '                  [--json] [--strict]\n' +
-  '\n' +
-  'Pre-launch "try to break it" sweep of ordinary user flows. This phase ships\n' +
-  'the deterministic scenario matrix: no network, no agent.\n' +
-  '\n' +
-  'commands:\n' +
-  '  validate              check flows.json and targets.json\n' +
-  '  matrix                rank flows x abuse patterns, cut to a budget\n' +
-  '\n' +
-  'options:\n' +
-  '  -h, --help            show this help message and exit\n' +
-  '  --flows PATH          flows file (default: .canary/cry/flows.json)\n' +
-  '  --targets PATH        targets file (default: .canary/cry/targets.json)\n' +
-  '  --target NAME         matrix: also schedule the target-scoped patterns\n' +
-  '  --critical-areas PATH matrix: rank with critical areas (default:\n' +
-  '                        .canary/critical-areas.json, when present)\n' +
-  '  --amplitude A         matrix budget: whisper (default), shout, scream\n' +
-  '  --seed N              recorded for {{unique.*}} test data; never selects\n' +
-  '                        scenarios (default: 0)\n' +
-  '  --json                matrix: print the canonical matrix.json document\n' +
-  '  --strict              matrix: exit 3 when the matrix abstained';
+const LATER = new Set(['report']);
 
 export const CLI_SPEC = {
   prog: PROG,
@@ -78,6 +59,8 @@ export const CLI_SPEC = {
     '--critical-areas': { key: 'criticalAreas' },
     '--amplitude': { key: 'amplitude' },
     '--seed': { key: 'seed', type: 'int' },
+    '--live': { key: 'live' },
+    '--confirm': { key: 'confirm' },
   },
   defaults: {
     flows: '.canary/cry/flows.json',
@@ -90,7 +73,11 @@ export const CLI_SPEC = {
 
 const parseArgs = createParser(CLI_SPEC);
 
-const COMMANDS = { validate: validateCommand, matrix: matrixCommand };
+const COMMANDS = {
+  validate: validateCommand,
+  matrix: matrixCommand,
+  run: runCommand,
+};
 
 /** A usage error for argv, or null. */
 function usageError(error, positionals) {
@@ -100,10 +87,10 @@ function usageError(error, positionals) {
     return 'the following arguments are required: command';
   }
   if (LATER.has(command)) {
-    return `'${command}' is not yet supported (a later phase of #608)`;
+    return `'${command}' is not yet supported ${LATER_PHASE}`;
   }
   if (!Object.hasOwn(COMMANDS, command)) {
-    return `argument command: invalid choice: '${command}' (choose from 'validate', 'matrix')`;
+    return `argument command: invalid choice: '${command}' (choose from 'validate', 'matrix', 'run')`;
   }
   if (extra.length) return `unrecognized arguments: ${extra.join(' ')}`;
   return null;
@@ -167,51 +154,6 @@ function loadAreas(explicit) {
   return { value: read.doc.areas, errors: [] };
 }
 
-/** One line per distinct reason, in first-seen (catalog) order. */
-function unscheduledLines(unscheduled) {
-  const byReason = new Map();
-  for (const u of unscheduled) {
-    byReason.set(u.reason, [...(byReason.get(u.reason) ?? []), u.pattern]);
-  }
-  return [...byReason].map(
-    ([reason, names]) =>
-      `target-scoped patterns not scheduled (${reason}): ${names.join(', ')}`,
-  );
-}
-
-/** Why the matrix is empty: no flows at all, or no pattern fits a step. */
-function abstainedLine(m, declaredFlows) {
-  const why =
-    declaredFlows === 0
-      ? 'no flows are declared'
-      : `no scheduled pattern (${m.patterns.join(', ')}) ` +
-        'applies to any declared step';
-  return `ABSTAINED: zero scenarios -- ${why}.`;
-}
-
-function renderMatrix(m, declaredFlows) {
-  const where = m.target === null ? '' : `, target ${m.target}`;
-  const lines = [
-    `${PROG} matrix -- amplitude ${m.amplitude}, seed ${m.seed}, ` +
-      `ranking: ${m.ranking}${where}`,
-  ];
-  if (m.status === 'abstained') {
-    lines.push(abstainedLine(m, declaredFlows));
-    lines.push(ABSTAINED_LINE);
-  } else {
-    const rounds = m.intensities.map((n) => `i${n}`).join(', ');
-    lines.push(
-      `${m.scenarios.length} scenario(s) over ${m.flows.length} flow(s); ` +
-        `patterns: ${m.patterns.join(', ')}; intensity: ${rounds}`,
-    );
-    for (const s of m.scenarios) {
-      lines.push(`  ${String(s.score).padStart(3)}  ${s.id}`);
-    }
-  }
-  lines.push(...unscheduledLines(m.unscheduled));
-  return lines.join('\n');
-}
-
 function amplitudeError(amplitude) {
   if (Object.hasOwn(AMPLITUDES, amplitude)) return null;
   const choices = Object.keys(AMPLITUDES).map((a) => `'${a}'`);
@@ -244,8 +186,94 @@ function matrixCommand(opts) {
   return matrix.status === 'abstained' && opts.strict ? EXIT_ABSTAINED : 0;
 }
 
-/** @param {string[]} argv */
-export function main(argv = []) {
+// --- run --live: the two-step gate of ADR 0046 -------------------------------
+// Order is load-bearing: inputs (exit 2); the target gate (exit 4) before any
+// credential is read; the account env vars (exit 2); then the run dir. With
+// --confirm the manifest is REBUILT from the files, never read back from the
+// run dir. P2 has no executor, so even a matching sha sends nothing: it exits
+// 2 "not yet supported", the P1 convention for a later phase's command, and
+// exit 4 stays reserved for a safety refusal (ADR 0046: it means nothing else).
+
+function refused(reason) {
+  console.error(`${PROG}: refused: ${reason}`);
+  return EXIT_REFUSED;
+}
+
+/** `20261125T143333Z`: sortable, filesystem-safe, UTC. */
+const stamp = (date) =>
+  date
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d+Z$/, 'Z');
+
+function runArgError(opts) {
+  if (opts.live === null) return 'run: --live TARGET is required';
+  if (RUNNABLE.has(opts.amplitude)) return null;
+  return `run --amplitude ${opts.amplitude} is not yet supported ${LATER_PHASE}; matrix accepts it`;
+}
+
+/** The run dir sits beside the flows file: .canary/cry/runs/ by default. */
+function writeRunDir(flowsFile, plan, now) {
+  const id = `${stamp(now())}-${plan.sha.slice(0, 8)}`;
+  const dir = path.join(path.dirname(flowsFile), 'runs', id);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'manifest.json');
+  fs.writeFileSync(file, manifestFileText(plan.manifest));
+  return file;
+}
+
+function confirmRun(opts, sha) {
+  if (opts.confirm !== sha) {
+    return refused(
+      `manifest-sha mismatch: confirmed ${opts.confirm}, rebuilt ${sha}. ` +
+        'Re-run without --confirm and read the new manifest.',
+    );
+  }
+  return fail([
+    'manifest-sha confirmed, but live execution is not yet supported ' +
+      `${LATER_PHASE}; nothing was sent to '${opts.live}'`,
+  ]);
+}
+
+function runCommand(opts, { env, now }) {
+  const bad = runArgError(opts);
+  if (bad !== null) return fail([bad]);
+  const flows = loadFlows(opts.flows);
+  if (flows.errors.length) return fail(flows.errors);
+  const targets = loadTargets(opts.targets, flowIds(flows.doc));
+  if (targets.errors.length) return fail(targets.errors);
+  const gate = gateLive(targets.doc, opts.live, env);
+  if (gate.refusal !== null) return refused(gate.refusal);
+  if (gate.errors.length) return fail(gate.errors);
+  const { amplitude, seed } = opts;
+  const plan = planRun({
+    flowsDoc: flows.doc,
+    target: gate.target,
+    amplitude,
+    seed,
+  });
+  if (plan.manifest === null) {
+    const declared = flows.doc.flows.length;
+    console.log(renderRunAbstained(plan.matrix, opts.live, declared));
+    return opts.strict ? EXIT_ABSTAINED : 0;
+  }
+  if (opts.confirm !== null) return confirmRun(opts, plan.sha);
+  console.log(
+    renderManifest(plan.manifest, plan.sha, writeRunDir(opts.flows, plan, now)),
+  );
+  return 0;
+}
+
+/**
+ * @param {string[]} argv
+ * @param {{env?: Record<string, string | undefined>, now?: () => Date}} [deps]
+ *   `run` reads account env vars and stamps its run dir; tests inject both.
+ */
+export function main(argv = [], deps = {}) {
+  const ctx = {
+    env: deps.env ?? process.env,
+    now: deps.now ?? (() => new Date()),
+  };
   const { opts, positionals, help, error } = parseArgs(argv);
   if (help) {
     console.log(USAGE);
@@ -257,7 +285,7 @@ export function main(argv = []) {
     return EXIT_USAGE;
   }
   try {
-    return COMMANDS[positionals[0]](opts);
+    return COMMANDS[positionals[0]](opts, ctx);
   } catch (exc) {
     console.error(`${PROG}: ${exc.message}`);
     return 1;

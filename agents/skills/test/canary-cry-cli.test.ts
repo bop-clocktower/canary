@@ -115,7 +115,7 @@ function inputs(): { dir: string; flows: string; targets: string } {
 describe('command dispatch', () => {
   it.each<[string[], RegExp]>([
     [[], /the following arguments are required: command/],
-    [['run'], /'run' is not yet supported \(a later phase of #608\)/],
+    [['run'], /run: --live TARGET is required/],
     [['report'], /'report' is not yet supported/],
     [['frobnicate'], /invalid choice: 'frobnicate'/],
     [['validate', 'extra'], /unrecognized arguments: extra/],
