@@ -1806,6 +1806,13 @@ Run once after cloning to activate the shared pre-commit hook:
 git config core.hooksPath .githooks
 ```
 
+Use the relative `.githooks`, not an absolute path, so each worktree runs its
+own branch's hook. The session siren (`hooks/canary-session-siren.sh`, check 6)
+reports a checkout where this step was skipped or set differently (#1240). It
+also reports a `.git/hooks/pre-commit` that differs from the tracked one,
+because that stale copy is what runs whenever `core.hooksPath` is unset. The
+siren only reports. It never sets the config itself.
+
 The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 
 - Runs `markdownlint` on staged `.md` files — catches MD040 and other violations

@@ -429,4 +429,43 @@ else
   fi
 fi
 
+# 6. This session's checkout commits through the tracked pre-commit (#1240).
+#    AGENTS.md asks for a one-time `git config core.hooksPath .githooks`, and
+#    nothing checked it. A clone that skipped it runs whatever copy sits in
+#    .git/hooks/pre-commit, or no hook at all, and every worktree inherits that
+#    through the common git dir. This hook is machine-global, so the repo is
+#    the session's: CLAUDE_PROJECT_DIR, else the working directory.
+#
+#    Report only. The siren writes no git config: a hook that edits config at
+#    session start would be a silent install step, the thing #1240 indicts.
+#    A check that cannot run says so; it never reads as a pass.
+HOOK_REPO="${CLAUDE_PROJECT_DIR:-$PWD}"
+HOOK_FIX="git config core.hooksPath .githooks"
+if ! HOOK_TOP=$(git -C "$HOOK_REPO" rev-parse --show-toplevel 2>/dev/null) || [ -z "$HOOK_TOP" ]; then
+  FINDINGS+=("cannot verify the pre-commit hook setup: $HOOK_REPO is not a git checkout — whether commits run the tracked .githooks/pre-commit is unverifiable")
+elif ! git -C "$HOOK_TOP" ls-files --error-unmatch .githooks/pre-commit >/dev/null 2>&1; then
+  FINDINGS+=("cannot verify the pre-commit hook setup: $HOOK_TOP has no tracked .githooks/pre-commit — whether commits run the shared hook is unverifiable")
+else
+  HOOKS_PATH=$(git -C "$HOOK_TOP" config --get core.hooksPath 2>/dev/null)
+  if [ -z "$HOOKS_PATH" ]; then
+    FINDINGS+=("core.hooksPath is unset in $HOOK_TOP, so commits run .git/hooks/pre-commit (a stale copy, or nothing) instead of the tracked .githooks/pre-commit — in that checkout, run: $HOOK_FIX")
+  elif [ "${HOOKS_PATH%/}" != ".githooks" ]; then
+    FINDINGS+=("core.hooksPath is $(shq "$HOOKS_PATH"), not .githooks, in $HOOK_TOP, so commits may not run the tracked .githooks/pre-commit — in that checkout, run: $HOOK_FIX")
+  fi
+  # --git-common-dir prints a path relative to the -C directory unless it is
+  # elsewhere; resolve it here rather than lean on --path-format (git 2.31+).
+  HOOK_COMMON=$(git -C "$HOOK_TOP" rev-parse --git-common-dir 2>/dev/null)
+  case "$HOOK_COMMON" in
+  /*) ;;
+  *) HOOK_COMMON="$HOOK_TOP/$HOOK_COMMON" ;;
+  esac
+  OLD_HOOK="$HOOK_COMMON/hooks/pre-commit"
+  # Only a copy that differs is a finding; none at all, or an identical one, is
+  # not. It runs whenever core.hooksPath is unset, so the path fix alone leaves
+  # it armed: the remedy also moves it aside.
+  if [ -e "$OLD_HOOK" ] && ! cmp -s "$OLD_HOOK" "$HOOK_TOP/.githooks/pre-commit"; then
+    FINDINGS+=("$OLD_HOOK differs from the tracked .githooks/pre-commit — it is what commits run whenever core.hooksPath is unset; in $HOOK_TOP, run: $HOOK_FIX && mv $(shq "$OLD_HOOK") $(shq "$OLD_HOOK.stale")")
+  fi
+fi
+
 emit_and_exit

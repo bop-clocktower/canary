@@ -1,0 +1,35 @@
+{
+  "issues": [1240],
+  "route": "bug",
+  "stages": ["debugging"],
+  "fleet": "roadmap-fleet",
+  "run": "fc1125",
+  "reproducingTest": "ts/test/install-siren.test.ts",
+  "reproducingTests": [
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > reports an unset core.hooksPath and names the fix",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > reports a core.hooksPath that is not .githooks",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > reports a stale .git/hooks/pre-commit from a worktree, via the common git dir",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > falls back to the working directory when CLAUDE_PROJECT_DIR is unset",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > says it cannot verify outside a git checkout, never stays quiet",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > says it cannot verify a checkout with no tracked .githooks/pre-commit"
+  ],
+  "guardTests": [
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > is silent about hooks when core.hooksPath is .githooks and no stale copy exists",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > is silent about an old-style copy identical to the tracked hook",
+    "ts/test/install-siren.test.ts::canary-session-siren.sh pre-commit hook setup — executed (#1240) > auto-sets nothing: git config is unchanged after a run"
+  ],
+  "redAtBase": "Tests 6 failed | 80 passed of 86 with the suite run against the base hook (07256a2c); all 86 pass with the change. The 3 guard tests pass at base by design: they pin the no-false-positive and no-write behavior.",
+  "closingKeyword": "Closes",
+  "closingKeywordReason": "The session siren now reports an unset or non-.githooks core.hooksPath and a drifted .git/hooks/pre-commit, naming the fix, and says 'cannot verify' when the check cannot run; covered red-first.",
+  "assumptions": [
+    "Human-confirmed (Q5a): report only, never auto-set; strict compare against `.githooks`; each finding names `git config core.hooksPath .githooks`; a check that cannot run says it cannot verify.",
+    "The siren is machine-global (~/.claude/hooks), so the checkout under test is the session's: CLAUDE_PROJECT_DIR, falling back to the working directory.",
+    "Strict compare accepts `.githooks` and `.githooks/` only. An absolute path to a .githooks dir (the maintainer's clone has one) is reported, because in a worktree it runs the main checkout's copy, not the branch's. The finding's fix clears it.",
+    "Default taken: the stale-copy finding also tells you to move the copy aside (mv to .stale). With core.hooksPath already .githooks, `git config` alone would never clear it, and this file treats a remedy that cannot clear its finding as a bug.",
+    "Default taken: a missing .git/hooks/pre-commit, or one identical to the tracked hook, is not a finding.",
+    "Global and system git config are honored, as git honors them; tests isolate them with GIT_CONFIG_GLOBAL and GIT_CONFIG_NOSYSTEM.",
+    "Every non-canary session where this hook is wired gets the 'no tracked .githooks/pre-commit — cannot verify' finding, following the human decision that a check that cannot run never stays quiet. Flagged for follow-up, not changed here.",
+    "The hook stays bash 3.2 compatible (verified with /bin/bash 3.2.57) and avoids `rev-parse --path-format` (git 2.31+)."
+  ],
+  "base": "07256a2c"
+}

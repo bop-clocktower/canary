@@ -14,6 +14,20 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **The session siren reports a checkout that skips the tracked pre-commit hook
+  (#1240).** New check 6 reads the session's checkout (`CLAUDE_PROJECT_DIR`,
+  else the working directory). It reports a `core.hooksPath` that is unset or
+  not `.githooks`. It also reports a `.git/hooks/pre-commit` that differs from
+  the tracked `.githooks/pre-commit`, found through the common git dir so
+  worktrees are covered. Each finding names
+  `git config core.hooksPath .githooks`. The siren sets nothing itself. A
+  directory that is not a git checkout, or has no tracked
+  `.githooks/pre-commit`, gets a "cannot verify" finding rather than silence. A
+  clone with an absolute `core.hooksPath` now gets one finding until it switches
+  to the relative `.githooks`.
+
 ## [9.8.0] - 2026-11-25
 
 ### Added
