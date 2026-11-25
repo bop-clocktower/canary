@@ -792,6 +792,18 @@ describe('canary-session-siren.sh skew check — executed, not read', () => {
     );
   });
 
+  it('says an unrankable installed version is unverifiable, never current (#1695)', () => {
+    // version_lt answers "not older" for a version it cannot parse, so 4b
+    // read `dev` or `v9.5.0` against a newer release as current.
+    cutRelease('9.6.0');
+    for (const version of ['dev', 'v9.5.0', '9.5']) {
+      writeInstalled({ version, gitCommitSha: mktHead });
+      expect(findings('9.6.0')).toContain(
+        `installed canary plugin version ${version} is not X.Y.Z — whether it is older than the latest release v9.6.0 is unverifiable`,
+      );
+    }
+  });
+
   it('is silent on skew and staleness when the install is the latest release', () => {
     writeInstalled({ version: '9.5.0', gitCommitSha: mktHead });
     const msg = findings('9.5.0');

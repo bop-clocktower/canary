@@ -120,12 +120,14 @@ clone_refresh() {
   fi
 }
 
+# 0 when $1 is X.Y.Z or X.Y.Z-suffix, the only shapes version_lt can rank.
+is_semver() { printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-.*)?$'; }
+
 # 0 when version $1 is older than $2 (X.Y.Z, numeric per field); 1 otherwise,
-# including when either cannot be read, which the caller reports separately.
+# including when either cannot be read, so the caller checks is_semver first.
 version_lt() {
   local a1 a2 a3 b1 b2 b3
-  printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+' || return 1
-  printf '%s' "$2" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+' || return 1
+  is_semver "$1" && is_semver "$2" || return 1
   IFS=. read -r a1 a2 a3 <<<"${1%%-*}"
   IFS=. read -r b1 b2 b3 <<<"${2%%-*}"
   [ "$a1" -lt "$b1" ] && return 0
@@ -383,6 +385,9 @@ fi
 if [ "$INST_VER" != "unknown" ] && [ "$ORIGIN_TIP" != "unknown" ]; then
   if [ "$RELEASE_VER" = "unknown" ]; then
     FINDINGS+=("the latest tag (@${ORIGIN_TIP:0:7}) sits on no vX.Y.Z release tag — whether installed canary $INST_VER is current is unverifiable")
+  elif ! is_semver "$INST_VER"; then
+    # version_lt reads an unparseable version as "not older"; say so instead.
+    FINDINGS+=("installed canary plugin version $INST_VER is not X.Y.Z — whether it is older than the latest release v$RELEASE_VER is unverifiable")
   elif version_lt "$INST_VER" "$RELEASE_VER"; then
     FINDINGS+=("installed canary plugin $INST_VER is older than the latest release v$RELEASE_VER — once the clone has the release: claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower --scope user")
   fi
