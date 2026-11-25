@@ -212,7 +212,7 @@ describe('blank lines around a healed line', () => {
   });
 
   it("counts a later rule's line against the original file, not the rewritten one", () => {
-    // HEAL-002 runs before HEAL-003; if it shifts lines, the click's line drifts.
+    // If the HEAL-002 rewrite changed the line count, the click's reported line would drift.
     const source =
       "test('x', async ({ page }) => {\n  await page.waitForTimeout(100);\n  page.click('#b');\n});\n";
     const result = healer.heal(tsFile(source));
