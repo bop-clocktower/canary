@@ -294,6 +294,47 @@ used for ranking; the values above are the P1 values in `patterns.mjs`, and
   reports `ABSTAINED: no @playwright/test in target` (the matrix is still
   emitted).
 - **The repro is the spec + runtime + seed**; each spec re-runs standalone.
+- **As shipped in P3:**
+  - A matching `--confirm` now executes; P2's exit 2 placeholder is gone. The
+    executor (`scripts/execute.mjs`) is loaded by one lazy dynamic import from
+    `cli.mjs`, so the static closure of `validate`, `matrix` and the pre-confirm
+    gate stays offline (SC6). It works from the confirmed manifest alone, never
+    from the input files.
+  - The runtime is `scripts/runtime/` (six modules, `cry-runtime.mjs` the
+    entry). Codegen copies the directory and `scripts/verdict.mjs` into the run
+    dir in the same relative layout, so each spec's imports resolve in place.
+    Each scenario writes `observations/<scenario>.json`; the verdict is judged
+    inside the browser run, so a standalone re-run reaches the same fingerprint.
+  - The target's Playwright CLI is resolved from the run dir
+    (`@playwright/test/cli`) and launched with the running Node: the
+    `npx playwright test -c` of this section, minus any chance of npx fetching a
+    package the project does not have.
+  - Probes run in **observer** contexts signed in on their own (as A; as A and B
+    for `shared-machine`, whose B-side invariant ids read `<id>@B`), so a
+    pattern that clears or swaps the session cannot blind its own comparison.
+  - When the target declares `auth`, every scenario signs in as A first, except
+    one whose flow is the sign-in flow itself.
+  - `duplicate-tab` completes the flow in the first tab only: the race is the
+    abuse, and one completion is what the delta describes.
+  - A cross-account leak compares account A's values of 3 or more characters
+    that B does not share, against B's page text and form field values. Every
+    string the runtime records is redacted against the account values.
+  - `{{unique.email}}` is `cry.<hash>@cry.invalid`; any other kind is
+    `cry-<kind>-<hash>`, the hash derived from seed, scenario id and kind.
+  - All six patterns are implemented at intensity 1. `whisper` schedules only
+    the core two, and `run` executes only `whisper` until P4, so the other four
+    are reachable from `run` only once P4 lifts the `shout`/`scream` refusal.
+    The cry-e2e suite drives their intensity-1 round through the same executor.
+    An intensity above 1 is refused (exit 2, and by the runtime itself), never
+    run as intensity 1.
+  - Verdict precedence, first match wins: `flow-broken`, `corrupted`,
+    `probe-failed`, `symptom`, `no-probes`, `clean`. A symptom can stand on a
+    flow with no invariants. A step that fails after the abuse point is a
+    `step-failed` UI signal. A scheduled scenario with no observation abstains
+    as `no-observation`, and one whose runtime threw as `runtime-error`.
+  - Known limit: `token-expiry` at intensity 1 reports `corrupted` whenever the
+    app correctly refuses the unauthenticated write, because `delta` means
+    exactly one completion. Settling that is left to a later decision.
 
 ### Verdicts and convergence (`scripts/verdict.mjs`)
 

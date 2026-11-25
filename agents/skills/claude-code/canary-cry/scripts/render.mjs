@@ -12,15 +12,16 @@ export const USAGE =
   '                  [--amplitude {whisper,shout,scream}] [--seed N]\n' +
   '                  [--live NAME] [--confirm SHA] [--json] [--strict]\n' +
   '\n' +
-  'Pre-launch "try to break it" sweep of ordinary user flows. This phase ships\n' +
-  'the deterministic scenario matrix and the live gate; nothing is sent to a\n' +
-  'target yet.\n' +
+  'Pre-launch "try to break it" sweep of ordinary user flows. Nothing reaches\n' +
+  'a target until run --confirm carries the sha of the manifest you read.\n' +
   '\n' +
   'commands:\n' +
   '  validate              check flows.json and targets.json\n' +
   '  matrix                rank flows x abuse patterns, cut to a budget\n' +
   '  run                   --live NAME: gate the target, print the manifest\n' +
-  '                        and its manifest-sha (no target request)\n' +
+  '                        and its manifest-sha (no target request);\n' +
+  '                        with a matching --confirm, run the scenarios\n' +
+  "                        on the target project's Playwright\n" +
   '\n' +
   'options:\n' +
   '  -h, --help            show this help message and exit\n' +
@@ -37,8 +38,10 @@ export const USAGE =
   '                        prodHosts match; there is no override)\n' +
   '  --confirm SHA         run: the manifest-sha you read; exit 4 unless it\n' +
   "                        equals the freshly rebuilt manifest's sha\n" +
+  '                        (a match executes it)\n' +
   '  --json                matrix: print the canonical matrix.json document\n' +
-  '  --strict              matrix, run: exit 3 when the matrix abstained';
+  '  --strict              matrix, run: exit 3 when abstained; run: exit 1\n' +
+  '                        when a scenario is corrupted';
 
 // #508 convention line, written as escapes so this source stays ASCII (the
 // same wording as ts/src/core/gate-result.ts and the other skill CLIs).

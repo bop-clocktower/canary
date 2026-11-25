@@ -6,15 +6,15 @@ description:
   away a bug. It abuses flows the way real people do (an impatient double-submit
   on a slow network, abandoning a multi-form flow after it wrote partial rows, a
   second user on a shared machine, a duplicated tab, a token that expires
-  mid-flow) and judges by state corruption, not by rendering. This release ships
-  the deterministic half. `validate` checks the declared .canary/cry/flows.json
-  and targets.json and names the JSON path of every error; `matrix` emits the
-  ranked scenario matrix (flows x abuse patterns, cut to a whisper, shout or
-  scream budget) with no network and no agent; `run --live` gates a target
-  (non-prod only, no override) and prints the hash-bound manifest a live run
-  must be confirmed against. Execution against the target arrives in a later
-  phase. NOT input fuzzing and NOT targeted bug pursuit (that is
-  canary-huntress).
+  mid-flow) and judges by state corruption, not by rendering. `validate` checks
+  the declared .canary/cry/flows.json and targets.json and names the JSON path
+  of every error; `matrix` emits the ranked scenario matrix (flows x abuse
+  patterns, cut to a whisper, shout or scream budget) with no network and no
+  agent; `run --live` gates a target (non-prod only, no override) and prints the
+  hash-bound manifest, and `run --live --confirm <sha>` generates one Playwright
+  spec per scenario, runs it on the target project's own Playwright and reports
+  each scenario corrupted, symptom, clean or abstain with how it knows. NOT
+  input fuzzing and NOT targeted bug pursuit (that is canary-huntress).
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -26,16 +26,14 @@ clicks. canary-cry sweeps **ordinary user flows** with the abuse real people
 commit, and its success criterion is **state corruption**: the platform left in
 a bad state, not a pixel out of place.
 
-This phase ships the **Tier-0 half** by the definition in
+`validate` and `matrix` are the **Tier-0 half** by the definition in
 [ADR 0015](../../../../docs/knowledge/decisions/0015-skill-capability-vocabulary.md):
-`validate` and `matrix` are deterministic, need no network and call no agent. It
-also ships the first half of the live tier: `run --live` applies the
+deterministic, no network, no agent. `run` is the live tier: it applies the
 confirmed-manifest gate of
-[ADR 0046](../../../../docs/knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md)
-and prints the manifest a run must be confirmed against. The executor that
-actually drives the target, and `report`, arrive in later phases; until then
-nothing is ever sent, and `report` exits 2 with `not yet supported` rather than
-doing something smaller under the same name. The full design is
+[ADR 0046](../../../../docs/knowledge/decisions/0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md),
+and only a confirmed sha loads the executor that drives the target. `report`
+arrives in a later phase and exits 2 with `not yet supported` until then, rather
+than doing something smaller under the same name. The full design is
 [the canary-cry spec](../../../../docs/changes/canary-cry/proposal.md).
 
 This limit holds for every live run and is printed in every manifest:
@@ -200,12 +198,97 @@ server-side limit line. `manifest-sha` is the sha256 of its sorted-key JSON.
 With `--confirm SHA`, the manifest is **rebuilt from the files** (never read
 back from the run dir) and its sha compared. A mismatch is exit 4: something
 that would run has changed since the manifest was read, so re-run without
-`--confirm` and read the new one. In this phase a matching sha still sends
-nothing: there is no executor yet, so it exits 2 `not yet supported` and says
-nothing was sent.
+`--confirm` and read the new one.
 
 `run` executes `--amplitude whisper` only for now; `shout` and `scream` exit 2
 `not yet supported` (the `matrix` command accepts all three).
+
+### A confirmed run
+
+A matching sha executes exactly the confirmed manifest, never the input files
+again. It needs `@playwright/test` and its browsers installed in the project you
+run it from: the generated specs run on **that project's** Playwright, and
+canary-cry adds no dependency of its own. Each step stops loudly when it cannot
+go on:
+
+1. `matrix.json` is written to the run dir, whatever happens next.
+2. `@playwright/test` must resolve from the run dir, else
+   `ABSTAINED: no @playwright/test in target` and nothing is sent.
+3. One preflight `GET baseURL`. A connection error or a 5xx is
+   `ABSTAINED: target unreachable` with the cause, and no scenario runs.
+4. The run dir gets `playwright.config.mjs` (one worker, no retries, the JSON
+   reporter, no trace, screenshot or video), one `specs/<scenario>.spec.mjs` per
+   scenario, and a copy of the runtime. Then the target's `playwright test`
+   runs.
+5. No `results.json` afterwards is `ABSTAINED: playwright crashed`, with the
+   last 20 lines of its stderr.
+6. `findings.json` and the verdict text, ranked corrupted, symptom, abstain,
+   clean, then by score.
+
+Per scenario, the runtime:
+
+- signs in as account A when the target declares `auth` (not when the flow is
+  the sign-in flow itself);
+- takes the **before** probes in separate observer contexts, signed in on their
+  own, so a pattern that clears or swaps the session cannot blind its own
+  comparison;
+- runs the flow with the pattern injected, in a context whose every request to a
+  host outside the target's `hosts` (and its `baseURL` host) is **aborted and
+  recorded**;
+- waits for in-flight requests to settle, reads the declared symptom selectors,
+  and takes the **after** probes;
+- judges the verdict and writes `observations/<scenario>.json`. A corrupted
+  scenario also fails its Playwright test, so the spec is a regression test as
+  well as the repro.
+
+Account values are read from their env vars inside the browser run only. Every
+string it records is redacted against them, and none is ever written into a
+spec, the config or any result.
+
+**Replay** a scenario from its run dir:
+
+```bash
+npx playwright test -c playwright.config.mjs specs/<scenario>.spec.mjs
+```
+
+The spec, the runtime copy and the seed are the whole repro. The same scenario
+types the same `{{unique.*}}` data on every run.
+
+### Verdicts
+
+| Verdict                             | When                                                                        |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `corrupted` (state-verified)        | at least one invariant's `expect` breached                                  |
+| `abstain: probe-failed@<invariant>` | a probe errored (HTTP non-2xx or timeout, shell non-zero or 30 s, no path)  |
+| `symptom` (observed)                | no breach, at least one UI signal                                           |
+| `clean` (state-verified)            | at least one invariant checked, no breach, no signal                        |
+| `abstain: no-probes`                | the flow declares no invariant and showed no signal                         |
+| `abstain: flow-broken@<step>`       | a step **before** the abuse point failed: a stale flows file, not a finding |
+| `abstain: no-observation`           | the runtime reported nothing for a scheduled scenario                       |
+| `abstain: runtime-error`            | the runtime itself failed on the scenario                                   |
+
+The first match wins, in the order `flow-broken`, `corrupted`, `probe-failed`,
+`symptom`, `no-probes`, `clean`. A probe that errored never yields `clean`. UI
+signals are an uncaught page error, a console error, a response of 500 or more
+from a target host, a declared symptom selector left visible, a step that failed
+**after** the abuse point (`step-failed`), and a `cross-account-leak`. The
+**fingerprint** is `<flow>:<pattern>:<invariant id or signal kind>`.
+
+A run in which every scenario abstained reports
+`ABSTAINED: every scenario abstained (<reason> <count>, ...)`. That is not a
+pass: `--strict` exits 3. Under `--strict` one `corrupted` exits 1, and a
+`symptom` never fails it.
+
+### `findings.json`
+
+`"format": "canary.cry-findings/1"`: the run (`id`, `target`, `environment`,
+`baseURL`, `amplitude`, `seed`, `manifestSha`), `status` and `reason`, `counts`
+per verdict, and one entry per scheduled scenario with its verdict, fidelity,
+reason, fingerprints, each invariant's `before` / `after` values, its signals,
+the egress hosts it blocked, and `repro` paths (the spec and the observation).
+The run-wide `fingerprints` and `blockedEgress` lists are unique and sorted.
+Playwright's own `results.json` stays beside it, readable unchanged by
+canary-test-reporter.
 
 ## Abuse patterns
 
@@ -220,25 +303,36 @@ nothing was sent.
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                                                                                                                                     |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Success. Advisory by default: an abstained matrix still exits 0 without `--strict`.                                                                                                                                                                         |
-| `2`  | Usage or input error: an unknown flag or command, `report` or a not-yet-runnable amplitude (not yet supported), a file not found or not valid JSON, a schema error, an unset or non-object account env var, or a confirmed `run` this phase cannot execute. |
-| `3`  | `--strict` and the matrix abstained (zero scenarios).                                                                                                                                                                                                       |
-| `4`  | Refused by a safety gate (ADR 0046): an unlisted target, a disallowed environment, a `prodHosts` match, or a `manifest-sha` mismatch. Exit 4 means nothing else.                                                                                            |
-
-Exit 1 today means only an unexpected exception (a crash, not a finding). Exit 1
-for `--strict` and a state-verified corruption arrives with the executor; giving
-the crash its own code is
-[issue 1716](https://github.com/bop-clocktower/canary/issues/1716).
+| Code | Meaning                                                                                                                                                                                                                       |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success. Advisory by default: an abstained matrix or run, and any verdict, still exit 0 without `--strict`. Under `--strict`, a run with no `corrupted` scenario (a `symptom` never fails it).                                |
+| `1`  | `--strict` and at least one scenario `corrupted` (state-verified). Also an unexpected exception: a crash, not a finding. Giving the crash its own code is [issue 1716](https://github.com/bop-clocktower/canary/issues/1716). |
+| `2`  | Usage or input error: an unknown flag or command, `report` or a not-yet-runnable amplitude or intensity (not yet supported), a file not found or not valid JSON, a schema error, or an unset or non-object account env var.   |
+| `3`  | `--strict` and the matrix or the run abstained: zero scenarios, no `@playwright/test` in the target, the target unreachable, Playwright crashed, or every scenario abstained.                                                 |
+| `4`  | Refused by a safety gate (ADR 0046): an unlisted target, a disallowed environment, a `prodHosts` match, or a `manifest-sha` mismatch. Exit 4 means nothing else.                                                              |
 
 ## Limits in this phase
 
-- No live execution and no report: a confirmed `run` and `report` exit 2
-  `not yet supported`, and nothing is ever sent to a target.
-- `{{unique.<kind>}}` is checked for syntax only; the kinds are fixed with the
-  runtime that generates them.
-- Account references in flows (`{{account.<K>.<field>}}`) are not yet checked
-  against a target's accounts or against the fields in an account's env var. The
-  gate checks only that each declared account's env var holds a JSON object;
-  resolving the references belongs to the executor that fills them.
+- `run` executes `whisper` only, so it schedules only the two core patterns
+  (`multi-submit`, `abandon-midflow`). All six patterns are implemented at
+  intensity 1, and the cry-e2e suite runs each of them, but the other four are
+  reachable from `run` once `shout` and `scream` can run (a later phase), with
+  their rounds and convergence.
+- No `report` command yet; `findings.json` and the run's text are the output.
+- `token-expiry` at intensity 1 reports `corrupted` when the app correctly
+  refuses the unauthenticated write, because `delta` means exactly one
+  completion of the flow. Read its findings with that in mind.
+- A cross-account leak compares only account A's values of 3 or more characters
+  that B does not share; a shorter or shared value would match by accident.
+- Probes must be **read-only**: a probe that writes invalidates its own
+  before/after comparison. Prefer `delta` to `equals` for an account-scoped
+  invariant, since scenarios run one after another on the state the previous
+  ones left.
+- Run one sweep per target and set of accounts at a time. Two concurrent runs
+  would contaminate each other's probes, and nothing enforces this.
+- Account references in flows (`{{account.<K>.<field>}}`) are not checked at the
+  desk against a target's accounts or an account's fields. A reference that
+  cannot be resolved fails its step at run time: before the abuse point that is
+  `abstain: flow-broken@<step>`.
+- `{{unique.email}}` is `cry.<hash>@cry.invalid`; every other kind is
+  `cry-<kind>-<hash>`, derived from the seed, the scenario id and the kind.
