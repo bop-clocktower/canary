@@ -56,7 +56,7 @@ function recorder() {
     },
     post: async (page: string, from: number, opts?: any) => {
       calls.push(`post("${page}", ${from}${opts ? ', each' : ''})`);
-      // A per-step hook runs before each remaining step; two are enough.
+      // Invoke the per-step hook twice: enough to prove it repeats.
       if (opts?.before) for (let i = 0; i < 2; i += 1) await opts.before();
     },
   };
