@@ -233,6 +233,11 @@
       "check": "ledger",
       "workflow": "harness-security.yml",
       "reason": "Not a gate. #1426 split the security-ledger push out of the required `security` job so the push could hold `contents: write` without the scans. It runs only on push to main and is skipped on every PR, so it has no verdict about a PR to give, and requiring it would leave every PR waiting on a skipped job."
+    },
+    {
+      "check": "cry-e2e (real Chromium)",
+      "workflow": "cry-e2e.yml",
+      "reason": "Path-filtered by design (#608 P3): it installs Playwright and a Chromium and drives canary-cry's fixture shop, which only means something when canary-cry, its fixture app or the e2e suite changed. A required check behind a `paths:` filter never reports on a PR outside those paths, so that PR could never merge (#542, ADR 0011). It also depends on the npm registry and the Playwright browser CDN, and a download flake must not read as a code failure. The offline half of the same contract (verdicts, exit codes, the executor with Playwright stubbed) is in the required agents/skills suite."
     }
   ],
 
