@@ -15,6 +15,8 @@ export interface ResultEntry {
   retries: number;
   tags: string[];
   area?: string;
+  /** Dashboard feature slugs; absent = the suite said nothing (see `resolveFeatures`). */
+  features?: string[];
 }
 
 /** One test the run collected, whether or not it ran (the suite's denominator). */
@@ -23,4 +25,5 @@ export interface CollectedEntry {
   test_file: string;
   tags: string[];
   area?: string;
+  features?: string[];
 }

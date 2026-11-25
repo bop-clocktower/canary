@@ -1,5 +1,6 @@
 // Ingest reporter: JUnit report files -> one run's rows, timing, catalog and
 // the denominator line, for `canary testtracker push` (#1320).
+import { mergedFeatures } from './entry/features.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -21,7 +22,7 @@ export interface JunitReport {
 export type Locate = (
   testFile: string | undefined,
   reportPath: string,
-) => { test_file: string; area?: string };
+) => { test_file: string; area?: string; features?: string[] };
 
 /**
  * Reads one report, or throws naming the file when it is missing, unreadable
@@ -80,13 +81,14 @@ export function junitRunTiming(reports: JunitReport[], now: number) {
 /** Every testcase, one entry per title (as the results are deduped), tags merged. */
 export function junitCatalog(rows: ResultEntry[]): CollectedEntry[] {
   const byTitle = new Map<string, CollectedEntry>();
-  for (const { full_title, test_file, tags, area } of rows) {
+  for (const { full_title, test_file, tags, area, features } of rows) {
     const prior = byTitle.get(full_title);
     byTitle.set(full_title, {
       full_title,
       test_file,
       tags: [...new Set([...(prior?.tags ?? []), ...tags])],
       ...(area ? { area } : {}),
+      ...mergedFeatures(prior?.features, features),
     });
   }
   return [...byTitle.values()];

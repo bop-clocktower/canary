@@ -40,30 +40,33 @@ export default defineConfig({
 
 ### Options
 
-| Option             | Env fallback                      | Legacy env (deprecated)        | Default        | Purpose                                                                                                                  |
-| ------------------ | --------------------------------- | ------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `suite`            | `CANARY_INGEST_SUITE`             | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`).                                                   |
-| `testFilePrefix`   | `CANARY_INGEST_TEST_FILE_PREFIX`  | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                                                                           |
-| `environment`      | `CANARY_INGEST_ENVIRONMENT`       | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                                                                           |
-| `url`              | `CANARY_INGEST_URL`               | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.                                                       |
-| `token`            | `CANARY_INGEST_TOKEN`             | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                                                                      |
-| `workflow`         | `CANARY_INGEST_WORKFLOW`          | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                                                                                |
-| `areaMap`          | `CANARY_INGEST_AREA_MAP` (JSON)   | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).                                                              |
-| `retryDelaysMs`    | —                                 | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                                                                  |
-| `titleFormat`      | `CANARY_INGEST_TITLE_FORMAT`      | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                                                                  |
-| `collected`        | `CANARY_INGEST_COLLECTED`         | —                              | `true`         | Send the suite catalog. See [collected](#what-it-sends-besides-results).                                                 |
-| `runFile`          | `CANARY_RUN_FILE`                 | —                              | (unset)        | Also write the run as a `canary.run/1` file. See [The `canary.run/1` file](#the-canaryrun1-file).                        |
-| `scopeId`          | `CANARY_SCOPE_ID`                 | —                              | (unset)        | `canary.run/1` scope id. Required with `runFile`; never inferred.                                                        |
-| `scopeEnv`         | `CANARY_SCOPE_ENV`                | —                              | (unset)        | `canary.run/1` scope env. Required with `runFile`; falls back to `environment`.                                          |
-| `quarantineLedger` | `CANARY_INGEST_QUARANTINE_LEDGER` | —                              | (unset)        | canary-katana ledger to publish quarantine state from. See [Quarantine state](#quarantine-state-from-the-katana-ledger). |
+| Option             | Env fallback                       | Legacy env (deprecated)        | Default        | Purpose                                                                                                                  |
+| ------------------ | ---------------------------------- | ------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `suite`            | `CANARY_INGEST_SUITE`              | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`).                                                   |
+| `testFilePrefix`   | `CANARY_INGEST_TEST_FILE_PREFIX`   | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                                                                           |
+| `environment`      | `CANARY_INGEST_ENVIRONMENT`        | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                                                                           |
+| `url`              | `CANARY_INGEST_URL`                | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.                                                       |
+| `token`            | `CANARY_INGEST_TOKEN`              | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                                                                      |
+| `workflow`         | `CANARY_INGEST_WORKFLOW`           | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                                                                                |
+| `areaMap`          | `CANARY_INGEST_AREA_MAP` (JSON)    | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).                                                              |
+| `featureMap`       | `CANARY_INGEST_FEATURE_MAP` (JSON) | —                              | `{}`           | Glob → dashboard feature slug(s), first match wins. See [Features and level](#features-and-level).                       |
+| `level`            | `CANARY_INGEST_LEVEL`              | —                              | (unset)        | The suite's test level, sent as the run's `level`. See [Features and level](#features-and-level).                        |
+| `retryDelaysMs`    | —                                  | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                                                                  |
+| `titleFormat`      | `CANARY_INGEST_TITLE_FORMAT`       | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                                                                  |
+| `collected`        | `CANARY_INGEST_COLLECTED`          | —                              | `true`         | Send the suite catalog. See [collected](#what-it-sends-besides-results).                                                 |
+| `runFile`          | `CANARY_RUN_FILE`                  | —                              | (unset)        | Also write the run as a `canary.run/1` file. See [The `canary.run/1` file](#the-canaryrun1-file).                        |
+| `scopeId`          | `CANARY_SCOPE_ID`                  | —                              | (unset)        | `canary.run/1` scope id. Required with `runFile`; never inferred.                                                        |
+| `scopeEnv`         | `CANARY_SCOPE_ENV`                 | —                              | (unset)        | `canary.run/1` scope env. Required with `runFile`; falls back to `environment`.                                          |
+| `quarantineLedger` | `CANARY_INGEST_QUARANTINE_LEDGER`  | —                              | (unset)        | canary-katana ledger to publish quarantine state from. See [Quarantine state](#quarantine-state-from-the-katana-ledger). |
 
 When both a `CANARY_INGEST_*` var and its legacy name are set, the new name
 wins. An empty value counts as unset, so a `${{ secrets.X }}` for a secret that
 does not exist yet never hides a working legacy value.
 
-An invalid optional setting (`titleFormat`, `areaMap`) falls back to its default
-with a warning; it never turns pushing off. Only a missing `suite` disables the
-reporter, and that is a warning when `url` and `token` are set.
+An invalid optional setting (`titleFormat`, `areaMap`, `featureMap`) falls back
+to its default with a warning; it never turns pushing off. Only a missing
+`suite` disables the reporter, and that is a warning when `url` and `token` are
+set.
 
 ### Areas
 
@@ -78,6 +81,32 @@ A test's product area comes from, in order:
 
 A test matching neither sends **no** area. The reporter never guesses one from a
 folder name, so `functional` or `smoke` never shows up as a product area.
+
+### Features and level
+
+A suite can say which of the dashboard's features each test covers, and at which
+level the suite tests, so the dashboard can place every result on a feature ×
+level matrix without keeping its own copy of the mapping.
+
+A test's `features` come from, in order:
+
+1. its `feature` annotations, one per feature:
+   `{ type: 'feature', description: 'rewards' }` in the test's `annotation`;
+2. the first `featureMap` glob matching its repo-relative file, with the same
+   glob rules as `areaMap`: `{ 'src/billing/**': ['billing'] }`. A bare string
+   is one slug.
+
+The difference between the two empty cases is deliberate:
+
+- a test that **no glob matches** sends **no `features` key**. The suite said
+  nothing, and the dashboard may fall back to a mapping of its own;
+- a glob mapped to **`[]`** sends **`features: []`**. The suite says the test
+  covers no feature, which is an answer.
+
+`level` (e.g. `unit`, `integration`, `contract`, `e2e`) is sent on the run as
+given. The reporter does not validate either value. The dashboard owns the
+vocabulary, and it reports back a slug or level it does not recognise rather
+than refusing the run.
 
 ### Environment variables
 
@@ -212,13 +241,13 @@ pass covers the Playwright reporter, `canary testtracker push`, and the
 ## What it sends besides results
 
 - **`collected`** — every test Playwright collected, whether or not it ran
-  (`full_title`, `test_file`, `tags`, `area`). It is the denominator that lets
-  the dashboard tell "not covered" from "did not run" (#1150). An empty suite
-  sends `collected: []`, a real measured zero. A catalog from a partial run
-  would shrink the suite's denominator, so it is **left out (and the log says
-  why)** when the run is a shard, uses `--grep`/`--grep-invert`, or skipped any
-  configured project. Push from `merge-reports` to get a catalog for a sharded
-  suite. Playwright does not tell a reporter about `--last-failed` or
+  (`full_title`, `test_file`, `tags`, `area`, `features`). It is the denominator
+  that lets the dashboard tell "not covered" from "did not run" (#1150). An
+  empty suite sends `collected: []`, a real measured zero. A catalog from a
+  partial run would shrink the suite's denominator, so it is **left out (and the
+  log says why)** when the run is a shard, uses `--grep`/`--grep-invert`, or
+  skipped any configured project. Push from `merge-reports` to get a catalog for
+  a sharded suite. Playwright does not tell a reporter about `--last-failed` or
   `--only-changed`: set `CANARY_INGEST_COLLECTED=false` on jobs that use them.
   If the dashboard's `collected_count` differs from what was sent, the reporter
   prints a warning.
@@ -357,7 +386,7 @@ config, payload builder, size budget and push (#1320):
 ```bash
 canary testtracker push --junit <file…> --suite <name> \
   [--workflow <label>] [--no-collected] [--[no-]strict-budget] \
-  [--quarantine-ledger <path>] [--dry-run]
+  [--quarantine-ledger <path>] [--level <level>] [--features-map <file>] [--dry-run]
 ```
 
 One adapter covers each runner's JUnit output:
@@ -379,9 +408,15 @@ Pass several reports to push them as one run (`--junit a.xml b.xml`, or repeat
 `--junit`). `CANARY_INGEST_URL` and `CANARY_INGEST_TOKEN` are required unless
 `--dry-run`, which prints the payload instead. Unlike the reporter, the command
 pushes whenever they are set: running it is the request to push.
-`CANARY_INGEST_ENVIRONMENT`, `CANARY_INGEST_AREA_MAP` and
-`CANARY_INGEST_TEST_FILE_PREFIX` work as above. `workflow` defaults to `junit`.
-The command does not write a `canary.run/1` file.
+`CANARY_INGEST_ENVIRONMENT`, `CANARY_INGEST_AREA_MAP`,
+`CANARY_INGEST_FEATURE_MAP`, `CANARY_INGEST_LEVEL` and
+`CANARY_INGEST_TEST_FILE_PREFIX` work as above. `--level` wins over
+`CANARY_INGEST_LEVEL`. `--features-map <file>` reads the feature map from a JSON
+file, and wins over `CANARY_INGEST_FEATURE_MAP`; a file that is missing or not a
+valid map exits 1 with nothing pushed, since a run pushed without the map it
+named would read as a suite that says nothing about features. JUnit reports
+carry no annotations, so the map is the only source. `workflow` defaults to
+`junit`. The command does not write a `canary.run/1` file.
 
 **Identity.** `full_title` is `file > suite… > classname > name`, from whichever
 of those the report carries. A classname that repeats the file (vitest), the
@@ -598,6 +633,9 @@ Validate a file with
   reporter's Playwright hooks and the public exports.
 - [`ingest/config.ts`](../../npm/src/reporters/ingest/config.ts) — options, env
   resolution (with legacy aliases) and area mapping.
+- [`ingest/entry/`](../../npm/src/reporters/ingest/entry/) — the glob rules
+  `areaMap` and `featureMap` share (`globs.ts`), feature resolution and the one
+  merge rule for features (`features.ts`), and result dedupe (`merge.ts`).
 - [`ingest/payload.ts`](../../npm/src/reporters/ingest/payload.ts) — the wire
   payload, status mapping, dedupe and the size budget.
 - [`ingest/describe.ts`](../../npm/src/reporters/ingest/describe.ts) — per-test
@@ -607,7 +645,8 @@ Validate a file with
 - [`ingest/junit.ts`](../../npm/src/reporters/ingest/junit.ts) — JUnit XML to
   result rows.
 - [`npm/src/testtracker.ts`](../../npm/src/testtracker.ts) —
-  `canary testtracker push`.
+  `canary testtracker push` (`--features-map` reading in
+  [`testtracker-features.ts`](../../npm/src/testtracker-features.ts)).
 
 ## Convergence
 

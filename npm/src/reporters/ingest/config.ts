@@ -1,4 +1,6 @@
 // Ingest reporter: options, env resolution and area mapping.
+import { featureMapFrom, parseFeatureMap } from "./entry/features.js";
+import { checkGlobs, globToRegExp } from "./entry/globs.js";
 
 /**
  * Pushes a completed Playwright run to an `/api/ingest` endpoint (a QA
@@ -23,6 +25,21 @@ export interface IngestReporterOptions {
    * area, so the dashboard never shows a folder name as a product area.
    */
   areaMap?: Record<string, string>;
+  /**
+   * Glob → the dashboard's feature slugs for a test's repo-relative file,
+   * first match wins, like `areaMap` (`{ "src/billing/**": ["billing"] }`).
+   * `{ type: "feature", description }` annotations win over the map (one per
+   * feature). A test no glob matches sends no `features` key at all, which a
+   * dashboard reads as "the suite said nothing", not "covers no feature";
+   * map a glob to `[]` to say the second.
+   */
+  featureMap?: Record<string, string | string[]>;
+  /**
+   * The suite's test level (e.g. `unit`, `integration`, `contract`, `e2e`),
+   * sent as the run's `level`. Passed through unvalidated: the dashboard owns
+   * the vocabulary and reports back a value it does not know.
+   */
+  level?: string;
   /** Waits before each retry of a 5xx/429/network failure. Default `[1000, 4000]` (3 attempts). */
   retryDelaysMs?: number[];
   /**
@@ -66,6 +83,8 @@ export interface ResolvedConfig {
   token: string;
   workflow: string;
   areaMap: Record<string, string>;
+  featureMap: Record<string, string[]>;
+  level?: string;
   retryDelaysMs: number[];
   titleFormat: TitleFormat;
   collected: boolean;
@@ -89,6 +108,8 @@ const ENV_NAMES = {
   workflow: ["CANARY_INGEST_WORKFLOW", "TESTTRACKER_WORKFLOW"],
   push: ["CANARY_INGEST_PUSH", "TESTTRACKER_PUSH"],
   areaMap: ["CANARY_INGEST_AREA_MAP"],
+  featureMap: ["CANARY_INGEST_FEATURE_MAP"],
+  level: ["CANARY_INGEST_LEVEL"],
   titleFormat: ["CANARY_INGEST_TITLE_FORMAT"],
   collected: ["CANARY_INGEST_COLLECTED"],
   runFile: ["CANARY_RUN_FILE"],
@@ -140,6 +161,14 @@ export function resolveConfig(
     token: opts.token ?? read("token") ?? "",
     workflow: opts.workflow ?? read("workflow") ?? "playwright",
     areaMap: checkAreaMap(opts.areaMap ?? parseAreaMap(read("areaMap"), configWarnings), configWarnings),
+    featureMap: checkGlobs(
+      "featureMap",
+      opts.featureMap !== undefined
+        ? featureMapFrom(opts.featureMap, configWarnings)
+        : parseFeatureMap(read("featureMap"), configWarnings),
+      configWarnings,
+    ),
+    level: opts.level || read("level") || undefined,
     retryDelaysMs: opts.retryDelaysMs ?? [1000, 4000],
     titleFormat: parseTitleFormat(opts.titleFormat ?? read("titleFormat"), configWarnings),
     collected: opts.collected ?? read("collected") !== "false",
@@ -195,23 +224,12 @@ function parseAreaMap(raw: string | undefined, warnings: string[]): Record<strin
   return {};
 }
 
-/** Only `**`, `*` and `?` are glob syntax here; `{a,b}` and `[ab]` would match as literal text. */
+
+
 function checkAreaMap(map: Record<string, string>, warnings: string[]): Record<string, string> {
-  for (const glob of Object.keys(map)) {
-    if (/[{}[\]]/.test(glob)) {
-      warnings.push(`areaMap glob "${glob}" uses unsupported {a,b} or [ab] syntax and matches only literally; list each path instead.`);
-    }
-  }
-  return map;
+  return checkGlobs("areaMap", map, warnings);
 }
 
-/** `**` crosses directories, `*` and `?` stay within one path segment. */
-const GLOB_TOKENS: Record<string, string> = { "**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]" };
-
-function globToRegExp(glob: string): RegExp {
-  const re = glob.replace(/\*\*\/|\*\*|\*|\?|[.+^${}()|[\]\\]/g, (t) => GLOB_TOKENS[t] ?? `\\${t}`);
-  return new RegExp(`^${re}$`);
-}
 
 /**
  * A test's product area: an `area` annotation, else the first `areaMap` glob
@@ -229,6 +247,7 @@ export function resolveArea(
   }
   return undefined;
 }
+
 
 export function shouldPush(
   cfg: Pick<ResolvedConfig, "url" | "token">,
