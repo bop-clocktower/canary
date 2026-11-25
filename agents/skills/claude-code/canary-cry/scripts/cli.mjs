@@ -12,8 +12,9 @@
 // until then, rather than doing something smaller under the same name.
 //
 // Exit codes: 0 ok (advisory), 2 usage or schema error, 3 --strict and the
-// matrix abstained (zero scenarios). 1 and 4 (ADR 0046: refused by a safety
-// gate) belong to `run`.
+// matrix abstained (zero scenarios), 1 an unexpected exception (issue 1716
+// gives it its own code). 1 for corruption and 4 (ADR 0046: refused by a
+// safety gate) belong to `run`.
 //
 // Invoked via `canary skills run canary-cry -- <command> [options]`.
 
@@ -178,17 +179,24 @@ function unscheduledLines(unscheduled) {
   );
 }
 
-function renderMatrix(m) {
+/** Why the matrix is empty: no flows at all, or no pattern fits a step. */
+function abstainedLine(m, declaredFlows) {
+  const why =
+    declaredFlows === 0
+      ? 'no flows are declared'
+      : `no scheduled pattern (${m.patterns.join(', ')}) ` +
+        'applies to any declared step';
+  return `ABSTAINED: zero scenarios -- ${why}.`;
+}
+
+function renderMatrix(m, declaredFlows) {
   const where = m.target === null ? '' : `, target ${m.target}`;
   const lines = [
     `${PROG} matrix -- amplitude ${m.amplitude}, seed ${m.seed}, ` +
       `ranking: ${m.ranking}${where}`,
   ];
   if (m.status === 'abstained') {
-    lines.push(
-      `ABSTAINED: zero scenarios -- no scheduled pattern ` +
-        `(${m.patterns.join(', ')}) applies to any declared step.`,
-    );
+    lines.push(abstainedLine(m, declaredFlows));
     lines.push(ABSTAINED_LINE);
   } else {
     const rounds = m.intensities.map((n) => `i${n}`).join(', ');
@@ -229,7 +237,10 @@ function matrixCommand(opts) {
     target: target.value,
     areas: areas.value,
   });
-  console.log(opts.json ? matrixJson(matrix) : renderMatrix(matrix));
+  const text = opts.json
+    ? matrixJson(matrix)
+    : renderMatrix(matrix, flows.doc.flows.length);
+  console.log(text);
   return matrix.status === 'abstained' && opts.strict ? EXIT_ABSTAINED : 0;
 }
 

@@ -377,6 +377,24 @@ describe('matrix', () => {
       expect(r.stdout).not.toContain('scenario(s) over');
     });
 
+    it('says there are no declared flows when flows is empty', () => {
+      const flows = write(tmp(), 'flows.json', { version: 1, flows: [] });
+      const r = run(['matrix', '--flows', flows]);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain(
+        'ABSTAINED: zero scenarios -- no flows are declared',
+      );
+      expect(r.stdout).not.toContain('applies to any declared step');
+      expect(r.stdout).toContain('this is not a pass');
+    });
+
+    it('blames the steps, not the flows, when flows exist', () => {
+      const flows = write(tmp(), 'flows.json', readOnly);
+      const r = run(['matrix', '--flows', flows]);
+      expect(r.stdout).toContain('applies to any declared step');
+      expect(r.stdout).not.toContain('no flows are declared');
+    });
+
     it('exits 3 under --strict, in text and in --json', () => {
       const flows = write(tmp(), 'flows.json', readOnly);
       expect(run(['matrix', '--flows', flows, '--strict']).code).toBe(3);
