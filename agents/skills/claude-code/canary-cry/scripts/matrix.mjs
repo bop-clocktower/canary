@@ -27,6 +27,16 @@ export const AMPLITUDES = Object.freeze({
   }),
 });
 
+/** The --amplitude usage error, or null: `matrix` and `run` share it. */
+export function amplitudeError(amplitude) {
+  if (Object.hasOwn(AMPLITUDES, amplitude)) return null;
+  const choices = Object.keys(AMPLITUDES).map((a) => `'${a}'`);
+  return (
+    `argument --amplitude: invalid choice: '${amplitude}' ` +
+    `(choose from ${choices.join(', ')})`
+  );
+}
+
 const writes = (steps) => steps.filter((s) => s.writes === true);
 
 /** The steps each pattern `anchor` attacks (patterns.mjs names them). */
@@ -125,7 +135,7 @@ function atIntensity(chosen, n) {
       id: `${s.flow}:${s.pattern}:i${n}:s${s.step}`,
       flow: s.flow,
       pattern: s.pattern,
-      mayRefuse: s.mayRefuse,
+      mayRefuse: s.mayRefuse[n - 1],
       intensity: n,
       step: s.step,
       score: s.score,

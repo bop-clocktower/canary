@@ -14,9 +14,12 @@
 //     a guest's. An expired session half-completes the owner's checkout: one
 //     row of the two (#1720; token-expiry -> corrupted)
 // `variant: 'fixed'` guards the buttons, makes both writes idempotent per
-// cart, stores the current user's email, and never files a write made with no
-// session under any account: a correct app refusing an unauthenticated write,
-// as far as the account's state can tell.
+// cart and refuses one with no cart, stores the current user's email and
+// forgets it on sign-out, clears its sign-in form once signed in, clears its
+// error banner after a successful retry, survives a dropped request, and
+// never files a write made with no session under any account: a correct app
+// refusing an unauthenticated write, as far as the account's state can tell.
+// The P4 hardening (#608) is what lets it stay clean at intensities 2 and 3.
 //
 // Every page also loads a pixel from egress.cry-e2e.invalid, a host no
 // target declares, so the egress lockdown has something to abort (SC13).
@@ -32,41 +35,61 @@ const page = (body, script = '') =>
 const post = (path, body) =>
   `fetch('${path}', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(${body}) })`;
 
+/**
+ * Fixed (#608 P4): the form is `autocomplete=off` and cleared once signed in,
+ * so neither the page left open (shared-machine i3) nor a back navigation to
+ * it (i2) shows the last user's email or password; a dropped sign-in request
+ * is handled instead of thrown.
+ */
 function loginPage(fixed) {
   const remember = fixed
-    ? "localStorage.setItem('cry.profile', email.value);"
+    ? "localStorage.setItem('cry.profile', email.value); f.reset();"
     : "if (!localStorage.getItem('cry.profile')) localStorage.setItem('cry.profile', email.value);";
+  const form = fixed ? '<form id="f" autocomplete="off">' : '<form id="f">';
   return page(
-    '<form id="f"><input name="email"><input name="password" type="password">' +
+    `${form}<input name="email"><input name="password" type="password">` +
       '<button type="submit">Sign in</button></form><p id="who"></p>',
-    `const email = document.querySelector('[name=email]');
+    `const f = document.getElementById('f');
+     const email = document.querySelector('[name=email]');
      const pw = document.querySelector('[name=password]');
-     document.getElementById('f').onsubmit = (e) => {
+     f.onsubmit = (e) => {
        e.preventDefault();
        ${post('/api/session', '{ email: email.value, password: pw.value }')}
-         .then((r) => { if (r.ok) { ${remember} document.getElementById('who').textContent = 'Signed in'; } });
+         .then((r) => { if (r.ok) { ${remember} document.getElementById('who').textContent = 'Signed in'; } })${fixed ? '.catch(() => {})' : ''};
      };`,
   );
 }
 
-const logoutPage = () =>
+/** Fixed: signing out forgets the remembered profile, and survives a drop. */
+const logoutPage = (fixed) =>
   page(
     '<button id="sign-out">Sign out</button>',
-    `document.getElementById('sign-out').onclick = () => ${post('/api/logout', '{}')};`,
+    `document.getElementById('sign-out').onclick = () => {
+       ${fixed ? "localStorage.removeItem('cry.profile');" : ''}
+       ${post('/api/logout', '{}')}${fixed ? '.catch(() => {})' : ''};
+     };`,
   );
 
-/** A write button: guarded and disabled while in flight only when fixed. */
+/**
+ * A write button. Fixed: guarded and disabled while in flight, the error
+ * banner cleared by a later success, and a dropped request (no response at
+ * all) re-enables the button instead of leaving it stuck (#608 P4).
+ */
 const writeButton = (id, path, body, done, fixed) => `
   {
     const b = document.getElementById('${id}');
+    const banner = document.querySelector('.error-banner');
     let busy = false;
+    const failed = () => { busy = false; b.disabled = false; banner.hidden = false; };
     b.onclick = () => {
       ${fixed ? 'if (busy) return; busy = true; b.disabled = true;' : ''}
       ${post(path, body)}.then((r) => {
         busy = false; b.disabled = false;
-        if (r.ok) document.getElementById('status').textContent = '${done}';
-        else document.querySelector('.error-banner').hidden = false;
-      });
+        if (r.ok) {
+          document.getElementById('status').textContent = '${done}';
+          ${fixed ? 'banner.hidden = true;' : ''}
+        } else banner.hidden = false;
+      })${fixed ? '.catch(failed)' : ''};
     };
   }`;
 
@@ -121,6 +144,22 @@ function store(state, table, user, cart, row) {
   rows.push({ ...row, user, cart });
 }
 
+/** Fixed: a write needs the cart it belongs to. */
+const cartless = (state, ctx) => state.fixed && ctx.cart === undefined;
+
+/**
+ * The cart a visit to /cart works on. Fixed: a cart that already has an
+ * order is spent, so the next visit (the next user on a shared machine)
+ * starts a fresh one -- while the cart id itself never changes under a page,
+ * so racing tabs all post to one idempotent cart (#608 P4). It used to be
+ * consumed by clearing the cookie on the order's response, which let a tab
+ * that lost the race post with no cart at all.
+ */
+function openCart(state, ctx) {
+  const spent = state.fixed && state.orders.some((o) => o.cart === ctx.cart);
+  return ctx.cart !== undefined && !spent ? ctx.cart : `c${(state.carts += 1)}`;
+}
+
 /** Buggy: a write with no session is filed under the cart's owner. */
 function addressOwner(state, ctx) {
   if (state.fixed || ctx.user !== 'guest') return ctx.user;
@@ -131,9 +170,9 @@ function makeHandler(state) {
   const routes = {
     'GET /': () => [200, page('<p>cry fixture</p>')],
     'GET /login': () => [200, loginPage(state.fixed)],
-    'GET /logout': () => [200, logoutPage()],
+    'GET /logout': () => [200, logoutPage(state.fixed)],
     'GET /cart': (ctx) => {
-      const cart = ctx.cart ?? `c${(state.carts += 1)}`;
+      const cart = openCart(state, ctx);
       if (ctx.user !== 'guest') state.owners.set(cart, ctx.user);
       return [
         200,
@@ -161,15 +200,13 @@ function makeHandler(state) {
     },
     'POST /api/orders': async (ctx) => {
       const body = await readBody(ctx.req);
+      if (cartless(state, ctx)) return [400, { error: 'no cart' }];
       store(state, 'orders', ctx.user, ctx.cart, { card: body.card });
-      // Fixed: a placed order consumes the cart, so the next flow starts fresh.
-      const done = state.fixed
-        ? { 'set-cookie': 'cart=; Path=/; Max-Age=0' }
-        : {};
-      return [200, { ok: true }, done];
+      return [200, { ok: true }];
     },
     'POST /api/addresses': async (ctx) => {
       const body = await readBody(ctx.req);
+      if (cartless(state, ctx)) return [400, { error: 'no cart' }];
       const user = addressOwner(state, ctx);
       store(state, 'addresses', user, ctx.cart, { line: body.line });
       return [200, { ok: true }];

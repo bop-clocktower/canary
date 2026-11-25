@@ -49,6 +49,14 @@ export function scenarioPayload(manifest, scenario) {
   };
 }
 
+/**
+ * The env var naming one scenario's JSON report (#608 P4). The executor runs
+ * each scenario as its own Playwright run, so it can checkpoint between them,
+ * and points each at `results/<scenario>.json`; a standalone replay, with the
+ * variable unset, writes `results.json` as before.
+ */
+export const RESULTS_ENV = 'CANARY_CRY_RESULTS';
+
 // `workers: 1` because scenarios share accounts; `retries: 0` because a
 // retried scenario would write twice and break its own delta. No trace,
 // screenshot or video: each could capture an account value on screen.
@@ -59,7 +67,7 @@ export default {
   retries: 0,
   timeout: 120000,
   outputDir: './test-results',
-  reporter: [['json', { outputFile: 'results.json' }]],
+  reporter: [['json', { outputFile: process.env.${RESULTS_ENV} || 'results.json' }]],
   use: { headless: true, trace: 'off', screenshot: 'off', video: 'off' },
 };
 `;

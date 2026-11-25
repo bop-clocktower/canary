@@ -3,7 +3,8 @@
 //
 // The session is the API the abuse patterns (abuse.mjs) are written against,
 // so a pattern says WHAT it does to a flow and never how a step, a sign-in or
-// a failure is handled:
+// a failure is handled (what it does to the network, the history and the
+// session keys is tamper.mjs):
 //
 // - `pre` runs steps BEFORE the abuse point. A failure there means the flows
 //   file no longer matches the app, so it throws FlowBroken and the verdict
@@ -19,15 +20,8 @@
 // session records passes through `redact`, and a cross-account leak is
 // recorded by field name (`account.A.email`), never by value (SC10, SC25).
 
+import { StepFailure, lookupFor, resolve, runStep } from './steps.mjs';
 import {
-  StepFailure,
-  lookupFor,
-  requestMatcher,
-  resolve,
-  runStep,
-} from './steps.mjs';
-import {
-  hostAllowed,
   leakedFields,
   lockdown,
   observe,
@@ -35,9 +29,7 @@ import {
   settle,
   visibleSelectors,
 } from './guard.mjs';
-
-const HOLD_LIMIT_MS = 15_000;
-const REACH_LIMIT_MS = 10_000;
+import { expire, hold, leave, slow } from './tamper.mjs';
 
 /** A failure before the abuse point. */
 class FlowBroken extends Error {
@@ -77,11 +69,15 @@ async function newContext(s) {
   return context;
 }
 
-/** Run steps[from, to); `phase` decides what a failure means. */
+/**
+ * Run steps[from, to); `phase` decides what a failure means, and `before`
+ * (token-expiry i3) runs ahead of every step.
+ */
 async function runRange(s, page, steps, range) {
   const lookup = range.lookup ?? s.lookup();
   for (const step of steps.slice(range.from, range.to)) {
     try {
+      if (range.before) await range.before();
       await runStep(page, step, lookup, {});
       if (s.account === 'B') await scanLeak(s, page);
     } catch (exc) {
@@ -116,40 +112,16 @@ async function scanLeak(s, page) {
   }
 }
 
-/** Hold the first matching response until released: the server has it. */
-async function hold(s, page, spec) {
-  const matches = requestMatcher(spec);
-  let release;
-  let reached;
-  const released = new Promise((done) => (release = done));
-  const reachedServer = new Promise((done) => (reached = done));
-  let held = false;
-  await page.route('**/*', async (route) => {
-    const req = route.request();
-    const ours = hostAllowed(new URL(req.url()).hostname, s.hosts);
-    if (held || !ours || !matches(req)) return route.fallback();
-    held = true;
-    const response = await route.fetch();
-    reached();
-    await Promise.race([released, sleep(HOLD_LIMIT_MS)]);
-    return route.fulfill({ response });
-  });
-  const reach = Promise.race([reachedServer, sleep(REACH_LIMIT_MS)]);
-  return { reached: reach, release: () => release() };
+/** Close the page's whole context, as closing the browser would (i3). */
+async function close(s, page) {
+  s.pages.splice(s.pages.indexOf(page), 1);
+  await page.context().close();
 }
 
-/** Clear the target's session keys on `page`, as an expired token would. */
-async function expire(s, page) {
-  for (const key of s.scenario.auth.sessionKeys) {
-    // `cookie:session`, `localStorage:token`, `sessionStorage:token`.
-    const colon = key.indexOf(':');
-    const store = key.slice(0, colon);
-    const name = key.slice(colon + 1);
-    if (store === 'cookie') await page.context().clearCookies({ name });
-    else {
-      await page.evaluate(([st, k]) => window[st].removeItem(k), [store, name]);
-    }
-  }
+/** Back after sign-out: what the next user at the machine sits down to. */
+async function peek(s, page) {
+  await page.goBack().catch(() => null);
+  await scanLeak(s, page);
 }
 
 function methods(s) {
@@ -157,10 +129,16 @@ function methods(s) {
   return {
     pre: (page, from, to) =>
       runRange(s, page, steps, { from, to, phase: 'pre' }),
-    post: (page, from) => runRange(s, page, steps, { from, phase: 'post' }),
+    post: (page, from, { before } = {}) =>
+      runRange(s, page, steps, { from, phase: 'post', before }),
     fire: (page, opts = {}) => fire(s, page, opts),
-    hold: (page) => hold(s, page, steps[s.anchor].awaitResponse),
-    expire: (page) => expire(s, page),
+    hold: (page, mode) =>
+      hold(s.hosts, page, steps[s.anchor].awaitResponse, mode),
+    slow: (page, ms) => slow(s.hosts, page, ms),
+    leave,
+    close: (page) => close(s, page),
+    peek: (page) => peek(s, page),
+    expire: (page) => expire(page, s.scenario.auth.sessionKeys),
     tab: (page) => page.context().newPage(),
     pause: sleep,
     page: () => abusePage(s),

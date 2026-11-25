@@ -15,7 +15,17 @@ import { describe, expect, it } from 'vitest';
 import { ALLOWED_ENVIRONMENTS } from '../claude-code/canary-cry/scripts/gate.mjs';
 import { AMPLITUDES } from '../claude-code/canary-cry/scripts/matrix.mjs';
 import { buildFindings } from '../claude-code/canary-cry/scripts/findings.mjs';
+import {
+  CHECKPOINT_FORMAT,
+  newCheckpoint,
+  partialLine,
+  recordResult,
+} from '../claude-code/canary-cry/scripts/checkpoint.mjs';
 import { PATTERNS } from '../claude-code/canary-cry/scripts/patterns.mjs';
+import {
+  runRounds,
+  toResult,
+} from '../claude-code/canary-cry/scripts/rounds.mjs';
 import {
   scenarioVerdict,
   summarize,
@@ -43,7 +53,7 @@ const row = (first: string) =>
     (l) => l.trimStart().startsWith('|') && cells(l)[0] === first,
   );
 
-describe('canary-cry SKILL.md (P1, P2, P3)', () => {
+describe('canary-cry SKILL.md (P1-P4)', () => {
   it.each(['validate', 'matrix', 'run'])(
     'has a section for `%s`',
     (command) => {
@@ -79,7 +89,9 @@ describe('canary-cry SKILL.md (P1, P2, P3)', () => {
       const [, core, weight, , , mayRefuse] = cells(row(`\`${id}\``));
       expect(weight, id).toBe(String(p.weight));
       expect(core, id).toBe(p.core ? 'yes' : 'no');
-      expect(mayRefuse, id).toBe(p.mayRefuse ? 'yes' : 'no');
+      // One flag per intensity (#608 P4), written `i1 / i2 / i3`.
+      const flags = p.mayRefuse.map((f: boolean) => (f ? 'yes' : 'no'));
+      expect(mayRefuse, id).toBe(flags.join(' / '));
     },
   );
 
@@ -163,5 +175,82 @@ describe('canary-cry SKILL.md: a confirmed run (P3)', () => {
     expect(SKILL_MD).toContain(
       'npx playwright test -c playwright.config.mjs specs/<scenario>.spec.mjs',
     );
+  });
+});
+
+/** A scream of `rounds` rounds whose round-k scenario finds `found[k]`. */
+async function screamLine(found: (string | null)[]) {
+  const scenarios = found.map((_, i) => ({
+    id: `f:multi-submit:i${i + 1}:sa`,
+    flow: 'f',
+    pattern: 'multi-submit',
+    intensity: i + 1,
+  }));
+  const observation = (inv: string | null) => ({
+    verdict: inv === null ? 'clean' : 'corrupted',
+    reason: null,
+    invariants: inv === null ? [] : [{ id: inv, breached: true }],
+    signals: [],
+  });
+  const out = await runRounds({
+    manifest: { amplitude: 'scream', scenarios },
+    run: { id: RUN_ID, manifestSha: 'e'.repeat(64) },
+    resumed: null,
+    runOne: async (s: any) => ({
+      result: toResult(s, observation(found[s.intensity - 1]!)),
+    }),
+    save: () => {},
+    clock: () => 0,
+    maxWall: null,
+  });
+  return out.line!;
+}
+
+const RUN_ID = '20261125T143333Z-0123abcd';
+
+describe('canary-cry SKILL.md: rounds, checkpoints, --resume (P4)', () => {
+  it('has a run usage line for --resume and documents --max-wall', () => {
+    expect(SKILL_MD).toContain('canary-cry run --resume RUN_ID --confirm SHA');
+    expect(SKILL_MD).toContain('[--max-wall D]');
+  });
+
+  it('documents the convergence line, worded as the code prints it', async () => {
+    const line = await screamLine([null, null, null]);
+    expect(line).toBe('converged after round 2');
+    expect(SKILL_MD).toContain(line);
+  });
+
+  it('documents the ceiling line, worded as the code prints it', async () => {
+    const line = await screamLine([null, 'one-order', null]);
+    expect(PROSE).toContain(line);
+  });
+
+  it('documents the PARTIAL line, worded as the code prints it', () => {
+    const cp = ['a', 'b'].reduce(
+      (c, step) =>
+        recordResult(c, {
+          id: `f:multi-submit:i1:s${step}`,
+          verdict: 'clean',
+          fingerprints: [],
+        }),
+      newCheckpoint({ runId: RUN_ID, manifestSha: 'e'.repeat(64), total: 6 }),
+    );
+    expect(SKILL_MD).toContain(partialLine(cp));
+  });
+
+  it('names the checkpoint format the code writes', () => {
+    expect(PROSE).toContain(`\`${CHECKPOINT_FORMAT}\``);
+  });
+
+  it('lists every stop reason findings.json can carry', () => {
+    for (const reason of [
+      'budget',
+      'converged',
+      'ceiling',
+      'partial',
+      'crashed',
+    ]) {
+      expect(PROSE, reason).toContain(`\`${reason}\``);
+    }
   });
 });

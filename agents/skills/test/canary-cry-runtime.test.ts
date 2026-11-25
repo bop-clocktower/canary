@@ -11,14 +11,20 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { PATTERNS as CATALOG } from '../claude-code/canary-cry/scripts/patterns.mjs';
 import {
+  INTENSITY_CEILING,
+  PATTERNS as CATALOG,
+} from '../claude-code/canary-cry/scripts/patterns.mjs';
+import {
+  INTENSITY_CEILING as RUNTIME_CEILING,
   PATTERNS,
   inject,
 } from '../claude-code/canary-cry/scripts/runtime/abuse.mjs';
 import {
+  INJECTED_HEADER,
   hostAllowed,
   leakedFields,
+  observe,
 } from '../claude-code/canary-cry/scripts/runtime/guard.mjs';
 import {
   jsonPath,
@@ -197,6 +203,44 @@ describe('the egress allowlist', () => {
   });
 });
 
+/** A fake response event: status, headers, method and path. */
+const response = (status: number, headers: Record<string, string> = {}) => ({
+  url: () => 'http://127.0.0.1:9/api/orders',
+  status: () => status,
+  headers: () => headers,
+  request: () => ({ method: () => 'POST' }),
+});
+
+describe('the http-5xx signal', () => {
+  /** observe() on a fake context; returns what one response signals. */
+  function signalsFor(res: object) {
+    const on: Record<string, (x: any) => void> = {};
+    const seen: string[] = [];
+    const context = { on: (name: string, fn: any) => (on[name] = fn) };
+    observe(context, {
+      hosts: ['127.0.0.1'],
+      signal: (kind: string, detail: string) => seen.push(`${kind} ${detail}`),
+      inflight: { n: 0 },
+    });
+    on.response!(res);
+    return seen;
+  }
+
+  it("records the app's own 5xx", () => {
+    expect(signalsFor(response(502))).toEqual([
+      'http-5xx POST /api/orders 502',
+    ]);
+  });
+
+  // #608 P4: stale-optimistic i2 answers the client with a fake 500 of its
+  // own. That is the abuse, not a symptom of the app.
+  it("never records canary-cry's injected fake 500", () => {
+    expect(
+      signalsFor(response(500, { [INJECTED_HEADER]: 'fake-500' })),
+    ).toEqual([]);
+  });
+});
+
 describe('leakedFields (SC25)', () => {
   const A = { email: 'alice@x.test', password: 'pw-a-1', id: '7' };
   const B = { email: 'bob@x.test', password: 'pw-a-1', id: '8' };
@@ -225,11 +269,18 @@ describe('the pattern runners', () => {
     );
   });
 
-  it('refuse an intensity this phase cannot inject, loudly', () => {
-    const session = { scenario: { pattern: 'multi-submit', intensity: 2 } };
-    expect(() => inject(session)).toThrow(
-      'multi-submit at intensity 2 is not implemented',
-    );
+  it.each([0, 4, 1.5])(
+    'refuse intensity %s, past the ceiling or not a round, loudly',
+    (intensity) => {
+      const session = { scenario: { pattern: 'multi-submit', intensity } };
+      expect(() => inject(session)).toThrow(
+        `multi-submit at intensity ${intensity} is not implemented`,
+      );
+    },
+  );
+
+  it('stop at the catalog ceiling', () => {
+    expect(RUNTIME_CEILING).toBe(INTENSITY_CEILING);
   });
 
   it('refuse an unknown pattern', () => {

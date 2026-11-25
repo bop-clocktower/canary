@@ -2,8 +2,8 @@
 // convergence", D3). One module decides what a finding is. The browser
 // runtime (runtime/cry-runtime.mjs) judges each scenario with it inside the
 // Playwright run, so a spec re-run standalone reaches the same verdict and
-// fingerprint (SC12); the executor folds the scenarios into a run status and
-// an exit code with it.
+// fingerprint (SC12); the executor folds the scenarios into a run status with
+// it (the exit code of that run is findings.mjs's).
 //
 // It has no imports on purpose: codegen copies it into every run dir beside
 // the runtime, so it must stand alone there.
@@ -134,14 +134,4 @@ export function summarize(scenarios) {
     reason: `every scenario abstained (${why})`,
     counts,
   };
-}
-
-/**
- * Advisory by default. Under --strict: 3 when the run ABSTAINED, 1 when a
- * scenario is state-verified corrupted, else 0 -- a symptom never fails it.
- */
-export function exitCode(summary, strict) {
-  if (!strict) return 0;
-  if (summary.status === 'abstained') return 3;
-  return summary.counts.corrupted > 0 ? 1 : 0;
 }

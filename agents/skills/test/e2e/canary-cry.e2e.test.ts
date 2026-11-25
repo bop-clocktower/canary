@@ -15,7 +15,11 @@
  *        no run artifact contains an account value
  * - #1720 token-expiry: the fixed shop refusing the unauthenticated write is
  *        `clean`; the buggy one half-completing the checkout is `corrupted`
- * plus every one of the six patterns runs to a verdict at intensity 1.
+ * - #608 P4 every one of the six patterns runs to a verdict at intensities
+ *        1, 2 and 3, each intensity doing what the catalog says
+ * - SC17 a confirmed scream against the fixed shop converges after round 2
+ * - SC18 --max-wall stops PARTIAL; a resume after a flows edit exits 4 and
+ *        sends nothing; a resume of the same inputs finishes the run in place
  */
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
@@ -137,7 +141,19 @@ function checkoutSteps(cardSelector: string): any[] {
   ];
 }
 
-function flowsDoc(cardSelector = '[name=card]'): any {
+/**
+ * `spanning: false` drops the whole-checkout invariant. It spans both writes,
+ * so it reads the partial checkout a CORRECT app leaves when a flow is cut
+ * between them (token-expiry i2, abandon-midflow i3) as corrupted -- the
+ * documented limit of per-invariant deltas (SKILL.md, Limits).
+ */
+function flowsDoc(cardSelector = '[name=card]', spanning = true): any {
+  const invariants = [
+    countProbe('one-order', 'orders'),
+    countProbe('one-address', 'addresses'),
+    // Address + order: 2 per checkout, so half a checkout is visible.
+    ...(spanning ? [countProbe('one-checkout', 'checkout', 2)] : []),
+  ];
   return {
     version: 1,
     fixtures: { card: '4242424242424242' },
@@ -148,12 +164,7 @@ function flowsDoc(cardSelector = '[name=card]'): any {
         id: 'checkout',
         risk: 5,
         steps: checkoutSteps(cardSelector),
-        invariants: [
-          countProbe('one-order', 'orders'),
-          countProbe('one-address', 'addresses'),
-          // Address + order: 2 per checkout, so half a checkout is visible.
-          countProbe('one-checkout', 'checkout', 2),
-        ],
+        invariants,
         symptoms: { selectors: ['.error-banner'] },
       },
     ],
@@ -215,11 +226,17 @@ async function cry(dir: string, args: string[]) {
 }
 
 /** The two-step gate, as an operator runs it: read the sha, confirm it. */
-async function confirmedRun(dir: string, extra: string[] = []) {
-  const first = await cry(dir, ['run', '--live', 'fixture']);
+async function readSha(dir: string, extra: string[] = []) {
+  const first = await cry(dir, ['run', '--live', 'fixture', ...extra]);
   const sha = /manifest-sha: ([0-9a-f]{64})/.exec(first.stdout)?.[1];
   expect(sha, first.stdout + first.stderr).toBeDefined();
-  return cry(dir, ['run', '--live', 'fixture', '--confirm', sha!, ...extra]);
+  return sha!;
+}
+
+/** `extra` goes to both steps: --amplitude is part of what the sha binds. */
+async function confirmedRun(dir: string, extra: string[] = []) {
+  const sha = await readSha(dir, extra);
+  return cry(dir, ['run', '--live', 'fixture', '--confirm', sha, ...extra]);
 }
 
 /** The run dir holding findings.json (the confirmed one). */
@@ -343,33 +360,38 @@ describe('a stale flows file (SC14)', () => {
 });
 
 /**
- * The non-core patterns are scheduled only by `shout` and `scream`, whose
- * live rounds arrive with #608 P4. Their intensity-1 round is driven here
- * through the same executor a confirmed run uses.
+ * Chosen rounds of a scream matrix, driven through the same executor a
+ * confirmed run uses, so each round's verdicts are pinned without a whole
+ * confirmed scream (whose convergence stop is tested on its own below).
  */
-async function roundOne(variant: 'buggy' | 'fixed') {
+async function directRounds(variant: 'buggy' | 'fixed', intensities: number[]) {
   const url = (await app(variant)).url;
-  const p = project(`round-${variant}`, url);
+  const p = project(`rounds-${variant}`, url);
   const flows = flowsDoc();
   const target = { name: 'fixture', spec: fixtureTarget(url) };
   const all = buildMatrix({
     flows: flows.flows,
-    amplitude: 'shout',
+    amplitude: 'scream',
     seed: 0,
     target,
   });
   const matrix = {
     ...all,
-    intensities: [1],
-    scenarios: all.scenarios.filter((s: any) => s.intensity === 1),
+    intensities,
+    scenarios: all.scenarios.filter((s: any) =>
+      intensities.includes(s.intensity),
+    ),
   };
   const manifest = buildManifest({ flowsDoc: flows, target, matrix });
-  const dir = path.join(p.runs, 'round-one');
+  const dir = path.join(p.runs, `rounds-${intensities.join('-')}`);
   fs.mkdirSync(dir, { recursive: true });
   const plan = { manifest, matrix, sha: manifestSha(manifest) };
-  await executeRun({ opts: { strict: false }, plan, dir, env: ENV });
+  const now = () => new Date('2026-01-01T00:00:00Z');
+  await executeRun({ opts: { strict: false }, plan, dir, env: ENV, now });
   return { dir, doc: findingsIn(dir) };
 }
+
+const roundOne = (variant: 'buggy' | 'fixed') => directRounds(variant, [1]);
 
 const TOKEN_EXPIRY = 'checkout:token-expiry:i1:saddress';
 
@@ -444,5 +466,166 @@ describe('all six patterns at intensity 1, and the shared machine (SC25)', () =>
       expect([id, byId(fixed.doc, id).verdict]).toEqual([id, 'clean']);
     }
     expectNoSecret(fixed.dir);
+  });
+});
+
+/** `after - before` of one invariant of one scenario. */
+function delta(doc: any, id: string, invariant: string): number {
+  const inv = byId(doc, id).invariants.find((i: any) => i.id === invariant);
+  return inv.after - inv.before;
+}
+
+describe('intensities 2 and 3, every pattern (#608 P4)', () => {
+  let buggy: any;
+
+  it('runs every pattern at i2 and i3 to a verdict', async () => {
+    buggy = await directRounds('buggy', [2, 3]);
+    const { scenarios } = buggy.doc;
+    expect(new Set(scenarios.map((s: any) => s.pattern)).size).toBe(6);
+    expect([...new Set(scenarios.map((s: any) => s.intensity))]).toEqual([
+      2, 3,
+    ]);
+    for (const s of scenarios) {
+      expect([s.id, s.reason]).not.toEqual([s.id, 'runtime-error']);
+      expect([s.id, s.reason]).not.toEqual([s.id, 'no-observation']);
+    }
+  });
+
+  it.each<[string, string, number]>([
+    ['checkout:multi-submit:i2:spay', 'one-order', 3],
+    ['checkout:multi-submit:i3:spay', 'one-order', 5],
+    ['checkout:duplicate-tab:i2:spay', 'one-order', 3],
+    ['checkout:duplicate-tab:i3:spay', 'one-order', 3],
+  ])('%s writes as its intensity says: %s +%i', (id, inv, n) => {
+    expect(byId(buggy.doc, id).verdict).toBe('corrupted');
+    expect(delta(buggy.doc, id, inv)).toBe(n);
+  });
+
+  it.each([
+    'checkout:stale-optimistic:i2:spay',
+    'checkout:stale-optimistic:i3:spay',
+    'checkout:abandon-midflow:i2:saddress',
+    'checkout:token-expiry:i3:saddress',
+  ])('catches the planted bug with %s', (id) => {
+    expect(byId(buggy.doc, id).verdict).toBe('corrupted');
+  });
+
+  it('abandon-midflow i3 closes the context: no order is a refusal, the half checkout a finding', () => {
+    const id = 'checkout:abandon-midflow:i3:saddress';
+    const s = byId(buggy.doc, id);
+    expect(delta(buggy.doc, id, 'one-order')).toBe(0);
+    const order = s.invariants.find((i: any) => i.id === 'one-order');
+    expect(order.breached).toBe(false);
+    expect(s.fingerprints).toEqual(['checkout:abandon-midflow:one-checkout']);
+  });
+
+  it('shared-machine i2: back after sign-out shows the next user A, by field name only', () => {
+    const s = byId(buggy.doc, 'checkout:shared-machine:i2:spay');
+    expect(s.signals).toContainEqual({
+      kind: 'cross-account-leak',
+      field: 'account.A.email',
+    });
+    expectNoSecret(buggy.dir);
+  });
+});
+
+describe('a confirmed scream against the fixed shop (SC17)', () => {
+  it('converges after two barren rounds: i3 never runs', async () => {
+    const url = (await app('fixed')).url;
+    const p = project('scream-fixed', url, flowsDoc(undefined, false));
+    const r = await confirmedRun(p.dir, ['--amplitude', 'scream', '--strict']);
+    expect(r.code, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout.split('\n')).toContain('converged after round 2');
+    const dir = confirmedDir(p.runs);
+    const doc = findingsIn(dir);
+    expect(doc.stop).toEqual({
+      reason: 'converged',
+      line: 'converged after round 2',
+    });
+    expect([...new Set(doc.scenarios.map((s: any) => s.intensity))]).toEqual([
+      1, 2,
+    ]);
+    for (const s of doc.scenarios) {
+      const quiet = s.verdict === 'clean' || s.reason === 'no-probes';
+      expect([s.id, s.verdict, quiet]).toEqual([s.id, s.verdict, true]);
+    }
+    // The confirmed manifest still carried i3: the worst case was approved.
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'),
+    );
+    expect(
+      manifest.scenarios.filter((s: any) => s.intensity === 3).length,
+    ).toBeGreaterThan(0);
+    const checkpoint = JSON.parse(
+      fs.readFileSync(path.join(dir, 'checkpoint.json'), 'utf8'),
+    );
+    expect(checkpoint.results).toHaveLength(doc.scenarios.length);
+    expectNoSecret(dir);
+  });
+});
+
+describe('--max-wall, then --resume (SC18)', () => {
+  let p: { dir: string; runs: string };
+  let shop: any;
+  let sha = '';
+  let id = '';
+  const flowsFile = () => path.join(p.dir, '.canary', 'cry', 'flows.json');
+  const checkpointOf = () =>
+    JSON.parse(
+      fs.readFileSync(path.join(p.runs, id, 'checkpoint.json'), 'utf8'),
+    );
+
+  it('stops PARTIAL once the wall elapses, checkpointed', async () => {
+    shop = await app('buggy');
+    p = project('wall', shop.url);
+    sha = await readSha(p.dir);
+    const live = ['run', '--live', 'fixture', '--confirm', sha];
+    // Each scenario takes longer than 1 s, so the wall stops after the first.
+    const r = await cry(p.dir, [...live, '--max-wall', '1s']);
+    expect(r.code, r.stderr).toBe(0);
+    id = path.basename(confirmedDir(p.runs));
+    expect(r.stdout.split('\n')).toContain(
+      `PARTIAL: 1/3 — resume with --resume ${id}`,
+    );
+    expect(checkpointOf().results).toHaveLength(1);
+  });
+
+  it('refuses a resume after a flows edit: exit 4, and nothing reaches the shop', async () => {
+    const original = fs.readFileSync(flowsFile(), 'utf8');
+    const edited = JSON.parse(original);
+    edited.flows.find((f: any) => f.id === 'checkout').risk = 4;
+    fs.writeFileSync(flowsFile(), JSON.stringify(edited));
+    const writes = shop.state.orders.length + shop.state.addresses.length;
+    const r = await cry(p.dir, ['run', '--resume', id, '--confirm', sha]);
+    fs.writeFileSync(flowsFile(), original);
+    expect(r.code).toBe(4);
+    // The old sha no longer matches the rebuild (checked before the
+    // checkpoint's own sha, which a new --confirm would trip instead).
+    expect(r.stderr).toMatch(
+      /canary-cry: refused: manifest-sha mismatch: confirmed [0-9a-f]{64}, rebuilt [0-9a-f]{64}/,
+    );
+    expect(shop.state.orders.length + shop.state.addresses.length).toBe(writes);
+    expect(checkpointOf().results).toHaveLength(1);
+  });
+
+  it('resumes the same inputs: skips the completed id and finishes in place', async () => {
+    const done = checkpointOf().results.map((x: any) => x.id);
+    const r = await cry(p.dir, [
+      'run',
+      '--resume',
+      id,
+      '--confirm',
+      sha,
+      '--strict',
+    ]);
+    expect(r.code, r.stdout + r.stderr).toBe(1);
+    expect(r.stdout).not.toContain('PARTIAL');
+    const doc = findingsIn(path.join(p.runs, id));
+    expect(doc.status).toBe('ok');
+    expect(doc.scenarios).toHaveLength(3);
+    const results = checkpointOf().results.map((x: any) => x.id);
+    expect(results.slice(0, done.length)).toEqual(done);
+    expect(new Set(results).size).toBe(3);
+    expectNoSecret(path.join(p.runs, id));
   });
 });

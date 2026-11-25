@@ -108,6 +108,24 @@ describe('budgets (SC2)', () => {
     }
   });
 
+  // #608 P4: the flag is per intensity, so the same pattern can complete the
+  // flow at i1 and i2 and be refusable at i3 (abandon-midflow's close).
+  it('takes the flag for the scenario intensity, not the pattern alone', () => {
+    const m = buildMatrix({
+      flows: flows10(),
+      amplitude: 'scream',
+      seed: 0,
+      target: FULL_TARGET,
+    });
+    const abandon = m.scenarios.filter(
+      (s: any) => s.pattern === 'abandon-midflow',
+    );
+    expect(abandon.length).toBeGreaterThan(0);
+    for (const s of abandon) {
+      expect([s.id, s.mayRefuse]).toEqual([s.id, s.intensity === 3]);
+    }
+  });
+
   it('scream is every flow x every pattern x i1..i3, never past the ceiling', () => {
     const m = buildMatrix({
       flows: flows10(),
