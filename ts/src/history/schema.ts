@@ -12,6 +12,7 @@
  */
 
 import { def } from '../util/coalesce.js';
+import { redactFailureText } from '../util/redact.js';
 import { SCHEMA_VERSION } from './record.js';
 import type { OrderOutcome, ReplayContext } from './keys/replay-record.js';
 
@@ -121,7 +122,10 @@ export function serializeTestResult(
     status: t.status,
     area: def(t.area, null),
     failure_category: def(t.failure_category, null),
-    error_text: def(t.error_text, null),
+    // #1566: the one serializer every local AND remote row goes through.
+    error_text: t.error_text
+      ? redactFailureText(t.error_text)
+      : def(t.error_text, null),
     retry_count: def(t.retry_count, 0),
     duration_ms: def(t.duration_ms, null),
     tags: def(t.tags, []),

@@ -14,6 +14,19 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Security
+
+- **Run history no longer stores or pushes credentials echoed in failure text
+  (#1566).** `error_text` now goes through the same redaction as the TestTracker
+  path (#1354) before `canary history record` writes `history-v2.jsonl` and
+  before `canary history push` upserts to the remote store: emails (`<email>`),
+  JWTs and bare 32+-character credentials (`<token>`), and the values of the env
+  vars named in `CANARY_INGEST_REDACT_ENV` (`<secret:NAME>`). ANSI escapes are
+  stripped, and absolute paths outside the working directory become
+  `<path>/<file name>` (paths inside it become repo-relative). Redaction runs
+  before truncation, so a cut never leaves a fragment. `CANARY_INGEST_REDACT=0`
+  turns it off, as it does for the ingest reporter.
+
 ## [9.8.0] - 2026-11-25
 
 ### Added

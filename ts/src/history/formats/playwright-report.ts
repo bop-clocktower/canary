@@ -20,6 +20,7 @@
  * module only imports the schema and its own error rows, so the two files cannot
  * form an import cycle.
  */
+import { clipFailureText } from '../../util/redact.js';
 import {
   countTopLevelErrors,
   ERROR_TEXT_LIMIT,
@@ -155,7 +156,7 @@ function errorText(attempts: PwAttempt[]): string | undefined {
     .pop();
   return message === undefined
     ? undefined
-    : String(message).slice(0, ERROR_TEXT_LIMIT);
+    : clipFailureText(String(message), ERROR_TEXT_LIMIT);
 }
 
 function sumDurations(attempts: PwAttempt[]): number {
