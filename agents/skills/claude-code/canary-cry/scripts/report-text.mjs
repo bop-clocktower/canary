@@ -61,26 +61,40 @@ function buildReport(doc, dir, file) {
 
 const shellArg = (text) =>
   SHELL_SAFE.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`;
-const json = (v) => JSON.stringify(v);
+
+// Every string below but the replay command is untrusted: a probe error is
+// the target's HTTP or shell output, and findings.json can be hand-edited.
+// `inert` is the ONE way such a string reaches report.md: no backtick (so a
+// code span cannot close early), no control or line-separator character (so
+// it cannot start a new line, a `##` heading or a forged `- replay:`), and
+// at most MAX_SHOWN characters. The replay command never passes through it:
+// it is built from the checked scenario id alone.
+const MAX_SHOWN = 300;
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029`]/g;
+function inert(value) {
+  const flat = String(value).replace(UNSAFE, ' ');
+  return flat.length > MAX_SHOWN ? `${flat.slice(0, MAX_SHOWN)}...` : flat;
+}
+const json = (v) => inert(JSON.stringify(v));
 
 function statusLines(r) {
   if (r.status === 'abstained') {
-    return [`- status: ABSTAINED: ${r.reason}`, '', ABSTAINED_LINE];
+    return [`- status: ABSTAINED: ${inert(r.reason)}`, '', ABSTAINED_LINE];
   }
-  if (r.status === 'partial') return [`- status: ${r.reason}`];
-  return ['- status: ok', ...(r.stop?.line ? [`- ${r.stop.line}`] : [])];
+  if (r.status === 'partial') return [`- status: ${inert(r.reason)}`];
+  return ['- status: ok', ...(r.stop?.line ? [`- ${inert(r.stop.line)}`] : [])];
 }
 
 function headerLines(r) {
   const { run, counts: c } = r;
   const egress = r.blockedEgress.length
-    ? [`- blocked egress (aborted): ${r.blockedEgress.join(', ')}`]
+    ? [`- blocked egress (aborted): ${r.blockedEgress.map(inert).join(', ')}`]
     : [];
   return [
     `# canary-cry report: ${run.id}`,
     '',
-    `- target: \`${run.target}\` (${run.environment}) ${run.baseURL}`,
-    `- amplitude ${run.amplitude}, seed ${run.seed}, manifest-sha ${run.manifestSha}`,
+    `- target: \`${inert(run.target)}\` (${inert(run.environment)}) ${inert(run.baseURL)}`,
+    `- amplitude ${inert(run.amplitude)}, seed ${inert(run.seed)}, manifest-sha ${inert(run.manifestSha)}`,
     `- corrupted ${c.corrupted}, symptom ${c.symptom}, clean ${c.clean}, abstain ${c.abstain}`,
     ...egress,
     ...statusLines(r),
@@ -90,20 +104,20 @@ function headerLines(r) {
 
 const invariantLine = (inv) =>
   inv.error !== undefined
-    ? `- ${inv.id}: probe failed: ${inv.error}`
-    : `- ${inv.id}: before ${json(inv.before)} -> after ${json(inv.after)} ` +
+    ? `- ${inert(inv.id)}: probe failed: ${inert(inv.error)}`
+    : `- ${inert(inv.id)}: before ${json(inv.before)} -> after ${json(inv.after)} ` +
       `(expect ${json(inv.expect)})`;
 
 function entryLines(e) {
   const label =
     e.verdict === 'abstain'
-      ? `abstain: ${e.reason}`
-      : `${e.verdict}${e.fidelity ? ` (${e.fidelity})` : ''}`;
+      ? `abstain: ${inert(e.reason)}`
+      : `${e.verdict}${e.fidelity ? ` (${inert(e.fidelity)})` : ''}`;
   return [
     `## ${e.rank}. ${label}: \`${e.id}\``,
     '',
     `- score ${e.score}`,
-    ...e.fingerprints.map((fp) => `- fingerprint \`${fp}\``),
+    ...e.fingerprints.map((fp) => `- fingerprint \`${inert(fp)}\``),
     ...e.invariants
       .filter((inv) => inv.breached === true || inv.error !== undefined)
       .map(invariantLine),

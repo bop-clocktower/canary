@@ -491,7 +491,13 @@ a quiet clean:
     naming another run makes the file damaged (exit 2), so a tampered
     `findings.json` cannot hand an operator a command to paste. The run-id is
     checked with `isRunId` before it becomes a path; a run with no
-    `findings.json` (planned, never confirmed) is exit 2 too.
+    `findings.json` (planned, never confirmed) is exit 2 too. Every field the
+    report renders must be a string of at most 4096 characters (exit 2
+    otherwise), and each is rendered through one `inert` helper in
+    `report-text.mjs` (no backtick, no control or line-separator character, at
+    most 300 characters), because a probe error is the target's own output: a
+    newline or backtick in it could otherwise forge a `- replay:` line or a
+    heading (security review, P5).
   - `--json` prints `canary.cry-report/1` (the run, status, reason, counts,
     stop, blocked egress, the run dir, the report path, and `ranked`).
     `--strict` uses `findings.mjs`'s `exitCode`, the function a confirmed run

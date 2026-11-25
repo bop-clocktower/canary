@@ -434,8 +434,14 @@ verdict; it ranks the ones the run recorded.
   (checked before it becomes a path) or names no run, a run with no
   `findings.json` (planned and never confirmed, or stopped before writing one),
   or a `findings.json` that is damaged: not JSON, another format, an unknown
-  status or verdict, a scenario id that is not one, or a `run.id` that is not
-  this run.
+  status or verdict, a scenario id that is not one, a `run.id` that is not this
+  run, or a field the report renders (a reason, fingerprint, invariant id, probe
+  error, egress host, run field or stop line) that is not a string of at most
+  4096 characters.
+- Every string `report.md` shows from `findings.json` is untrusted (a probe
+  error is the target's own output) and is rendered inert: backticks and line
+  breaks become spaces and it is cut at 300 characters, so no value can close a
+  code span, start a heading, or forge a `- replay:` line.
 
 ## Abuse patterns
 

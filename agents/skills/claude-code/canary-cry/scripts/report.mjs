@@ -27,12 +27,44 @@ const SCENARIO_ID =
 const isObject = (v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
+// Every field report renders must be a string of bounded length (the run's
+// seed a number): a value of another type, or a megabyte of probe output, is
+// a damaged findings.json, not something to render. report-text.mjs still
+// renders each one inert (no backtick, no line break), because a well-typed
+// string can carry a payload too.
+const MAX_TEXT = 4096;
+const isText = (v) => typeof v === 'string' && v.length <= MAX_TEXT;
+const isOptText = (v) => v === undefined || v === null || isText(v);
+const allText = (list) => Array.isArray(list) && list.every(isText);
+const isInvariant = (inv) =>
+  isObject(inv) &&
+  isText(inv.id) &&
+  (inv.error === undefined || isText(inv.error));
+const RUN_TEXT = [
+  'target',
+  'environment',
+  'baseURL',
+  'amplitude',
+  'manifestSha',
+];
+const isRun = (run) =>
+  isObject(run) &&
+  RUN_TEXT.every((k) => isOptText(run[k])) &&
+  (run.seed === undefined || Number.isFinite(run.seed));
+const isStop = (stop) =>
+  stop === undefined ||
+  stop === null ||
+  (isObject(stop) && isOptText(stop.line));
+const TEXT = 'not a string of at most 4096 characters';
+
 const DOC_CHECKS = [
   ['format', (d) => d.format === FINDINGS_FORMAT, `not ${FINDINGS_FORMAT}`],
   ['status', (d) => STATUSES.has(d.status), 'not ok, abstained or partial'],
-  ['run', (d) => isObject(d.run), 'not an object'],
+  ['run', (d) => isRun(d.run), 'not an object of bounded strings'],
+  ['reason', (d) => isOptText(d.reason), TEXT],
+  ['stop', (d) => isStop(d.stop), 'not an object with a bounded line'],
   ['scenarios', (d) => Array.isArray(d.scenarios), 'not a list'],
-  ['blockedEgress', (d) => Array.isArray(d.blockedEgress), 'not a list'],
+  ['blockedEgress', (d) => allText(d.blockedEgress), 'not a list of strings'],
 ];
 
 const SCENARIO_CHECKS = [
@@ -40,8 +72,14 @@ const SCENARIO_CHECKS = [
   ['verdict', (s) => VERDICTS.has(s.verdict), 'not a verdict'],
   ['score', (s) => Number.isFinite(s.score), 'not a number'],
   ['repro.spec', (s) => s.repro?.spec === specOf(s.id), 'not its own spec'],
-  ['fingerprints', (s) => Array.isArray(s.fingerprints), 'not a list'],
-  ['invariants', (s) => Array.isArray(s.invariants), 'not a list'],
+  ['reason', (s) => isOptText(s.reason), TEXT],
+  ['fidelity', (s) => isOptText(s.fidelity), TEXT],
+  ['fingerprints', (s) => allText(s.fingerprints), 'not a list of strings'],
+  [
+    'invariants',
+    (s) => Array.isArray(s.invariants) && s.invariants.every(isInvariant),
+    'not a list of invariants with bounded string ids and errors',
+  ],
 ];
 
 const firstFailure = (checks, value, at) => {
