@@ -13,10 +13,13 @@
  *
  * P2's `run --live` (gate + manifest) is in this closure on purpose: it must
  * decide a refusal and print a manifest with no way to reach the target, and
- * this test is what proves it. The executor (P3) needs a browser and a child
- * process; it must arrive through a lazy dynamic import of a separate module,
- * so this closure stays the offline one. Dynamic imports are LISTED, never skipped:
- * the day one lands in the closure this test fails and forces that review.
+ * this test is what proves it. The P3 executor needs a socket and a child
+ * process, so it arrives through ONE lazy dynamic import, in cli.mjs, of one
+ * module (execute.mjs), loaded only after a matching --confirm. Dynamic
+ * imports are LISTED with their specifiers, never skipped: a second one, a
+ * different target, or a non-literal `import(x)` fails here and forces that
+ * review. The executor's own closure is walked too, to prove the split is
+ * real (it does reach a process module) rather than vacuous.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -41,19 +44,28 @@ const FORBIDDEN = [
   /^(undici|ws|axios|node-fetch|playwright|playwright-core|@playwright\/test)$/,
   /^(@anthropic-ai\/|openai$|@openai\/|@google\/genai|@google\/generative-ai|@ai-sdk\/|ai$|langchain|@langchain\/)/,
 ];
-/** Globals that reach the network with no import. */
+/** Globals that reach the network with no import -- `fetch` as a value too. */
 const NETWORK_GLOBALS =
-  /\bfetch\s*\(|\bWebSocket\b|\bXMLHttpRequest\b|\bEventSource\b/;
+  /\bfetch\b|\bWebSocket\b|\bXMLHttpRequest\b|\bEventSource\b/;
 const STATIC_IMPORT =
   /^\s*(?:import|export)\s[^'"]*?\sfrom\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]/gm;
-const DYNAMIC_IMPORT = /\bimport\s*\(/;
+const DYNAMIC_IMPORT = /\bimport\s*\(\s*(?:['"]([^'"]+)['"]\s*\))?/g;
 
 interface Closure {
   files: string[];
   bare: string[];
+  /** `<file> -> <specifier>`; a non-literal specifier reads `<computed>`. */
   dynamic: string[];
   globals: string[];
 }
+
+const rel = (f: string) => path.relative(SKILLS, f).split(path.sep).join('/');
+
+/** `<file> -> <specifier>` for every dynamic import in `src`. */
+const dynamicImports = (file: string, src: string) =>
+  [...src.matchAll(DYNAMIC_IMPORT)].map(
+    (m) => `${rel(file)} -> ${m[1] ?? '<computed>'}`,
+  );
 
 function closure(entry: string): Closure {
   const seen = new Set<string>();
@@ -72,14 +84,13 @@ function closure(entry: string): Closure {
         queue.push(path.resolve(path.dirname(file), spec));
       else bare.add(spec);
     }
-    if (DYNAMIC_IMPORT.test(src)) dynamic.push(file);
+    dynamic.push(...dynamicImports(file, src));
     if (NETWORK_GLOBALS.test(src)) globals.push(file);
   }
-  const rel = (f: string) => path.relative(SKILLS, f).split(path.sep).join('/');
   return {
     files: [...seen].map(rel).sort(),
     bare: [...bare].sort(),
-    dynamic: dynamic.map(rel).sort(),
+    dynamic: dynamic.sort(),
     globals: globals.map(rel).sort(),
   };
 }
@@ -117,8 +128,42 @@ describe('canary-cry Tier-0 import closure (SC6)', () => {
     expect(c.globals).toEqual([]);
   });
 
-  it('has no dynamic import (the future run path must stay outside)', () => {
-    expect(c.dynamic).toEqual([]);
+  it('reaches the executor only through one lazy import, in cli.mjs', () => {
+    expect(c.dynamic).toEqual([
+      'claude-code/canary-cry/scripts/cli.mjs -> ./execute.mjs',
+    ]);
+    expect(c.files).not.toContain('claude-code/canary-cry/scripts/execute.mjs');
+  });
+});
+
+describe('the executor stays outside the Tier-0 closure (SC6)', () => {
+  const EXECUTOR = path.join(path.dirname(CLI), 'execute.mjs');
+  const e = closure(EXECUTOR);
+  const tier0 = closure(CLI);
+
+  it('is the half that reaches a process and the network', () => {
+    expect(forbidden(e.bare)).toEqual(['node:child_process']);
+    expect(e.globals).toEqual([
+      'claude-code/canary-cry/scripts/playwright.mjs',
+    ]);
+  });
+
+  it('shares only pure modules with the Tier-0 closure', () => {
+    const shared = e.files.filter((f) => tier0.files.includes(f));
+    for (const file of shared) {
+      const sub = closure(path.join(SKILLS, file));
+      expect([file, forbidden(sub.bare), sub.globals]).toEqual([file, [], []]);
+    }
+    expect(shared).toEqual(
+      expect.arrayContaining([
+        'claude-code/canary-cry/scripts/matrix.mjs',
+        'claude-code/canary-cry/scripts/render.mjs',
+      ]),
+    );
+  });
+
+  it('has no dynamic import of its own', () => {
+    expect(e.dynamic).toEqual([]);
   });
 });
 

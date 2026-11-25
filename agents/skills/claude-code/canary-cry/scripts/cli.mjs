@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 // canary-cry -- pre-launch "try to break it" sweep of ordinary user flows.
 //
-// P1 shipped the Tier-0 half (deterministic, no network, no agent); P2 adds
-// the live gate in front of anything that could reach a target.
+// P1 shipped the Tier-0 half (deterministic, no network, no agent), P2 the
+// live gate, P3 the executor behind it (execute.mjs, lazily imported).
 //
 //   validate  check .canary/cry/flows.json and targets.json; every error names
 //             the JSON path at fault
 //   matrix    the ranked scenario matrix: flows x the abuse-pattern catalog,
 //             cut to an --amplitude budget; same input, byte-identical --json
-//   run       --live <t>: gate the target, print the manifest + its sha
+//   run       --live <t>: gate, print the manifest + sha; --confirm runs it
 //
-// `report` exits 2 "not yet supported" until its phase, rather than doing
-// something smaller under the same name. Exit codes: 0 ok (advisory), 2 usage
-// or input error, 3 --strict and the matrix abstained, 4 refused by a safety
-// gate (ADR 0046), 1 an unexpected exception (issue 1716).
+// `report` exits 2 "not yet supported" until its phase. Exit codes: 0 ok
+// (advisory), 2 usage or input error, 3 --strict and abstained, 1 --strict
+// and >= 1 corrupted, 4 refused by a safety gate (ADR 0046), and 1 an
+// unexpected exception (issue 1716).
 //
 // Invoked via `canary skills run canary-cry -- <command> [options]`.
 
@@ -190,9 +190,7 @@ function matrixCommand(opts) {
 // Order is load-bearing: inputs (exit 2); the target gate (exit 4) before any
 // credential is read; the account env vars (exit 2); then the run dir. With
 // --confirm the manifest is REBUILT from the files, never read back from the
-// run dir. P2 has no executor, so even a matching sha sends nothing: it exits
-// 2 "not yet supported", the P1 convention for a later phase's command, and
-// exit 4 stays reserved for a safety refusal (ADR 0046: it means nothing else).
+// run dir; only a matching sha loads the executor, by a lazy import: SC6.
 
 function refused(reason) {
   console.error(`${PROG}: refused: ${reason}`);
@@ -222,27 +220,28 @@ function writeRunDir(flowsFile, plan, now) {
   return file;
 }
 
-function confirmRun(opts, sha) {
-  if (opts.confirm !== sha) {
+function confirmRun(opts, plan, ctx) {
+  if (opts.confirm !== plan.sha) {
     return refused(
-      `manifest-sha mismatch: confirmed ${opts.confirm}, rebuilt ${sha}. ` +
+      `manifest-sha mismatch: confirmed ${opts.confirm}, rebuilt ${plan.sha}. ` +
         'Re-run without --confirm and read the new manifest.',
     );
   }
-  return fail([
-    'manifest-sha confirmed, but live execution is not yet supported ' +
-      `${LATER_PHASE}; nothing was sent to '${opts.live}'`,
-  ]);
+  const dir = path.resolve(
+    path.dirname(writeRunDir(opts.flows, plan, ctx.now)),
+  );
+  const run = (m) => m.executeRun({ ...ctx, opts, plan, dir });
+  return import('./execute.mjs').then(run);
 }
 
-function runCommand(opts, { env, now }) {
+function runCommand(opts, ctx) {
   const bad = runArgError(opts);
   if (bad !== null) return fail([bad]);
   const flows = loadFlows(opts.flows);
   if (flows.errors.length) return fail(flows.errors);
   const targets = loadTargets(opts.targets, flowIds(flows.doc));
   if (targets.errors.length) return fail(targets.errors);
-  const gate = gateLive(targets.doc, opts.live, env);
+  const gate = gateLive(targets.doc, opts.live, ctx.env);
   if (gate.refusal !== null) return refused(gate.refusal);
   if (gate.errors.length) return fail(gate.errors);
   const { amplitude, seed } = opts;
@@ -257,20 +256,21 @@ function runCommand(opts, { env, now }) {
     console.log(renderRunAbstained(plan.matrix, opts.live, declared));
     return opts.strict ? EXIT_ABSTAINED : 0;
   }
-  if (opts.confirm !== null) return confirmRun(opts, plan.sha);
-  console.log(
-    renderManifest(plan.manifest, plan.sha, writeRunDir(opts.flows, plan, now)),
-  );
+  if (opts.confirm !== null) return confirmRun(opts, plan, ctx);
+  const file = writeRunDir(opts.flows, plan, ctx.now);
+  console.log(renderManifest(plan.manifest, plan.sha, file));
   return 0;
 }
 
 /**
  * @param {string[]} argv
- * @param {{env?: Record<string, string | undefined>, now?: () => Date}} [deps]
- *   `run` reads account env vars and stamps its run dir; tests inject both.
+ * @param {{env?: Record<string, string | undefined>, now?: () => Date,
+ *   pw?: object}} [deps] tests inject the env, the clock and Playwright
+ * @returns {number | Promise<number>} a Promise only for a confirmed run
  */
 export function main(argv = [], deps = {}) {
   const ctx = {
+    ...deps,
     env: deps.env ?? process.env,
     now: deps.now ?? (() => new Date()),
   };
@@ -295,5 +295,5 @@ export function main(argv = [], deps = {}) {
 // `process.exitCode`, not `process.exit()`: a large `--json` payload must
 // drain before the process ends (#791).
 if (isMain(import.meta.url)) {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2));
 }

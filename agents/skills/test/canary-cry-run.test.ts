@@ -1,8 +1,7 @@
 /**
  * `canary-cry run --live` end to end through main() (#608 P2): the two-step
- * gate of ADR 0046. P2 has no executor, so a confirmed sha still sends
- * nothing; what this proves is everything that must hold BEFORE an executor
- * exists:
+ * gate of ADR 0046. What this proves is everything that must hold BEFORE
+ * the executor loads (a matching sha executing is canary-cry-execute.test.ts):
  *
  * - SC7  refused targets exit 4 and write nothing
  * - SC8  without --confirm: manifest + sha printed, only the run dir written
@@ -260,20 +259,6 @@ describe('--confirm (SC9)', () => {
     const r = run(['run', '--live', 'staging', ...p.args, '--confirm', sha]);
     expect(r.code).toBe(4);
     expect(r.stderr).toMatch(/manifest-sha mismatch/);
-  });
-
-  it('a matching sha still sends nothing in this phase, and says why', () => {
-    const p = project();
-    const sha = shaOf(run(['run', '--live', 'staging', ...p.args]).stdout)!;
-    const before = fs.readdirSync(p.runs);
-    const r = run(['run', '--live', 'staging', ...p.args, '--confirm', sha]);
-    expect(r.code).toBe(2);
-    expect(r.stderr).toBe(
-      'canary-cry: error: manifest-sha confirmed, but live execution is not yet ' +
-        "supported (a later phase of #608); nothing was sent to 'staging'",
-    );
-    expect(r.fetches).toBe(0);
-    expect(fs.readdirSync(p.runs)).toEqual(before);
   });
 });
 
