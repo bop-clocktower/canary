@@ -211,7 +211,7 @@ describe('executeRun guards', () => {
       plan: { manifest: null as any, matrix: {}, sha: 'x' },
       dir: '/nonexistent',
       env: {},
-      now: () => new Date(),
+      now: () => new Date('2026-01-01T00:00:00Z'),
     });
     expect(code).toBe(1);
     expect(String(err.mock.calls[0])).toMatch(/^canary-cry: /);

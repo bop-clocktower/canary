@@ -386,7 +386,7 @@ async function directRounds(variant: 'buggy' | 'fixed', intensities: number[]) {
   const dir = path.join(p.runs, `rounds-${intensities.join('-')}`);
   fs.mkdirSync(dir, { recursive: true });
   const plan = { manifest, matrix, sha: manifestSha(manifest) };
-  const now = () => new Date();
+  const now = () => new Date('2026-01-01T00:00:00Z');
   await executeRun({ opts: { strict: false }, plan, dir, env: ENV, now });
   return { dir, doc: findingsIn(dir) };
 }
