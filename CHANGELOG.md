@@ -14,6 +14,16 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Security
+
+- **`canary critical-areas` escapes control characters in the paths it reports
+  as dropped (#1575).** The "Dropped symbols" lines print paths read from an
+  existing `.canary/critical-areas.json`, which a scanned tree controls. An ESC
+  sequence, BEL, newline or other C0/C1 control in such a path reached the
+  terminal raw (CWE-150), so it could recolour or rewrite the screen or forge an
+  output line. Each control character now prints as `\xHH`, so the odd path is
+  still visible.
+
 ## [9.8.0] - 2026-11-25
 
 ### Added

@@ -874,6 +874,49 @@ describe('canary critical-areas', () => {
       expect(res.stdout).not.toContain('no longer in HEAD');
     });
 
+    describe('a map path carrying control characters (#1575)', () => {
+      // ESC + CSI colour, BEL, a newline that could forge a line, DEL, and
+      // the 8-bit C1 CSI: each would reach the operator's terminal raw.
+      const hostile = 'gone/\u001b[31mred\u0007\nfake\u007f\u009b2J.ts';
+      const shown = 'gone/\\x1b[31mred\\x07\\x0afake\\x7f\\x9b2J.ts';
+      const RAW_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
+
+      const droppedLines = (stdout: string): string[] =>
+        stdout.split('\n').filter((l) => l.startsWith('Dropped symbols'));
+
+      it('escapes them in the not-tracked line', async () => {
+        ranked(root);
+        plant([{ path: hostile, symbols: ['charge'] }]);
+        const res = await run();
+        expect(res.code).toBe(0);
+        expect(res.stdout).not.toMatch(RAW_CONTROL);
+        expect(res.stdout).not.toContain('\nfake');
+        expect(droppedLines(res.stdout)).toEqual([
+          `Dropped symbols for paths that are not a tracked file in HEAD: ${shown}.`,
+        ]);
+      });
+
+      it('escapes them in the rejected-list line', async () => {
+        ranked(root);
+        plant([{ path: hostile, symbols: ['ab'] }]);
+        const res = await run();
+        expect(res.code).toBe(0);
+        expect(res.stdout).not.toMatch(RAW_CONTROL);
+        const lines = droppedLines(res.stdout);
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain(`under 3 letters or digits): ${shown}.`);
+      });
+
+      it('leaves a printable non-ASCII path as it is', async () => {
+        ranked(root);
+        plant([{ path: 'gone/café.ts', symbols: ['charge'] }]);
+        const res = await run();
+        expect(droppedLines(res.stdout)).toEqual([
+          'Dropped symbols for paths that are not a tracked file in HEAD: gone/café.ts.',
+        ]);
+      });
+    });
+
     it.each([
       ['too short', ['ab']],
       ['blank', ['  ']],

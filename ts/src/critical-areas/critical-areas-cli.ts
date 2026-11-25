@@ -182,9 +182,21 @@ function signalsFor(
   }));
 }
 
+/**
+ * These paths come from an existing map in a tree that may not be trusted
+ * (#1575): a C0/C1 control or DEL would reach the terminal raw, so an ESC
+ * sequence could recolour or rewrite the screen and a newline forge a line.
+ * Each is shown as `\xHH`, so the operator still sees the path was odd.
+ */
+const showPath = (path: string): string =>
+  path.replace(
+    /[\u0000-\u001f\u007f-\u009f]/g,
+    (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`,
+  );
+
 const reportDropped = (deps: MainDeps, why: string, paths: string[]): void => {
   if (paths.length > 0) {
-    deps.out(`Dropped symbols for ${why}: ${paths.join(', ')}.`);
+    deps.out(`Dropped symbols for ${why}: ${paths.map(showPath).join(', ')}.`);
   }
 };
 
