@@ -2,23 +2,24 @@
 // canary-cry -- pre-launch "try to break it" sweep of ordinary user flows.
 //
 // P1 shipped the Tier-0 half (deterministic, no network, no agent), P2 the
-// live gate, P3 the executor behind it (execute.mjs, lazily imported).
+// live gate, P3 the executor behind it (execute.mjs, lazily imported), P4
+// its rounds, convergence, --max-wall, checkpoints and --resume.
 //
 //   validate  check .canary/cry/flows.json and targets.json; every error names
 //             the JSON path at fault
 //   matrix    the ranked scenario matrix: flows x the abuse-pattern catalog,
 //             cut to an --amplitude budget; same input, byte-identical --json
-//   run       --live <t>: gate, print the manifest + sha; --confirm runs it
+//   run       --live <t>: gate, print the manifest + sha; --confirm runs it;
+//             --resume <run-id> --confirm <sha> picks a stopped run back up
 //
 // `report` exits 2 "not yet supported" until its phase. Exit codes: 0 ok
-// (advisory), 2 usage or input error, 3 --strict and abstained, 1 --strict
-// and >= 1 corrupted, 4 refused by a safety gate (ADR 0046), and 1 an
-// unexpected exception (issue 1716).
+// (advisory), 2 usage or input error, 3 --strict and abstained or PARTIAL,
+// 1 --strict and >= 1 corrupted, 4 refused by a safety gate (ADR 0046), and
+// 1 an unexpected exception (issue 1716).
 //
 // Invoked via `canary skills run canary-cry -- <command> [options]`.
 
 import fs from 'node:fs';
-import path from 'node:path';
 
 import {
   createParser,
@@ -28,14 +29,15 @@ import {
 import { isMain } from '../../../lib/is-main.mjs';
 import { validateCriticalAreas } from '../../../lib/contracts/critical-areas.mjs';
 import { gateLive } from './gate.mjs';
-import { manifestFileText, planRun } from './manifest.mjs';
-import { AMPLITUDES, buildMatrix, matrixJson } from './matrix.mjs';
+import { planRun } from './manifest.mjs';
+import { amplitudeError, buildMatrix, matrixJson } from './matrix.mjs';
 import {
   renderManifest,
   renderMatrix,
   renderRunAbstained,
   USAGE,
 } from './render.mjs';
+import { newRunDir, readRun, runArgError, trustResume } from './runs.mjs';
 import { readJsonFile } from './schema-core.mjs';
 import { loadFlows, loadTargets } from './schema.mjs';
 
@@ -43,8 +45,6 @@ const PROG = 'canary-cry';
 const EXIT_ABSTAINED = 3;
 const EXIT_REFUSED = 4;
 const LATER_PHASE = '(a later phase of #608)';
-/** The amplitudes `run` can execute today; `matrix` knows all three. */
-const RUNNABLE = new Set(['whisper']);
 
 const DEFAULT_AREAS = '.canary/critical-areas.json';
 const LATER = new Set(['report']);
@@ -61,6 +61,8 @@ export const CLI_SPEC = {
     '--seed': { key: 'seed', type: 'int' },
     '--live': { key: 'live' },
     '--confirm': { key: 'confirm' },
+    '--max-wall': { key: 'maxWall' },
+    '--resume': { key: 'resume' },
   },
   defaults: {
     flows: '.canary/cry/flows.json',
@@ -154,15 +156,6 @@ function loadAreas(explicit) {
   return { value: read.doc.areas, errors: [] };
 }
 
-function amplitudeError(amplitude) {
-  if (Object.hasOwn(AMPLITUDES, amplitude)) return null;
-  const choices = Object.keys(AMPLITUDES).map((a) => `'${a}'`);
-  return (
-    `argument --amplitude: invalid choice: '${amplitude}' ` +
-    `(choose from ${choices.join(', ')})`
-  );
-}
-
 function matrixCommand(opts) {
   const bad = amplitudeError(opts.amplitude);
   if (bad !== null) return fail([bad]);
@@ -186,80 +179,82 @@ function matrixCommand(opts) {
   return matrix.status === 'abstained' && opts.strict ? EXIT_ABSTAINED : 0;
 }
 
-// --- run --live: the two-step gate of ADR 0046 -------------------------------
+// --- run: the two-step gate of ADR 0046 ------------------------------------
 // Order is load-bearing: inputs (exit 2); the target gate (exit 4) before any
 // credential is read; the account env vars (exit 2); then the run dir. With
 // --confirm the manifest is REBUILT from the files, never read back from the
 // run dir; only a matching sha loads the executor, by a lazy import: SC6.
+// --resume rebuilds it the same way, from the parameters its run recorded.
 
 function refused(reason) {
   console.error(`${PROG}: refused: ${reason}`);
   return EXIT_REFUSED;
 }
 
-/** `20261125T143333Z`: sortable, filesystem-safe, UTC. */
-const stamp = (date) =>
-  date
-    .toISOString()
-    .replace(/[-:]/g, '')
-    .replace(/\.\d+Z$/, 'Z');
-
-function runArgError(opts) {
-  if (opts.live === null) return 'run: --live TARGET is required';
-  if (RUNNABLE.has(opts.amplitude)) return null;
-  return `run --amplitude ${opts.amplitude} is not yet supported ${LATER_PHASE}; matrix accepts it`;
+/** The gated plan rebuilt from the files, or `{exit}` when a check stopped. */
+function gatedPlan(opts, ctx, { target, amplitude, seed }) {
+  const flows = loadFlows(opts.flows);
+  if (flows.errors.length) return { exit: fail(flows.errors) };
+  const targets = loadTargets(opts.targets, flowIds(flows.doc));
+  if (targets.errors.length) return { exit: fail(targets.errors) };
+  const gate = gateLive(targets.doc, target, ctx.env);
+  if (gate.refusal !== null) return { exit: refused(gate.refusal) };
+  if (gate.errors.length) return { exit: fail(gate.errors) };
+  const flowsDoc = flows.doc;
+  const plan = planRun({ flowsDoc, target: gate.target, amplitude, seed });
+  return { plan, declared: flowsDoc.flows.length };
 }
 
-/** The run dir sits beside the flows file: .canary/cry/runs/ by default. */
-function writeRunDir(flowsFile, plan, now) {
-  const id = `${stamp(now())}-${plan.sha.slice(0, 8)}`;
-  const dir = path.join(path.dirname(flowsFile), 'runs', id);
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, 'manifest.json');
-  fs.writeFileSync(file, manifestFileText(plan.manifest));
-  return file;
-}
+/** The ONE way the executor loads: lazily, after the sha check passed. */
+const execute = (ctx, input) =>
+  import('./execute.mjs').then((m) => m.executeRun({ ...ctx, ...input }));
 
-function confirmRun(opts, plan, ctx) {
+function liveCommand(opts, ctx) {
+  const { amplitude, seed } = opts;
+  const live = gatedPlan(opts, ctx, { target: opts.live, amplitude, seed });
+  if (live.exit !== undefined) return live.exit;
+  const { plan } = live;
+  if (plan.manifest === null) {
+    console.log(renderRunAbstained(plan.matrix, opts.live, live.declared));
+    return opts.strict ? EXIT_ABSTAINED : 0;
+  }
+  if (opts.confirm === null) {
+    const { file } = newRunDir(opts.flows, plan, ctx.now);
+    console.log(renderManifest(plan.manifest, plan.sha, file));
+    return 0;
+  }
   if (opts.confirm !== plan.sha) {
     return refused(
       `manifest-sha mismatch: confirmed ${opts.confirm}, rebuilt ${plan.sha}. ` +
         'Re-run without --confirm and read the new manifest.',
     );
   }
-  const dir = path.resolve(
-    path.dirname(writeRunDir(opts.flows, plan, ctx.now)),
-  );
-  const run = (m) => m.executeRun({ ...ctx, opts, plan, dir });
-  return import('./execute.mjs').then(run);
+  const { dir } = newRunDir(opts.flows, plan, ctx.now);
+  return execute(ctx, { opts, plan, dir });
+}
+
+/** `run --resume <run-id> --confirm <sha>`: exit 2 usage, exit 4 refusal. */
+function resumeCommand(opts, ctx) {
+  const runId = opts.resume;
+  const run = readRun(opts.flows, runId);
+  if (run.error !== null) return fail([run.error]);
+  const bad = amplitudeError(run.params.amplitude);
+  if (bad !== null) return fail([`run ${runId}: manifest.json: ${bad}`]);
+  const live = gatedPlan(opts, ctx, run.params);
+  if (live.exit !== undefined) return live.exit;
+  const { plan } = live;
+  const trust = trustResume({ runId, run, plan, confirm: opts.confirm });
+  if (trust.exit === EXIT_REFUSED) return refused(trust.reason);
+  if (trust.exit !== null) return fail([trust.reason]);
+  return execute(ctx, { opts, plan, dir: run.dir, resume: run.checkpoint });
 }
 
 function runCommand(opts, ctx) {
-  const bad = runArgError(opts);
+  const live = opts.resume === null;
+  const bad =
+    runArgError(opts) ?? (live ? amplitudeError(opts.amplitude) : null);
   if (bad !== null) return fail([bad]);
-  const flows = loadFlows(opts.flows);
-  if (flows.errors.length) return fail(flows.errors);
-  const targets = loadTargets(opts.targets, flowIds(flows.doc));
-  if (targets.errors.length) return fail(targets.errors);
-  const gate = gateLive(targets.doc, opts.live, ctx.env);
-  if (gate.refusal !== null) return refused(gate.refusal);
-  if (gate.errors.length) return fail(gate.errors);
-  const { amplitude, seed } = opts;
-  const plan = planRun({
-    flowsDoc: flows.doc,
-    target: gate.target,
-    amplitude,
-    seed,
-  });
-  if (plan.manifest === null) {
-    const declared = flows.doc.flows.length;
-    console.log(renderRunAbstained(plan.matrix, opts.live, declared));
-    return opts.strict ? EXIT_ABSTAINED : 0;
-  }
-  if (opts.confirm !== null) return confirmRun(opts, plan, ctx);
-  const file = writeRunDir(opts.flows, plan, ctx.now);
-  console.log(renderManifest(plan.manifest, plan.sha, file));
-  return 0;
+  return live ? liveCommand(opts, ctx) : resumeCommand(opts, ctx);
 }
 
 /**

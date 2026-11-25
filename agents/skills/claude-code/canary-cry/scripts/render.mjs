@@ -10,7 +10,8 @@ export const USAGE =
   'usage: canary-cry [-h] {validate,matrix,run} [--flows PATH] [--targets PATH]\n' +
   '                  [--target NAME] [--critical-areas PATH]\n' +
   '                  [--amplitude {whisper,shout,scream}] [--seed N]\n' +
-  '                  [--live NAME] [--confirm SHA] [--json] [--strict]\n' +
+  '                  [--live NAME] [--confirm SHA] [--max-wall D]\n' +
+  '                  [--resume RUN_ID] [--json] [--strict]\n' +
   '\n' +
   'Pre-launch "try to break it" sweep of ordinary user flows. Nothing reaches\n' +
   'a target until run --confirm carries the sha of the manifest you read.\n' +
@@ -21,7 +22,9 @@ export const USAGE =
   '  run                   --live NAME: gate the target, print the manifest\n' +
   '                        and its manifest-sha (no target request);\n' +
   '                        with a matching --confirm, run the scenarios\n' +
-  "                        on the target project's Playwright\n" +
+  "                        on the target project's Playwright, round by\n" +
+  '                        round; --resume RUN_ID --confirm SHA picks a\n' +
+  '                        stopped run back up\n' +
   '\n' +
   'options:\n' +
   '  -h, --help            show this help message and exit\n' +
@@ -30,7 +33,8 @@ export const USAGE =
   '  --target NAME         matrix: also schedule the target-scoped patterns\n' +
   '  --critical-areas PATH matrix: rank with critical areas (default:\n' +
   '                        .canary/critical-areas.json, when present)\n' +
-  '  --amplitude A         matrix budget: whisper (default), shout, scream\n' +
+  '  --amplitude A         the budget: whisper (default), shout, scream;\n' +
+  '                        run scream stops after 2 barren rounds\n' +
   '  --seed N              recorded for {{unique.*}} test data; never selects\n' +
   '                        scenarios (default: 0)\n' +
   '  --live NAME           run: the targets.json target to gate (exit 4 when\n' +
@@ -39,9 +43,13 @@ export const USAGE =
   '  --confirm SHA         run: the manifest-sha you read; exit 4 unless it\n' +
   "                        equals the freshly rebuilt manifest's sha\n" +
   '                        (a match executes it)\n' +
+  '  --max-wall D          run: stop between scenarios once D (90s, 30m, 2h,\n' +
+  '                        1h30m) has elapsed: PARTIAL, resumable\n' +
+  '  --resume RUN_ID       run: continue a stopped run; its target, amplitude\n' +
+  '                        and seed come from the run, its sha must match\n' +
   '  --json                matrix: print the canonical matrix.json document\n' +
-  '  --strict              matrix, run: exit 3 when abstained; run: exit 1\n' +
-  '                        when a scenario is corrupted';
+  '  --strict              matrix, run: exit 3 when abstained (run: or\n' +
+  '                        PARTIAL); run: exit 1 when a scenario is corrupted';
 
 // #508 convention line, written as escapes so this source stays ASCII (the
 // same wording as ts/src/core/gate-result.ts and the other skill CLIs).

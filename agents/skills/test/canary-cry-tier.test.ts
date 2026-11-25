@@ -113,6 +113,9 @@ describe('canary-cry Tier-0 import closure (SC6)', () => {
         'claude-code/canary-cry/scripts/render.mjs',
         'claude-code/canary-cry/scripts/gate.mjs',
         'claude-code/canary-cry/scripts/manifest.mjs',
+        // #608 P4: --resume reads its run back and plans it before confirm.
+        'claude-code/canary-cry/scripts/runs.mjs',
+        'claude-code/canary-cry/scripts/checkpoint.mjs',
         'lib/parse-args.mjs',
         'lib/contracts/critical-areas.mjs',
       ]),
@@ -158,7 +161,18 @@ describe('the executor stays outside the Tier-0 closure (SC6)', () => {
       expect.arrayContaining([
         'claude-code/canary-cry/scripts/matrix.mjs',
         'claude-code/canary-cry/scripts/render.mjs',
+        'claude-code/canary-cry/scripts/checkpoint.mjs',
       ]),
+    );
+    // The round loop and convergence are the executor's alone (#608 P4).
+    expect(e.files).toEqual(
+      expect.arrayContaining([
+        'claude-code/canary-cry/scripts/rounds.mjs',
+        'claude-code/canary-cry/scripts/convergence.mjs',
+      ]),
+    );
+    expect(tier0.files).not.toContain(
+      'claude-code/canary-cry/scripts/rounds.mjs',
     );
   });
 

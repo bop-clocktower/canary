@@ -47,17 +47,36 @@ function scenarioEntry(scenario, observation) {
 }
 
 /**
+ * The run's status: a run-level abstention first, then a --max-wall stop
+ * (PARTIAL, #608 P4), else what the scenario verdicts add up to.
+ */
+function statusOf(scenarios, abstainedReason, stop) {
+  const summary = summarize(scenarios);
+  if (abstainedReason) {
+    return { ...summary, status: 'abstained', reason: abstainedReason };
+  }
+  if (stop?.reason === 'partial') {
+    return { ...summary, status: 'partial', reason: stop.line };
+  }
+  return summary;
+}
+
+/**
  * findings.json for a confirmed run.
- * @param {{run: object, manifest: object,
+ * @param {{run: object, manifest: {scenarios: object[]},
  *   observations: Map<string, object | null> | null,
- *   abstainedReason?: string}} input `observations` is null when no
- *   scenario ran (the run abstained before the browser started)
+ *   abstainedReason?: string, stop?: {reason: string, line: string | null,
+ *   rounds: object[]}}} input `manifest.scenarios` is the denominator: the
+ *   scenarios that ran. `observations` is null when none ran (the run
+ *   abstained before the browser started). `stop` is how the round loop
+ *   ended (rounds.mjs), absent when it never started.
  */
 export function buildFindings({
   run,
   manifest,
   observations,
   abstainedReason,
+  stop,
 }) {
   const scenarios =
     observations === null
@@ -65,13 +84,12 @@ export function buildFindings({
       : manifest.scenarios.map((s) =>
           scenarioEntry(s, observations.get(fileStem(s.id)) ?? null),
         );
-  const summary = abstainedReason
-    ? { ...summarize(scenarios), status: 'abstained', reason: abstainedReason }
-    : summarize(scenarios);
   return {
     format: 'canary.cry-findings/1',
     run,
-    ...summary,
+    ...statusOf(scenarios, abstainedReason, stop),
+    stop: stop ? { reason: stop.reason, line: stop.line } : null,
+    rounds: stop?.rounds ?? [],
     scenarios,
     fingerprints: uniqueSorted(scenarios.flatMap((s) => s.fingerprints)),
     blockedEgress: uniqueSorted(scenarios.flatMap((s) => s.blockedEgress)),
@@ -123,6 +141,8 @@ export function renderFindings(doc, where) {
   if (doc.blockedEgress.length) {
     lines.push(`blocked egress (aborted): ${doc.blockedEgress.join(', ')}`);
   }
+  // `converged after round <n>`, the ceiling's line, or PARTIAL's (#608 P4).
+  if (doc.stop?.line) lines.push(doc.stop.line);
   if (doc.status === 'abstained') {
     lines.push(`ABSTAINED: ${doc.reason}`, ABSTAINED_LINE);
   }
@@ -132,4 +152,17 @@ export function renderFindings(doc, where) {
       '-c playwright.config.mjs specs/<scenario>.spec.mjs',
   );
   return lines.join('\n');
+}
+
+/**
+ * The exit code of a findings document (#608 P4 moved it here from
+ * verdict.mjs: it judges a run, not a scenario). Advisory by default. Under --strict: 1 when a scenario is state-verified
+ * corrupted, however the run ended; else 3 when it did not run its budget
+ * (ABSTAINED, or a --max-wall PARTIAL: cannot-verify is never a pass); else
+ * 0 -- a symptom never fails it.
+ */
+export function exitCode(summary, strict) {
+  if (!strict) return 0;
+  if (summary.counts.corrupted > 0) return 1;
+  return summary.status === 'ok' ? 0 : 3;
 }

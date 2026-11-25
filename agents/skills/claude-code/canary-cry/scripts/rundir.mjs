@@ -1,20 +1,25 @@
-// canary-cry run dir I/O (#608 P3; spec "Codegen and runtime", "Outputs").
+// canary-cry run dir I/O (#608 P3, P4; spec "Codegen and runtime", "Outputs").
 // Everything a confirmed run writes or reads back lives here, under
 // `runs/<run-id>/` beside the flows file:
 //
-//   manifest.json          written by cli.mjs before the executor loads
+//   manifest.json          written by the CLI before the executor loads
 //   matrix.json            always, even when the run then abstains
 //   playwright.config.mjs  specs/<scenario>.spec.mjs   (codegen.mjs)
 //   runtime/*.mjs  verdict.mjs   copies, in the same relative layout as
 //                          scripts/, so a spec's imports resolve in place
 //   observations/<scenario>.json  written by the runtime, one per scenario
-//   results.json           Playwright's JSON reporter (canary-test-reporter)
+//   results/<scenario>.json       each scenario's own Playwright report
+//   results.json           those reports merged (canary-test-reporter)
+//   checkpoint.json        rewritten after every scenario (checkpoint.mjs)
 //   findings.json          canary.cry-findings/1
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 import { fileStem, runFiles } from './codegen.mjs';
+
+// The env var the generated config reads for each scenario's report path.
+export { RESULTS_ENV } from './codegen.mjs';
 import { matrixJson } from './matrix.mjs';
 
 const RUNTIME = new URL('./runtime/', import.meta.url);
@@ -49,22 +54,85 @@ function readJson(file) {
   }
 }
 
+/** One scenario's files: its spec, its Playwright report, its observation. */
+export function scenarioFiles(dir, scenario) {
+  const stem = fileStem(scenario.id);
+  return {
+    spec: path.join(dir, 'specs', `${stem}.spec.mjs`),
+    results: path.join(dir, 'results', `${stem}.json`),
+    observation: path.join(dir, 'observations', `${stem}.json`),
+  };
+}
+
 /**
- * What the browser run left behind: whether Playwright wrote its results,
- * and each scenario's observation (null when the runtime wrote none).
- * @param {string} dir
- * @param {{id: string}[]} scenarios keyed by their file stem
+ * One scenario's files, with any report or observation an earlier attempt
+ * left removed: a scenario killed mid-run is re-run on resume, and what the
+ * killed attempt wrote must never read as the new attempt's outcome.
  */
-export function readOutcome(dir, scenarios) {
-  const stems = scenarios.map((s) => fileStem(s.id));
-  const results = fs.existsSync(path.join(dir, 'results.json'));
-  const observations = new Map(
-    stems.map((stem) => [
-      stem,
-      readJson(path.join(dir, 'observations', `${stem}.json`)),
+export function resetScenario(dir, scenario) {
+  const files = scenarioFiles(dir, scenario);
+  fs.rmSync(files.results, { force: true });
+  fs.rmSync(files.observation, { force: true });
+  return files;
+}
+
+/**
+ * What one scenario's Playwright run left behind: whether it wrote its
+ * report (no report is a crash), and the observation (null when none).
+ */
+export function readScenario(dir, scenario) {
+  const files = scenarioFiles(dir, scenario);
+  return {
+    results: fs.existsSync(files.results),
+    observation: readJson(files.observation),
+  };
+}
+
+/** Each scenario's observation by file stem, null when the runtime wrote none. */
+export function readObservations(dir, scenarios) {
+  return new Map(
+    scenarios.map((s) => [
+      fileStem(s.id),
+      readJson(scenarioFiles(dir, s).observation),
     ]),
   );
-  return { results, observations };
+}
+
+/** Rewritten after every scenario: a rename, so a kill never tears it. */
+export function writeCheckpoint(dir, checkpoint) {
+  const file = path.join(dir, 'checkpoint.json');
+  fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(checkpoint, null, 2)}\n`);
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+const COUNTS = ['expected', 'skipped', 'unexpected', 'flaky'];
+
+function mergeStats(reports) {
+  const sum = (key) => reports.reduce((n, r) => n + (r.stats?.[key] ?? 0), 0);
+  return {
+    startTime: reports[0].stats?.startTime,
+    duration: sum('duration'),
+    ...Object.fromEntries(COUNTS.map((key) => [key, sum(key)])),
+  };
+}
+
+/**
+ * results.json: the scenarios' own reports as one Playwright JSON report, in
+ * run order, so canary-test-reporter reads a whole run unchanged. None is
+ * written when no scenario reported.
+ */
+export function mergeResults(dir, scenarios) {
+  const reports = scenarios
+    .map((s) => readJson(scenarioFiles(dir, s).results))
+    .filter((r) => r !== null);
+  if (!reports.length) return;
+  const doc = {
+    ...reports[0],
+    suites: reports.flatMap((r) => r.suites ?? []),
+    errors: reports.flatMap((r) => r.errors ?? []),
+    stats: mergeStats(reports),
+  };
+  write(dir, 'results.json', `${JSON.stringify(doc, null, 2)}\n`);
 }
 
 export const writeFindings = (dir, doc) =>

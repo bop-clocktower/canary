@@ -16,148 +16,30 @@
  */
 import fs from 'node:fs';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { main } from '../claude-code/canary-cry/scripts/cli.mjs';
 import { executeRun } from '../claude-code/canary-cry/scripts/execute.mjs';
+import {
+  ACCOUNT,
+  PAY,
+  SECRET,
+  STEM,
+  type Seen,
+  cleanup,
+  confirmed,
+  confirmedDir,
+  fakePw,
+  findings,
+  observation,
+  project,
+} from './fixtures/cry-run/harness.js';
 
-const NOW = () => new Date('2026-11-25T14:33:33.123Z');
-const SECRET = 'pw-planted-5150';
-const ACCOUNT = JSON.stringify({ email: 'a@x.test', password: SECRET, id: 7 });
-const ENV = { CRY_A: ACCOUNT };
-const PAY = 'checkout:multi-submit:i1:spay';
-const STEM = 'checkout.multi-submit.i1.spay';
-
-const tmps: string[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
-  while (tmps.length) fs.rmSync(tmps.pop()!, { recursive: true, force: true });
+  cleanup();
 });
-
-function checkoutFlow(invariants: any[]): any {
-  return {
-    id: 'checkout',
-    risk: 5,
-    steps: [
-      { id: 'open', action: 'goto', url: '/cart' },
-      { id: 'pay', action: 'click', selector: '#p', writes: true },
-    ],
-    invariants,
-  };
-}
-
-const ONE_ORDER = {
-  id: 'one-order',
-  probe: { http: { method: 'GET', path: '/api/orders' } },
-  expect: { jsonPath: '$.length', delta: 1 },
-};
-
-function targetsDoc(baseURL: string): any {
-  const local = {
-    baseURL,
-    environment: 'local',
-    hosts: ['127.0.0.1'],
-    accounts: { A: { env: 'CRY_A' } },
-  };
-  return { version: 1, prodHosts: [], targets: { local } };
-}
-
-function project(baseURL = 'http://127.0.0.1:9', invariants = [ONE_ORDER]) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canary-cry-exec-'));
-  tmps.push(dir);
-  const cry = path.join(dir, '.canary', 'cry');
-  fs.mkdirSync(cry, { recursive: true });
-  const f = path.join(cry, 'flows.json');
-  const t = path.join(cry, 'targets.json');
-  const flows = { version: 1, flows: [checkoutFlow(invariants)] };
-  fs.writeFileSync(f, JSON.stringify(flows));
-  fs.writeFileSync(t, JSON.stringify(targetsDoc(baseURL)));
-  return { runs: path.join(cry, 'runs'), args: ['--flows', f, '--targets', t] };
-}
-
-/** An observation the runtime would write for one scenario. */
-function observation(verdict: string, over: Record<string, unknown> = {}) {
-  return {
-    id: PAY,
-    verdict,
-    reason: null,
-    fidelity: verdict === 'symptom' ? 'observed' : 'state-verified',
-    fingerprints: [],
-    invariants: [],
-    signals: [],
-    blockedEgress: [],
-    error: null,
-    ...over,
-  };
-}
-
-interface Seen {
-  calls: any[];
-}
-
-/** Playwright stubbed: `run` writes what a real run would leave behind. */
-function fakePw(seen: Seen, obs: object | null, results = true) {
-  return {
-    resolve: () => '/fake/@playwright/test/cli.js',
-    preflight: async () => ({ ok: true, detail: 'HTTP 200' }),
-    run: async (args: any) => {
-      seen.calls.push(args);
-      const dir = path.dirname(args.config);
-      if (results) fs.writeFileSync(path.join(dir, 'results.json'), '{}');
-      if (obs !== null) {
-        fs.mkdirSync(path.join(dir, 'observations'), { recursive: true });
-        const file = path.join(dir, 'observations', `${STEM}.json`);
-        fs.writeFileSync(file, JSON.stringify(obs));
-      }
-      // runPlaywright already keeps only the last 20 (canary-cry-codegen).
-      const stderr = Array.from({ length: 20 }, (_, i) => `err ${i}`);
-      return { code: results ? 0 : 1, stderr };
-    },
-  };
-}
-
-async function cry(argv: string[], pw?: object) {
-  const out: string[] = [];
-  const err: string[] = [];
-  vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
-    out.push(a.join(' '));
-  });
-  vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
-    err.push(a.join(' '));
-  });
-  const code = await main(argv, { env: ENV, now: NOW, pw });
-  vi.restoreAllMocks();
-  return { code, stdout: out.join('\n'), stderr: err.join('\n') };
-}
-
-/** The two-step gate: read the sha, then confirm it. */
-async function confirmed(
-  p: { args: string[] },
-  pw?: object,
-  extra: string[] = [],
-) {
-  const first = await cry(['run', '--live', 'local', ...p.args]);
-  const sha = /manifest-sha: ([0-9a-f]{64})/.exec(first.stdout)![1];
-  return cry(
-    ['run', '--live', 'local', ...p.args, '--confirm', sha!, ...extra],
-    pw,
-  );
-}
-
-function confirmedDir(runs: string): string {
-  return fs
-    .readdirSync(runs)
-    .map((id) => path.join(runs, id))
-    .find((d) => fs.existsSync(path.join(d, 'findings.json')))!;
-}
-
-const findings = (runs: string) =>
-  JSON.parse(
-    fs.readFileSync(path.join(confirmedDir(runs), 'findings.json'), 'utf8'),
-  );
 
 describe('a matching --confirm executes', () => {
   it('generates the run dir, launches the target Playwright, writes findings.json', async () => {
@@ -322,21 +204,6 @@ function closedPort(): Promise<number> {
 }
 
 describe('executeRun guards', () => {
-  it('refuses a round above i1 rather than running it as i1 (P4)', async () => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const scenario = { id: 'f:multi-submit:i2:sx', intensity: 2 };
-    const code = await executeRun({
-      opts: { strict: false },
-      plan: { manifest: { scenarios: [scenario] }, matrix: {}, sha: 'x' },
-      dir: '/nonexistent',
-      env: {},
-    });
-    expect(code).toBe(2);
-    expect(String(err.mock.calls[0])).toContain(
-      'live rounds above i1 are not yet supported',
-    );
-  });
-
   it('an unexpected exception exits 1 with its message', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const code = await executeRun({
@@ -344,6 +211,7 @@ describe('executeRun guards', () => {
       plan: { manifest: null as any, matrix: {}, sha: 'x' },
       dir: '/nonexistent',
       env: {},
+      now: () => new Date(),
     });
     expect(code).toBe(1);
     expect(String(err.mock.calls[0])).toMatch(/^canary-cry: /);

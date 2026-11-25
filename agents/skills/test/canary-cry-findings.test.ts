@@ -168,3 +168,45 @@ describe('renderFindings', () => {
     expect(text).not.toContain('ABSTAINED');
   });
 });
+
+describe('how a run stopped (#608 P4)', () => {
+  const rounds = [{ intensity: 1, fresh: [], abstained: false, barren: true }];
+
+  it('records the stop and the rounds, and prints the convergence line', () => {
+    const doc = buildFindings({
+      run: RUN,
+      manifest: MANIFEST,
+      observations,
+      stop: { reason: 'converged', line: 'converged after round 2', rounds },
+    });
+    expect(doc.status).toBe('ok');
+    expect(doc.stop).toEqual({
+      reason: 'converged',
+      line: 'converged after round 2',
+    });
+    expect(doc.rounds).toEqual(rounds);
+    const text = renderFindings(doc, { dir: '/r', findings: '/r/f.json' });
+    expect(text.split('\n')).toContain('converged after round 2');
+  });
+
+  it('a wall stop is PARTIAL, never ok, and says how to resume', () => {
+    const line = 'PARTIAL: 4/9 — resume with --resume r1';
+    const doc = buildFindings({
+      run: RUN,
+      manifest: MANIFEST,
+      observations,
+      stop: { reason: 'partial', line, rounds },
+    });
+    expect(doc.status).toBe('partial');
+    expect(doc.reason).toBe(line);
+    const text = renderFindings(doc, { dir: '/r', findings: '/r/f.json' });
+    expect(text.split('\n')).toContain(line);
+    expect(text).not.toContain('ABSTAINED');
+  });
+
+  it('a run that never reached its rounds has no stop', () => {
+    const doc = buildFindings({ run: RUN, manifest: MANIFEST, observations });
+    expect(doc.stop).toBeNull();
+    expect(doc.rounds).toEqual([]);
+  });
+});

@@ -15,6 +15,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  RESULTS_ENV,
   fileStem,
   runFiles,
   scenarioPayload,
@@ -24,9 +25,15 @@ import {
   preflight,
   resolvePlaywright,
   runPlaywright,
+  specFilter,
 } from '../claude-code/canary-cry/scripts/playwright.mjs';
 import {
-  readOutcome,
+  mergeResults,
+  readObservations,
+  readScenario,
+  resetScenario,
+  scenarioFiles,
+  writeCheckpoint,
   writeHarness,
 } from '../claude-code/canary-cry/scripts/rundir.mjs';
 
@@ -151,7 +158,11 @@ describe('runFiles', () => {
     const config = files[0].text;
     expect(config).toContain('workers: 1');
     expect(config).toContain('retries: 0');
-    expect(config).toContain("['json', { outputFile: 'results.json' }]");
+    // One Playwright run per scenario (#608 P4): the executor names each
+    // run's report; a standalone replay still writes results.json.
+    expect(config).toContain(
+      `['json', { outputFile: process.env.${RESULTS_ENV} || 'results.json' }]`,
+    );
     expect(config).toContain("trace: 'off'");
     const spec = files[1].text;
     expect(spec).toContain(`manifest-sha ${sha}`);
@@ -193,24 +204,124 @@ describe('the run dir', () => {
       'runtime/steps.mjs',
       'runtime/guard.mjs',
       'runtime/probes.mjs',
+      'runtime/tamper.mjs',
     ]) {
       expect(fs.existsSync(path.join(dir, f)), f).toBe(true);
     }
   });
 
-  it('reads back results.json presence and observations, null when missing', () => {
+  it('names each scenario its spec, report and observation', () => {
+    expect(scenarioFiles('/r', { id: 'a:b:i1:sc' })).toEqual({
+      spec: path.join('/r', 'specs', 'a.b.i1.sc.spec.mjs'),
+      results: path.join('/r', 'results', 'a.b.i1.sc.json'),
+      observation: path.join('/r', 'observations', 'a.b.i1.sc.json'),
+    });
+  });
+
+  it('reads back one scenario: whether Playwright reported, and its observation', () => {
+    const dir = tmp();
+    const s = { id: 'a:b' };
+    expect(readScenario(dir, s)).toEqual({ results: false, observation: null });
+    fs.mkdirSync(path.join(dir, 'results'));
+    fs.writeFileSync(path.join(dir, 'results', 'a.b.json'), '{}');
+    fs.mkdirSync(path.join(dir, 'observations'));
+    fs.writeFileSync(path.join(dir, 'observations', 'a.b.json'), '{"x":1}');
+    expect(readScenario(dir, s)).toEqual({
+      results: true,
+      observation: { x: 1 },
+    });
+  });
+
+  // A scenario killed mid-run is re-run on resume: whatever its earlier
+  // attempt left must not be read as the new attempt's report or verdict.
+  it('clears a scenario report and observation before it runs again', () => {
+    const dir = tmp();
+    const s = { id: 'a:b' };
+    const files = scenarioFiles(dir, s);
+    for (const f of [files.results, files.observation]) {
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, '{"stale":true}');
+    }
+    expect(resetScenario(dir, s)).toEqual(files);
+    expect(readScenario(dir, s)).toEqual({ results: false, observation: null });
+  });
+
+  it('reads back observations, null when missing or unreadable', () => {
     const dir = tmp();
     fs.mkdirSync(path.join(dir, 'observations'));
     fs.writeFileSync(path.join(dir, 'observations', 'a.b.json'), '{"x":1}');
     fs.writeFileSync(path.join(dir, 'observations', 'c.d.json'), '{bad');
-    const out = readOutcome(dir, [{ id: 'a:b' }, { id: 'c:d' }, { id: 'e:f' }]);
-      'runtime/tamper.mjs',
-    expect(out.results).toBe(false);
-    expect([...out.observations]).toEqual([
+    const out = readObservations(dir, [
+      { id: 'a:b' },
+      { id: 'c:d' },
+      { id: 'e:f' },
+    ]);
+    expect([...out]).toEqual([
       ['a.b', { x: 1 }],
       ['c.d', null],
       ['e.f', null],
     ]);
+  });
+
+  it('writes checkpoint.json whole, never a torn file', () => {
+    const dir = tmp();
+    const cp = { format: 'canary.cry-checkpoint/1', results: [] };
+    writeCheckpoint(dir, cp);
+    writeCheckpoint(dir, { ...cp, total: 2 });
+    expect(fs.readdirSync(dir)).toEqual(['checkpoint.json']);
+    expect(
+      JSON.parse(fs.readFileSync(path.join(dir, 'checkpoint.json'), 'utf8')),
+    ).toEqual({ ...cp, total: 2 });
+  });
+
+  /** A Playwright JSON report of one spec. */
+  const report = (title: string, ok: boolean, ms: number) => ({
+    config: { version: '1.65.0' },
+    suites: [{ title }],
+    errors: ok ? [] : [{ message: title }],
+    stats: {
+      startTime: `t-${title}`,
+      duration: ms,
+      expected: ok ? 1 : 0,
+      skipped: 0,
+      unexpected: ok ? 0 : 1,
+      flaky: 0,
+    },
+  });
+
+  it("merges the per-scenario reports into one results.json, in the run's order", () => {
+    const dir = tmp();
+    fs.mkdirSync(path.join(dir, 'results'));
+    const put = (stem: string, doc: object) =>
+      fs.writeFileSync(
+        path.join(dir, 'results', `${stem}.json`),
+        JSON.stringify(doc),
+      );
+    put('a.b', report('a', true, 10));
+    put('c.d', report('c', false, 5));
+    mergeResults(dir, [{ id: 'a:b' }, { id: 'x:y' }, { id: 'c:d' }]);
+    const merged = JSON.parse(
+      fs.readFileSync(path.join(dir, 'results.json'), 'utf8'),
+    );
+    expect(merged).toEqual({
+      config: { version: '1.65.0' },
+      suites: [{ title: 'a' }, { title: 'c' }],
+      errors: [{ message: 'c' }],
+      stats: {
+        startTime: 't-a',
+        duration: 15,
+        expected: 1,
+        skipped: 0,
+        unexpected: 1,
+        flaky: 0,
+      },
+    });
+  });
+
+  it('writes no results.json when no scenario reported', () => {
+    const dir = tmp();
+    mergeResults(dir, [{ id: 'a:b' }]);
+    expect(fs.existsSync(path.join(dir, 'results.json'))).toBe(false);
   });
 });
 
@@ -253,6 +364,42 @@ describe("the target's Playwright", () => {
     expect(r.code).toBe(3);
     expect(r.stderr).toHaveLength(20);
     expect(r.stderr.at(-1)).toBe('test -c /c.mjs seen');
+  });
+
+  it('runs one spec when given one, after the config', async () => {
+    const dir = tmp();
+    const cli = path.join(dir, 'cli.js');
+    fs.writeFileSync(cli, 'console.error(process.argv.slice(2).join(" "));\n');
+    const r = await runPlaywright({
+      cli,
+      config: '/c.mjs',
+      cwd: dir,
+      env: {},
+      spec: 'only-this',
+    });
+    expect(r.stderr).toEqual(['test -c /c.mjs only-this']);
+  });
+
+  // Playwright reads a file argument as a regular expression over the file
+  // path. The filter must match exactly one spec: a flow `a` must not also
+  // run flow `xa`'s scenario, and a `.` in a stem is not "any character".
+  it('filters to exactly one spec file, whatever its stem contains', () => {
+    const want = path.join('/r', 'specs', 'a.multi-submit.i1.sx.spec.mjs');
+    const re = new RegExp(specFilter(want), 'gi');
+    const hits = (file: string) => {
+      re.lastIndex = 0;
+      return re.test(file);
+    };
+    expect(hits(want)).toBe(true);
+    expect(
+      hits(path.join('/r', 'specs', 'xa.multi-submit.i1.sx.spec.mjs')),
+    ).toBe(false);
+    expect(
+      hits(path.join('/r', 'specs', 'aXmulti-submit.i1.sx.spec.mjs')),
+    ).toBe(false);
+    expect(
+      hits(path.join('/r', 'specs', 'a.multi-submit.i1.sx.spec.mjs.bak')),
+    ).toBe(false);
   });
 
   it('reports a launch failure instead of hanging', async () => {

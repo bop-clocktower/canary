@@ -12,10 +12,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   checkExpect,
-  exitCode,
   scenarioVerdict,
   summarize,
 } from '../claude-code/canary-cry/scripts/verdict.mjs';
+import { exitCode } from '../claude-code/canary-cry/scripts/findings.mjs';
 
 const base = { flow: 'checkout', pattern: 'multi-submit', brokenAt: null };
 
@@ -258,5 +258,24 @@ describe('exitCode (SC15, SC16)', () => {
 
   it('--strict: an ABSTAINED run exits 3', () => {
     expect(exitCode({ ...counts({}), status: 'abstained' }, true)).toBe(3);
+  });
+
+  // #608 P4: a --max-wall stop did not run its whole budget, so it is not a
+  // pass -- the same exit as an abstention. A corruption it already proved
+  // outranks that: it is a state-verified finding however the run ended.
+  it('--strict: a PARTIAL run exits 3, or 1 once it found a corruption', () => {
+    expect(exitCode({ ...counts({ clean: 2 }), status: 'partial' }, true)).toBe(
+      3,
+    );
+    expect(
+      exitCode({ ...counts({ corrupted: 1 }), status: 'partial' }, true),
+    ).toBe(1);
+    expect(exitCode({ ...counts({}), status: 'partial' }, false)).toBe(0);
+  });
+
+  it('--strict: a crash after a proven corruption still exits 1', () => {
+    expect(
+      exitCode({ ...counts({ corrupted: 1 }), status: 'abstained' }, true),
+    ).toBe(1);
   });
 });

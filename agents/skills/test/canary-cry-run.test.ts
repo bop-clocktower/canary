@@ -109,6 +109,9 @@ function run(argv: string[], env: Record<string, string> = ENV) {
 const shaOf = (stdout: string) =>
   /manifest-sha: ([0-9a-f]{64})/.exec(stdout)?.[1];
 
+/** The manifest.json path the manifest text names. */
+const manifestFile = (stdout: string) => /^manifest: (.+)$/m.exec(stdout)![1]!;
+
 /** Every byte under dir, so an artifact grep cannot miss a file. */
 function allText(dir: string): string {
   if (!fs.existsSync(dir)) return '';
@@ -307,18 +310,30 @@ describe('run usage', () => {
     expect(r.stderr).toMatch(message);
   });
 
-  it.each(['shout', 'scream'])(
-    'refuses --amplitude %s until it can run it (P4)',
-    (a) => {
-      const p = project();
-      const r = run(['run', '--live', 'staging', ...p.args, '--amplitude', a]);
-      expect(r.code).toBe(2);
-      expect(r.stderr).toContain(
-        `run --amplitude ${a} is not yet supported (a later phase of #608)`,
-      );
-      expect(fs.existsSync(p.runs)).toBe(false);
-    },
-  );
+  // #608 P4: shout and scream run. Their manifest is the WORST case -- every
+  // scenario of every round, though scream may converge before its last --
+  // so the confirmed sha covers everything that can run.
+  it.each<[string, number[]]>([
+    ['shout', [1, 2]],
+    ['scream', [1, 2, 3]],
+  ])('--amplitude %s lists every round in the manifest', (a, rounds) => {
+    const p = project();
+    const r = run(['run', '--live', 'staging', ...p.args, '--amplitude', a]);
+    expect(r.code, r.stderr).toBe(0);
+    const doc = JSON.parse(fs.readFileSync(manifestFile(r.stdout), 'utf8'));
+    const seen = [...new Set(doc.scenarios.map((s: any) => s.intensity))];
+    expect(seen).toEqual(rounds);
+    for (const n of rounds) {
+      expect(r.stdout).toContain(`checkout:multi-submit:i${n}:spay`);
+    }
+  });
+
+  it('an unknown --amplitude is exit 2 on run too', () => {
+    const p = project();
+    const r = run(['run', '--live', 'staging', ...p.args, '--amplitude', 'x']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("argument --amplitude: invalid choice: 'x'");
+  });
 
   it('schema errors in the inputs exit 2 before the gate', () => {
     const t = targetsDoc();

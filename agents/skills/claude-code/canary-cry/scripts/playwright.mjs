@@ -43,15 +43,31 @@ export async function preflight(baseURL, fetchImpl = fetch) {
   }
 }
 
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
- * Run `playwright test -c <config>`; resolves with its exit code and the
- * last 20 stderr lines (shown when it leaves no results.json).
- * @param {{cli: string, config: string, cwd: string,
- *   env: Record<string, string | undefined>}} run
+ * The `playwright test` file argument that selects exactly one spec. The CLI
+ * reads a file argument as a regular expression over the spec's path, so the
+ * file name is escaped and anchored at a path separator and at the end: a
+ * flow `a` never also runs flow `xa`'s scenario (#608 P4).
+ * @param {string} spec the spec file's path
  */
-export function runPlaywright({ cli, config, cwd, env }) {
+export function specFilter(spec) {
+  const name = spec.split(/[\\/]/).pop();
+  return `[\\\\/]${escapeRegex(name)}$`;
+}
+
+/**
+ * Run `playwright test -c <config> [spec]`; resolves with its exit code and
+ * the last 20 stderr lines (shown when it leaves no report).
+ * @param {{cli: string, config: string, cwd: string,
+ *   env: Record<string, string | undefined>, spec?: string}} run `spec` is
+ *   a file argument (specFilter) selecting the one scenario to run
+ */
+export function runPlaywright({ cli, config, cwd, env, spec }) {
+  const args = [cli, 'test', '-c', config, ...(spec ? [spec] : [])];
   return new Promise((done) => {
-    const child = spawn(process.execPath, [cli, 'test', '-c', config], {
+    const child = spawn(process.execPath, args, {
       cwd,
       env,
       stdio: ['ignore', 'ignore', 'pipe'],
