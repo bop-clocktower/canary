@@ -295,12 +295,41 @@ function defaultSurfaceDeps(): SurfaceDeps {
   };
 }
 
+/**
+ * Answers whether `canary <path...>` names a registered command, e.g.
+ * `['history', 'gaps']`. Supplied by the CLI layer from the live program, so
+ * this module never imports the command tree (#1753).
+ */
+export type CanaryCommandResolver = (path: readonly string[]) => boolean;
+
+/** `cli: canary <subcmd> [...]` targets the canary CLI itself, not a file. */
+const CANARY_SUBCOMMAND = /^canary\s+(\S.*)$/;
+
 /** Findings for one declaration's `cli:` target. */
 function cliFindings(
   decl: SurfaceDeclaration,
   deps: SurfaceDeps,
+  canaryCommands: CanaryCommandResolver | undefined,
 ): SurfaceFinding[] {
   if (decl.cli === null) return [];
+  const sub = CANARY_SUBCOMMAND.exec(decl.cli);
+  // With no command tree to resolve against, fall through to the file check
+  // and report it missing: an unresolvable target is never assumed valid.
+  if (sub && canaryCommands) {
+    const path = sub[1]!.split(/\s+/).filter((t) => !t.startsWith('-'));
+    if (canaryCommands(path)) return [];
+    return [
+      {
+        kind: SurfaceFindingKind.CliMissing,
+        surface: decl.kind,
+        name: decl.name,
+        path: decl.path,
+        detail:
+          `declares \`cli: ${decl.cli}\` but \`canary ${path.join(' ')}\` is ` +
+          'not a registered canary command',
+      },
+    ];
+  }
   const target = join(decl.path, '..', decl.cli);
   if (!deps.exists(target)) {
     return [
@@ -342,6 +371,7 @@ function cliFindings(
  */
 export function checkSurfaces(
   root: string,
+  canaryCommands?: CanaryCommandResolver,
   deps: SurfaceDeps = defaultSurfaceDeps(),
 ): GateResult<SurfaceFinding> {
   const surfaces = collectSurfaces(root);
@@ -371,7 +401,7 @@ export function checkSurfaces(
           'the directory, so one of the two paths misses',
       });
     }
-    findings.push(...cliFindings(decl, deps));
+    findings.push(...cliFindings(decl, deps, canaryCommands));
     for (const ref of decl.references) {
       if (!known.has(ref)) {
         findings.push({

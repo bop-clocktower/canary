@@ -28,6 +28,7 @@ import {
   SurfaceFindingKind,
   checkSurfaces,
   collectSurfaces,
+  type CanaryCommandResolver,
   type SurfaceDeclaration,
   type SurfaceFinding,
 } from './core/skill-surfaces.js';
@@ -469,10 +470,37 @@ function verifyReport(
   }
 }
 
-function verifyCmd(opts: VerifyOptions, deps: MainDeps): void {
+/**
+ * A resolver over the live command tree that `cmd` belongs to (#1753), so a
+ * `cli: canary <subcmd>` target is checked against what the program actually
+ * registers. Walks from the root: each token must name a subcommand while the
+ * current command has any; once it has none, the rest are arguments.
+ */
+function canaryCommandsOf(cmd: Command): CanaryCommandResolver {
+  let top = cmd;
+  while (top.parent) top = top.parent;
+  return (path) => {
+    let current = top;
+    for (const token of path) {
+      if (current.commands.length === 0) return true;
+      const next = current.commands.find(
+        (c) => c.name() === token || c.aliases().includes(token),
+      );
+      if (!next) return false;
+      current = next;
+    }
+    return path.length > 0;
+  };
+}
+
+function verifyCmd(
+  opts: VerifyOptions,
+  deps: MainDeps,
+  canaryCommands: CanaryCommandResolver,
+): void {
   const root = resolve(opts.root ?? deps.cwd());
   const surfaces = collectSurfaces(root);
-  const surfaceResult = checkSurfaces(root);
+  const surfaceResult = checkSurfaces(root, canaryCommands);
   const exampleResult = exampleHalf(opts, surfaces, root);
 
   if (opts.json) {
@@ -526,8 +554,8 @@ function registerVerify(program: Command, deps: MainDeps): void {
       'Inspect declarations only; do not execute documented examples.',
     )
     .option('--canary-bin <path>', 'CLI to spawn for documented examples.')
-    .action((opts: VerifyOptions) => {
-      verifyCmd(opts, deps);
+    .action((opts: VerifyOptions, cmd: Command) => {
+      verifyCmd(opts, deps, canaryCommandsOf(cmd));
     });
 }
 

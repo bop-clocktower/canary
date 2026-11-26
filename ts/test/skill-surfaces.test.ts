@@ -45,6 +45,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { gateOutcome } from '../src/core/gate-result.js';
+import { invokeCanary } from './canary-cli-testkit.js';
 import {
   SurfaceFindingKind,
   SurfaceKind,
@@ -162,6 +163,51 @@ describe('collectSurfaces', () => {
   });
 });
 
+/**
+ * #1753 end to end: `canary skills verify` resolves `cli: canary <subcmd>`
+ * against the program it is part of, not against a hand-kept list.
+ */
+describe('skills verify: cli: canary <subcmd> through the real program', () => {
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'skill-surfaces-cli-'));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  async function cliMissing(): Promise<string[]> {
+    const res = await invokeCanary([
+      'skills',
+      'verify',
+      '--root',
+      root,
+      '--json',
+      '--no-run-examples',
+    ]);
+    const report = JSON.parse(res.stdout) as {
+      surfaces: { findings: Array<{ kind: string; name: string }> };
+    };
+    return report.surfaces.findings
+      .filter((f) => f.kind === SurfaceFindingKind.CliMissing)
+      .map((f) => f.name);
+  }
+
+  it('accepts registered commands, nested ones included', async () => {
+    skill('canary-batwoman', { cli: 'canary batwoman' });
+    skill('canary-clocktower', { cli: 'canary history gaps' });
+
+    expect(await cliMissing()).toEqual([]);
+  });
+
+  it('rejects an unregistered subcommand, top-level or nested', async () => {
+    skill('canary-ghost', { cli: 'canary nosuchthing' });
+    skill('canary-ghost2', { cli: 'canary history nosuchthing' });
+
+    expect((await cliMissing()).sort()).toEqual([
+      'canary-ghost',
+      'canary-ghost2',
+    ]);
+  });
+});
+
 describe('checkSurfaces', () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'skill-surfaces-'));
@@ -236,6 +282,40 @@ describe('checkSurfaces', () => {
     const kinds = checkSurfaces(root).findings.map((f) => f.kind);
 
     expect(kinds).toContain(SurfaceFindingKind.CliNotExecutable);
+  });
+
+  describe('#1753 a `cli: canary <subcmd>` target', () => {
+    // Stands in for the real program's command tree: `canary batwoman`, and
+    // `canary history gaps` one level down.
+    const known = (path: readonly string[]) =>
+      ['batwoman', 'history gaps'].includes(path.join(' '));
+
+    it('is valid when the subcommand is a registered canary command', () => {
+      skill('canary-batwoman', { cli: 'canary batwoman' });
+      skill('canary-clocktower', { cli: 'canary history gaps' });
+
+      expect(checkSurfaces(root, known).findings).toEqual([]);
+    });
+
+    it('is still missing when the subcommand is not registered', () => {
+      skill('canary-ghost', { cli: 'canary nosuchthing' });
+
+      const finding = checkSurfaces(root, known).findings.find(
+        (f) => f.kind === SurfaceFindingKind.CliMissing,
+      );
+
+      expect(finding?.name).toBe('canary-ghost');
+      expect(finding?.detail).toContain('canary nosuchthing');
+      expect(finding?.detail).toMatch(/not a registered canary command/);
+    });
+
+    it('is missing, not assumed valid, when no command tree was given', () => {
+      skill('canary-batwoman', { cli: 'canary batwoman' });
+
+      const kinds = checkSurfaces(root).findings.map((f) => f.kind);
+
+      expect(kinds).toContain(SurfaceFindingKind.CliMissing);
+    });
   });
 
   it('does not flag an executable cli: target', () => {
