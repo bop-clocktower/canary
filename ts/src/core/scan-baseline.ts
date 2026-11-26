@@ -186,23 +186,27 @@ export function compareBaseline(
 ): BaselineComparison {
   const base = new Map(baseline.findings.map((e) => [keyOf(e), e]));
   const head = tally(identities);
-  const added: BaselineEntry[] = [];
-  const fixed: BaselineEntry[] = [];
-  let baselined = 0;
-  for (const [key, e] of head) {
-    const had = base.get(key)?.count ?? 0;
-    baselined += Math.min(had, e.count);
-    if (e.count > had) added.push({ ...e, count: e.count - had });
-  }
-  for (const [key, e] of base) {
-    const has = head.get(key)?.count ?? 0;
-    if (e.count > has) fixed.push({ ...e, count: e.count - has });
-  }
+  const added = excess(head, base);
+  const fixed = excess(base, head);
+  const newCount = total(added);
   return {
-    baselined,
-    new: added.sort(byIdentity),
-    fixed: fixed.sort(byIdentity),
-    newCount: total(added),
+    baselined: total([...head.values()]) - newCount,
+    new: added,
+    fixed,
+    newCount,
     fixedCount: total(fixed),
   };
+}
+
+/** The entries of `from` whose count exceeds `against`'s, by the excess. */
+function excess(
+  from: Map<string, BaselineEntry>,
+  against: Map<string, BaselineEntry>,
+): BaselineEntry[] {
+  const out: BaselineEntry[] = [];
+  for (const [key, e] of from) {
+    const other = against.get(key)?.count ?? 0;
+    if (e.count > other) out.push({ ...e, count: e.count - other });
+  }
+  return out.sort(byIdentity);
 }

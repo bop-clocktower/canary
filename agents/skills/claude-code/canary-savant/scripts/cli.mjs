@@ -243,14 +243,16 @@ function emit(opts, result, dyn, bl) {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+// Baseline owns the static exit (#1322); --confirm victims stay --strict's.
+const baselineExit = (bl, strictVictims) =>
+  bl.exitCode === 0 && strictVictims ? 1 : bl.exitCode;
+
 function exitCodeFor(opts, result, dyn, bl) {
-  const victims = (dyn?.victims.length ?? 0) > 0;
-  // Ratchet mode owns the static exit code (#1322); victims stay --strict's.
-  if (bl) return bl.exitCode === 0 && opts.strict && victims ? 1 : bl.exitCode;
-  // Advisory by default (D3); --strict inherits EXIT_ABSTAINED (3) on a
-  // collapsed denominator, distinct from 1 ("found something real").
-  if (opts.strict && !result.filesScanned) return 3;
-  return opts.strict && (result.findings.length > 0 || victims) ? 1 : 0;
+  const victims = Boolean(dyn?.victims.length);
+  if (bl) return baselineExit(bl, opts.strict && victims);
+  if (!opts.strict) return 0; // advisory by default (D3)
+  if (!result.filesScanned) return 3; // abstained, distinct from 1 (real)
+  return result.findings.length || victims ? 1 : 0;
 }
 
 export function main(argv = []) {
