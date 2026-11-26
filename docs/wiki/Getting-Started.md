@@ -3,114 +3,88 @@
 This guide takes you from zero to your first generated test. It should take
 about five minutes.
 
+The install steps live in one place, the README, so this page links to them
+instead of copying them. A copy is how this page once ended up teaching an
+install path that no longer existed.
+
 ## Prerequisites
 
 You'll need:
 
-- Python 3.11 or later (`python --version` to check)
-- Node.js 18 or later (`node --version` to check)
-- Claude Code (Canary runs as a plugin — no separate API key needed)
+- Node.js 22 or later (`node --version` to check). Older versions are past
+  end-of-life and are not supported.
+- Claude Code (Canary runs as a plugin, so there is no separate API key)
 - Git
 
-## Step 1: Install Canary
+You do not need Python. Canary can _generate_ Pytest suites, but Canary itself
+has run on TypeScript since v6.0.0, and there is no `pip` or `pipx` package.
+
+## Step 1: Install the CLI
+
+Install `canary-test-cli` from npm with Volta, mise, or npm. Pick one from the
+README's [Installation section][install]. The package provides the `canary` CLI
+and the `canary-mcp` server that the plugin starts.
+
+Check that it worked:
 
 ```bash
-git clone https://github.com/bop-clocktower/canary.git
-cd canary
-pip install -e .
+canary --version
 ```
 
-Verify the install worked:
+If your shell says `canary: command not found`, see
+[Troubleshooting](Troubleshooting.md#canary-command-not-found).
 
-```bash
-canary version
-```
+## Step 2: Add the Claude Code plugin
 
-You should see the Canary banner with the current version number.
+In Claude Code, add the `bop-clocktower` marketplace and install the `canary`
+plugin. The two commands are in the README's [Claude Code plugin
+section][plugin].
 
-## Step 2: Open Canary in Claude Code
+Claude Code's own session does the LLM work, so there is no key to configure.
 
-Canary runs as a Claude Code plugin — no API key setup required. Install the
-plugin once:
+## Step 3: Generate your first test
 
-```bash
-claude plugin install .
-```
-
-Claude Code's own session provides the LLM. Your first `/canary:generate` will
-analyse the target file and write tests automatically.
-
-## Step 3: Generate Your First Test
-
-In Claude Code, invoke the test-author persona:
+In Claude Code, run the test-author command:
 
 ```text
-/canary-write-test  Test that GET /api/health returns 200
+/canary-write-test Test that GET /api/health returns 200
 ```
 
-Canary will:
+The `canary-test-author` agent reads your repo first. It finds the test
+framework you already use and follows your existing test layout and fixtures. It
+writes the test and tells you the file path. When there is no framework to
+follow, it asks you once or hands off to the framework advisor.
 
-1. Classify the intent (API test)
-2. Pick the best framework (pytest)
-3. Generate a test file
-4. Print the path to the file
+## Step 4: Review the generated file
 
-The output looks something like:
-
-```text
-Canary Processing Request...
-
-Test Type: api
-Framework: pytest
-
-Reasoning:
- - HTTP endpoint test maps to API category
- - Python ecosystem detected, pytest preferred
-
-Output File:
-tests/generated/api/test_api_health_get_200.py
-```
-
-## Step 5: Look at the Generated File
-
-```bash
-cat tests/generated/api/test_api_health_get_200.py
-```
-
-Read through it. Check that:
+Open the file it wrote. Check that:
 
 - The endpoint matches what you intended
 - The assertion matches the expected behavior
-- There are no placeholder values you need to fill in
+- There are no placeholder values left for you to fill in
 
-## Step 6: Run the Test
+## Step 5: Run the test
 
-Once the file is written, run it with the CLI executor (deterministic, no key):
-
-```bash
-canary run tests/generated/api/test_api_health_get_200.py pytest
-```
-
-Or invoke the framework directly:
+Run it through Canary's executor. This is deterministic and needs no key:
 
 ```bash
-pytest tests/generated/api/test_api_health_get_200.py
+canary run <path-to-test-file> <framework>
 ```
 
-## What Happens to Generated Tests
+Use `canary frameworks` to see the framework names Canary accepts and how it
+runs each one. You can also run the framework directly, for example
+`npx playwright test <file>` or `pytest <file>`.
 
-Generated tests live in `tests/generated/` — a scratch space that is **not**
-committed to git. They're yours to review and run freely.
+## Promoting a generated test
 
-Once a test passes review, you can promote it into the committed test suite. See
-the [canary-promote-test][promote-skill] skill for the full promotion checklist.
+Before a generated test joins your committed suite, it should pass review. The
+[canary-promote-test][promote-skill] skill has the full promotion checklist, and
+`canary promote-check <path>` gives a deterministic verdict.
 
-[promote-skill]: ../../agents/skills/claude-code/canary-promote-test/SKILL.md
+## Want a preview without generating?
 
-## Want a Preview Without Generating?
-
-Use `canary recommend` to see what framework Canary would pick, with its
-reasoning — a deterministic CLI command that makes no LLM call:
+`canary recommend` shows which framework Canary would pick and why. It is a
+deterministic CLI command and makes no LLM call:
 
 ```bash
 canary recommend "load test the search endpoint"
@@ -118,8 +92,13 @@ canary recommend "load test the search endpoint"
 
 ## Next Steps
 
-- [Writing Good Prompts](Writing-Good-Prompts.md) — get the test you actually
+- [Writing Good Prompts](Writing-Good-Prompts.md): get the test you actually
   want on the first try
-- [For Manual Testers](For-Manual-Testers.md) — if you're coming from a manual
+- [For Manual Testers](For-Manual-Testers.md): if you're coming from a manual
   testing background
-- [Troubleshooting](Troubleshooting.md) — if something went wrong above
+- [Troubleshooting](Troubleshooting.md): if something went wrong above
+
+[install]: https://github.com/bop-clocktower/canary#-installation
+[plugin]: https://github.com/bop-clocktower/canary#claude-code-plugin
+[promote-skill]:
+  https://github.com/bop-clocktower/canary/blob/main/agents/skills/claude-code/canary-promote-test/SKILL.md

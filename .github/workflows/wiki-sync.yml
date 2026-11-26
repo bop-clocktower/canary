@@ -13,6 +13,13 @@ on:
 permissions:
   contents: write
 
+# Two merges in quick succession would otherwise run two syncs against the same
+# wiki remote at once. Queue rather than cancel, so every merge's sync stays
+# visible in the run list (#1749).
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -32,27 +39,25 @@ jobs:
 
           WIKI_URL="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git"
 
-          # Clone the wiki if it exists, otherwise init a fresh
-          # local repo pointing at the wiki remote. The wiki git
-          # repo doesn't exist until at least one page has been
-          # created via the GitHub UI; the fresh-init path handles
-          # that first-run case.
-          if git clone "$WIKI_URL" wiki-repo 2>/dev/null; then
-            echo "Cloned existing wiki."
-          else
-            echo "Wiki not yet initialized — creating fresh repo."
-            mkdir -p wiki-repo
-            cd wiki-repo
-            git init
-            git checkout -b master
-            git remote add origin "$WIKI_URL"
-            cd ..
+          # The wiki already exists (it has published pages since the first
+          # sync), so a failed clone is an error to report, not a first run to
+          # paper over. The old fallback silenced the clone and `git init`ed a
+          # fresh history, which -- with the mirror below -- would try to
+          # publish a history unrelated to the real wiki (#1749).
+          if ! git clone "$WIKI_URL" wiki-repo; then
+            echo "::error::Could not clone ${REPO}.wiki.git -- nothing was synced."
+            exit 1
           fi
 
+          # Mirror, not append: clear the published pages, then copy ours, so a
+          # page deleted from docs/wiki is deleted from the wiki too (a page
+          # removed in #1187 stayed live until this). Only *.md is cleared --
+          # .git and any non-page asset are left alone.
+          rm -f wiki-repo/*.md
           cp docs/wiki/*.md wiki-repo/
 
           cd wiki-repo
-          git add .
+          git add -A
           if git diff --cached --exit-code; then
             echo "No wiki changes to push."
           else
