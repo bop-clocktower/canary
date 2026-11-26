@@ -107,6 +107,19 @@ under the project's former name) are documented in the
   before truncation, so a cut never leaves a fragment. `CANARY_INGEST_REDACT=0`
   turns it off, as it does for the ingest reporter.
 
+- **Releases publish only commits on `main`, and CI no longer runs movable
+  action tags (#1750, #1267).** Any `v*` tag used to publish to npm with
+  provenance, even on an unmerged commit. `release.yml` now refuses a tag whose
+  commit is not an ancestor of `origin/main`. A shallow checkout or a failed
+  fetch fails the run; neither skips the check. Every third-party `uses:` across
+  the workflows is pinned to a full commit SHA with a `# vX.Y.Z` comment. That
+  includes `softprops/action-gh-release` in the job that holds the npm OIDC
+  token. `docs-lint.yml` pins `markdownlint-cli@0.50.1`. Every job sets
+  `timeout-minutes` at about 3× its recent p90 runtime, where it used to fall
+  back to GitHub's 360-minute default. The last four workflows without a
+  `permissions:` block now run at `contents: read`.
+  `ts/test/workflow-supply-chain.test.ts` holds all of these for every workflow.
+
 ## [9.8.0] - 2026-11-25
 
 ### Added

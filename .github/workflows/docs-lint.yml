@@ -11,25 +11,33 @@ on:
     branches:
       - main
 
+# Read-only (#1267): every job only reads the checkout and runs a linter.
+permissions:
+  contents: read
+
 jobs:
   markdownlint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+      # Exact version (#1750): an unpinned `npx` runs whatever the registry
+      # serves that day, on every PR. Bump it deliberately.
       - name: Run markdownlint
         run:
-          npx --yes markdownlint-cli "**/*.md" --ignore node_modules --ignore
-          plugins --ignore agents/agents --ignore agents/commands
+          npx --yes markdownlint-cli@0.50.1 "**/*.md" --ignore node_modules
+          --ignore plugins --ignore agents/agents --ignore agents/commands
 
   fences:
     name: Code fences open and close correctly
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       # markdownlint accepts a fence closed with a language tag -- it is
@@ -41,9 +49,10 @@ jobs:
   mermaid:
     name: Wiki diagrams render
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       # The GitHub Wiki renders Mermaid natively, so a malformed chart fails

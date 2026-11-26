@@ -1527,6 +1527,26 @@ fresh state, and a second rejection fails the step.
 `ts/test/release-advance-latest.test.ts` runs the `latest` step against a local
 bare remote, including a racing run.
 
+**Supply-chain invariants hold for every workflow (#1750, #1267).**
+`ts/test/workflow-supply-chain.test.ts` fails the build when any of these
+breaks:
+
+- Every remote `uses:` names a full 40-hex commit SHA plus a `# vX.Y.Z` comment,
+  and each action repo has one pin across all files. A tag can be moved and a
+  SHA cannot. Dependabot's `github-actions` entry rewrites the SHA and the
+  comment together. To bump by hand, resolve the tag with
+  `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, and if that returns an
+  annotated tag, dereference it through `git/tags/<sha>`.
+- Every workflow declares a top-level `permissions:` block.
+- Every job sets `timeout-minutes` below GitHub's 360 default, at about 3× its
+  recent p90 runtime and never under 5. A hung `npx` fetch then fails in minutes
+  rather than hours. A job that legitimately gets slower needs a deliberate
+  bump.
+- `release.yml` `publish` refuses a tag whose commit is not an ancestor of
+  `origin/main`. A shallow checkout, a failed fetch of `main`, or a bad SHA also
+  fails the run. None of them skips the check.
+- `docs-lint.yml` runs an exact `markdownlint-cli` version.
+
 ## Agent Behavior
 
 ### Branch Hygiene Before Code Changes
@@ -1884,12 +1904,12 @@ canary-cassandra delegates to `ts/dist`, and a vitest `globalSetup`
 **The repo root is not a gate surface.** There is no root `package.json` in this
 repository — `/package.json` and `/package-lock.json` are gitignored as
 per-machine markdownlint scratch (issue #244), because CI runs
-`npx --yes markdownlint-cli` and never installs a root node project. A root
-manifest you find in your checkout is a local file no review or CI job has ever
-seen; #672 was one that still ran `ruff check agent tests` long after `agent/`
-was deleted in the v6.0.0 cutover, so `npm run lint` at the root reported on
-nothing. Ignore any root manifest, or delete it. The invariants are pinned by
-`ts/test/root-manifest-not-a-gate.test.ts`.
+`npx --yes markdownlint-cli@<exact version>` and never installs a root node
+project. A root manifest you find in your checkout is a local file no review or
+CI job has ever seen; #672 was one that still ran `ruff check agent tests` long
+after `agent/` was deleted in the v6.0.0 cutover, so `npm run lint` at the root
+reported on nothing. Ignore any root manifest, or delete it. The invariants are
+pinned by `ts/test/root-manifest-not-a-gate.test.ts`.
 
 ### Workflow steps
 

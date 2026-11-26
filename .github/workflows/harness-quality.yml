@@ -6,6 +6,11 @@ on:
     branches:
       - main
 
+# Read-only (#1267): no job pushes, comments, or calls the API. Artifact and
+# cache steps authenticate with the runtime token, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
   HARNESS_CLI: '@harness-engineering/cli@14'
@@ -13,14 +18,15 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 6
     steps:
       # `fetch-depth: 0` so the merge base is a real commit in the object DB
       # and not just a SHA in the event payload — the entropy delta gate (#703)
       # checks the base tree out as a worktree and scans it.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
 
@@ -193,7 +199,7 @@ jobs:
       # that needs it, the failing one.
       - name: Upload docs coverage reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-coverage-reports
           path: |
@@ -388,9 +394,10 @@ jobs:
     # keeps "pilot" because it is a required check context.
     name: TS engine (pilot)
     runs-on: ubuntu-latest
+    timeout-minutes: 7
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # Node 22+ required: @supabase/supabase-js's realtime client needs a
           # native global WebSocket (absent in Node 20).
@@ -401,7 +408,7 @@ jobs:
       # throwaway pytest suite. Without a python3 here those assertions would
       # skip, and a skipped gate reporting green is the zero denominator this
       # repo keeps fixing everywhere else.
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
 
@@ -434,7 +441,7 @@ jobs:
       # `if:` adds no check context, so branch protection waits on nothing new.
       - name: Upload lcov as the guardian base report
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ts-coverage-lcov-${{ github.sha }}
           path: ts/coverage/lcov.info
@@ -451,9 +458,10 @@ jobs:
     # enforces nothing if it never executes.
     name: npm package
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
 
@@ -471,12 +479,13 @@ jobs:
     # pytest baseline to exercise the JUnit parse.
     name: Skills (JS)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
 
@@ -538,7 +547,7 @@ jobs:
       # ratchet with --update to refresh it.
       - name: Upload test durations
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-durations-agents-skills
           path: /tmp/durations.json

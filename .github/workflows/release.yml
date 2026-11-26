@@ -27,6 +27,7 @@ jobs:
   publish:
     name: Build engine + publish (npm + GitHub Release)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     permissions:
       contents: write # needed to create the GitHub Release
@@ -38,9 +39,40 @@ jobs:
       version: ${{ steps.pkg.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v7
+      # Full history: the ancestry check below refuses a shallow checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-node@v7
+      # #1750: any `v*` tag triggers this job, and anyone who can push a tag
+      # could otherwise publish an unmerged commit with provenance. Publish
+      # only a commit that is on main. Every failure to PROVE that (shallow
+      # history, main not fetchable, a bad SHA) fails the run; none skips.
+      # `ts/test/workflow-supply-chain.test.ts` runs this body against local
+      # repos, including the unmerged and shallow cases.
+      - name: Refuse a tag whose commit is not on main
+        shell: bash
+        run: |
+          if [ -z "${GITHUB_SHA:-}" ]; then
+            echo "::error::GITHUB_SHA is empty, so the tagged commit cannot be shown to be on main. Not publishing."
+            exit 1
+          fi
+          if [ "$(git rev-parse --is-shallow-repository)" != "false" ]; then
+            echo "::error::the checkout is shallow, so ancestry cannot be proven. Not publishing."
+            exit 1
+          fi
+          if ! git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main; then
+            echo "::error::could not fetch main from origin, so ancestry cannot be proven. Not publishing."
+            exit 1
+          fi
+          # Exit 1 = not an ancestor, 128 = bad object. Both refuse.
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::${GITHUB_REF_NAME:-this tag} points at ${GITHUB_SHA}, which is not on main. Releases publish only commits merged to main. Not publishing."
+            exit 1
+          fi
+          echo "${GITHUB_SHA} is on main; publishing ${GITHUB_REF_NAME:-this tag}."
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           registry-url: 'https://registry.npmjs.org'
@@ -110,7 +142,7 @@ jobs:
       # does not wait on bin verification. A bin failure or abstention still
       # turns the run red, in verify-bins, and holds `latest` back.
       - name: Create GitHub Release (changelog only)
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           generate_release_notes: true
           # A tag containing a hyphen (e.g. v6.0.0-rc.1) is a pre-release.
@@ -130,14 +162,15 @@ jobs:
     name: Verify the published manifest ships every bin
     needs: publish
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     permissions:
       contents: read
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
 
@@ -205,6 +238,7 @@ jobs:
     # `if:` below has no status function, so success() is implied.
     needs: [publish, verify-bins]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # Only advance for stable vX.Y.Z tags, never pre-releases (e.g. v1.2.0-rc1).
     if: ${{ !contains(github.ref_name, '-') }}
     # #1427 / #1481: this job moves the floating `latest` tag. Two things keep
@@ -227,12 +261,12 @@ jobs:
       contents: write # needed to push the floating tag
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       # The tag ranking below runs under node; use the pinned one.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
 
