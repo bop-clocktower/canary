@@ -63,13 +63,12 @@ jobs:
           cp docs/wiki/*.md wiki-repo/
 
           cd wiki-repo
-          # The push needs the same header; keep it in this clone's config so
-          # the remote URL stays credential-free.
-          git config http.extraheader "$AUTH_HEADER"
           git add -A
           if git diff --cached --exit-code; then
             echo "No wiki changes to push."
           else
             git commit -m "docs: sync wiki from main (${SHA})"
-            git push origin HEAD:master
+            # Same transient header as the clone: never `git config` it, or the
+            # credential is written into wiki-repo/.git/config.
+            git -c http.extraheader="$AUTH_HEADER" push origin HEAD:master
           fi

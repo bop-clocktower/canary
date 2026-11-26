@@ -113,14 +113,24 @@ describe('wiki-sync.yml', () => {
     const script = syncScript();
     expect(script).not.toMatch(/https:\/\/[^\s"']*@/);
     expect(script).not.toMatch(/x-access-token:\$\{?GH_TOKEN\}?@/);
-    // The credential rides an http.extraheader instead, on the clone and in
-    // the cloned repo's config for the push.
+    // The credential rides a transient `-c http.extraheader` on exactly the
+    // two commands that talk to the remote: the clone and the push.
     const lines = codeLines(script);
-    const clone = lines.find((l) => l.includes('git') && l.includes('clone'));
-    expect(clone).toMatch(/http\.extraheader/);
-    expect(lines.some((l) => /git config .*http\.extraheader/.test(l))).toBe(
-      true,
+    const remote = lines.filter((l) =>
+      /\bgit\b(\s+-c\s+\S+)*\s+(clone|push)\b/.test(l),
     );
+    expect(remote, 'one clone and one push').toHaveLength(2);
+    for (const l of remote) {
+      expect(l).toMatch(/\bgit -c http\.extraheader=/);
+    }
+  });
+
+  it('never persists the credential into a git config file', () => {
+    const lines = codeLines(syncScript());
+    expect(
+      lines.some((l) => /\bgit config\b.*extraheader/.test(l)),
+      'no `git config http.extraheader` (it lands in .git/config)',
+    ).toBe(false);
   });
 
   it('serializes runs with a concurrency group', () => {
