@@ -122,7 +122,11 @@ beforeEach(() => {
   canaryDir = join(tmp, '.canary');
   mkdirSync(canaryDir, { recursive: true });
   passReport = join(tmp, 'report.json');
-  writeFileSync(passReport, JSON.stringify({ result: 'pass' }), 'utf-8');
+  writeFileSync(
+    passReport,
+    JSON.stringify({ result: 'pass', total: 1, passed: 1 }),
+    'utf-8',
+  );
   writeMapping('PROJ');
 });
 

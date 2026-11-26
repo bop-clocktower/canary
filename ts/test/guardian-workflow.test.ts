@@ -22,7 +22,16 @@
  * handoff and is equally language-agnostic, so it is preserved.
  */
 
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
@@ -304,4 +313,69 @@ describe('guardian workflow', () => {
       /case "\$rc" in 0\|1\|3\) exit 0 ;; \*\) exit "\$rc"/,
     );
   });
+
+  // #1748: exit 3 had two meanings and one annotation. A docs-only PR is
+  // legitimately green; a PR that changed a shell hook changed code no rung
+  // could check. Both stay non-failing (whether the second should fail is a
+  // merge-policy question), but the step must tell them apart. Driven for real:
+  // the step's own script runs with a fake `node` that plays pr-check.
+  describe.skipIf(process.platform === 'win32')(
+    'pr-check exit 3 is split by what was left unchecked',
+    () => {
+      function runStep(stdout: string, rc: number) {
+        const step = (load().jobs?.['guardian']?.steps ?? []).find((st) =>
+          st.run?.includes('guardian pr-check'),
+        );
+        expect(step, 'no pr-check step').toBeDefined();
+        const work = mkdtempSync(join(tmpdir(), 'guardian-step-'));
+        try {
+          const bin = join(work, 'bin');
+          mkdirSync(bin);
+          const fake = join(bin, 'node');
+          writeFileSync(
+            fake,
+            `#!/bin/sh\nprintf '%s\\n' "$FAKE_OUT"\nexit "$FAKE_RC"\n`,
+          );
+          chmodSync(fake, 0o755);
+          const r = spawnSync('bash', ['-e', '-c', step!.run!], {
+            cwd: work,
+            encoding: 'utf-8',
+            env: {
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              RUNNER_TEMP: work,
+              BASE_COVERAGE: '',
+              FAKE_OUT: stdout,
+              FAKE_RC: String(rc),
+            },
+          });
+          return { code: r.status, out: r.stdout };
+        } finally {
+          rmSync(work, { recursive: true, force: true });
+        }
+      }
+
+      it('nothing to check: green, with the plain abstention warning', () => {
+        const r = runStep('Abstained -- verified zero items', 3);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain('title=Guardian abstained::');
+        expect(r.out).not.toContain('unverified code');
+      });
+
+      it('changed code no rung can check: still green, but says so distinctly', () => {
+        const r = runStep(
+          'guardian: abstained on unverified code: 1 changed code file(s) no coverage rung can check: hooks/a.sh',
+          3,
+        );
+        expect(r.code).toBe(0);
+        expect(r.out).toContain(
+          'title=Guardian abstained on unverified code::',
+        );
+        expect(r.out).not.toContain('title=Guardian abstained::');
+      });
+
+      it('a real finding still fails the job', () => {
+        expect(runStep('1 file needs test coverage', 1).code).toBe(1);
+      });
+    },
+  );
 });

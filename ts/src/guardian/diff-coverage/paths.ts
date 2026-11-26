@@ -6,15 +6,30 @@
 
 import { basename, extname } from 'node:path';
 
-const TEST_PATH_RE =
-  /(^|\/)tests?\/|(^|\/)test_[^/]*\.py$|\.test\.[^/]+$|\.spec\.[^/]+$/;
+import { isCollectedTestFile } from '../../core/test-files.js';
 
 /**
- * True if `path` looks like a test file (`tests/**`, `test_*.py`, `*.test.*`,
- * `*.spec.*`).
+ * The directory rule, plus `*.test.*` / `*.spec.*` over ANY extension -- wider
+ * than the collector, which only takes extensions a scanner can read. File
+ * names the collector takes are delegated to it rather than restated here.
+ */
+const TEST_PATH_RE = /(^|\/)tests?\/|\.test\.[^/]+$|\.spec\.[^/]+$/;
+
+/**
+ * True if `path` looks like a test file (`tests/**`, `test_*.py`, `*_test.py`,
+ * `*.test.*`, `*.spec.*`).
+ *
+ * The file-name half is {@link isCollectedTestFile}, the same predicate the
+ * `review-test` / `flake-check` collector uses (#1748). Restating it here is
+ * how `*_test.py` came to be a test to pytest and to canary's own framework
+ * registry, yet source to this gate: a diff adding one drew "no test file
+ * references" against the test itself.
  */
 export function isTestPath(path: string): boolean {
-  return TEST_PATH_RE.test(path);
+  return (
+    TEST_PATH_RE.test(path) ||
+    isCollectedTestFile(path.slice(path.lastIndexOf('/') + 1))
+  );
 }
 
 /**
@@ -144,6 +159,27 @@ const SOURCE_EXTENSIONS: ReadonlySet<string> = new Set([
   '.r',
   '.jl',
 ]);
+
+/**
+ * Executable script languages kept OUT of {@link SOURCE_EXTENSIONS} by #933.
+ *
+ * Out of the source floor is not the same as not code: no test file will ever
+ * name a deploy script, so the heuristic finding stays suppressed, but a diff
+ * that changes one still changed behaviour that nothing verified (#1748). This
+ * set is what lets an abstention say so rather than read like a docs-only PR.
+ */
+const SCRIPT_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.ps1',
+  '.psm1',
+]);
+
+/** True if `path` is an executable script below the source floor (#1748). */
+export function isScriptPath(path: string): boolean {
+  return SCRIPT_EXTENSIONS.has(extname(basename(path)).toLowerCase());
+}
 
 /**
  * True if `path` looks like hand-authored program source (#413).

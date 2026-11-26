@@ -234,7 +234,7 @@ describe('#1500 flakiness retires deleted test files', () => {
       expect(retirement.retired_count).toBe(0);
     });
 
-    it.each(['tests/foo_test.py', 'tests/x.e2e.ts', 'tests/conftest.py'])(
+    it.each(['tests/foo.test.rb', 'tests/x.e2e.ts', 'tests/conftest.py'])(
       'keeps %s scored: the inventory never collects that name (name guard)',
       (file) => {
         const { flakiness, retirement } = score(
@@ -248,6 +248,19 @@ describe('#1500 flakiness retires deleted test files', () => {
         ]);
       },
     );
+
+    it('retires a deleted pytest-style foo_test.py: the inventory collects it (#1748)', () => {
+      // Until #1748 a `*_test.py` was never collected, so its absence from an
+      // inventory proved nothing and the name guard kept it scored. It is now
+      // collected like `test_*.py`, so a missing one retires the same way.
+      const gone = 'tests/checkout_test.py';
+      const { flakiness, retirement } = score(
+        runs((i) => [flaked(gone, 'x', i), clean('tests/cart_test.py')]),
+        inventoryOf(['tests/cart_test.py']),
+      );
+      expect(flakiness.verdict).toBe('pass');
+      expect(retirement.retired.map((r) => r.file)).toEqual([gone]);
+    });
 
     it('keeps a file listed as skipped scored: unreadable is not deleted', () => {
       const { flakiness, retirement } = score(
@@ -472,7 +485,9 @@ describe('#1500 flakiness retires deleted test files', () => {
       ['a.spec.mjs', true],
       ['a.test.tsx', true],
       ['test_a.py', true],
-      ['a_test.py', false],
+      ['a_test.py', true],
+      ['latest.py', false],
+      ['a_test.pyc', false],
       ['a.e2e.ts', false],
       ['conftest.py', false],
       ['a.test.rb', false],
@@ -544,7 +559,7 @@ describe('#1500 flakiness retires deleted test files', () => {
       seed(
         [LIVE],
         runs((i) => [
-          flaked('tests/foo_test.py', 'x', i),
+          flaked('tests/foo.test.rb', 'x', i),
           flaked(undefined, 'y', i),
           clean(LIVE),
         ]),
@@ -555,7 +570,7 @@ describe('#1500 flakiness retires deleted test files', () => {
         'Flakiness retirement: 27 row(s) with no test_file stayed scored',
       );
       expect(res.stdout).toContain(
-        '1 file(s) missing from the inventory stayed scored (tests/foo_test.py: uncollected-name)',
+        '1 file(s) missing from the inventory stayed scored (tests/foo.test.rb: uncollected-name)',
       );
     });
   });

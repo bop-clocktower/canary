@@ -1047,8 +1047,9 @@ describe('workflow false-green invariants', () => {
 
     /**
      * The loop counts findings by parsing `--json`, and the checks do not agree
-     * on a shape: `review-test`/`flake-check` emit a bare array while
-     * `vacuity-check` emits `{checked, abstained, findings, skipped}`. Reading
+     * on a shape: `flake-check` emits a bare array while `review-test` emits
+     * `{files, checked, findings}` (#1748) and `vacuity-check` emits
+     * `{files, checked, abstained, findings, skipped}`. Reading
      * `.length` off the envelope gives `undefined`, which `$(( ))` silently
      * folds to 0 -- the check runs, finds 101 things, and reports a clean 0.
      * A count that cannot be read is an abstention, not a zero (#508).

@@ -73,25 +73,28 @@ function walkFiles(dir: string, links = false): string[] {
 }
 
 /**
- * `test_*.py` plus `*.test.*` / `*.spec.*` over every extension the scanners
- * can actually read -- `.mjs` and `.cjs` included, which is the half of #566
- * that made a directory of ESM tests collect zero files.
+ * `*.test.*` / `*.spec.*` over every extension the scanners can actually read
+ * -- `.mjs` and `.cjs` included, which is the half of #566 that made a
+ * directory of ESM tests collect zero files. The Python half is below.
  */
 const JS_TEST_FILE_RE = new RegExp(
   `\\.(test|spec)\\.(${JS_TEST_EXTENSIONS.map((e) => e.slice(1)).join('|')})$`,
 );
 
+/** Both halves of pytest's default `python_files` (#1748). */
+const PY_TEST_FILE_RE = /^test_.*\.py$|_test\.py$/;
+
 /**
- * True when a bare file name is one {@link collectTestFiles} collects. Exported
- * so a file's absence from an inventory can be read correctly (#1500): a
- * `foo_test.py` is absent because no inventory ever lists it, not because it
- * was deleted.
+ * True when a bare file name is one {@link collectTestFiles} collects -- the
+ * ONE answer to "is this file name a test?". The guardian's `isTestPath`
+ * calls it too, so the scanners and the PR gate cannot disagree (#1748: they
+ * did, and `*_test.py` was both silently unscanned and asked for its own
+ * test). Exported so a file's absence from an inventory can be read correctly
+ * (#1500): a `conftest.py` is absent because no inventory ever lists it, not
+ * because it was deleted.
  */
 export function isCollectedTestFile(name: string): boolean {
-  return (
-    (name.startsWith('test_') && name.endsWith('.py')) ||
-    JS_TEST_FILE_RE.test(name)
-  );
+  return PY_TEST_FILE_RE.test(name) || JS_TEST_FILE_RE.test(name);
 }
 
 /** Recursive test-file glob (union of the test patterns), sorted by path. */
@@ -113,6 +116,6 @@ export function collectTestFilesAndLinks(dir: string): string[] {
 }
 
 /** Human-readable list of what {@link collectTestFiles} looks for. */
-export const SCANNABLE_DESC = `test_*.py, *.test|spec.{${JS_TEST_EXTENSIONS.map(
+export const SCANNABLE_DESC = `test_*.py, *_test.py, *.test|spec.{${JS_TEST_EXTENSIONS.map(
   (e) => e.slice(1),
 ).join(',')}}`;

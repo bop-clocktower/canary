@@ -734,6 +734,7 @@ function abstain(
   deps: MainDeps,
   json: boolean,
   skipped: SkipEntry[] = [],
+  jsonPayload: unknown = [],
 ): never {
   const result: GateResult<never> = { checked: 0, findings: [] };
   // Only attach a non-empty list: `skippedSuffix` renders nothing for an empty
@@ -742,7 +743,7 @@ function abstain(
   if (skipped.length > 0) result.skipped = skipped;
   const outcome = gateOutcome(result, 'gate');
   if (json) {
-    deps.out(jsonIndent2([]));
+    deps.out(jsonIndent2(jsonPayload));
     deps.err(`${outcome.summaryLine} ${remedy}`);
   } else {
     deps.out(pc.bold(pc.yellow(outcome.summaryLine)));
@@ -769,6 +770,7 @@ function abstainOnZeroFiles(
   path: string,
   deps: MainDeps,
   json: boolean,
+  jsonPayload: unknown = [],
 ): void {
   if (files.length > 0) return;
   abstain(
@@ -776,6 +778,8 @@ function abstainOnZeroFiles(
       `Point at a directory that holds tests, or pass a single file directly.`,
     deps,
     json,
+    [],
+    jsonPayload,
   );
 }
 
@@ -793,6 +797,7 @@ function abstainOnUnlintableFile(
   path: string,
   deps: MainDeps,
   json: boolean,
+  jsonPayload: unknown = [],
 ): void {
   if (frameworkForPath(path) !== null) return;
   const ext = extname(path) || basename(path);
@@ -801,6 +806,8 @@ function abstainOnUnlintableFile(
       `meaningless (looked for ${SCANNABLE_DESC}).`,
     deps,
     json,
+    [],
+    jsonPayload,
   );
 }
 
@@ -852,6 +859,7 @@ function abstainOnUnreadable(
   path: string,
   deps: MainDeps,
   json: boolean,
+  jsonPayload: unknown = [],
 ): void {
   if (sweep.checked > 0) return;
   abstain(
@@ -860,7 +868,13 @@ function abstainOnUnreadable(
     deps,
     json,
     sweep.skipped,
+    jsonPayload,
   );
+}
+
+/** "(N file(s) checked)": the denominator a clean tick states (#1748). */
+function checkedSuffix(sweep: LintSweep): string {
+  return `(${sweep.checked} file(s) checked)`;
 }
 
 /**
@@ -882,12 +896,15 @@ export function reviewTestCmd(
 ): void {
   const json = opts.json === true;
   const files = isDir(path) ? collectTestFiles(path) : [path];
-  abstainOnZeroFiles(files, path, deps, json);
+  // #1748: the --json document is `{files, checked, findings}`, never a bare
+  // array -- `[]` was the same bytes for "clean" and "read nothing".
+  const empty = { files: files.length, checked: 0, findings: [] };
+  abstainOnZeroFiles(files, path, deps, json, empty);
   if (!isDir(path) && !opts.framework)
-    abstainOnUnlintableFile(path, deps, json);
+    abstainOnUnlintableFile(path, deps, json, empty);
   const linter = deps.makeLinter();
   const sweep = sweepFiles(files, (f) => linter.lint(f, opts.framework));
-  abstainOnUnreadable(sweep, path, deps, json);
+  abstainOnUnreadable(sweep, path, deps, json, empty);
   reportSkips(sweep, deps, json);
   const allFindings = sweep.findings;
 
@@ -895,7 +912,13 @@ export function reviewTestCmd(
   // exit-code decision as human mode. It used to `return` here, so a consumer
   // gating on `$?` saw every finding-bearing run as clean (#566).
   if (json) {
-    deps.out(jsonIndent2(allFindings.map(findingPayload)));
+    deps.out(
+      jsonIndent2({
+        files: files.length,
+        checked: sweep.checked,
+        findings: allFindings.map(findingPayload),
+      }),
+    );
     if (allFindings.some((f) => f.severity === 'critical')) {
       throw new CliExitError(1);
     }
@@ -903,7 +926,11 @@ export function reviewTestCmd(
   }
 
   if (allFindings.length === 0) {
-    deps.out(pc.bold(pc.green(`${CHECK_MARK} No issues found.`)));
+    deps.out(
+      pc.bold(
+        pc.green(`${CHECK_MARK} No issues found ${checkedSuffix(sweep)}.`),
+      ),
+    );
     return;
   }
 
@@ -960,7 +987,11 @@ export function flakeCheckCmd(
 
   if (allFindings.length === 0) {
     deps.out(
-      pc.bold(pc.green(`${CHECK_MARK} No flakiness patterns detected.`)),
+      pc.bold(
+        pc.green(
+          `${CHECK_MARK} No flakiness patterns detected ${checkedSuffix(sweep)}.`,
+        ),
+      ),
     );
     return;
   }
@@ -1377,6 +1408,23 @@ export async function ticketUpdateCmd(
     ticket_key: opts.ticket ?? null,
     project_key: opts.project ?? null,
   });
+
+  // #1748: a 0-of-0 run verified nothing, so it may not post "PASS (0/0
+  // tests)" or move a ticket to qa_passed. `total` defaults to 0 when the
+  // report omits it, which is how `{"result":"PASS"}` alone used to transition.
+  // FAIL is exempt on purpose: it never transitions, and a runner that died
+  // before counting anything is exactly the failure a ticket should hear about
+  // (no `--result` is documented as FAIL, #1413). Abstaining there would
+  // swallow a red signal to avoid a green one.
+  if (summary.total === 0 && rawResult !== 'FAIL') {
+    abstain(
+      `The run reported 0 tests (result ${rawResult}), so there is nothing to ` +
+        'report: no comment was posted and no ticket was transitioned. Pass ' +
+        '--result with a report that counts the tests it ran.',
+      deps,
+      false,
+    );
+  }
 
   const updater = deps.makeTicketUpdater();
   const updateResult = await updater.update(summary, {

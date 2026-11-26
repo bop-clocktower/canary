@@ -141,17 +141,30 @@ jobs:
         # The `--coverage` flag plus the "Verify the coverage report exists"
         # step above are what keep THIS repo off the #761 cause: a run that
         # reaches here has a real lcov.
+        #
+        # #1748: exit 3 is split by what was left unchecked. A diff of docs,
+        # tests or config had nothing to check, and stays the plain warning. A
+        # diff that changed code no coverage rung can reach (a shell hook, #1738)
+        # makes pr-check print its `guardian: abstained on unverified code` line
+        # naming the files, and gets its own title here so the rate is
+        # countable. Both still exit 0: whether the second should FAIL the
+        # required check is a merge-policy decision, open on #1748.
         run: |
           base_args=()
           if [ -n "$BASE_COVERAGE" ]; then
             base_args=(--base-coverage "$BASE_COVERAGE")
           fi
+          log="$RUNNER_TEMP/pr-check.log"
           set +e
-          node ts/bin/canary.js guardian pr-check --coverage ts/coverage/lcov.info "${base_args[@]}" --emit-analysis --post-comment
-          rc=$?
+          node ts/bin/canary.js guardian pr-check --coverage ts/coverage/lcov.info "${base_args[@]}" --emit-analysis --post-comment | tee "$log"
+          rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -eq 3 ]; then
-            echo "::warning title=Guardian abstained::pr-check verified nothing (exit 3) — zero findings-eligible units, or no coverage data at all. Not a failure, and not a pass. Read the comment above for which."
+            if grep -q '^guardian: abstained on unverified code' "$log"; then
+              echo "::warning title=Guardian abstained on unverified code::pr-check verified nothing (exit 3), and this PR changed code no coverage rung can check. The files are named in the notice above. Not a pass."
+            else
+              echo "::warning title=Guardian abstained::pr-check verified nothing (exit 3) — zero findings-eligible units, or no coverage data at all. Not a failure, and not a pass. Read the comment above for which."
+            fi
             exit 0
           fi
           exit "$rc"
