@@ -6,7 +6,8 @@ description:
   commit, why) into an append-only ledger, and alarms in exactly one case — the
   deletion removed the last coverage of a symbol critical-areas.json marks
   high-risk. Silent by default, degrades to recording-only when critical-area
-  data is missing. Self-contained, deterministic, advisory by default.
+  data is missing. `--check` fails when a static skip in the source has no
+  ledger row. Self-contained, deterministic, advisory by default.
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -371,6 +372,94 @@ config the row applies to, say) passes through unchanged, in the row's own key
 order, and the file is rewritten with the indentation it already had (2 spaces
 only for a new or single-line file). An append to a v2 file that supersedes no
 row is therefore a diff of the appended rows alone (#1569).
+
+## Check mode: every static skip has a row (#1319)
+
+Katana records a skip only when it runs on the diff that adds it. Nothing used
+to check the ledger against the source, so a test could be switched off with
+`test.skip` and no row, and CI stayed green. In one consuming repo, 37 tests
+were parked that way before it wrote its own gate.
+
+`--check` walks the test files (`scripts/skipscan.mjs`), finds every **static**
+skip, and matches each one to a ledger row:
+
+```bash
+canary skills run canary-katana -- --check            # whole repo
+canary skills run canary-katana -- --check tests/e2e  # narrowed to PATHs
+canary skills run canary-katana -- --check --json
+```
+
+| Exit | Meaning                                                                           |
+| ---- | --------------------------------------------------------------------------------- |
+| `0`  | every static skip has a ledger row                                                |
+| `1`  | at least one has none; each is listed as `file:line`, title, marker, and the fix  |
+| `3`  | abstained: zero test files read, or the ledger is not valid JSON or not an object |
+
+**What counts as static.** The patterns are the ones diffscan uses when it
+records a skip, so the check and the recorder agree on what a skip is:
+`it.skip`, `test.skip('title', …)`, `describe.skip`, `test.describe.skip`,
+`test.fixme('title', …)`, `xit`, `xdescribe`, and, on a `def` or `class`, pytest
+`@pytest.mark.skip`, `@pytest.mark.xfail` with no condition, and
+`@pytest.mark.skipif(True, …)`. `.only`, `fit` and `fdescribe` focus a test;
+they do not switch it off, so they are not counted.
+
+**What is exempt.** A skip that depends on the run is an environment gate, not a
+quarantine: `it.skipIf(cond)`, `describe.runIf(cond)`, Playwright's
+`test.skip(cond, why)` inside a test, pytest `skipif(cond)` and `xfail(cond)`.
+They are counted as `exempt` and do not fail the check. Ledger one under
+`env-gated` if a dashboard should know where it really runs. A marker inside a
+comment, string or template literal is not a skip. Suites keep fixture source
+that only looks like one. Python triple-quoted bodies are skipped too.
+
+**Identity.** A skip matches a row with the same `file` (repo-relative) and
+`test`: the title in the skip call, or the decorated function's name. That is
+the identity katana writes when it records. Line numbers are reported, not
+matched, so a row still matches after code above it moves. A `removed` row does
+not count, because it records a deletion and the test is still in the file.
+
+**The fix.** Every unledgered skip prints the command that records it:
+
+```text
+✗ tests/cart.test.ts:8  "parks the cart"  (it.skip) has no ledger row
+  fix: canary skills run canary-katana -- --check --record tests/cart.test.ts
+```
+
+`--record` appends one causeless `skipped` row per unledgered skip, as a
+diff-mode capture would have. Provenance comes from `git blame` of the marker
+line: the commit that added the skip, its author, date and subject, and its
+`Ticket:` trailer as `issue`. Outside git, or for an uncommitted line, the
+author is `unknown`. `cause` stays empty, because why a test is out is the
+quarantine producer's call. `--record` never writes over a ledger it cannot
+read. It is refused with `--no-write`. `--diff-file` and `--critical-areas` are
+refused with `--check`, because the check reads the tree and not a diff.
+
+`--json` shape:
+
+```json
+{
+  "checked": 14,
+  "skips": 2,
+  "ledgered": 1,
+  "exempt": 3,
+  "unledgered": [
+    {
+      "file": "tests/cart.test.ts",
+      "line": 8,
+      "test": "parks the cart",
+      "marker": "it.skip",
+      "fix": "canary skills run canary-katana -- --check --record tests/cart.test.ts"
+    }
+  ],
+  "recorded": 0,
+  "abstained": false,
+  "ledger": ".canary/quarantine.json"
+}
+```
+
+An abstained run adds `"error"` when the ledger could not be read. Limits: skips
+with no title of their own (a bare `test.skip()` in a test body), a module-level
+`pytestmark`, and titles built at run time are not seen. The title must be a
+string literal on a single line.
 
 ## Invocation
 

@@ -28,6 +28,7 @@ import * as alarm from './alarm.mjs';
 import { assess, notAssessedToDict } from './alarm.mjs';
 import { DEFAULT_MAX_AGE_DAYS, mapFreshness } from './areas.mjs';
 import * as ledger from './ledger.mjs';
+import { checkUsageError, runCheck } from './check.mjs';
 import { abstains, renderText } from './verdict-text.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
 
@@ -37,6 +38,8 @@ const USAGE =
   'usage: canary-katana [-h] [--repo PATH] [--diff-file PATH] [--ledger PATH]\n' +
   '                     [--critical-areas PATH] [--max-age-days N] [--json]\n' +
   '                     [--strict] [--no-write]\n' +
+  '       canary-katana --check [--record] [--repo PATH] [--ledger PATH] [--json]\n' +
+  '                     [PATH ...]\n' +
   '\n' +
   'Quarantine deleted and newly-skipped tests into an append-only ledger with\n' +
   'provenance, and alarm when a removal drops the last coverage of a critical\n' +
@@ -54,14 +57,18 @@ const USAGE =
   '  --strict               exit 1 on a real alarm, 3 when abstained (empty diff,\n' +
   '                         a touched area katana cannot assess, or a stale or\n' +
   '                         undated map); degraded runs stay 0\n' +
-  '  --no-write             do not append to the ledger (read-only run)';
+  '  --no-write             do not append to the ledger (read-only run)\n' +
+  '  --check                fail (exit 1) when a static skip in the test files\n' +
+  '                         has no ledger row; 3 when nothing could be checked.\n' +
+  '                         PATHs narrow the scan to those files or directories\n' +
+  '  --record               with --check: append a row for each unledgered skip';
 
 /**
- * katana takes no positionals, so any leftover token -- dashed or not -- is a
- * usage error rather than something silently ignored, and `--` has nothing to
- * protect. The four shared invariants (null-prototype lookup, empty-value
- * rejection, arity, `--flag=value`) live in the shared parser; see #479 for why
- * they stopped living here.
+ * Only `--check` takes positionals (#1319); anywhere else a leftover token is
+ * a usage error (checkUsageError) rather than something silently ignored. The
+ * four shared invariants (null-prototype lookup, empty-value rejection, arity,
+ * `--flag=value`) live in the shared parser; see #479 for why they stopped
+ * living here.
  */
 export const CLI_SPEC = {
   prog: 'canary-katana',
@@ -69,6 +76,8 @@ export const CLI_SPEC = {
     '--json': 'json',
     '--strict': 'strict',
     '--no-write': 'noWrite',
+    '--check': 'check',
+    '--record': 'record',
   },
   values: {
     '--repo': { key: 'repo' },
@@ -78,6 +87,8 @@ export const CLI_SPEC = {
     '--max-age-days': { key: 'maxAgeDays', type: 'int' },
   },
   defaults: { repo: '.', maxAgeDays: DEFAULT_MAX_AGE_DAYS },
+  // Only --check takes PATHs; checkUsageError rejects them anywhere else.
+  positionals: { key: 'paths' },
 };
 
 const parseArgs = createParser(CLI_SPEC);
@@ -176,7 +187,7 @@ const maxAgeError = (n) =>
  */
 export function main(argv = [], deps = {}) {
   const now = deps.now ?? (() => new Date());
-  const { opts: args, help, error } = parseArgs(argv);
+  const { opts: args, positionals, help, error } = parseArgs(argv);
 
   // FIRST, before loadDiff and before any ledger write: a usage request or a
   // typo must never mutate the working tree.
@@ -184,7 +195,8 @@ export function main(argv = [], deps = {}) {
     console.log(USAGE);
     return 0;
   }
-  const usage = error ?? maxAgeError(args.maxAgeDays);
+  const usage =
+    error ?? checkUsageError(args, positionals) ?? maxAgeError(args.maxAgeDays);
   if (usage) {
     console.error(formatUsageError(CLI_SPEC.prog, usage));
     return EXIT_USAGE;
@@ -192,6 +204,7 @@ export function main(argv = [], deps = {}) {
 
   const repo = args.repo;
   const ledgerPath = ledgerPathFor(args);
+  if (args.check) return runCheck(args, positionals, ledgerPath);
 
   const loaded = readDiff(repo, args.diffFile);
   if (!loaded) return 1;

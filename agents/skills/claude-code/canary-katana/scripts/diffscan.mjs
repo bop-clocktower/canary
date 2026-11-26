@@ -61,11 +61,11 @@ export function isTestFile(p) {
 // --- diff parsing ----------------------------------------------------------
 
 const PY_DEF_TEST = /^(?:async\s+)?def\s+(test\w*)\s*\(/;
-const PY_DEF_ANY = /^(?:async\s+)?def\s+(\w+)\s*\(/;
-const PY_SKIP_DEC = /^@(pytest\.mark\.(?:skip|skipif|xfail)\b.*)$/;
+export const PY_DEF_ANY = /^(?:async\s+)?def\s+(\w+)\s*\(/;
+export const PY_SKIP_DEC = /^@(pytest\.mark\.(?:skip|skipif|xfail)\b.*)$/;
 const JS_DECL =
   /\b(?:describe|context|it|test)(?:\.\w+)?\s*\(\s*(['"`])(.*?)\1/;
-const JS_SKIP =
+export const JS_SKIP =
   /\b(xit|xdescribe|fit|fdescribe|(?:it|test|describe|context)\.(?:skip|only|fixme))\s*\(\s*(['"`])(.*?)\2/g;
 const HUNK_RE = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
