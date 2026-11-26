@@ -381,7 +381,9 @@ describe('availability: a linter that hangs is not advisory, it is down', () => 
         '\n' +
         `it('a', () => { expect(save(1)).toBe(1); });\n`,
     );
-    new StaticLinter().lint(path);
+    // The timeout bounds the time; this bounds the verdict. The file's one test
+    // asserts, so a linter that got through it reports nothing.
+    expect(new StaticLinter().lint(path)).toEqual([]);
   }, 1000);
 
   it('handles the same shape in a single-quoted literal', () => {
@@ -393,7 +395,9 @@ describe('availability: a linter that hangs is not advisory, it is down', () => 
         '\n' +
         `it('a', () => { expect(save(1)).toBe(1); });\n`,
     );
-    new StaticLinter().lint(path);
+    // The timeout bounds the time; this bounds the verdict. The file's one test
+    // asserts, so a linter that got through it reports nothing.
+    expect(new StaticLinter().lint(path)).toEqual([]);
   }, 1000);
 });
 

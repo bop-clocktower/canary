@@ -38,8 +38,11 @@ const CATEGORY: Consumer = {
   ],
 };
 
+// A counter, not Math.random(): ids only need to be distinct, and a seedless
+// random value makes a failure impossible to replay (#1753).
+let runSeq = 0;
 function run(extra: Partial<RunRecord> = {}): RunRecord {
-  return { run_id: `r${Math.random()}`, suite: 's', ...extra };
+  return { run_id: `r${++runSeq}`, suite: 's', ...extra };
 }
 
 function t(status: string, extra: Partial<TestResultRecord> = {}) {
