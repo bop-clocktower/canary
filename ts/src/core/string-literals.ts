@@ -50,7 +50,9 @@
  *   expression may start (`regexLiteralEnd`); misread as division, a regex
  *   with a quote can still open a phantom string, and because an
  *   unterminated run is discarded the usual outcome is a no-op.
- * - Python f-string nesting beyond `${...}` is not modelled.
+ * - A Python f-string's `{...}` replacement field is CODE, like a template's
+ *   `${...}` (#1704); `{{` is an escape, and the format spec after a top-level
+ *   `:` is content. A spec fill of the string's OWN quote is not modelled.
  * - JSX children text is modelled only when the caller passes `jsx` (for
  *   `.tsx`/`.jsx`): see `jsx-text.ts` (#1180).
  */
@@ -145,7 +147,7 @@ function literalContentSpans(code: string, python: boolean): Span[] {
 
     const opener = readOpener(code, i, python);
     if (opener !== null) {
-      stack.push({ kind: 'string', quote: opener, start: i + opener.length });
+      stack.push(stringFrame(code, i, opener, python));
       i += opener.length - 1;
       continue;
     }
@@ -163,33 +165,36 @@ function literalContentSpans(code: string, python: boolean): Span[] {
  * where brace nesting has no meaning.
  */
 type Frame =
-  | { kind: 'string'; quote: string; start: number }
-  | { kind: 'interp'; depth: number };
+  | { kind: 'string'; quote: string; start: number; fstring?: boolean }
+  | { kind: 'interp'; depth: number; field?: boolean };
+type Interp = Extract<Frame, { kind: 'interp' }>;
 
 /**
- * Handle one character of a template's `${ ... }`. Only braces matter here:
- * everything else in an interpolation is code the main loop already handles.
+ * One character of a template's `${ ... }` (or an f-string field, below). Only
+ * braces matter: the rest is code the main loop already handles.
  * Lives apart from the walk so brace bookkeeping cannot leak into it.
  */
-function advanceInsideInterp(
-  ch: string,
-  i: number,
-  frame: Extract<Frame, { kind: 'interp' }>,
-  stack: Frame[],
-): void {
-  if (ch === '{') {
-    frame.depth += 1;
-    return;
-  }
-  if (ch !== '}') return;
+function advanceInsideInterp(ch: string, i: number, f: Interp, stack: Frame[]) {
+  if (f.field === true) return advanceInsideField(ch, i, f, stack);
+  if (ch === '{') f.depth += 1;
+  else if (ch === '}' && f.depth > 0) f.depth -= 1;
+  else if (ch === '}') resumeString(i, stack);
+}
 
-  if (frame.depth > 0) {
-    frame.depth -= 1;
-    return;
-  }
+/**
+ * An f-string field: brackets nest, and a `:` at depth 0 starts the format
+ * spec, which is CONTENT -- its fill may be a quote (`f"{v:'>10}"`), and read
+ * as code that quote opened a phantom string. The string resumes at the spec.
+ */
+function advanceInsideField(ch: string, i: number, f: Interp, stack: Frame[]) {
+  if ('([{'.includes(ch)) f.depth += 1;
+  else if (')]}'.includes(ch) && f.depth > 0) f.depth -= 1;
+  else if (ch === '}' || (ch === ':' && f.depth === 0)) resumeString(i, stack);
+}
 
+/** Close an interpolation: the enclosing string resumes after `i`. */
+function resumeString(i: number, stack: Frame[]): void {
   stack.pop();
-  // The enclosing template resumes its content after the `}`.
   const enclosing = stack[stack.length - 1];
   if (enclosing?.kind === 'string') enclosing.start = i + 1;
 }
@@ -226,7 +231,21 @@ function advanceInsideString(
     return i + 1;
   }
 
+  // An f-string field opens on `{`; `{{` is an escaped brace, content (#1704).
+  if (frame.fstring === true && ch === '{') {
+    if (code[i + 1] === '{') return i + 1;
+    pushSpan(spans, frame.start, i);
+    stack.push({ kind: 'interp', depth: 0, field: true });
+  }
+
   return i;
+}
+
+/** A string frame; an `f`/`rf`/`fr` token prefix makes `{...}` code (#1704). */
+function stringFrame(code: string, i: number, quote: string, py: boolean) {
+  const prefix = code.slice(Math.max(0, i - 3), i);
+  const fstring = py && /(?:^|\W)(?:[fF][rR]?|[rR][fF])$/.test(prefix);
+  return { kind: 'string' as const, quote, start: i + quote.length, fstring };
 }
 
 /** Record a content span, skipping empty ones. */

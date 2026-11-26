@@ -16,6 +16,33 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Cassandra VAC-002 reads three code shapes correctly (#1704).** The comment
+  model worked one line at a time. A JS line that started with `#` or `*` was
+  read as all comment, so a private field (`#count = makeStore()`), a `*`
+  expression continuation, or code after a block's closing `*/` was dropped and
+  gave a false VAC-002. A `/*` that did not close on its own line covered only
+  that line, so a call named in the block's middle lines counted as an
+  invocation and hid a real VAC-002. Only `//` and `/*` now open a JS comment,
+  and an open block carries across lines to its `*/`. In Python, an f-string's
+  `{...}` replacement field (`f`, `rf`, `fr` in any case) is now code, not
+  string content, so `f"{target(1)}"` invokes `target`; `{{` stays an escape.
+  The shared string blanker changed for Python f-strings, so the static linter
+  and test inventory also read those fields as code. On canary's own `ts/test`
+  the counts are unchanged (216 findings, 590 skipped).
+
+- **Cassandra VAC-001 no longer reports two identical calls as a self-comparison
+  (#1233).** Since #1076 the rule compared call expressions, so a determinism or
+  referential-identity test such as
+  `expect(deterministicUuid('a')).toBe(deterministicUuid('a'))` or
+  `expect(mod.useRouter()).toBe(mod.useRouter())` read as "no implementation can
+  fail it". Each side is a separate evaluation, and an implementation that
+  returns a fresh object or a random value per call does fail it. VAC-001 now
+  fires only when both sides are the same binding: a literal, an identifier or a
+  member path with no call, tagged template, `new` or `await`. This reverses
+  #1171's "identical calls still count". Expect fewer VAC-001 findings: on one
+  consumer repo, 10 of 11 were this shape. On canary's own `ts/test` VAC-001
+  went from 1 to 0, and that one was the "is byte-identical across runs" test.
+
 - **The session siren reports a checkout that skips the tracked pre-commit hook
   (#1240).** New check 6 reads the session's checkout (`CLAUDE_PROJECT_DIR`,
   else the working directory). It reports a `core.hooksPath` that is unset or
