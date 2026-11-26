@@ -78,6 +78,7 @@ import {
   type TestBlock,
 } from './static-linter.js';
 import { regexLiteralEnd } from './js-literals.js';
+import { type LocalDecl, localDecls } from './local-decls.js';
 import { blankStringContent } from './string-literals.js';
 
 /** How the target under test was resolved. Mirrors the guardian's ladder. */
@@ -186,65 +187,6 @@ const PY_STDLIB = new Set([
 ]);
 
 /**
- * A local declaration whose body may reach the target set.
- *
- * Three shapes, and the third is not optional. Measured on canary's own suite,
- * the largest single source of false positives was the testkit idiom
- * `const { findings, write } = kitFor(dir)`: the imported target is `kitFor`,
- * `findings()` reaches it, and a pattern that only understood `const x = ` saw
- * none of it -- so every test in `doc-links.test.ts` read as touching nothing at
- * all. An object pattern binds every name in it to the same reaching RHS.
- *
- * A type annotation may sit between the binding and its `=` (#1179):
- * `const parse: Parser = (...a) => parseArgv(a)` was invisible, so a test
- * calling the target through it drew VAC-002. The annotation is one line with no
- * `=` or `;` of its own -- except the `=>` of a function type, which is why the
- * declaration's `=` must not be followed by `>`. A multi-line annotation, or an
- * object type with `;` members, is still missed: the safe direction, because a
- * missed declaration can only leave a finding standing, never silence one.
- *
- * The leading indent is `[^\S\n]*`, not `\s*`, here and in every
- * `(?:^|\n)`-anchored pattern in this file. These run over BLANKED source, where
- * a big multi-line fixture is a long run of spaces and newlines, and `\s*`
- * restarted at every newline in it and re-consumed the rest of the run --
- * quadratic, ~23s on a 16,000-line fixture. The match set is unchanged: a
- * declaration after blank lines is still found from the last newline.
- */
-const JS_LOCAL_DECL =
-  /(?:^|\n)[^\S\n]*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|(?:const|let|var)\s+(?:\{([^}]*)\}|\[([^\]]*)\]|(\w+))(?:\s*:(?:[^=;\n]|=>)+?)?\s*=(?![=>]))/g;
-const PY_LOCAL_DECL = /(?:^|\n)[^\S\n]*def\s+(\w+)\s*\(/g;
-
-/**
- * A destructuring ASSIGNMENT with no declarator: `({ write, findings } =
- * kitFor(root))`.
- *
- * The declare-then-assign-in-a-hook idiom -- `let findings: Kit['findings']` at
- * module scope, bound inside `beforeEach`. `doc-links.test.ts` is written this
- * way throughout, and because the binding line carries no `const`/`let`/`var`,
- * a declaration-only pattern misses it and every test in the file reads as
- * touching nothing at all.
- */
-const JS_DESTRUCTURED_ASSIGN = /\(\s*\{([^}]*)\}\s*=\s*([^;\n]*)\)/g;
-
-/** Every identifier bound by one declaration match (a pattern binds several). */
-function boundNames(m: RegExpMatchArray, python: boolean): string[] {
-  if (python) return m[1] ? [m[1]] : [];
-  if (m[1]) return [m[1]];
-  if (m[4]) return [m[4]];
-  const pattern = m[2] ?? m[3] ?? '';
-  return pattern
-    .split(',')
-    .map((raw) =>
-      raw
-        .split(':')
-        .pop()!
-        .trim()
-        .replace(/^\.\.\./, ''),
-    )
-    .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
-}
-
-/**
  * Assertions whose expectation is an ABSENCE. A test built only from these
  * passes identically when the code under test never ran at all -- the
  * `canary-katana` case from #486, where a bare tmpdir exited before the write
@@ -347,26 +289,55 @@ const JS_BINDING_FORMS: {
   re: RegExp;
   clause: number;
   singles: number[];
+  specifier: number;
 }[] = [
-  { re: JS_RELATIVE_IMPORT, clause: 2, singles: [1, 3] },
-  { re: JS_RELATIVE_REQUIRE, clause: 1, singles: [2] },
-  { re: JS_DYNAMIC_IMPORT, clause: 1, singles: [2] },
+  { re: JS_RELATIVE_IMPORT, clause: 2, singles: [1, 3], specifier: 4 },
+  { re: JS_RELATIVE_REQUIRE, clause: 1, singles: [2], specifier: 3 },
+  { re: JS_DYNAMIC_IMPORT, clause: 1, singles: [2], specifier: 3 },
 ];
 
-/** JS/TS first-party imports: any `import`/`require` with a relative specifier. */
-function jsImportedTargets(code: string): Set<string> {
+/** Names bound by a relative `import`/`require` whose specifier passes `keep`. */
+function relativeImportNames(
+  code: string,
+  keep: (specifier: string) => boolean,
+): Set<string> {
   const names = new Set<string>();
-  for (const { re, clause, singles } of JS_BINDING_FORMS) {
+  for (const { re, clause, singles, specifier } of JS_BINDING_FORMS) {
     // Reset explicitly: these are module-level `/g` patterns, so a leftover
     // `lastIndex` from an earlier file would silently skip the head of this one.
     re.lastIndex = 0;
     for (const m of code.matchAll(re)) {
+      if (!keep(m[specifier] ?? '')) continue;
       for (const n of clauseNames(m[clause])) names.add(n);
       for (const g of singles) if (m[g]) names.add(m[g]!);
     }
   }
+  return names;
+}
+
+/** JS/TS first-party imports: any `import`/`require` with a relative specifier. */
+function jsImportedTargets(code: string): Set<string> {
+  const names = relativeImportNames(code, () => true);
   for (const n of subprocessScriptHandles(code)) names.add(n);
   return names;
+}
+
+/** `./required-checks-testkit.js`, `./testkit.js`: shared test plumbing. */
+const TESTKIT_SPECIFIER = /testkit[^/]*$/i;
+
+/**
+ * Is every inferred target a name imported from a testkit (#1751)?
+ *
+ * A testkit is shared test plumbing, not the code under test. A workflow-lint
+ * suite that parses YAML and imports one helper from
+ * `./required-checks-testkit.js` inferred that helper as its target, so every
+ * test that read only the YAML drew VAC-002 -- 20 in `leak-gate-workflow.test.ts`.
+ * The inference was never about the code under test, so it abstains (named and
+ * counted) rather than accusing; `// @covers` still checks such a test.
+ */
+function onlyTestkitTargets(source: string, direct: Set<string>): boolean {
+  const kit = relativeImportNames(source, (s) => TESTKIT_SPECIFIER.test(s));
+  return kit.size > 0 && [...direct].every((n) => kit.has(n));
 }
 
 /**
@@ -436,9 +407,22 @@ function reachesOutOfBandTarget(rawBody: string): boolean {
  * call. A helper that runs `git ls-files` and then filters on `'.d.ts'` is not
  * a handle (measured on canary's own `typecheck-denominator.test.ts`), and a
  * bare command (`spawnSync('git', ...)`) never is.
+ *
+ * The specifier may also be a NAME bound to a first-party script path (#1365,
+ * reopened by #1751): `const { a } = (await import(SCRIPT_URL)) as T` and
+ * `lib = await import(LIB)`, where `SCRIPT_URL` is
+ * `pathToFileURL(join(..., 'install-siren.mjs')).href`. That is how canary's
+ * own script suites load their subject, and 74 VAC-002 findings in 8 files
+ * were this one shape. `paths` holds those names; see {@link scriptPathNames}.
  */
-function outOfBandHandles(source: string, decls: LocalDecl[]): Set<string> {
+function outOfBandHandles(
+  source: string,
+  decls: LocalDecl[],
+  paths: Set<string>,
+): Set<string> {
   const names = new Set<string>();
+  const firstParty = (a: string) =>
+    RELATIVE_SPECIFIER_ARG.test(a) || mentionsAny(a, paths);
   for (const d of decls) {
     const raw = source.slice(d.start, d.start + d.body.length);
     const reaches =
@@ -446,11 +430,24 @@ function outOfBandHandles(source: string, decls: LocalDecl[]): Set<string> {
         SCRIPT_PATH_LITERAL.test(a),
       ) ||
       [DYNAMIC_IMPORT_CALLS, REQUIRE_CALLS].some((re) =>
-        callArguments(d.body, raw, re).some((a) =>
-          RELATIVE_SPECIFIER_ARG.test(a),
-        ),
+        callArguments(d.body, raw, re).some(firstParty),
       );
     if (reaches) for (const n of d.names) names.add(n);
+  }
+  return names;
+}
+
+/**
+ * Same-file names whose declaration holds a first-party script path literal --
+ * `const LIB = pathToFileURL(join(ROOT, 'lib', 'x.mjs')).href`. A name, not a
+ * target: it only makes an `import(LIB)` first-party (see
+ * {@link outOfBandHandles}), so a path that is never imported binds nothing.
+ */
+function scriptPathNames(source: string, decls: LocalDecl[]): Set<string> {
+  const names = new Set<string>();
+  for (const d of decls) {
+    const raw = source.slice(d.start, d.start + d.body.length);
+    if (SCRIPT_PATH_LITERAL.test(raw)) for (const n of d.names) names.add(n);
   }
   return names;
 }
@@ -479,140 +476,6 @@ function callArguments(code: string, raw: string, re: RegExp): string[] {
 /** Names imported from first-party (relative) modules. */
 function importedTargets(code: string, python: boolean): Set<string> {
   return python ? pythonImportedTargets(code) : jsImportedTargets(code);
-}
-
-/**
- * Brace depth immediately BEFORE each character, over already-blanked code.
- *
- * Cheap and approximate on purpose: string content is blanked before this runs,
- * so the only braces it can see are real ones (a `{` inside a comment is the
- * residual inaccuracy, and it can only widen a body, never narrow one).
- */
-function braceDepths(code: string): Int32Array {
-  const depths = new Int32Array(code.length);
-  let d = 0;
-  for (let i = 0; i < code.length; i += 1) {
-    depths[i] = d;
-    const c = code[i];
-    if (c === '{') d += 1;
-    else if (c === '}') d -= 1;
-  }
-  return depths;
-}
-
-/**
- * Where declaration `i`'s body ends.
- *
- * Bounding it at the NEXT declaration is wrong for any helper that declares
- * something inside itself, and that is the common shape for the subprocess
- * helper #705 is about:
- *
- * ```ts
- * const SCRIPT = join(REPO_ROOT, 'scripts', 'entropy-ratchet.mjs');
- * function run() {
- *   const r = spawnSync(process.execPath, [SCRIPT, ...]);   // <- next decl
- *   ...
- * }
- * ```
- *
- * `run`'s body stopped at `const r`, so it never saw `SCRIPT`, so `run()` did
- * not reach the target and every test calling it read as vacuous. Nesting is the
- * discriminator: the body runs to the next declaration at the same or shallower
- * brace depth, which is the first one that is genuinely a SIBLING.
- */
-function declEnd(
-  code: string,
-  matches: RegExpMatchArray[],
-  i: number,
-  depth: Int32Array | null,
-): number {
-  if (depth === null) return matches[i + 1]?.index ?? code.length;
-  const m = matches[i]!;
-  const own = depth[m.index!] ?? 0;
-  let sibling = code.length;
-  for (let j = i + 1; j < matches.length; j += 1) {
-    const at = matches[j]!.index!;
-    if ((depth[at] ?? 0) <= own) {
-      sibling = at;
-      break;
-    }
-  }
-  const from = m.index! + m[0].length;
-  // A `function` owns its own braced body. Running it to the next sibling
-  // instead let a helper that never touches the target absorb a TEST below it
-  // that does, so a test calling only that helper read as invoking the target
-  // and the real VAC-002 went quiet (#1170's surviving positive).
-  if (m[1]) return Math.min(functionBodyEnd(code, from, depth), sibling);
-  // A `const`/`let`/`var` owns only its initializer (#871): inside a test body
-  // there is usually no later sibling, so bounding a bystander at one let it
-  // absorb the target call below it and read as reaching the target, silencing
-  // VAC-003. The statement ends at the first `;` or line break at the
-  // declaration's own brace depth, so an arrow helper's braced body still
-  // belongs to it -- unless the line plainly continues (#1170): an open paren
-  // or bracket, a trailing `=>`/operator, or a next line starting with `.`.
-  // Prettier wraps `const parse = (...a) =>\n  target(a)` exactly that way.
-  let parens = 0;
-  for (let k = from; k < sibling; k += 1) {
-    const ch = code[k];
-    if (ch === '(' || ch === '[') parens += 1;
-    else if (ch === ')' || ch === ']') parens -= 1;
-    if (parens > 0 || (depth[k] ?? 0) > own) continue;
-    if (ch === ';') return k;
-    if (ch === '\n' && !continuesPastNewline(code, k)) return k;
-  }
-  return sibling;
-}
-
-/** Characters that leave an expression incomplete at the end of a line. */
-const TRAILING_CONTINUATION = /(?:=>|[=,(?:|&+\-*/.[{])\s*$/;
-/** Characters that attach a line to the expression above it. */
-const LEADING_CONTINUATION = /^\s*(?:[.?:|&)\]]|=>)/;
-
-/** Does the statement around the line break at `nl` carry on past it? */
-function continuesPastNewline(code: string, nl: number): boolean {
-  const lineStart = code.lastIndexOf('\n', nl - 1) + 1;
-  const before = code.slice(lineStart, nl).replace(/\/\/.*$/, '');
-  if (TRAILING_CONTINUATION.test(before)) return true;
-  const nextEnd = code.indexOf('\n', nl + 1);
-  const after = code.slice(nl + 1, nextEnd < 0 ? code.length : nextEnd);
-  return LEADING_CONTINUATION.test(after);
-}
-
-/**
- * The end of a `function` declaration's braced body: the `}` matching the
- * first `{` after its parameter list, or the end of `code` when unbalanced.
- *
- * A `{` in TYPE position is not the body -- `function run(): { out: string } {`
- * opens an object type first. One preceded by `:`, `|`, `&`, `<` or `,` is
- * skipped past its matching `}`. Taking it for the body cut `run` off before it
- * named the target, and every test calling it read as never invoking anything.
- */
-function functionBodyEnd(
-  code: string,
-  from: number,
-  depth: Int32Array,
-): number {
-  let parens = 0;
-  for (let k = from; k < code.length; k += 1) {
-    const ch = code[k];
-    if (ch === '(') parens += 1;
-    else if (ch === ')') parens -= 1;
-    else if (ch === '{' && parens === 0) {
-      const close = matchingBrace(code, k, depth);
-      if (!/[:|&<,]\s*$/.test(code.slice(from, k))) return close;
-      k = close - 1;
-    }
-  }
-  return code.length;
-}
-
-/** One past the `}` matching the `{` at `open`, or the end of `code`. */
-function matchingBrace(code: string, open: number, depth: Int32Array): number {
-  const inner = (depth[open] ?? 0) + 1;
-  for (let j = open + 1; j < code.length; j += 1) {
-    if (code[j] === '}' && depth[j] === inner) return j + 1;
-  }
-  return code.length;
 }
 
 /**
@@ -695,6 +558,7 @@ function reachingHookAssigns(
   code: string,
   decls: LocalDecl[],
   direct: Set<string>,
+  paths: Set<string>,
 ): LocalDecl[] {
   const pending = unresolvedNames(code, decls);
   const assigns: LocalDecl[] = [];
@@ -708,55 +572,10 @@ function reachingHookAssigns(
       start: m.index! + m[0].length - body.length,
     });
   }
-  for (const n of outOfBandHandles(source, assigns)) direct.add(n);
+  for (const n of outOfBandHandles(source, assigns, paths)) direct.add(n);
   return assigns.filter(
     (d) => direct.has(d.names[0]!) || mentionsAny(d.body, direct),
   );
-}
-
-/** One same-file declaration: the names it binds and the text it owns. */
-interface LocalDecl {
-  names: string[];
-  body: string;
-  /** Offset of `body` in the file, so the unblanked text can be read. */
-  start: number;
-}
-
-function localDecls(code: string, python: boolean): LocalDecl[] {
-  const decls: LocalDecl[] = [];
-  const re = python ? PY_LOCAL_DECL : JS_LOCAL_DECL;
-  re.lastIndex = 0;
-  const matches = [...code.matchAll(re)];
-  const depth = python ? null : braceDepths(code);
-  for (let i = 0; i < matches.length; i += 1) {
-    const m = matches[i]!;
-    const names = boundNames(m, python);
-    if (names.length === 0) continue;
-    const start = m.index! + m[0].length;
-    const end = declEnd(code, matches, i, depth);
-    decls.push({ names, body: code.slice(start, end), start });
-  }
-  if (!python) decls.push(...destructuredAssignDecls(code));
-  return decls;
-}
-
-/** `({ a, b } = rhs)` bindings, each owning only its RHS. */
-function destructuredAssignDecls(code: string): LocalDecl[] {
-  const decls: LocalDecl[] = [];
-  JS_DESTRUCTURED_ASSIGN.lastIndex = 0;
-  for (const m of code.matchAll(JS_DESTRUCTURED_ASSIGN)) {
-    const names = (m[1] ?? '')
-      .split(',')
-      .map((raw) => raw.split(':').pop()!.trim())
-      .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
-    // The RHS alone is the body here: unlike a declaration, an assignment
-    // does not own the text that follows it.
-    // The RHS is the last thing before the closing `)`.
-    const body = m[2] ?? '';
-    const start = m.index! + m[0].length - 1 - body.length;
-    if (names.length > 0) decls.push({ names, body, start });
-  }
-  return decls;
 }
 
 /** One body line: blanked `text`, the same offsets unblanked as `raw`. */
@@ -1518,8 +1337,11 @@ function resolveTargets(
   const direct = importedTargets(source, python);
   const decls = localDecls(code, python);
   if (!python) {
-    for (const n of outOfBandHandles(source, decls)) direct.add(n);
-    decls.push(...reachingHookAssigns(source, code, decls, direct));
+    const paths = scriptPathNames(source, decls);
+    for (const n of outOfBandHandles(source, decls, paths)) direct.add(n);
+    for (const n of eachParameterHandles(code, direct)) direct.add(n);
+    bindAliases(decls, direct);
+    decls.push(...reachingHookAssigns(source, code, decls, direct, paths));
   }
   if (direct.size === 0) return null;
   return {
@@ -1529,6 +1351,119 @@ function resolveTargets(
     unresolved: python ? new Set() : unresolvedNames(code, decls),
   };
 }
+
+/**
+ * `describe.each(TABLE)('%s', (_name, mod) => ...)`: the callback parameters
+ * that receive a direct target from the table (#1751).
+ *
+ * `string-literals.test.ts` runs one suite over two namespace-imported copies
+ * this way, and every test reached them only through `mod` -- 33 VAC-002
+ * findings in one file. For an array-of-arrays table a parameter is bound only
+ * when its COLUMN names a target, so `_name` (a label) stays a bystander; any
+ * other table shape whose text names a target binds every parameter.
+ */
+function eachParameterHandles(code: string, direct: Set<string>): Set<string> {
+  const names = new Set<string>();
+  EACH_CALL.lastIndex = 0;
+  for (const m of code.matchAll(EACH_CALL)) {
+    const open = m.index + m[0].length - 1;
+    const close = closingParen(code, open);
+    const table = close < 0 ? '' : code.slice(open + 1, close);
+    if (!mentionsAny(table, direct)) continue;
+    const columns = targetColumns(table, direct);
+    eachCallbackParameters(code, close).forEach((p, i) => {
+      if (columns === null || columns.has(i))
+        for (const n of parameterNames(p)) names.add(n);
+    });
+  }
+  return names;
+}
+
+/** The parameter list of the callback after the table closing at `close`. */
+function eachCallbackParameters(code: string, close: number): string[] {
+  const cb = code.slice(close + 1, close + 400).match(EACH_CALLBACK);
+  return splitTopLevel(cb?.[1] ?? cb?.[2] ?? cb?.[3] ?? '');
+}
+
+const EACH_CALL =
+  /(?<![\w$.])(?:describe|it|test)(?:\.(?:only|skip|concurrent|sequential))*\.each\s*\(/g;
+/** The `(title, callback)` that follows the table: the callback's parameters. */
+const EACH_CALLBACK =
+  /^\s*\([^,]*,\s*(?:async\s+)?(?:function\s*[\w$]*\s*\(([^)]*)\)|\(([^)]*)\)\s*=>|([A-Za-z_$][\w$]*)\s*=>)/;
+
+/** Columns of an array-of-arrays table naming a target; `null` for any other shape. */
+function targetColumns(table: string, direct: Set<string>): Set<number> | null {
+  const t = table.trim();
+  if (!t.startsWith('[') || !t.endsWith(']')) return null;
+  const rows = splitTopLevel(t.slice(1, -1)).filter((r) => r !== '');
+  if (!rows.every((r) => r.startsWith('['))) return new Set([0]);
+  const columns = new Set<number>();
+  for (const row of rows) {
+    splitTopLevel(row.slice(1, -1)).forEach((cell, i) => {
+      if (mentionsAny(cell, direct)) columns.add(i);
+    });
+  }
+  return columns;
+}
+
+/** `s` split on its depth-0 commas, each piece trimmed. */
+function splitTopLevel(s: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i]!;
+    if ('([{'.includes(c)) depth += 1;
+    else if (')]}'.includes(c)) depth -= 1;
+    else if (c === ',' && depth === 0) {
+      parts.push(s.slice(from, i).trim());
+      from = i + 1;
+    }
+  }
+  parts.push(s.slice(from).trim());
+  return parts;
+}
+
+/** The names one parameter binds: `mod`, `mod: T`, `{ a, b: c }`, `...rest`. */
+function parameterNames(param: string): string[] {
+  const p = param.trim();
+  const pattern = /^[{[]([^}\]]*)[}\]]/.exec(p);
+  const pieces = pattern ? pattern[1]!.split(',') : [p.split(/[:=]/)[0]!];
+  return pieces
+    .map((raw) =>
+      raw
+        .split('=')[0]!
+        .split(':')
+        .pop()!
+        .trim()
+        .replace(/^\.\.\./, ''),
+    )
+    .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
+}
+
+/**
+ * `const { a, b } = mod as T` -- a rebinding of a direct target is itself
+ * direct, not a helper level (#1751). Without this the describe.each module
+ * above sat one level down, so every helper over its destructured functions
+ * was two levels down and abstained (#1170).
+ */
+function bindAliases(decls: LocalDecl[], direct: Set<string>): void {
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const d of decls) {
+      const root = ALIAS_RHS.exec(d.body)?.[1];
+      if (root === undefined || !direct.has(root)) continue;
+      if (d.names.every((n) => direct.has(n))) continue;
+      for (const n of d.names) direct.add(n);
+      grew = true;
+    }
+  }
+}
+
+/** `mod`, `(mod)`, `mod.default`, `mod as T`, `mod satisfies T`. */
+const ALIAS_RHS =
+  /^\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*(?:(?:as|satisfies)\b[\s\S]*)?$/;
 
 /**
  * The `import-inferred` target, at the grains its two consumers need.
@@ -1688,6 +1623,10 @@ export function scanVacuity(path: string): VacuityResult {
     python,
     inference,
     driverImport: !python && importsBrowserDriver(source),
+    testkitOnly:
+      !python &&
+      inference !== null &&
+      onlyTestkitTargets(source, inference.direct),
     sourceLines: source.split('\n'),
     helperAbstentions: [],
   };
@@ -1735,6 +1674,8 @@ interface ScanContext {
   helperAbstentions: SkipEntry[];
   /** The file imports a browser-driver package (#971). */
   driverImport: boolean;
+  /** Every inferred target came from a testkit import (#1751). */
+  testkitOnly: boolean;
   /** `source` by line, for reading a test's declaration signature. */
   sourceLines: string[];
 }
@@ -1784,7 +1725,12 @@ function scanAllBlocks(
           : 'target unresolvable: no @covers annotation and no first-party relative import to infer from',
       });
     }
-    const blockFindings = scanBlock(ctx, block, annotated, skipped, outOfBand);
+    const blockFindings = divertTestkitInferred(
+      scanBlock(ctx, block, annotated, skipped, outOfBand),
+      ctx.testkitOnly && annotated === null,
+      skipLabel('VAC-002/VAC-003', ctx.path, block),
+      skipped,
+    );
     findings.push(
       ...divertE2EInferred(
         blockFindings,
@@ -1795,4 +1741,25 @@ function scanAllBlocks(
     );
   }
   return findings;
+}
+
+const TESTKIT_ONLY_REASON =
+  'the only first-party import is a testkit, which is test plumbing rather than the code under test, so the inferred target says nothing; add // @covers <symbol> to check this test';
+
+/**
+ * In a testkit-only file (see {@link onlyTestkitTargets}), move the findings
+ * that rest on the inferred target -- VAC-002, VAC-003, VAC-005 -- into
+ * `skipped`. VAC-001 needs no target and stays.
+ */
+function divertTestkitInferred(
+  findings: VacuityFinding[],
+  testkitOnly: boolean,
+  label: string,
+  skipped: SkipEntry[],
+): VacuityFinding[] {
+  if (!testkitOnly) return findings;
+  const kept = findings.filter((f) => f.rule === 'VAC-001');
+  if (kept.length < findings.length)
+    skipped.push({ name: label, reason: TESTKIT_ONLY_REASON });
+  return kept;
 }

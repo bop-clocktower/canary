@@ -512,11 +512,13 @@ describe('VAC-002 — targets the import inference could not see (#705)', () => 
 // common cause: the target is reached through a same-file DECLARATION whose own
 // body launches a first-party script or imports a relative module, and only the
 // one-line `const x = '<script literal>'` and `const x = await import(...)`
-// forms were read. A first-party testkit import keeps the target set non-empty
+// forms were read. A first-party helper import keeps the target set non-empty
 // in most fixtures here, because an empty set makes VAC-002 abstain rather than
 // fire -- the false positive needs a resolvable set that misses the real target.
+// Not a `*testkit*` module: since #1751 a file whose only first-party import is
+// a testkit abstains too, so it could not arm the rule.
 describe('VAC-002 — subprocess helpers and await-import bindings (#1365)', () => {
-  const KIT = `import { it, expect } from 'vitest';\nimport { tmpDir } from './testkit.js';\n`;
+  const KIT = `import { it, expect } from 'vitest';\nimport { tmpDir } from './helpers.js';\n`;
 
   it('reads a Prettier-wrapped execFileSync helper as a handle on its script', () => {
     const r = scan(
@@ -727,7 +729,7 @@ describe('VAC-002 — subprocess helpers and await-import bindings (#1365)', () 
 describe('VAC-002 — a module-scope let a hook reassigns (#1672)', () => {
   const HEAD3 =
     `import { it, expect, beforeAll, beforeEach } from 'vitest';\n` +
-    `import { tmpDir, makeStore } from './testkit.js';\n` +
+    `import { tmpDir, makeStore } from './helpers.js';\n` +
     `let mod;\n`;
   const TEST3 = `it('saves', () => { expect(mod.save(1)).toBe(1); });\n`;
 
@@ -799,7 +801,7 @@ describe('VAC-002 — a module-scope let a hook reassigns (#1672)', () => {
 describe('VAC-002 — a comment is not an invocation (#1681)', () => {
   const HEAD4 =
     `import { it, expect, beforeEach } from 'vitest';\n` +
-    `import { makeStore } from './testkit.js';\n` +
+    `import { makeStore } from './helpers.js';\n` +
     `let template;\n` +
     `let hookSpawns = 0;\n` +
     `beforeEach(() => {\n  template = makeStore();\n});\n`;
@@ -882,7 +884,7 @@ describe('VAC-002 — a comment is not an invocation (#1681)', () => {
 describe('VAC-002 — a trailing or block comment is not an invocation (#1691)', () => {
   const HEAD =
     `import { it, expect } from 'vitest';\n` +
-    `import { makeStore } from './testkit.js';\n` +
+    `import { makeStore } from './helpers.js';\n` +
     `let hookSpawns = 0;\n`;
   const vac002Tests = (r: ReturnType<typeof scan>) =>
     r.findings.filter((f) => f.rule === 'VAC-002').map((f) => f.test);
@@ -959,7 +961,7 @@ describe('VAC-002 — a trailing or block comment is not an invocation (#1691)',
 describe('VAC-002 — a // or /* inside a regex literal is not a comment', () => {
   const HEAD =
     `import { it, expect } from 'vitest';\n` +
-    `import { makeStore } from './testkit.js';\n` +
+    `import { makeStore } from './helpers.js';\n` +
     `let hookSpawns = 0;\n`;
   const vac002Tests = (body: string) =>
     scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`)
@@ -999,7 +1001,7 @@ describe('VAC-002 — a // or /* inside a regex literal is not a comment', () =>
 describe('VAC-002 — the comment model reads three code shapes correctly (#1704)', () => {
   const HEAD =
     `import { it, expect } from 'vitest';\n` +
-    `import { makeStore } from './testkit.js';\n` +
+    `import { makeStore } from './helpers.js';\n` +
     `let hookSpawns = 0;\n`;
   const vac002Tests = (body: string) =>
     scan('a.test.ts', HEAD + `it('counts', () => {\n${body}});\n`)

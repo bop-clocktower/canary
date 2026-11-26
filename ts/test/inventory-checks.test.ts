@@ -47,6 +47,7 @@ function byName(checks: { name: string }[], name: string) {
   return checks.find((c) => c.name === name) as unknown as {
     verdict: string;
     reason: string;
+    subjects?: string[];
   };
 }
 
@@ -139,6 +140,49 @@ describe('scoreInventoryChecks', () => {
       areas('src/a.ts', 'src/untested.ts'),
     );
     expect(byName(fail, 'coverage-depth').verdict).toBe('fail');
+  });
+
+  // #1751: "25 critical area(s): 4 at depth 0" with counts only gave nobody
+  // anything to act on. The depth-0 areas are named in the reason and listed,
+  // uncapped, in `subjects` for --json.
+  it('coverage-depth names the areas at depth 0', () => {
+    const fail = byName(
+      scoreInventoryChecks(
+        ok(inv([{ target: 'src/a', depths: [2] }])),
+        areas('src/a.ts', 'src/untested.ts', 'src/gone.ts'),
+      ),
+      'coverage-depth',
+    );
+    expect(fail.reason).toContain(
+      '3 critical area(s): 2 at depth 0 (src/untested.ts, src/gone.ts), 0 at depth 1, 1 at depth 2',
+    );
+    expect(fail.subjects).toEqual(['src/untested.ts', 'src/gone.ts']);
+  });
+
+  it('coverage-depth caps the names in its reason but never in subjects', () => {
+    const many = Array.from({ length: 12 }, (_, i) => `src/u${i}.ts`);
+    const fail = byName(
+      scoreInventoryChecks(
+        ok(inv([{ target: 'src/a', depths: [2] }])),
+        areas('src/a.ts', ...many),
+      ),
+      'coverage-depth',
+    );
+    expect(fail.reason).toContain('src/u9.ts');
+    expect(fail.reason).not.toContain('src/u10.ts');
+    expect(fail.reason).toContain('and 2 more');
+    expect(fail.subjects).toEqual(many);
+  });
+
+  it('coverage-depth lists no subjects when nothing is at depth 0', () => {
+    const pass = byName(
+      scoreInventoryChecks(
+        ok(inv([{ target: 'src/a', depths: [2] }])),
+        noAreas,
+      ),
+      'coverage-depth',
+    );
+    expect(pass.subjects).toBeUndefined();
   });
 
   it('assertion-quality warns on a minority of weak tests and fails on a majority', () => {

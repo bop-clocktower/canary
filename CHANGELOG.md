@@ -47,6 +47,23 @@ under the project's former name) are documented in the
     gives that case its own warning title. Whether it should fail the required
     check is still an open question.
 
+- **canary's test-intelligence tools stop flagging correct code in canary's own
+  suite (#1751, #1365).** `review-test`'s selector rules (LINT-001/002/003) now
+  fire only on a literal passed straight to a `locator`/`querySelector` call, so
+  a selector inside a string that is a test's input is data, and they skip
+  `querySelector` in a `happy-dom`/`jsdom` unit test that has no Testing Library
+  to offer `getByRole`. LINT-006 credits a test whose assertion sits in a
+  same-file helper one level down. Cassandra `VAC-002` binds a target imported
+  through a name holding a script path (`(await import(SCRIPT_URL))`,
+  `lib = await import(LIB)`), treats `const { a } = mod` as a rebinding rather
+  than a helper level, follows a `describe.each` table to the callback parameter
+  that receives the target, and records a named skip instead of findings when
+  the only inferred target is a `*testkit*` import. `critical-areas` no longer
+  ranks `<tool>.config.<ext>` files and, with no root report, reads
+  `<pkg>/coverage/lcov.info` beside each tracked `package.json`. On canary's own
+  tests: VAC-002 176 → 83 (`ts/test`) and 86 → 53 (`agents/skills/test`);
+  `review-test` selector and LINT-006 findings outside fixtures 23 → 2.
+
 - **canary-katana: a stale critical-areas map no longer reads as a clean run
   (#1325).** katana scored every diff against `critical-areas.json` however old
   it was, so a map written months ago reported `0 findings` under `--strict` and
@@ -127,6 +144,12 @@ under the project's former name) are documented in the
   wrong MCP server; it now names `canary-mcp` and links `plugin.json` for the
   list. `ts/test/public-docs-first-run.test.ts` and
   `ts/test/wiki-sync-workflow.test.ts` pin all of this.
+
+### Added
+
+- **`ci-ready` names the areas behind a coverage-depth failure (#1751).** The
+  reason lists the areas at depth 0, and `--json` adds an optional `subjects`
+  array to the check holding every one of them. Absent when none is at depth 0.
 
 ### Security
 

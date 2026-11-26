@@ -20,8 +20,10 @@ type ChurnRead = Pick<GitFacts, 'churn' | 'churnAbsentReason'>;
 const SOURCE = /\.(?:[cm]?[jt]sx?|py|php)$/;
 const EXCLUDED_DIR =
   /(?:^|\/)(?:node_modules|vendor|third_party|dist|build|out|coverage|fixtures?|__fixtures__|__mocks__|__tests__|tests?|specs?|e2e)\//;
+// `<tool>.config.<ext>` is tooling, not code under test: canary's own map
+// ranked `agents/skills/vitest.config.ts` #14 on churn alone (#1751).
 const EXCLUDED_FILE =
-  /\.d\.[cm]?ts$|\.min\.js$|\.(?:test|spec)\.[^./]+$|(?:^|\/)test_[^/]+\.py$|_test\.py$|(?:^|\/)conftest\.py$|Test\.php$/;
+  /\.d\.[cm]?ts$|\.min\.js$|\.(?:test|spec)\.[^./]+$|\.config\.[cm]?[jt]s$|(?:^|\/)test_[^/]+\.py$|_test\.py$|(?:^|\/)conftest\.py$|Test\.php$/;
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 /**

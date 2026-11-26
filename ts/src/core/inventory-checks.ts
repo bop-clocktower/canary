@@ -38,9 +38,14 @@ export interface InventoryCheck {
     unit: 'ratio' | 'count' | 'ms';
     denominator: number;
   } | null;
+  /** `CiCheck.subjects` in `ci-ready.ts`: the paths `measure.value` counts. */
+  subjects?: string[];
 }
 
 type CiCheck = InventoryCheck;
+
+/** How many depth-0 areas the prose reason names; `subjects` lists them all. */
+const MAX_NAMED = 10;
 
 export interface CriticalArea {
   path: string;
@@ -164,15 +169,29 @@ function scoreCoverageDepth(
     );
   }
   const depths = paths.map((p) => areaDepth(inv, p));
-  const at0 = depths.filter((d) => d === 0).length;
+  const zero = paths.filter((_, i) => depths[i] === 0);
+  const at0 = zero.length;
   const at1 = depths.filter((d) => d === 1).length;
   const verdict: CheckVerdict = at0 > 0 ? 'fail' : at1 > 0 ? 'warn' : 'pass';
-  return {
+  const check: CiCheck = {
     name,
     verdict,
-    reason: `${paths.length} ${label}: ${at0} at depth 0, ${at1} at depth 1, ${paths.length - at0 - at1} at depth 2`,
+    reason: `${paths.length} ${label}: ${at0} at depth 0${namedAreas(zero)}, ${at1} at depth 1, ${paths.length - at0 - at1} at depth 2`,
     measure: { value: at0, unit: 'count', denominator: paths.length },
   };
+  // A failing count nobody can act on is the #1751 shape: name the areas.
+  // Depth is direct imports only, so an area reached through a testkit or a
+  // subprocess reads 0 here even when its measured coverage is high.
+  if (at0 > 0) check.subjects = zero;
+  return check;
+}
+
+/** ` (a, b, c)` -- at most {@link MAX_NAMED}, then `and N more`. */
+function namedAreas(paths: string[]): string {
+  if (paths.length === 0) return '';
+  const shown = paths.slice(0, MAX_NAMED).join(', ');
+  const rest = paths.length - MAX_NAMED;
+  return ` (${shown}${rest > 0 ? ` and ${rest} more` : ''})`;
 }
 
 function scopedTests(inv: TestInventory, areas: CriticalAreasInput) {

@@ -81,6 +81,12 @@ test's file imports the area, its depth is 0.
 | assertion-quality | tests importing a critical area, or every test when there are no critical areas | all tests at depth 2 | a minority at ≤ 1    | a majority at ≤ 1     |
 | critical-paths    | the 5 highest-`risk_score` areas                                                | all at depth ≥ 1     | one uncovered        | two or more uncovered |
 
+coverage-depth names the areas at depth 0 in its reason (the first 10, then a
+count) and lists every one in the check's `subjects` array in
+`canary ci-ready --json` (#1751). Depth counts direct imports only, so an area
+reached through a testkit or a subprocess reads 0 even when its measured line
+coverage is high — the list says which areas to look at.
+
 Each check reports `skip` with the reason named, and never passes, in these
 cases:
 

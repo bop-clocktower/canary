@@ -10,6 +10,7 @@ import { basename, extname } from 'node:path';
 
 import { commentEnd, literalEnd } from './js-literals.js';
 import { isJsxPath, maskJsxText } from './jsx-text.js';
+import { localDecls } from './local-decls.js';
 import { blankStringContent } from './string-literals.js';
 
 export interface LintFinding {
@@ -42,7 +43,12 @@ const TIMESTAMP = /Date\.now\s*\(|datetime\.now\s*\(|datetime\.utcnow\s*\(/;
 const CSS_CLASS_SELECTOR = /['"]\.[a-zA-Z][\w-]*['"]/;
 const CSS_ID_SELECTOR = /['"]#[a-zA-Z][\w-]*['"]/;
 const XPATH_SELECTOR = /['"]\/+[a-zA-Z[\]/@*]/;
-const LOCATOR_METHODS = /\.(locator|querySelector)\s*\(/;
+const LOCATOR_CALL = /\.(locator|querySelector(?:All)?)\s*\(\s*/g;
+// One alternative per quote style, no backreference: see STRING_LITERAL.
+const LEADING_LITERAL = /^(?:'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")/;
+const DOM_EMULATION_PRAGMA =
+  /@(?:vitest|jest)-environment\s+(?:happy-dom|jsdom)\b/;
+const TESTING_LIBRARY = /['"]@testing-library\//;
 
 // Missing await
 const BARE_PLAYWRIGHT_CALL =
@@ -279,7 +285,8 @@ const FLAKINESS_RULES: FlakeRule[] = [
  *
  * NOT applied to the selector rules: LINT-001/002/003 match `'.btn'` / `'#id'`
  * inside quotes by construction, because a selector IS a string. Stripping
- * would delete those rules outright.
+ * would delete those rules outright. They find the locator CALL in blanked
+ * code instead and read only its argument raw (see `scanSelectors`, #1751).
  */
 function blankStrings(line: string): string {
   // Template literals first: their interior can contain `'`/`"` that would
@@ -351,14 +358,47 @@ function selectorFinding(
   return null;
 }
 
-function scanSelectors(lines: string[], file: string): LintFinding[] {
+/**
+ * The selector literals passed STRAIGHT to a locator call on each line.
+ *
+ * The call is found in the string-blanked line, so a `page.locator('.btn')`
+ * written inside a string -- the input of a linter or healer test -- is data
+ * and never matches; only the argument literal is read from the raw line
+ * (blanking preserves offsets). Before #1751 any line holding both a locator
+ * call and a quoted selector fired, and all 16 selector findings on canary's
+ * own tests were false: 10 were selectors inside a test's input string.
+ *
+ * `querySelector` in a DOM-emulation unit test (`@vitest-environment
+ * happy-dom`/`jsdom`) is the only DOM API there is, so "prefer getByRole" is a
+ * framework mismatch -- unless the file imports Testing Library, which does
+ * offer `getByRole`.
+ */
+function scanSelectors(
+  lines: string[],
+  blanked: string[],
+  file: string,
+  domEmulation: boolean,
+): LintFinding[] {
   const out: LintFinding[] = [];
   lines.forEach((line, idx) => {
-    if (isComment(line) || !LOCATOR_METHODS.test(line)) return;
-    const finding = selectorFinding(line, idx + 1, file);
-    if (finding) out.push(finding);
+    if (isComment(line)) return;
+    LOCATOR_CALL.lastIndex = 0;
+    for (const m of (blanked[idx] ?? '').matchAll(LOCATOR_CALL)) {
+      if (domEmulation && m[1] !== 'locator') continue;
+      const arg = line.slice(m.index + m[0].length).match(LEADING_LITERAL);
+      const finding = arg ? selectorFinding(arg[0], idx + 1, file) : null;
+      if (finding) {
+        out.push(finding);
+        return;
+      }
+    }
   });
   return out;
+}
+
+/** A DOM-emulation unit test with no Testing Library to offer `getByRole`. */
+function isDomEmulationUnitTest(code: string): boolean {
+  return DOM_EMULATION_PRAGMA.test(code) && !TESTING_LIBRARY.test(code);
 }
 
 function scanMissingAwait(lines: string[], file: string): LintFinding[] {
@@ -859,16 +899,39 @@ function scanAssertionFreePy(code: string, file: string): LintFinding[] {
   return out;
 }
 
+/**
+ * A call to a same-file helper whose OWN body asserts, or `null` when the file
+ * has none (#1751).
+ *
+ * `it('on a poor fit', () => abstains(points, /R²/))` where `abstains` wraps
+ * the `expect` read as assertion-free: five false LINT-006 findings in
+ * canary's own `scaling-curve.test.ts`. The helper is found with the vacuity
+ * scanner's declaration parser, and credit stops at ONE level, as VAC-002's
+ * does (#1170): a helper that only calls another helper is not followed, so a
+ * chain nobody read cannot clear a test. A method call (`kit.check(`) is not a
+ * same-file helper and does not count.
+ */
+function assertingHelperCall(code: string): RegExp | null {
+  const names = localDecls(code, false)
+    .filter((d) => ASSERT_JS.test(d.body))
+    .flatMap((d) => d.names);
+  if (names.length === 0) return null;
+  const alternatives = names.map((n) => n.replace(/\$/g, '\\$')).join('|');
+  return new RegExp(`(?<![\\w$.])(?:${alternatives})\\s*\\(`);
+}
+
 function scanAssertionFreeJs(
   code: string,
   file: string,
   source: string,
 ): LintFinding[] {
   const out: LintFinding[] = [];
+  const helper = assertingHelperCall(code);
   // Bodies are bounded by the NEXT declaration -- see `enumerateTests`, which
   // now owns that logic and its bug history (#590, #633) for both languages.
   for (const t of enumerateTests(code, source, false)) {
-    if (!t.skipped && !ASSERT_JS.test(t.body)) {
+    if (t.skipped || ASSERT_JS.test(t.body)) continue;
+    if (helper === null || !helper.test(t.body)) {
       out.push(
         mk(
           file,
@@ -957,7 +1020,12 @@ export class StaticLinter {
     const scanned = blankStringContent(code, { python: fw === 'pytest', jsx });
     const findings: LintFinding[] = [
       ...scanFlakiness(lines, path),
-      ...scanSelectors(lines, path),
+      ...scanSelectors(
+        lines,
+        scanned.split('\n'),
+        path,
+        isDomEmulationUnitTest(code),
+      ),
       ...scanMissingAwait(lines, path),
       ...scanMagicNumbers(lines, path),
       ...scanSoundness(lines, path, fw === 'pytest'),

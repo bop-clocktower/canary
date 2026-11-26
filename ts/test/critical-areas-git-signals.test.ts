@@ -99,8 +99,23 @@ describe('readGitFacts', () => {
   });
 
   describe('candidate filter', () => {
-    const IN = ['src/a.ts', 'src/a.tsx', 'lib/b.mjs', 'app/c.py', 'web/d.php'];
+    // `src/config.ts` is source that happens to be named config; only the
+    // `<tool>.config.<ext>` convention is tooling (#1751).
+    const IN = [
+      'src/a.ts',
+      'src/a.tsx',
+      'lib/b.mjs',
+      'app/c.py',
+      'web/d.php',
+      'src/config.ts',
+      'src/app-config.ts',
+    ];
     const OUT = [
+      // #1751: tool configuration ranked #14 on canary's own map (`high_churn`).
+      'agents/skills/vitest.config.ts',
+      'vite.config.mjs',
+      'eslint.config.js',
+      'stryker.config.cjs',
       'src/a.test.ts',
       'src/a.spec.js',
       'tests/x.py',

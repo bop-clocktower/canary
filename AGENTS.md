@@ -225,7 +225,11 @@ remote deletion is a human act. Worktree pruning waits for #889.
   distinction was half the linter's output. `LINT-001..003` are exempt by
   design: a selector _is_ a string (`'.btn'`, `'#id'`), so blanking would delete
   those rules outright. Also exports `enumerateTests`, the single "where does
-  this test end" implementation shared with the vacuity scanner.
+  this test end" implementation shared with the vacuity scanner. The selector
+  rules read only the literal passed straight to a locator call, and LINT-006
+  credits a one-level same-file helper that asserts, through the declaration
+  parser in [ts/src/core/local-decls.ts](ts/src/core/local-decls.ts) that
+  VAC-002 uses too (#1751).
 - **Vacuity Scanner:**
   [ts/src/core/vacuity-scanner.ts](ts/src/core/vacuity-scanner.ts) — The
   `canary-cassandra` detection (#612). Finds tests that pass without proving
