@@ -166,7 +166,7 @@ Fleet Health — window: 30 runs
 
   Suggested next step: e2e_ui's spike + 2 of the 3 flaky tests are in that
   suite — investigate the suite before chasing individual flakes.
-  Run /canary-ci-ready on e2e_ui, or /canary-flake-hunter on
+  Run /canary-ci-ready on e2e_ui, or /canary-debug-flake on
   checkout_retry_test for a root-cause fix.
 ```
 

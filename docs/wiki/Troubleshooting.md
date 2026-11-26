@@ -14,16 +14,25 @@ If a doc, script, or older fork tells you to set `ANTHROPIC_API_KEY` or
 
 **Error:** `canary: command not found`
 
-Canary wasn't installed or the install didn't complete.
+Canary wasn't installed, the install didn't complete, or npm's global `bin`
+directory isn't on your `PATH`.
 
-**Fix:** Run the install from the repo root:
+**Fix:** Install `canary-test-cli` from npm with one of the methods in the
+README's [Installation section][install] (Volta, mise, or npm), on Node 22 or
+later. For example:
 
 ```bash
-pip install -e .
+npm install -g canary-test-cli@latest
 ```
 
-If you're using a virtual environment, make sure it's activated before
-installing and before running Canary.
+If it installed but the command is still missing, add npm's global `bin`
+directory (`$(npm prefix -g)/bin`) to your `PATH`, or run Canary without
+installing it: `npx canary-test-cli --version`.
+
+Canary is not a Python package. A guide that tells you to install it with `pip`
+predates v6.0.0 and is out of date.
+
+[install]: https://github.com/bop-clocktower/canary#-installation
 
 ## `canary migrate` Reports `Framework: unknown` in a Monorepo
 
@@ -130,8 +139,8 @@ The most common CI failures:
 
 - **Broken markdown link** — fix the path or change to plain text
 - **Line too long in docs** — wrap prose at 80 characters
-- **Stale security ledger** — run `python3 scripts/security_ledger.py` and
-  commit
+- **Stale security ledger** — run `node scripts/security_ledger.mjs` and commit
+  the result
 
 ## Generated File Is Empty or Malformed
 

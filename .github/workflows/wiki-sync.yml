@@ -13,6 +13,13 @@ on:
 permissions:
   contents: write
 
+# Two merges in quick succession would otherwise run two syncs against the same
+# wiki remote at once. Queue rather than cancel, so every merge's sync stays
+# visible in the run list (#1749).
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -30,32 +37,38 @@ jobs:
           git config --global user.email \
             "github-actions[bot]@users.noreply.github.com"
 
-          WIKI_URL="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git"
+          # The credential rides an HTTP header, never the URL: git can echo a
+          # URL (userinfo included) in a clone or push error, and the Actions
+          # secret mask is a backstop, not the control. The encoded form is a
+          # new string, so mask it too.
+          WIKI_URL="https://github.com/${REPO}.wiki.git"
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::${AUTH_HEADER#AUTHORIZATION: basic }"
 
-          # Clone the wiki if it exists, otherwise init a fresh
-          # local repo pointing at the wiki remote. The wiki git
-          # repo doesn't exist until at least one page has been
-          # created via the GitHub UI; the fresh-init path handles
-          # that first-run case.
-          if git clone "$WIKI_URL" wiki-repo 2>/dev/null; then
-            echo "Cloned existing wiki."
-          else
-            echo "Wiki not yet initialized — creating fresh repo."
-            mkdir -p wiki-repo
-            cd wiki-repo
-            git init
-            git checkout -b master
-            git remote add origin "$WIKI_URL"
-            cd ..
+          # The wiki already exists (it has published pages since the first
+          # sync), so a failed clone is an error to report, not a first run to
+          # paper over. The old fallback silenced the clone and `git init`ed a
+          # fresh history, which -- with the mirror below -- would try to
+          # publish a history unrelated to the real wiki (#1749).
+          if ! git -c http.extraheader="$AUTH_HEADER" clone "$WIKI_URL" wiki-repo; then
+            echo "::error::Could not clone ${REPO}.wiki.git -- nothing was synced."
+            exit 1
           fi
 
+          # Mirror, not append: clear the published pages, then copy ours, so a
+          # page deleted from docs/wiki is deleted from the wiki too (a page
+          # removed in #1187 stayed live until this). Only *.md is cleared --
+          # .git and any non-page asset are left alone.
+          rm -f wiki-repo/*.md
           cp docs/wiki/*.md wiki-repo/
 
           cd wiki-repo
-          git add .
+          git add -A
           if git diff --cached --exit-code; then
             echo "No wiki changes to push."
           else
             git commit -m "docs: sync wiki from main (${SHA})"
-            git push origin HEAD:master
+            # Same transient header as the clone: never `git config` it, or the
+            # credential is written into wiki-repo/.git/config.
+            git -c http.extraheader="$AUTH_HEADER" push origin HEAD:master
           fi
