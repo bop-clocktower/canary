@@ -14,6 +14,20 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Security
+
+- **`canary critical-areas` escapes control characters in the paths it reports
+  as dropped (#1575).** The "Dropped symbols" lines print paths read from an
+  existing `.canary/critical-areas.json`, which a scanned tree controls. An ESC
+  sequence, BEL, newline or other C0/C1 control in such a path reached the
+  terminal raw (CWE-150), so it could recolour or rewrite the screen or forge an
+  output line. Bidi overrides, zero-width characters and U+2028/U+2029 could
+  likewise reorder, hide or split a path. Each path now prints double-quoted,
+  with `\` and `"` escaped, and every control, format or separator character
+  shown as `\xHH` or `\u{H…}`. The odd path stays visible, a literal backslash
+  cannot pass for an escape, and a comma inside a path cannot pass for a second
+  entry.
+
 ## [9.8.0] - 2026-11-25
 
 ### Added
