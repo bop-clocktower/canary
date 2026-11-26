@@ -6,7 +6,7 @@
   "branch": "feat/594-canary-sweep",
   "base": "origin/main @ 7f33d1cb",
   "date": "2026-09-17",
-  "worktree": "/Users/bs/Github/canary-fleet-594",
+  "worktree": "../canary-fleet-594",
   "stages": [
     {
       "stage": "intake",

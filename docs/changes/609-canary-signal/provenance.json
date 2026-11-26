@@ -6,7 +6,7 @@
   "branch": "feat/609-canary-signal",
   "base": "origin/main @ 47745970",
   "date": "2026-09-28",
-  "worktree": "/Users/bs/Github/canary-fleet-609-signal",
+  "worktree": "../canary-fleet-609-signal",
   "stages": [
     "brainstorming",
     "autopilot",

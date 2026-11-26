@@ -8,9 +8,9 @@ Order) | **ADR:**
 **Integration Tier:** medium | **Rigor:** standard | **Session:**
 `changes--canary-cry--proposal`
 
-Worktree: `/Users/bs/Github/canary-608-cry-p1`, branch `feat/608-canary-cry-p1`,
+Worktree: `../canary-608-cry-p1`, branch `feat/608-canary-cry-p1`,
 base `main` @ `71f5a1a7`. Every command below uses absolute paths or `git -C`;
-never touch `/Users/bs/Github/canary`.
+never touch `<repo>`.
 
 ## Goal
 
@@ -189,28 +189,28 @@ together with plan sign-off; see `concerns[]`._
 
 **Depends on:** none | **Files:** none (no commit)
 
-1. `cd /Users/bs/Github/canary-608-cry-p1 && git branch --show-current` →
+1. `cd ../canary-608-cry-p1 && git branch --show-current` →
    `feat/608-canary-cry-p1`. Then run `git status --short`; it should be empty.
    Then `git stash list | wc -l`; it should print `0`.
-2. `git -C /Users/bs/Github/canary-608-cry-p1 fetch origin` and confirm `main`
+2. `git -C ../canary-608-cry-p1 fetch origin` and confirm `main`
    has not moved past `71f5a1a7`. If it has, rebase:
-   `git -C /Users/bs/Github/canary-608-cry-p1 rebase origin/main`.
-3. `cd /Users/bs/Github/canary-608-cry-p1 && source ~/.nvm/nvm.sh && nvm use`
+   `git -C ../canary-608-cry-p1 rebase origin/main`.
+3. `cd ../canary-608-cry-p1 && source ~/.nvm/nvm.sh && nvm use`
    (pins 22.23.2 via `.nvmrc`; mise users get it via
    `idiomatic_version_file_enable_tools`).
 4. Build the engine; the skills suite's globalSetup fails if `ts/dist` is
    missing:
 
    ```bash
-   npm ci --prefix /Users/bs/Github/canary-608-cry-p1/ts
-   npm run build --prefix /Users/bs/Github/canary-608-cry-p1/ts
+   npm ci --prefix ../canary-608-cry-p1/ts
+   npm run build --prefix ../canary-608-cry-p1/ts
    ```
 
-5. `npm ci --prefix /Users/bs/Github/canary-608-cry-p1/agents/skills`
+5. `npm ci --prefix ../canary-608-cry-p1/agents/skills`
 6. Baseline (all pass; record the test count):
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1/agents/skills
+   cd ../canary-608-cry-p1/agents/skills
    npx vitest run test/skill-cli-conformance.test.ts \
      test/gate-conformance.test.ts
    ```
@@ -261,7 +261,7 @@ exists fails `skill-cli-executable`, `skill-cli-conformance` and
 2. Run (red):
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1/ts
+   cd ../canary-608-cry-p1/ts
    npx vitest run test/bop-name-registry.test.ts test/plugin-skills.test.ts
    ```
 
@@ -279,12 +279,12 @@ exists fails `skill-cli-executable`, `skill-cli-conformance` and
 6. Format the touched files:
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1
+   cd ../canary-608-cry-p1
    npx --prefix agents/skills prettier --write docs/naming-registry.md \
      .claude-plugin/plugin.json agents/skills/claude-code/canary-cry/SKILL.md
    ```
 
-7. `cd /Users/bs/Github/canary-608-cry-p1 && harness validate`
+7. `cd ../canary-608-cry-p1 && harness validate`
 8. Commit:
    `feat(canary-cry): scaffold the skill and mark the name shipped (#608 P1)`
    with a body line `Refs #608`. Never use a closing keyword next to `#608`.
@@ -376,7 +376,7 @@ in Task 6/8 tests together.
    ```
 
 2. Run:
-   `cd /Users/bs/Github/canary-608-cry-p1/agents/skills && npx vitest run test/canary-cry-patterns.test.ts`
+   `cd ../canary-608-cry-p1/agents/skills && npx vitest run test/canary-cry-patterns.test.ts`
    → fails (module missing).
 3. Create `agents/skills/claude-code/canary-cry/scripts/patterns.mjs`:
 
@@ -456,7 +456,7 @@ in Task 6/8 tests together.
 4. Run the same command → 5 pass.
 5. `npx prettier --write claude-code/canary-cry/scripts/patterns.mjs test/canary-cry-patterns.test.ts`
    (from `agents/skills`).
-6. `cd /Users/bs/Github/canary-608-cry-p1 && harness validate`
+6. `cd ../canary-608-cry-p1 && harness validate`
 7. Commit: `feat(canary-cry): add the abuse-pattern catalog (#608 P1)`
 
 ### Task 4: Schema helpers + targets.json validation
@@ -2754,9 +2754,9 @@ Subcommand dispatch mirrors canary-unquarantine. It uses the shared
    }
    ```
 
-4. `chmod 755 /Users/bs/Github/canary-608-cry-p1/agents/skills/claude-code/canary-cry/scripts/cli.mjs`.
+4. `chmod 755 ../canary-608-cry-p1/agents/skills/claude-code/canary-cry/scripts/cli.mjs`.
    Git must record mode 100755, which you can confirm after staging with
-   `git -C /Users/bs/Github/canary-608-cry-p1 ls-files -s agents/skills/claude-code/canary-cry/scripts/cli.mjs`.
+   `git -C ../canary-608-cry-p1 ls-files -s agents/skills/claude-code/canary-cry/scripts/cli.mjs`.
 5. Edit `SKILL.md` in two places. First, add the line `cli: scripts/cli.mjs`
    between `description:` and `requires:`. Second, insert this section under the
    H1, before the last paragraph:
@@ -2777,7 +2777,7 @@ Subcommand dispatch mirrors canary-unquarantine. It uses the shared
    → all pass. Then, all passing:
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1/ts
+   cd ../canary-608-cry-p1/ts
    npx vitest run test/skill-examples.test.ts test/skill-cli-executable.test.ts \
      test/skill-surfaces.test.ts test/plugin-skills.test.ts
    ```
@@ -3022,17 +3022,17 @@ integration
    `"agents/skills/claude-code/canary-cassandra/scripts/engine.mjs",` in
    **both** `entropy.entryPoints` (≈line 214) **and** `performance.entryPoints`
    (≈line 400). Verify with
-   `grep -c 'canary-cry/scripts/cli.mjs' /Users/bs/Github/canary-608-cry-p1/harness.config.json`
+   `grep -c 'canary-cry/scripts/cli.mjs' ../canary-608-cry-p1/harness.config.json`
    → `2`. Never touch `maxFindings`.
 4. Run the gates below. They should be green, with the coverage thresholds of
    90/90/85/90 holding.
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1/agents/skills
+   cd ../canary-608-cry-p1/agents/skills
    npm run format:check && npm test
    ```
 
-5. `cd /Users/bs/Github/canary-608-cry-p1 && harness validate`
+5. `cd ../canary-608-cry-p1 && harness validate`
 6. Commit:
    `chore(canary-cry): register with format, coverage, entropy (#608 P1)`
 
@@ -3317,7 +3317,7 @@ table, exit codes) to the human before committing.
 4. Run the docs test again (pass), then these engine-side checks (pass):
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1/ts
+   cd ../canary-608-cry-p1/ts
    npx vitest run test/skill-examples.test.ts test/doc-links.test.ts \
      test/entropy-doc-paths.test.ts test/plugin-skills.test.ts
    ```
@@ -3325,7 +3325,7 @@ table, exit codes) to the human before committing.
 5. Format, lint and validate:
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1
+   cd ../canary-608-cry-p1
    npx --prefix agents/skills prettier --write \
      agents/skills/claude-code/canary-cry/SKILL.md
    npx --yes markdownlint-cli agents/skills/claude-code/canary-cry/SKILL.md
@@ -3377,21 +3377,21 @@ never `$?` after a pipe.
 1. Engine gates:
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1/ts
+   cd ../canary-608-cry-p1/ts
    npm run build && npm run typecheck && npm run format:check && npm test
    ```
 
 2. Skills gates:
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1/agents/skills
+   cd ../canary-608-cry-p1/agents/skills
    npm run typecheck && npm run format:check && npm test
    ```
 
 3. Docs lint, the same way CI runs it:
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1
+   cd ../canary-608-cry-p1
    npx --yes markdownlint-cli "**/*.md" --ignore node_modules --ignore plugins \
      --ignore agents/agents --ignore agents/commands
    node scripts/check_doc_fences.mjs
@@ -3401,7 +3401,7 @@ never `$?` after a pipe.
    `--help` should exit 0, and the matrix should print 3 scenarios.
 
    ```bash
-   cd /Users/bs/Github/canary-608-cry-p1
+   cd ../canary-608-cry-p1
    node ts/bin/canary.js skills run canary-cry -- --help
    node ts/bin/canary.js skills run canary-cry -- matrix \
      --flows agents/skills/claude-code/canary-cry/scripts/flows.example.json
@@ -3426,10 +3426,10 @@ over-counts: `npm test` stages `npm/agents/`. Pass SHAs, not `HEAD`.
 1. Create the two worktrees:
 
    ```bash
-   W=/Users/bs/Github/canary-608-cry-p1
+   W=../canary-608-cry-p1
    H=$(git -C $W rev-parse HEAD); B=$(git -C $W merge-base HEAD origin/main)
-   git -C $W worktree add --detach /Users/bs/Github/canary-608-ratchet-head $H
-   git -C $W worktree add --detach /Users/bs/Github/canary-608-ratchet-base $B
+   git -C $W worktree add --detach ../canary-608-ratchet-head $H
+   git -C $W worktree add --detach ../canary-608-ratchet-base $B
    ```
 
 2. In both: `harness check-deps` (root) → passes, and `harness check-arch` → no
@@ -3450,8 +3450,8 @@ over-counts: `npm test` stages `npm/agents/`. Pass SHAs, not `HEAD`.
    covers.
 
    ```bash
-   cd /Users/bs/Github/canary-608-ratchet-head
-   BASE=/Users/bs/Github/canary-608-ratchet-base
+   cd ../canary-608-ratchet-head
+   BASE=../canary-608-ratchet-base
    node scripts/perf-ratchet.mjs --report perf-report.txt \
      --base-report $BASE/perf-report.txt \
      --base-baseline $BASE/.harness/perf-baseline.json
@@ -3470,7 +3470,7 @@ over-counts: `npm test` stages `npm/agents/`. Pass SHAs, not `HEAD`.
    floor. That passes, but it spends about 6 of the shared headroom. Report the
    numbers.
 
-6. `git -C /Users/bs/Github/canary-608-cry-p1 worktree remove /Users/bs/Github/canary-608-ratchet-head`
+6. `git -C ../canary-608-cry-p1 worktree remove ../canary-608-ratchet-head`
    (and base).
 
 ### Task 16: Doc-drift + testing-gap review, final validate
@@ -3479,7 +3479,7 @@ over-counts: `npm test` stages `npm/agents/`. Pass SHAs, not `HEAD`.
 integration
 
 1. Read the full diff as a reviewer:
-   `git -C /Users/bs/Github/canary-608-cry-p1 diff 71f5a1a7...HEAD`.
+   `git -C ../canary-608-cry-p1 diff 71f5a1a7...HEAD`.
 2. Doc drift (rule 8). Consider each of these:
    - the roadmap row (`docs/roadmap.md:46`, still `planned`, Plan field `—`;
      optionally set `Plan:` to this file, without `manage_roadmap promote`
@@ -3490,7 +3490,7 @@ integration
      agrees.
 3. Testing gaps: compare every observable truth above against its test. File
    anything uncovered as an issue (`gh issue create`), and do not widen scope.
-4. `cd /Users/bs/Github/canary-608-cry-p1 && harness validate && harness check-deps`
+4. `cd ../canary-608-cry-p1 && harness validate && harness check-deps`
 5. Hand off to the PR step. The PR body ends with `Refs #608`, and the branch
    stays `feat/608-canary-cry-p1`.
 

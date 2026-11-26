@@ -3,7 +3,7 @@
 **Date:** 2026-09-25 | **Spec:** `docs/changes/1106-savant-php/proposal.md` |
 **Tasks:** 15 | **Time:** ~62 min | **Integration Tier:** medium | **Rigor:**
 standard | **Branch:** `feat/1106-savant-php` (worktree
-`/Users/bs/Github/canary-fleet-1106-savant-php`)
+`../canary-fleet-1106-savant-php`)
 
 ## Goal
 
@@ -218,9 +218,9 @@ _Skeleton approved: auto (autonomous fleet lane, recommended default)._
 
 ## Conventions for every task
 
-- Work only in `/Users/bs/Github/canary-fleet-1106-savant-php`. Start each shell
+- Work only in `../canary-fleet-1106-savant-php`. Start each shell
   with
-  `cd /Users/bs/Github/canary-fleet-1106-savant-php && eval "$(mise env -s zsh)"`
+  `cd ../canary-fleet-1106-savant-php && eval "$(mise env -s zsh)"`
   (Node 22.23.2).
 - Test command:
   `cd agents/skills && npx vitest run test/canary-savant.php.test.ts`.

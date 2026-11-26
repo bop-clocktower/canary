@@ -111,7 +111,7 @@ implementation **Est:** 5 min
 5. **Acceptance check** (all must hold):
 
    ```bash
-   cd /Users/bs/Github/canary-fleet-1061
+   cd ../canary-fleet-1061
    F=docs/knowledge/decisions/0014-harness-check-wiring-register.md
    grep -n '`scan-config`' "$F" | head -3          # row still present, still one row
    grep -c '#1060' "$F"                            # >= 1
@@ -158,7 +158,7 @@ implementation **Est:** 3 min
 2. **Acceptance check:**
 
    ```bash
-   cd /Users/bs/Github/canary-fleet-1061
+   cd ../canary-fleet-1061
    grep -n 'AMENDED 2026-09-22 (#1061)' \
      docs/knowledge/decisions/0014-harness-check-wiring-register.md   # exactly 1 hit
    awk '/^## Consequences/,/^## Alternatives/' \
@@ -188,7 +188,7 @@ implementation **Est:** 2 min
 3. **Acceptance check:**
 
    ```bash
-   cd /Users/bs/Github/canary-fleet-1061
+   cd ../canary-fleet-1061
    sed -n '11,22p' docs/knowledge/decisions/0014-harness-check-wiring-register.md \
      | grep -E '#1060|#1061'    # both appear in the header block
    ```
@@ -204,7 +204,7 @@ integration **Est:** 3 min
 1. Run:
 
    ```bash
-   cd /Users/bs/Github/canary-fleet-1061
+   cd ../canary-fleet-1061
    npx prettier --write docs/knowledge/decisions/0014-harness-check-wiring-register.md
    npx prettier --check docs/knowledge/decisions/0014-harness-check-wiring-register.md
    ```
@@ -238,7 +238,7 @@ integration **Est:** 4 min
    typecheck, format:check, test.
 
    ```bash
-   cd /Users/bs/Github/canary-fleet-1061/ts
+   cd ../canary-fleet-1061/ts
    npm run build
    npm run typecheck
    npm run format:check
@@ -285,7 +285,7 @@ integration **Est:** 4 min
 
 ## Execution notes
 
-- Work only in the worktree `/Users/bs/Github/canary-fleet-1061`, branch
+- Work only in the worktree `../canary-fleet-1061`, branch
   `docs/1061-scan-config-unwired`.
 - A PR body for this work must carry `Closes #1061` — and must not place any
   negated closing keyword next to `#1060` or `#719`, since a negated phrase

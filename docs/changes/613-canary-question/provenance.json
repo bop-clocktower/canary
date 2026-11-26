@@ -6,7 +6,7 @@
   "run": "roadmap-fleet-2026-09-29-1402",
   "branch": "feat/613-canary-question",
   "date": "2026-09-29",
-  "worktree": "/Users/bs/Github/canary-fleet-613-canary-question",
+  "worktree": "../canary-fleet-613-canary-question",
   "closingKeyword": "Closes",
   "planPath": "docs/changes/613-canary-question/plans/2026-09-29-canary-question-plan.md",
   "specPath": "docs/changes/613-canary-question/proposal.md",

@@ -92,6 +92,14 @@ const GENERIC_PROPRIETARY_PATTERNS = [
     '(?i)\\bCONFIDENTIAL\\b',
     "'confidential' marker — proprietary content does not belong in the public repo",
   ],
+  // #1753: plans and provenance files recorded their worktree's absolute
+  // path, which on macOS names the local account. `/home/` is left out on
+  // purpose: CI-runner paths (`/home/runner/...`) are legitimate test data.
+  // `fixture` is the one synthetic account name the test suite uses.
+  [
+    '/Users/(?!fixture/)[\\w.-]+/',
+    'local home-directory path — write `<repo>/…`, a relative path, or `~/…`',
+  ],
 ];
 
 const DENYLIST_FILE = '.proprietary-denylist';

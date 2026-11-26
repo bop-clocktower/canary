@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-13 | **Issue:** #606 | **Route:** `feature` | **Branch:**
 `feat/606-guardian-coverage-delta`, worktree
-`/Users/bs/Github/canary-606-coverage-delta`, based on `origin/main` at
+`../canary-606-coverage-delta`, based on `origin/main` at
 `326bd2ce`.
 
 ## Problem

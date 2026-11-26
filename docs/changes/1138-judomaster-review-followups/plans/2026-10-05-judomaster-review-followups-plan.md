@@ -6,7 +6,7 @@
 `docs/changes/1138-judomaster-review-followups/proposal.md` | **Tasks:** 10 |
 **Time:** ~40 min | **Integration Tier:** medium | **Rigor:** fast (no skeleton)
 | **Branch:** `feat/1138-judomaster-review-followups` (worktree
-`/Users/bs/Github/canary-1138`)
+`../canary-1138`)
 
 ## Goal
 
@@ -162,8 +162,8 @@ No new source modules (`ts/src/**`): the entropy ratchet trips on new modules.
 
 ## Conventions for every task
 
-- Work only in `/Users/bs/Github/canary-1138`. Run test commands from
-  `/Users/bs/Github/canary-1138/ts`.
+- Work only in `../canary-1138`. Run test commands from
+  `../canary-1138/ts`.
 - Red first: run the named test file, confirm the new cases fail for the
   expected reason (not a syntax error), then implement, then green.
 - `npx prettier --write <changed files>` before each commit (single quote, 80
@@ -1247,7 +1247,7 @@ integration
 **Depends on:** Task 9 | **Files:** (conditional)
 `.harness/arch/allowances/feat-1138-judomaster-review-followups.json`
 
-1. From `/Users/bs/Github/canary-1138/ts`: `npm run build`, `npm run typecheck`,
+1. From `../canary-1138/ts`: `npm run build`, `npm run typecheck`,
    `npm run format:check`, `npm test`. Check each exit code directly (no pipe)
    and that the test count is non-zero.
 2. From the repo root: `harness validate`, `harness check-deps`,

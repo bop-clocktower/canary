@@ -94,7 +94,7 @@
     },
     {
       "id": "A8",
-      "assumption": "The worktree lives at /Users/bs/Github/canary-606-coverage-delta, outside .claude/.",
+      "assumption": "The worktree lives at ../canary-606-coverage-delta, outside .claude/.",
       "rationale": "A worktree under .claude/ breaks the pre-push check-docs gate, which self-excludes that path and then scans zero files — a zero denominator reporting as a pass.",
       "default": "Sibling worktree of the main checkout."
     }

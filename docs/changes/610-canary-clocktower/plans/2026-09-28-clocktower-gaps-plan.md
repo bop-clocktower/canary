@@ -134,7 +134,7 @@ rigor). The caller pre-fixed the module layout and task budget._
   from `history`, `core` and `util`. `cli.ts` binds to the `cli` layer because
   the filename matches `ts/src/**/*cli*.ts` first.
 - Every test run is
-  `cd /Users/bs/Github/canary-fleet-610-clocktower/ts && npx vitest run <file>`.
+  `cd ../canary-fleet-610-clocktower/ts && npx vitest run <file>`.
   Check the exit code, and never pipe the result before checking it.
 - **Plant a positive** means: mutate the implementation as stated, confirm the
   named test FAILS, then revert. Record the failing test name in the commit
@@ -996,15 +996,15 @@ are not vacuous.
 `[checkpoint:human-verify]` if any ratchet is red
 
 1. Free disk space first (see Uncertainties). Then, from
-   `/Users/bs/Github/canary-fleet-610-clocktower/ts`, run:
+   `../canary-fleet-610-clocktower/ts`, run:
    `npm run build && npm run typecheck && npm run format:check && npm test`. All
    four must pass. Read the vitest totals: a zero-test count is an abstention.
-2. From `/Users/bs/Github/canary-fleet-610-clocktower/agents/skills`, run
+2. From `../canary-fleet-610-clocktower/agents/skills`, run
    `npm test && npm run typecheck && npm run format:check`.
 3. Create the base worktree:
 
    ```text
-   git -C /Users/bs/Github/canary-fleet-610-clocktower worktree add --detach /Users/bs/Github/canary-610-base 47745970
+   git -C ../canary-fleet-610-clocktower worktree add --detach ../canary-610-base 47745970
    ```
 
    Verify that this equals `git merge-base HEAD origin/main` after `git fetch`.
@@ -1038,7 +1038,7 @@ are not vacuous.
 6. Remove the base worktree:
 
    ```text
-   git -C /Users/bs/Github/canary-fleet-610-clocktower worktree remove /Users/bs/Github/canary-610-base
+   git -C ../canary-fleet-610-clocktower worktree remove ../canary-610-base
    ```
 
 7. No commit, unless a ratchet forced a fix. A fix commit is

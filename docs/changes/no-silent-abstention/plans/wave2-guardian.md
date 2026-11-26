@@ -129,7 +129,7 @@ semantics, and constraints were fully specified by the requester)._
 
 ## Conventions (apply to every task)
 
-- Working dir for all verification commands: `/Users/bs/Github/canary/ts`.
+- Working dir for all verification commands: `<repo>/ts`.
 - Strict TDD: write the test, run it and observe the failure, implement, run it
   green, then commit.
 - ASCII source: any emitted non-ASCII glyph is written as a `\u{...}` escape
@@ -1012,7 +1012,7 @@ columns (D5's reviewed registry) stay.
 **Depends on:** Tasks 1-11 | **Files:** none new (formatting fixes only if the
 gate finds any)
 
-1. `cd /Users/bs/Github/canary/ts && npx vitest run` — everything green.
+1. `cd <repo>/ts && npx vitest run` — everything green.
    Expected count: 1671 baseline + the ~15 tests added above (assert >= 1684;
    pin the exact number observed).
 2. `npx tsc --noEmit` — clean.

@@ -171,10 +171,10 @@ directed a direct write. Flagged in the handoff concerns._
 
 ## Conventions for every task
 
-- Work only in `/Users/bs/Github/canary-fleet-613-canary-question` on branch
+- Work only in `../canary-fleet-613-canary-question` on branch
   `feat/613-canary-question`.
 - Run test commands from `agents/skills/`:
-  `cd /Users/bs/Github/canary-fleet-613-canary-question/agents/skills && npx vitest run test/canary-question.test.ts`.
+  `cd ../canary-fleet-613-canary-question/agents/skills && npx vitest run test/canary-question.test.ts`.
 - Before each commit, run `npx prettier --write <changed files>` (from the
   worktree root, using `agents/skills/node_modules/.bin/prettier`, or
   `npx prettier` from `agents/skills/`).
@@ -418,7 +418,7 @@ describe('history: target failure and last pass', () => {
 ```
 
 2. Run
-   `cd /Users/bs/Github/canary-fleet-613-canary-question/agents/skills && npx vitest run test/canary-question.test.ts`.
+   `cd ../canary-fleet-613-canary-question/agents/skills && npx vitest run test/canary-question.test.ts`.
    Expect a failure on the import (module not found).
 3. Create `agents/skills/claude-code/canary-question/scripts/history.mjs`:
 
@@ -2684,7 +2684,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 ```
 
-4. `chmod +x /Users/bs/Github/canary-fleet-613-canary-question/agents/skills/claude-code/canary-question/scripts/cli.mjs`
+4. `chmod +x ../canary-fleet-613-canary-question/agents/skills/claude-code/canary-question/scripts/cli.mjs`
 5. Run the test command and expect every case to pass. Then run
    `npx vitest run test/skill-cli-conformance.test.ts`. It is still green,
    because canary-question has no SKILL.md yet and so is not discovered. It

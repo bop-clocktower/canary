@@ -3,12 +3,12 @@
 Issue: [#1524](https://github.com/bop-clocktower/canary/issues/1524) · Spec:
 [proposal.md](../proposal.md) (Implementation Order, sub-project 1, item 1) ·
 Date: 2026-10-28 · Base: `5cb10f0b` (`origin/main`) · Branch:
-`feat/blackalice-1-contract` · Worktree: `/Users/bs/Github/canary-blackalice-1`
+`feat/blackalice-1-contract` · Worktree: `../canary-blackalice-1`
 · Rigor: standard · **Tasks:** 14 · **Checkpoints:** 4 (one conditional) ·
 **Time:** ~65 min, plus gate runtime · **Integration Tier:** medium
 
-`$WT` below means `/Users/bs/Github/canary-blackalice-1`. Work only there, with
-absolute paths or `git -C "$WT"`. Never touch `/Users/bs/Github/canary`. `$M`
+`$WT` below means `../canary-blackalice-1`. Work only there, with
+absolute paths or `git -C "$WT"`. Never touch `<repo>`. `$M`
 means `$WT/.harness/sessions/changes--canary-blackalice--proposal/measure`
 (gitignored: `.harness/.gitignore` ignores `sessions/`).
 
