@@ -8,6 +8,7 @@
  * these rows cannot double count against the test rows. All of that was read off
  * real Playwright 1.64.1 reports; see `test/history-record-file-errors.test.ts`.
  */
+import { clipFailureText } from '../../util/redact.js';
 import { FILE_FAILURE_SUFFIX, type TestResultInput } from '../schema.js';
 
 /** A failure outside any test. A thrown non-Error carries only `value`. */
@@ -96,7 +97,7 @@ export function errorRows(
       duration_ms: 0,
       ...(text === undefined
         ? {}
-        : { error_text: String(text).slice(0, ERROR_TEXT_LIMIT) }),
+        : { error_text: clipFailureText(String(text), ERROR_TEXT_LIMIT) }),
     };
   });
 }

@@ -236,7 +236,11 @@ pass covers the Playwright reporter, `canary testtracker push`, and the
 - Two titles that redact to the same text, such as one test per member email,
   are sent as **one** row (worst status wins), so the ingest API does not reject
   the run on a duplicate `full_title`.
-- `CANARY_INGEST_REDACT=0` (or `false`) turns redaction off.
+- `CANARY_INGEST_REDACT=0` (or `false`) turns redaction off. The same switch
+  also governs run history (#1566): `canary history record` and
+  `canary history push` apply these failure-text rules to `error_text`, and
+  additionally strip ANSI escapes and rewrite absolute paths outside the working
+  directory to `<path>/<file name>`.
 
 ## What it sends besides results
 

@@ -58,8 +58,10 @@ describe('vitest file-level failure', () => {
     expect(row).toMatchObject({
       test_file: '/repo/src/c.test.ts',
       test_name: '/repo/src/c.test.ts (file failed outside any test)',
+      // #1566: `/repo` is outside the test's cwd, so the stored failure text
+      // keeps only the basename; the row's identity fields are untouched.
       error_text:
-        "Cannot find module './missing.js' imported from /repo/src/c.test.ts",
+        "Cannot find module './missing.js' imported from <path>/c.test.ts",
     });
   });
 
