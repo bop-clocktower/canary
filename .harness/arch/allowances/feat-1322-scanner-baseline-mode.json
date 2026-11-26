@@ -1,0 +1,8 @@
+{
+  "reason": "#1322 (PR #1768): module-size 61023->61448 (+425). Both values were measured with `harness check-arch --json` (CLI 14.1.1), summing the module-size scopes on main ca06f902 and on this branch rebased onto it. The printed regression arrow uses the floor as its left operand (AGENTS.md, '`baselines.json` is the FLOOR'). newViolations is [] and the only regression is this aggregate. The +425 is the shared --baseline/--update-baseline mode for vacuity-check, savant and blackhawk: +383 in ts/src/core for the engine port of the skills' scan-baseline modules (the engine cannot import skill code; ts/test/scan-baseline-conformance.test.ts keeps the two copies byte-identical), and +42 in cli-commands.ts and cli.ts for the flags. Trimming would save about 50 lines of comments. Human-approved 2026-11-26 for the v10.0.0 feature batch.",
+  "categories": {
+    "module-size": 61448
+  },
+  "violationIds": [],
+  "createdFrom": "ca06f902"
+}
