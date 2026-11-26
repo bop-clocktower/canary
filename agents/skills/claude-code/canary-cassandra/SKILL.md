@@ -38,18 +38,17 @@ Cassandra is Tier-0: deterministic, no LLM, no network, no execution.
 | `VAC-005` | warning  | Every assertion is a trivially true _presence_ check (`toBeDefined`, `toBeTruthy`, `assert x is not None`) on a value the test built itself before the target ran |
 
 `VAC-001` is deterministic, hence `critical`: no implementation can fail it. It
-compares the **full expression** on each side — callee plus argument list,
-string contents included — so
-`expect(score(9, 0, 'severe')) .toBeGreaterThan(score(9, 0, 'unknown'))` is not
-a self-comparison (#1171). Only the same **binding** on both sides counts: a
-literal, an identifier or a member path. A side with a call, a tagged template,
-`new` or `await` is a separate evaluation, so `expect(f(1)).toBe(f(1))` is a
-determinism test, not a self-comparison, and is not reported (#1233). `VAC-005`
-abstains (no finding) whenever it cannot prove the subject is a bystander, such
-as a name bound in a hook or a multi-line initialiser. `VAC-004` is reserved for
-the self-excusing-skip rule (`docs/changes/vac-004-self-excusing-skip/`).
-`VAC-002` and `VAC-003` depend on resolving a target, which is inference, so
-they are `warning` and carry a fidelity tier.
+fires only when both sides are the same **binding** — a literal, an identifier
+or a member path, compared with string contents included, so `'a b'` and `'ab'`
+differ. A side with a call, a tagged template, `new` or `await` is a separate
+evaluation, so it is never a self-comparison: `expect(f(1)).toBe(f(1))` is a
+determinism test and is not reported (#1233), and calls with different arguments
+are not either (#1171). `VAC-005` abstains (no finding) whenever it cannot prove
+the subject is a bystander, such as a name bound in a hook or a multi-line
+initialiser. `VAC-004` is reserved for the self-excusing-skip rule
+(`docs/changes/vac-004-self-excusing-skip/`). `VAC-002` and `VAC-003` depend on
+resolving a target, which is inference, so they are `warning` and carry a
+fidelity tier.
 
 ## Run it
 

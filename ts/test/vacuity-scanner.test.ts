@@ -1426,6 +1426,7 @@ describe('VAC-001 — identical calls are two evaluations, not one value (#1233)
     `expect(make?.()).toBe(make?.());`,
     `expect(new Store()).toEqual(new Store());`,
     'expect(sql`select 1`).toBe(sql`select 1`);',
+    `expect(make!(1)).toBe(make!(1));`,
   ])('does not flag %s', (line) => {
     const r = scan(
       'a.test.ts',
@@ -1447,6 +1448,7 @@ describe('VAC-001 — identical calls are two evaluations, not one value (#1233)
     `expect(store).toBe(store);`,
     `expect(store.items.length).toBe(store.items.length);`,
     `expect('f(1)').toBe('f(1)');`,
+    `expect(!(done)).toBe(!(done));`,
   ])('still flags the same binding or literal %s', (line) => {
     const r = scan(
       'a.test.ts',
