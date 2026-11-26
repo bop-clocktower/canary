@@ -9,6 +9,7 @@
  * Validation is the caller's job (`../run-recorder.ts` `validateBuiltRun`);
  * this module only imports the schema so the two files cannot form a cycle.
  */
+import { clipFailureText } from '../../util/redact.js';
 import {
   FILE_FAILURE_SUFFIX,
   makeRunId,
@@ -74,7 +75,7 @@ function toResultRow(
     duration_ms: Math.round(assertion.duration ?? 0),
     ...(first === undefined
       ? {}
-      : { error_text: String(first).slice(0, 2000) }),
+      : { error_text: clipFailureText(String(first), 2000) }),
   };
 }
 

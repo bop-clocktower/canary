@@ -1246,7 +1246,7 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 82 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 88 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place, then 27 shipped rows archived by the
   2026-09-14 `roadmap-groom --check-issues` reconciliation, then 11 more
@@ -1265,9 +1265,11 @@ Two related facts worth not rediscovering:
   rows linked to #1682/#1680/#1681/#1678 by issue-fleet on 2026-11-24, then five
   Intake rows linked to #1685/#1686/#1691/#1692/#1693 by issue-fleet on
   2026-11-24, then the shipped ingest-reporter row (#603) archived on
-  2026-11-24. The count is of LINKED rows, and every row in the roadmap is
-  linked, so `--check-issues` abstains on none of them — and `Priority`,
-  serialized in that same extended group, is populated on every one of them.
+  2026-11-24, then six Intake rows linked to #1716/#1718/#1704/#1703/#1700/#1713
+  by issue-fleet on 2026-11-25. The count is of LINKED rows, and every row in
+  the roadmap is linked, so `--check-issues` abstains on none of them — and
+  `Priority`, serialized in that same extended group, is populated on every one
+  of them.
 - **The `route:*` label vocabulary is canary's half of the `issue-fleet`
   contract (#1071, ADR 0034).** `issue-fleet` computes a route per triaged issue
   and has nowhere to put it; the skill is vendored under
@@ -1296,7 +1298,7 @@ Two related facts worth not rediscovering:
   auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 82 rows
+  effectively blind gate that reported a real number nobody read. All 88 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless
@@ -1805,6 +1807,14 @@ Run once after cloning to activate the shared pre-commit hook:
 ```bash
 git config core.hooksPath .githooks
 ```
+
+Use the relative `.githooks`, not an absolute path, so each worktree runs its
+own branch's hook. The session siren (`hooks/canary-session-siren.sh`, check 6)
+reports a checkout where this step was skipped or set differently (#1240). It
+also reports a `.git/hooks/pre-commit` that differs from the committed one,
+because that stale copy is what runs whenever `core.hooksPath` is unset. The
+siren only reports. It never sets the config itself. A repo that does not track
+`.githooks/pre-commit` gets no finding from this check.
 
 The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 

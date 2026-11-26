@@ -28,6 +28,85 @@ under the project's former name) are documented in the
   (`generated`, `age_days`, `max_age_days`, `freshness`). The text output prints
   the parsed instant, never the raw field. Runs without a map are unchanged.
 
+- **Cassandra VAC-002 reads three code shapes correctly (#1704).** The comment
+  model worked one line at a time. A JS line that started with `#` or `*` was
+  read as all comment, so a private field (`#count = makeStore()`), a `*`
+  expression continuation, or code after a block's closing `*/` was dropped and
+  gave a false VAC-002. A `/*` that did not close on its own line covered only
+  that line, so a call named in the block's middle lines counted as an
+  invocation and hid a real VAC-002. Only `//` and `/*` now open a JS comment,
+  and an open block carries across lines to its `*/`. In Python, an f-string's
+  `{...}` replacement field (`f`, `rf`, `fr` in any case) is now code, not
+  string content, so `f"{target(1)}"` invokes `target`; `{{` stays an escape.
+  The shared string blanker changed for Python f-strings, so the static linter
+  and test inventory also read those fields as code. On canary's own `ts/test`
+  the counts are unchanged (216 findings, 590 skipped).
+
+- **Cassandra VAC-001 no longer reports two identical calls as a self-comparison
+  (#1233).** Since #1076 the rule compared call expressions, so a determinism or
+  referential-identity test such as
+  `expect(deterministicUuid('a')).toBe(deterministicUuid('a'))` or
+  `expect(mod.useRouter()).toBe(mod.useRouter())` read as "no implementation can
+  fail it". Each side is a separate evaluation, and an implementation that
+  returns a fresh object or a random value per call does fail it. VAC-001 now
+  fires only when both sides are the same binding: a literal, an identifier or a
+  member path with no call, tagged template, `new` or `await`. This reverses
+  #1171's "identical calls still count". Expect fewer VAC-001 findings: on one
+  consumer repo, 10 of 11 were this shape. On canary's own `ts/test` VAC-001
+  went from 1 to 0, and that one was the "is byte-identical across runs" test.
+
+- **The session siren reports a checkout that skips the tracked pre-commit hook
+  (#1240).** New check 6 reads the session's checkout (`CLAUDE_PROJECT_DIR`,
+  else the working directory). It reports a `core.hooksPath` that is unset or
+  not `.githooks`. It also reports a `.git/hooks/pre-commit` that differs from
+  the committed `.githooks/pre-commit`, found through the common git dir so
+  worktrees are covered, and a working-tree `.githooks/pre-commit` that differs
+  from `HEAD`. Each `core.hooksPath` finding names
+  `git config core.hooksPath .githooks`. The siren sets nothing itself. A repo
+  that does not track `.githooks/pre-commit` is silent. "Cannot verify" is only
+  for a repo that has the hook but cannot be read. The checkout is treated as
+  untrusted. Findings are fixed text, so no config value or path from the repo
+  reaches agent context. Git runs with `core.fsmonitor` off and no optional
+  locks, and a checkout owned by another user gets no git at all. A clone with
+  an absolute `core.hooksPath` now gets one finding until it switches to the
+  relative `.githooks`.
+
+- **`canary heal-test --pattern` reports the right line and leaves blank lines
+  alone (#1310).** Each rule's whitespace could run across newlines. So a blank
+  line above a healed call became the change's reported line. A healed sleep or
+  wait also deleted the blank lines below it, or added one when there were none.
+  Later rules then counted lines on text that earlier rules had already shifted.
+  Every rule now rewrites exactly one line in place. Reported line numbers match
+  the original file, blank lines are kept, and CRLF files keep their `\r`. A
+  sleep or wait call split over several lines is no longer rewritten. The
+  Python-parity golden `pattern-healer.json` is re-baselined for the three cases
+  that pinned the old output (`time_sleep`, `wait_for_timeout`, `multi_fix`).
+
+### Security
+
+- **`canary critical-areas` escapes control characters in the paths it reports
+  as dropped (#1575).** The "Dropped symbols" lines print paths read from an
+  existing `.canary/critical-areas.json`, which a scanned tree controls. An ESC
+  sequence, BEL, newline or other C0/C1 control in such a path reached the
+  terminal raw (CWE-150), so it could recolour or rewrite the screen or forge an
+  output line. Bidi overrides, zero-width characters and U+2028/U+2029 could
+  likewise reorder, hide or split a path. Each path now prints double-quoted,
+  with `\` and `"` escaped, and every control, format or separator character
+  shown as `\xHH` or `\u{H…}`. The odd path stays visible, a literal backslash
+  cannot pass for an escape, and a comma inside a path cannot pass for a second
+  entry.
+
+- **Run history no longer stores or pushes credentials echoed in failure text
+  (#1566).** `error_text` now goes through the same redaction as the TestTracker
+  path (#1354) before `canary history record` writes `history-v2.jsonl` and
+  before `canary history push` upserts to the remote store: emails (`<email>`),
+  JWTs and bare 32+-character credentials (`<token>`), and the values of the env
+  vars named in `CANARY_INGEST_REDACT_ENV` (`<secret:NAME>`). ANSI escapes are
+  stripped, and absolute paths outside the working directory become
+  `<path>/<file name>` (paths inside it become repo-relative). Redaction runs
+  before truncation, so a cut never leaves a fragment. `CANARY_INGEST_REDACT=0`
+  turns it off, as it does for the ingest reporter.
+
 ## [9.8.0] - 2026-11-25
 
 ### Added

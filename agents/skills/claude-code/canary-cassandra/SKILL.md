@@ -32,18 +32,19 @@ Cassandra is Tier-0: deterministic, no LLM, no network, no execution.
 
 | Rule      | Severity | Fires on                                                                                                                                                          |
 | --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VAC-001` | critical | An assertion whose expectation is identical to the value it checks — `expect(true).toBe(true)`, `assert x == x`, `expect(f()).toBe(f())`                          |
+| `VAC-001` | critical | An assertion whose expectation is identical to the value it checks — `expect(true).toBe(true)`, `assert x == x`, `expect(res.code).toBe(res.code)`                |
 | `VAC-002` | warning  | The test never references the target it claims to cover                                                                                                           |
 | `VAC-003` | warning  | Every assertion in the test asserts an _absence_, and none of them observes the target — so nothing proves it ran                                                 |
 | `VAC-005` | warning  | Every assertion is a trivially true _presence_ check (`toBeDefined`, `toBeTruthy`, `assert x is not None`) on a value the test built itself before the target ran |
 
 `VAC-001` is deterministic, hence `critical`: no implementation can fail it. It
-compares the **full expression** on each side — callee plus argument list,
-string contents included — so
-`expect(score(9, 0, 'severe')) .toBeGreaterThan(score(9, 0, 'unknown'))` is not
-a self-comparison (#1171). Identical calls on both sides, including no-argument
-`f()` vs `f()`, still are. `VAC-005` abstains (no finding) whenever it cannot
-prove the subject is a bystander, such as a name bound in a hook or a multi-line
+fires only when both sides are the same **binding** — a literal, an identifier
+or a member path, compared with string contents included, so `'a b'` and `'ab'`
+differ. A side with a call, a tagged template, `new` or `await` is a separate
+evaluation, so it is never a self-comparison: `expect(f(1)).toBe(f(1))` is a
+determinism test and is not reported (#1233), and calls with different arguments
+are not either (#1171). `VAC-005` abstains (no finding) whenever it cannot prove
+the subject is a bystander, such as a name bound in a hook or a multi-line
 initialiser. `VAC-004` is reserved for the self-excusing-skip rule
 (`docs/changes/vac-004-self-excusing-skip/`). `VAC-002` and `VAC-003` depend on
 resolving a target, which is inference, so they are `warning` and carry a

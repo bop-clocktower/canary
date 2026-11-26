@@ -35,6 +35,7 @@ import {
   type FileSignals,
   type SignalSource,
 } from './scoring.js';
+import { showPath } from './show-path.js';
 
 /** The conventional report names, first found wins (D11). */
 const DISCOVERED_REPORTS = [
@@ -184,7 +185,7 @@ function signalsFor(
 
 const reportDropped = (deps: MainDeps, why: string, paths: string[]): void => {
   if (paths.length > 0) {
-    deps.out(`Dropped symbols for ${why}: ${paths.join(', ')}.`);
+    deps.out(`Dropped symbols for ${why}: ${paths.map(showPath).join(', ')}.`);
   }
 };
 
