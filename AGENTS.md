@@ -244,6 +244,29 @@ remote deletion is a human act. Worktree pruning waits for #889.
   `import-inferred` `VAC-002` is also a named skip (#971). Returns a
   `GateResult` whose `checked` counts **tests**, not files. Surfaced as
   `canary vacuity-check`.
+- **Scanner baseline (#1322):**
+  [ts/src/core/scan-baseline.ts](ts/src/core/scan-baseline.ts) (format,
+  identity, comparison) and
+  [ts/src/core/scan-baseline-run.ts](ts/src/core/scan-baseline-run.ts) (flags,
+  exit codes, reports) give `canary vacuity-check` a ratchet mode:
+  `--baseline <file>` fails only on findings the file does not hold,
+  `--update-baseline <file>` writes it and refuses growth unless
+  `--allow-growth` is passed. `canary-savant` and `canary-blackhawk` take the
+  same flags through
+  [agents/skills/lib/scan-baseline.mjs](agents/skills/lib/scan-baseline.mjs) and
+  [agents/skills/lib/scan-baseline-run.mjs](agents/skills/lib/scan-baseline-run.mjs).
+  The engine copy is a port, because skills ship without the engine;
+  `ts/test/scan-baseline-conformance.test.ts` requires both copies to write the
+  same bytes and compare the same way, so change them together. A finding's
+  identity is `(file, rule, anchor)` and never its line: the anchor is the test
+  name for vacuity-check and the offending source line for the two skills, with
+  whitespace collapsed. Identical identities form a multiset, as in the perf
+  ratchet (#853). With a baseline flag the baseline owns the exit code: `0` no
+  new finding (fixed ones are reported as shrinkage and never fail), `1` a new
+  finding or refused growth, `2` a usage error or a missing, malformed or
+  wrong-tool baseline file, `3` zero items checked (abstained, and nothing is
+  written). `--json` adds a `baseline` block with `checked`, `new`, `fixed` and
+  `baselined`.
 - **Promotion Verdict:**
   [ts/src/core/promotion-verdict.ts](ts/src/core/promotion-verdict.ts) — The
   structured verdict `canary-promote-test` gates on (#477). Composes the static

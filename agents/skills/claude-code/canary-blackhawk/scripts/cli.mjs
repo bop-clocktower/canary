@@ -8,6 +8,8 @@
 //   <paths>    files or directories to scan (default: the current directory).
 //   --json     emit machine-readable findings instead of human text.
 //   --strict   exit 1 when there are findings (default is advisory: exit 0).
+//   --baseline FILE / --update-baseline FILE [--allow-growth]
+//              ratchet mode (#1322): fail only on findings FILE does not hold.
 //
 // Tier-0 deterministic analysis -- no LLM, no network, no secrets, no
 // dependency on any other skill.
@@ -23,6 +25,7 @@ import {
   EXIT_USAGE,
 } from '../../../lib/parse-args.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
+import * as baseline from '../../../lib/scan-baseline-run.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -46,7 +49,9 @@ const ABSTAINED_LINE =
 // up in --help the moment it is registered, so the help text cannot drift
 // behind the linter as rules are added.
 const USAGE =
-  'usage: canary-blackhawk [-h] [--json] [--strict] [--] [path ...]\n' +
+  'usage: canary-blackhawk [-h] [--json] [--strict] [--baseline FILE]\n' +
+  '                        [--update-baseline FILE [--allow-growth]] [--]\n' +
+  '                        [path ...]\n' +
   '\n' +
   'Temporal-dependency linter for test files: flags tests that depend on the\n' +
   'wall clock, a real delay, or the local timezone.\n' +
@@ -59,6 +64,9 @@ const USAGE =
   '  --json      emit machine-readable findings instead of human text\n' +
   '  --strict    exit 1 when there are findings (default is advisory: exit 0)\n' +
   '\n' +
+  '\n' +
+  baseline.BASELINE_HELP +
+  '\n\n' +
   'rules:\n' +
   RULES.map((r) => `  ${r.ruleId} (${r.severity})`).join('\n');
 
@@ -127,14 +135,45 @@ function renderText(result) {
  */
 export const CLI_SPEC = {
   prog: 'canary-blackhawk',
-  booleans: { '--json': 'json', '--strict': 'strict' },
+  booleans: {
+    '--json': 'json',
+    '--strict': 'strict',
+    ...baseline.BASELINE_FLAGS.booleans,
+  },
+  values: baseline.BASELINE_FLAGS.values,
   positionals: { key: 'paths', defaults: ['.'] },
 };
 
 const parseArgs = createParser(CLI_SPEC);
 
+function emit(opts, result, bl) {
+  if (!opts.json) {
+    console.log(baseline.withBaselineText(renderText(result), bl));
+    return;
+  }
+  const payload = {
+    schema_version: SCHEMA_VERSION,
+    findings: result.findings.map(toJson),
+    summary: summary(result),
+    ...(bl && { baseline: baseline.baselineJson(bl) }),
+  };
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function exitCodeFor(opts, result, bl) {
+  // Ratchet mode owns the exit code: 0 / 1 new / 3 abstained (#1322).
+  if (bl) return bl.exitCode;
+  // Advisory by default (D3). Under --strict the CLI carries an exit-code
+  // contract, so a collapsed denominator inherits EXIT_ABSTAINED (3) -- distinct
+  // from 1 ("found something real"), so CI can tell them apart.
+  if (opts.strict && !result.filesScanned) return 3;
+  return opts.strict && result.findings.length ? 1 : 0;
+}
+
 export function main(argv = []) {
-  const { positionals: paths, opts, help, error } = parseArgs(argv);
+  const parsed = parseArgs(argv);
+  const { positionals: paths, opts, help } = parsed;
+  const error = parsed.error ?? baseline.baselineFlagError(opts);
 
   // Usage and parse errors resolve before any filesystem work, so `--help`
   // never reports a missing path and a typo never half-runs a scan.
@@ -156,28 +195,13 @@ export function main(argv = []) {
   }
 
   const result = scanPaths(paths);
-
-  if (opts.json) {
-    console.log(
-      JSON.stringify(
-        {
-          schema_version: SCHEMA_VERSION,
-          findings: result.findings.map(toJson),
-          summary: summary(result),
-        },
-        null,
-        2,
-      ),
-    );
-  } else {
-    console.log(renderText(result));
+  const bl = baseline.skillBaseline(CLI_SPEC.prog, opts, result);
+  if (bl?.error) {
+    console.error(`${PREFIX} ${bl.error}`);
+    return EXIT_USAGE;
   }
-
-  // Advisory by default (D3). Under --strict the CLI carries an exit-code
-  // contract, so a collapsed denominator inherits EXIT_ABSTAINED (3) -- distinct
-  // from 1 ("found something real"), so CI can tell them apart.
-  if (opts.strict && !result.filesScanned) return 3;
-  return opts.strict && result.findings.length ? 1 : 0;
+  emit(opts, result, bl);
+  return exitCodeFor(opts, result, bl);
 }
 
 // Direct execution (the skill runner execs this file via its shebang).

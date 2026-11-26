@@ -147,6 +147,18 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **Baseline mode for `vacuity-check`, `canary-savant` and `canary-blackhawk`
+  (#1322).** `--baseline <file>` fails only on findings the committed file does
+  not hold, so a large advisory backlog stops hiding new offenders.
+  `--update-baseline <file>` writes the file and refuses to grow an existing one
+  unless `--allow-growth` is passed. A finding is keyed on file, rule and a
+  line-free anchor (the test name, or the offending source line), so it stays
+  baselined when code moves. Fixed findings are reported as shrinkage and never
+  fail. A scan that checked zero files or tests exits 3, never 0 or 1, and
+  writes nothing. A missing or malformed baseline exits 2. `--json` adds a
+  `baseline` block with `checked`, `new`, `fixed` and `baselined`. All three
+  commands share one file format and one exit-code table, printed in each
+  command's `--help`.
 - **`ci-ready` names the areas behind a coverage-depth failure (#1751).** The
   reason lists the areas at depth 0, and `--json` adds an optional `subjects`
   array to the check holding every one of them. Absent when none is at depth 0.
