@@ -724,10 +724,13 @@ function git(repo: string, ...args: string[]): string {
   ).trim();
 }
 
+// Each touch must change the file so git sees a diff. A counter does that
+// deterministically; Math.random() did it unreplayably (#1753).
+let touchSeq = 0;
 function touch(repo: string, file: string): void {
   const full = path.join(repo, file);
   fs.mkdirSync(path.dirname(full), { recursive: true });
-  fs.appendFileSync(full, `// ${Math.random()}\n`);
+  fs.appendFileSync(full, `// edit ${++touchSeq}\n`);
 }
 
 /** A repo with a SUT file and a test file; returns the base sha. */

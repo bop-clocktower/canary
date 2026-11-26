@@ -86,7 +86,7 @@ flags, no new commands.
 
 ## Conventions (apply to every task)
 
-- Run all commands from `/Users/bs/Github/canary/ts/`.
+- Run all commands from `<repo>/ts/`.
 - TDD: write the test, watch it fail, implement, watch it pass.
 - Source stays ASCII: output glyphs are `\u{...}` escapes (the `migrator.ts`
   header convention). `\u{26A0}` = warning sign, `\u{2014}` = em dash.
@@ -673,7 +673,7 @@ conformance layers first, then one implementation, one commit.
 
 **Depends on:** Task 4 | **Files:** none (verification only)
 
-1. From `/Users/bs/Github/canary/ts/`: `npx vitest run` Expected: all 1639
+1. From `<repo>/ts/`: `npx vitest run` Expected: all 1639
    pre-existing tests plus the new ones (~14: gate-result suite, conformance
    rows, dry-run status trio, coupling assert) pass; zero skips introduced by
    this wave.

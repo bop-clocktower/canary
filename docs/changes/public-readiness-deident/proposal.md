@@ -94,7 +94,7 @@ placeholder (e.g. `DASHBOARD_API_TOKEN`).
   install commands (`canary-test-cli`) with the published package name
   (`canary-test-ai`).
 - `docs/plans/oracle-plugin.md`: genericize the four hardcoded
-  `/Users/bs/Github/canary-test-ai-agent/...` paths (lines 683, 733, 1071, 1215)
+  `~/Github/canary-test-ai-agent/...` paths (lines 683, 733, 1071, 1215)
   to relative or placeholder paths.
 - **Audit-then-act** on `docs/CANARY_STATE.md`, `docs/CANARY_LEARNINGS.md`,
   `docs/SECURITY_LEDGER.md`: grep for hook/tooling references first (the pre-commit

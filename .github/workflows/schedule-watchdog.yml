@@ -18,7 +18,11 @@ name: Schedule watchdog
 # which lists PR checks only).
 #
 # The window is 8 days: one weekly period plus a day for GitHub's start delay,
-# which has reached 8h36m on this repo. Add every new cron to the list below;
+# which has reached 12h11m on this repo (2026-11-23; every cron that day fired
+# 11h45m to 12h11m late, up from the 8h36m recorded when the window was set).
+# The script warns, without going red, once a run is over 18h past its weekly
+# period, so the slack running out is seen before it fails. Add every new cron
+# to the list below;
 # ts/test/schedule-staleness.test.ts fails if a workflow declaring a schedule
 # is missing from it.
 

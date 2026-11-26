@@ -121,9 +121,9 @@
     },
     {
       "id": "A8",
-      "assumption": "The worktree lives at /Users/bs/Github/canary-fleet-602, outside any .claude/ path.",
+      "assumption": "The worktree lives at ../canary-fleet-602, outside any .claude/ path.",
       "rationale": "A worktree under .claude/ breaks the pre-push check-docs gate, which self-excludes that path and then scans zero files — a zero denominator reporting as a pass.",
-      "default": "Sibling worktree of the main checkout; the main working tree at /Users/bs/Github/canary was never modified."
+      "default": "Sibling worktree of the main checkout; the main working tree at <repo> was never modified."
     }
   ]
 }

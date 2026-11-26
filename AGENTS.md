@@ -1530,9 +1530,10 @@ refreshed as an artifact. The push job (`ledger`, `push`) holds
 standing-branch push above. `security` is still the required check. `ledger` is
 skipped on PRs, so `.github/required-checks.json` lists it as advisory.
 `ts/test/workflow-hygiene.test.ts` fails on a top-level `contents: write`
-outside its allowlist (`release.yml`, `wiki-sync.yml`), and on `npx` in a write
-job of either workflow. `ts/test/ledger-push-jobs.test.ts` runs the push jobs'
-own scripts against a local bare remote.
+outside its allowlist (`wiki-sync.yml` only; `release.yml` came off it in
+PR #1439, when `contents: write` moved down to its publishing jobs), and on
+`npx` in a write job of either workflow. `ts/test/ledger-push-jobs.test.ts`
+runs the push jobs' own scripts against a local bare remote.
 
 `refresh-arch-baseline.yml` has the same split, with no standing branch (#1463).
 `measure` runs the CLI and the PR-head `scripts/refresh-arch-baseline.mjs` at

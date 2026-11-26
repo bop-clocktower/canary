@@ -35,6 +35,12 @@ import { isMain } from './lib/is-main.mjs';
 
 const DAY_MS = 86_400_000;
 
+// #1753: weekly crons, 24h of slack in the 8-day window, start delay up to
+// 12h11m (2026-11-23): warn once a fresh run has used over 18h of the slack.
+const PERIOD_DAYS = 7;
+const WARN_LATE_HOURS = 18;
+const WORST_SEEN_DELAY = '12h11m';
+
 const USAGE =
   'usage: schedule-staleness.mjs [--repo OWNER/NAME] --max-age-days N [--json] <workflow-file>...\n' +
   '  --repo defaults to $GITHUB_REPOSITORY';
@@ -89,7 +95,7 @@ export function ghApi(path, bin = 'gh') {
  * The verdict for one workflow, from data already fetched. Pure.
  *
  * @param {{workflow: string, state: unknown, runs: unknown, now: Date, maxAgeDays: number}} args
- * @returns {{workflow: string, verdict: 'fresh'|'stale'|'abstain', reason: string, lastRunAt?: string, lastRunUrl?: string}}
+ * @returns {{workflow: string, verdict: 'fresh'|'stale'|'abstain', reason: string, lastRunAt?: string, lastRunUrl?: string, warning?: string}}
  */
 export function assessSchedule({ workflow, state, runs, now, maxAgeDays }) {
   // Only an explicit state string is evidence about the workflow. `{}`, `null`
@@ -129,8 +135,20 @@ export function assessSchedule({ workflow, state, runs, now, maxAgeDays }) {
   const ageDays = (now.getTime() - startedMs) / DAY_MS;
   const fields = { lastRunAt: last.created_at, lastRunUrl: last.html_url };
   const when = `last schedule run ${last.created_at} (${ageDays.toFixed(1)} days ago, max ${maxAgeDays})`;
-  return ageDays > maxAgeDays
-    ? { workflow, verdict: 'stale', reason: when, ...fields }
+  if (ageDays > maxAgeDays) {
+    return { workflow, verdict: 'stale', reason: when, ...fields };
+  }
+  const lateHours = (ageDays - PERIOD_DAYS) * 24;
+  return lateHours > WARN_LATE_HOURS
+    ? {
+        workflow,
+        verdict: 'fresh',
+        reason: when,
+        ...fields,
+        warning:
+          `next run is ${lateHours.toFixed(1)}h past its weekly period, over ${WARN_LATE_HOURS}h ` +
+          `of the window's slack; GitHub's start delay has reached ${WORST_SEEN_DELAY} here`,
+      }
     : { workflow, verdict: 'fresh', reason: when, ...fields };
 }
 
@@ -193,9 +211,11 @@ const LABEL = { fresh: 'FRESH', stale: 'STALE', abstain: 'ABSTAINED' };
  */
 export function render(results, maxAgeDays) {
   const count = (v) => results.filter((r) => r.verdict === v).length;
+  const late = results.filter((r) => r.warning).length;
+  const lateNote = late ? ` (${late} starting late)` : '';
   const lines = [
     `schedule-staleness: checked ${results.length} workflow(s) against a ${maxAgeDays}-day window: ` +
-      `${count('fresh')} fresh, ${count('stale')} stale, ${count('abstain')} abstained`,
+      `${count('fresh')} fresh${lateNote}, ${count('stale')} stale, ${count('abstain')} abstained`,
   ];
   if (results.length === 0) {
     lines.push('ABSTAINED: no workflow was checked, which is not a pass.');
@@ -205,6 +225,8 @@ export function render(results, maxAgeDays) {
     lines.push(
       `${LABEL[r.verdict].padEnd(9)} ${r.workflow}: ${r.reason}${url}`,
     );
+    if (r.warning)
+      lines.push(`${'LATE'.padEnd(9)} ${r.workflow}: ${r.warning}`);
   }
   if (exitCode(results) === 3) lines.push(FIX_STEP);
   return lines.join('\n');
@@ -252,7 +274,25 @@ function main() {
       ? `${JSON.stringify({ checked: results.length, abstained: code === 3, results }, null, 2)}\n`
       : `${render(results, maxAgeDays)}\n`,
   );
+  process.stderr.write(annotations(results, process.env).join(''));
   process.exit(code);
+}
+
+/**
+ * `::warning::` lines for late crons, only under GitHub Actions: a summary
+ * line alone goes unseen on a green run. Exit code unchanged. Pure.
+ *
+ * @param {{workflow: string, warning?: string}[]} results
+ * @param {Record<string, string | undefined>} env
+ * @returns {string[]}
+ */
+export function annotations(results, env) {
+  if (env.GITHUB_ACTIONS !== 'true') return [];
+  return results
+    .filter((r) => r.warning)
+    .map(
+      (r) => `::warning title=${r.workflow} cron starting late::${r.warning}\n`,
+    );
 }
 
 if (isMain(import.meta.url)) main();

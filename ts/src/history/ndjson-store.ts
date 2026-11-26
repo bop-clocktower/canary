@@ -156,7 +156,9 @@ export class NdjsonHistoryStore implements HistoryStore {
     mkdirSync(dirname(this.path), { recursive: true });
     // A tail with no newline (another tool, a hand edit) would swallow this row
     // and make every later read throw (#1297). 'a+' reads a new file as empty.
-    const text = readFileSync(this.path, { encoding: 'utf-8', flag: 'a+' });
+    // SEC-PTH-001 below is a false positive (#1753, #1060): `this.path` is the
+    // user's own history path from their flag or config, never request data.
+    const text = readFileSync(this.path, { encoding: 'utf-8', flag: 'a+' }); // harness-ignore SEC-PTH-001: path is the local user's own config/flag
     const sep = text === '' || text.endsWith('\n') ? '' : '\n';
     appendFileSync(this.path, sep + JSON.stringify(record) + '\n', 'utf-8');
   }

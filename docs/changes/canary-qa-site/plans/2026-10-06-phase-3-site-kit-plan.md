@@ -163,7 +163,7 @@ MAYBE  .harness/arch/allowances/feat-1151-qa-site-barda.json (Task 23 checkpoint
 
 ## Conventions every task follows
 
-- Work in `/Users/bs/Github/canary-1151-site-kit`. Run test commands from
+- Work in `../canary-1151-site-kit`. Run test commands from
   `agents/skills/`.
 - Kit files are browser ES modules (`.js`, two-space, single quotes, prettier).
   They import only each other — never `node:*`, never a skill script — because

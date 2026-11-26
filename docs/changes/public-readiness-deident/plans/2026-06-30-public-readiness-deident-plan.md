@@ -410,9 +410,9 @@ editing.
 
 **Category:** integration (documentation update)
 
-1. Replace the four `/Users/bs/Github/canary-test-ai-agent/...` absolute paths
+1. Replace the four `~/Github/canary-test-ai-agent/...` absolute paths
    with a placeholder rooted var. At lines 683, 733, 1071, 1215 change the
-   prefix `/Users/bs/Github/canary-test-ai-agent` → `$PLUGIN_ROOT` (introduce it
+   prefix `~/Github/canary-test-ai-agent` → `$PLUGIN_ROOT` (introduce it
    as `PLUGIN_ROOT=~/path/to/canary-plugin` context if the surrounding prose
    needs it), yielding e.g.:
 

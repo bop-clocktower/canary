@@ -189,7 +189,7 @@ plan approval; the orchestrator gates this plan at APPROVE_PLAN._
 Setup, once before Task 1 (`node_modules` is absent in this worktree):
 
 ```bash
-WT=/Users/bs/Github/canary/.claude/worktrees/agent-aa7a6968b9b59db96
+WT=<repo>/.claude/worktrees/agent-aa7a6968b9b59db96
 cd "$WT" && nvm use            # .nvmrc = 22.23.2
 cd "$WT/agents/skills" && npm ci
 cd "$WT/ts" && npm ci

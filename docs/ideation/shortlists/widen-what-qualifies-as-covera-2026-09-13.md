@@ -113,6 +113,6 @@ conclusion.
 - **Worker isolation.** The orchestrator's own dispatched worktree was removed
   mid-run by the environment; isolation was re-established with six detached
   worktrees off the pinned base before any work proceeded. The shared
-  `/Users/bs/Github/canary` checkout was never written to. Each theme worktree
+  `<repo>` checkout was never written to. Each theme worktree
   was released only after its artifact was copied out and verified
   byte-identical by SHA-1.

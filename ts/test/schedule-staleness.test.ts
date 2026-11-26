@@ -46,6 +46,7 @@ interface Result {
   reason: string;
   lastRunAt?: string;
   lastRunUrl?: string;
+  warning?: string;
 }
 type Api = (path: string) => unknown;
 interface Module {
@@ -65,6 +66,10 @@ interface Module {
   }) => Result[];
   exitCode: (results: Result[]) => number;
   render: (results: Result[], maxAgeDays: number) => string;
+  annotations: (
+    results: Result[],
+    env: Record<string, string | undefined>,
+  ) => string[];
   ghApi: (path: string, bin?: string) => unknown;
 }
 
@@ -227,6 +232,70 @@ describe('assessSchedule', () => {
       expect(r.reason).not.toMatch(/disabled/);
     },
   );
+});
+
+/**
+ * #1753: GitHub's start delay reached 12h11m on 2026-11-23, against the 8-day
+ * window's 24h of slack over a weekly period. A fresh verdict that has eaten
+ * most of that slack is worth a warning before it becomes a red X, so a fresh
+ * run more than 18h past one period carries a `warning` and stays fresh.
+ */
+describe('assessSchedule: late-start warning', () => {
+  const base = { workflow: 'w.yml', state: 'active', now: NOW, maxAgeDays: 8 };
+  const hoursAgo = (h: number) =>
+    new Date(NOW.getTime() - h * 3_600_000).toISOString();
+
+  it('warns, and stays fresh, when the next run is over 18h overdue', () => {
+    const r = mod.assessSchedule({
+      ...base,
+      runs: [run(hoursAgo(7 * 24 + 19))],
+    });
+    expect(r.verdict).toBe('fresh');
+    expect(r.warning).toMatch(/19\.0h past its weekly period/);
+    expect(r.warning).toMatch(/over 18h/);
+  });
+
+  it('does not warn at exactly 18h overdue, or for a recent run', () => {
+    for (const h of [7 * 24 + 18, 7 * 24, 2]) {
+      const r = mod.assessSchedule({ ...base, runs: [run(hoursAgo(h))] });
+      expect(r.verdict).toBe('fresh');
+      expect(r.warning).toBeUndefined();
+    }
+  });
+
+  it('does not warn on a stale run, which is already a finding', () => {
+    const r = mod.assessSchedule({ ...base, runs: [run(hoursAgo(9 * 24))] });
+    expect(r.verdict).toBe('stale');
+    expect(r.warning).toBeUndefined();
+  });
+
+  it('renders the warning, counts it, and keeps exit code 0', () => {
+    const r = mod.assessSchedule({
+      ...base,
+      runs: [run(hoursAgo(7 * 24 + 20))],
+    });
+    const out = mod.render([r], 8);
+    expect(out).toMatch(/1 fresh \(1 starting late\)/);
+    expect(out).toMatch(/LATE\s+w\.yml: /);
+    expect(mod.exitCode([r])).toBe(0);
+  });
+
+  it('turns each warning, and only a warning, into a CI annotation', () => {
+    const late = mod.assessSchedule({
+      ...base,
+      runs: [run(hoursAgo(7 * 24 + 20))],
+    });
+    const onTime = mod.assessSchedule({ ...base, runs: [run(hoursAgo(2))] });
+    const ci = { GITHUB_ACTIONS: 'true' };
+    const lines = mod.annotations([late, onTime], ci);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      /^::warning title=w\.yml cron starting late::next run is 20\.0h past/,
+    );
+    expect(mod.annotations([onTime], ci)).toEqual([]);
+    // Off CI the warning stays in the report and adds no workflow command.
+    expect(mod.annotations([late], {})).toEqual([]);
+  });
 });
 
 describe('checkSchedules', () => {

@@ -151,7 +151,7 @@ _Not produced: there are 7 tasks, below the standard-rigor threshold of 8._
 
 ## Tasks
 
-All commands run from `/Users/bs/Github/canary-1154/agents/skills` unless they
+All commands run from `../canary-1154/agents/skills` unless they
 say otherwise. Target test command: `npx vitest run test/contracts-*.test.ts`.
 Each task ends with `npx prettier --write` on the files it touched (TS and JS
 are single-quote, 80 col), then `harness validate` from the repo root, then the

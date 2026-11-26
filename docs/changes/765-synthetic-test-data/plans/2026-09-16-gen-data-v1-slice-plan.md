@@ -199,7 +199,7 @@ _Skeleton approved: no (subagent run; see C6)._
 ## Tasks
 
 All commands run from
-`/Users/bs/Github/canary/.claude/worktrees/agent-a2aad24d25f819f16/ts` unless
+`<repo>/.claude/worktrees/agent-a2aad24d25f819f16/ts` unless
 stated. Per task: `npx vitest run <test>` for red/green, then
 `npx prettier --write <touched ts files>` and `harness validate` (from repo
 root). Never `--no-verify`. Commit subjects are Conventional Commits, no
@@ -1733,7 +1733,7 @@ allowance.
 2. Base worktree for deltas (outside this checkout):
 
    ```bash
-   W=/Users/bs/Github/canary/.claude/worktrees/agent-a2aad24d25f819f16
+   W=<repo>/.claude/worktrees/agent-a2aad24d25f819f16
    git -C "$W" fetch origin
    git -C "$W" worktree add --detach "$TMPDIR/gen-data-base" \
      "$(git -C "$W" merge-base HEAD origin/main)"

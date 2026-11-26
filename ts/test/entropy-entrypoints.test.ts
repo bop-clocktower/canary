@@ -180,4 +180,20 @@ describe('entry-point lists', () => {
       CONFIG.entropy?.entryPoints,
     );
   });
+
+  // #1753. ADR 0012 keeps these five on purpose: ported-and-tested capability
+  // from the Python reference that the CLI is not yet wired to, pinned by
+  // parity tests. Kept code is declared a root rather than left counted as
+  // dead, so the dead-code number stays about code nobody meant to keep. The
+  // JSON has no comment slot, so this is where the reason lives. Wiring one
+  // into the CLI makes its entry here redundant; delete it then.
+  it.each([
+    'ts/src/analysis/reachability.ts',
+    'ts/src/core/fixture-scanner.ts',
+    'ts/src/core/mcp-validator.ts',
+    'ts/src/core/metadata-scanner.ts',
+    'ts/src/core/reporter.ts',
+  ])('declares the ADR 0012 kept module %s as a root', (path) => {
+    expect(CONFIG.entropy?.entryPoints).toContain(path);
+  });
 });
