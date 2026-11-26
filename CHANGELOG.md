@@ -14,7 +14,38 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [10.0.0] - 2026-11-26
+
+A major release. It comes from a cross-dimensional audit of the repo: several
+gates had been reporting green after checking nothing, and canary's own
+test-intelligence tools were flagging correct code in canary's own suites. It
+also adds four features: baseline mode for the scanners, `katana --check`, an
+advisory CHANGELOG check, and `skills run` for canary-subcommand skills.
+
+### Breaking changes
+
+- **`review-test --json` prints `{files, checked, findings}` instead of a bare
+  array (#1748).** To migrate, read `.findings`. `flake-check --json` still
+  prints an array.
+- **`ticket-update` abstains (exit 3) on a `PASS` or `PARTIAL` report that
+  counts 0 tests (#1748).** Before this, the ticket moved to `qa_passed`. A
+  pipeline that posted a bare `{"result":"PASS"}` now gets exit 3, and nothing
+  is transitioned.
+- **pytest `*_test.py` files are now collected (#1748).** `review-test`,
+  `flake-check`, `vacuity-check` and `canary inventory` used to skip them
+  silently, so a suite that was green on 9.x can report findings that were
+  always there.
+- **canary-katana's degraded notice has new wording (#1558).** It now names the
+  default `.canary/critical-areas.json` path. Anything matching the old notice
+  text exactly needs updating.
+
 ### Fixed
+
+- **`canary skills verify` accepts a `cli: canary <subcmd>` target when
+  `<subcmd>` is a real canary command (#1753).** It checks the target against
+  the CLI's own command list, nested commands included. Unknown subcommands are
+  still reported. The seven skills it used to flag as having a missing target
+  now verify clean.
 
 - **`canary skills run` runs the seven skills whose `cli:` is a canary
   subcommand (#1766).** `canary-batwoman`, `canary-clocktower`,
@@ -6071,7 +6102,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.8.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v10.0.0...HEAD
+[10.0.0]: https://github.com/bop-clocktower/canary/compare/v9.8.0...v10.0.0
 [9.8.0]: https://github.com/bop-clocktower/canary/compare/v9.7.0...v9.8.0
 [9.7.0]: https://github.com/bop-clocktower/canary/compare/v9.6.0...v9.7.0
 [9.6.0]: https://github.com/bop-clocktower/canary/compare/v9.5.0...v9.6.0
