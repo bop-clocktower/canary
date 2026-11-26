@@ -8,10 +8,14 @@
  * `entry:` branch preserves the Python exit-code ladder (bad format -> 5,
  * load/attr failure -> 6) over a dynamic `import()`, which will not resolve a
  * Python module. No Python test exercises the cli/entry execution branches.
+ *
+ * A `cli: canary <subcmd>` target (#1766) names canary's own command tree, not
+ * a file: it is spawned as `node <this package's bin> <subcmd> ...`.
  */
 
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { Command } from 'commander';
 import pc from 'picocolors';
@@ -28,6 +32,7 @@ import {
   SurfaceFindingKind,
   checkSurfaces,
   collectSurfaces,
+  parseCanaryTarget,
   type CanaryCommandResolver,
   type SurfaceDeclaration,
   type SurfaceFinding,
@@ -250,11 +255,44 @@ function runProseSkill(
   }
 }
 
+/** The bin shipped beside this module: `src/` and `dist/` both sit by `bin/`. */
+const CANARY_BIN = fileURLToPath(new URL('../bin/canary.js', import.meta.url));
+
+/**
+ * The command line for a skill's `cli:` target; throws when it cannot run.
+ *
+ * A `canary <subcmd>` target (#1766) is checked with the resolver
+ * `skills verify` uses, so verify and run cannot disagree about which skills
+ * are runnable. It is spawned like a file target rather than re-entered
+ * in-process: the same exit-code and stdio path every other `cli:` skill
+ * takes, and a fresh program instead of re-parsing the one already running
+ * this command.
+ */
+function cliCommand(
+  skill: SkillInfo,
+  deps: MainDeps,
+  canaryCommands: CanaryCommandResolver,
+): string[] {
+  const sub = parseCanaryTarget(skill.cli!);
+  if (sub === null) {
+    const target = resolveCliPath(skill);
+    return target.endsWith('.py') ? [deps.pythonExe(), target] : [target];
+  }
+  if (!canaryCommands(sub.path)) {
+    throw new Error(
+      `skill '${skill.name}' declares \`cli: ${skill.cli}\`, but ` +
+        `\`canary ${sub.path.join(' ')}\` is not a registered canary command`,
+    );
+  }
+  return [process.execPath, CANARY_BIN, ...sub.argv];
+}
+
 async function runCmd(
   name: string,
   args: string[],
   opts: RunOptions,
   deps: MainDeps,
+  canaryCommands: CanaryCommandResolver,
 ): Promise<void> {
   const skill = deps.makeSkillRegistry().find(name);
   if (skill === null) {
@@ -280,16 +318,15 @@ async function runCmd(
   const forwarded = args;
 
   if (skill.cli) {
-    let target: string;
+    let cmd: string[];
     try {
-      target = resolveCliPath(skill);
+      cmd = cliCommand(skill, deps, canaryCommands);
     } catch (exc) {
       deps.out(
         `${pc.red(CROSS)} ${exc instanceof Error ? exc.message : String(exc)}`,
       );
       throw new CliExitError(4);
     }
-    const cmd = target.endsWith('.py') ? [deps.pythonExe(), target] : [target];
     const res = deps.runSubprocess(cmd[0]!, [...cmd.slice(1), ...forwarded], {
       // The caller's cwd, not skill.dir (#955): a relative path argument (and
       // a skill's own `.` default) means the caller's directory. The script
@@ -535,9 +572,11 @@ function registerRun(program: Command, deps: MainDeps): void {
       '--json',
       'For a dispatched prose skill, emit the labelled payload as JSON.',
     )
-    .action(async (name: string, args: string[], opts: RunOptions) => {
-      await runCmd(name, args ?? [], opts, deps);
-    });
+    .action(
+      async (name: string, args: string[], opts: RunOptions, cmd: Command) => {
+        await runCmd(name, args ?? [], opts, deps, canaryCommandsOf(cmd));
+      },
+    );
 }
 
 /** Register `skills verify` -- the two-denominator cross-surface check. */
