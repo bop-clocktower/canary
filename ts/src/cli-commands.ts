@@ -1391,14 +1391,22 @@ export async function ticketUpdateCmd(
       : [String(item), 'unknown'],
   );
 
+  // #1748: coerce before the zero guard below -- `"0"`, `null`, `-1` or
+  // `"abc"` would each slip past a strict `=== 0`. Anything that is not a
+  // finite count above zero is treated as zero tests.
+  const rawTotal =
+    'total' in reportData
+      ? Number(reportData['total'])
+      : passedNames.length + failedNames.length;
+  const reportedTotal =
+    Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : 0;
+
   const summary = new RunSummary({
     suite_name: suiteName,
     env: envName,
     result: rawResult as 'PASS' | 'FAIL' | 'PARTIAL',
     passed: (reportData['passed'] as number) ?? passedNames.length,
-    total:
-      (reportData['total'] as number) ??
-      passedNames.length + failedNames.length,
+    total: reportedTotal,
     flaky_count: (reportData['flaky_count'] as number) ?? 0,
     duration_s: Number(reportData['duration_s'] ?? 0.0),
     test_file: testFile ?? (reportData['test_file'] as string) ?? '',

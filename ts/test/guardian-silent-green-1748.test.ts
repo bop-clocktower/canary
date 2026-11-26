@@ -26,6 +26,7 @@ import { isTestPath } from '../src/guardian/coverage.js';
 import {
   UNVERIFIED_CODE_MARKER,
   renderFindings,
+  unverifiedCodeAnnouncement,
   unverifiedCodePaths,
 } from '../src/guardian/pr-check.js';
 import { FakeGitHubClient } from '../src/guardian/pr-comment.js';
@@ -125,6 +126,36 @@ describe('unverifiedCodePaths', () => {
     expect(
       unverifiedCodePaths([{ name: 'ci/pipeline.yaml', reason: 'non-source' }]),
     ).toEqual([]);
+  });
+});
+
+describe('a hostile path cannot inject workflow commands', () => {
+  // git allows CR/LF in a file name, and these paths come from the PR diff.
+  const hostile = 'hooks/x\n::error::pwned\r\n::warning::also.sh';
+
+  it('escapes control characters before any sink sees the path', () => {
+    const [path] = unverifiedCodePaths([
+      { name: hostile, reason: 'non-source' },
+    ]);
+    expect(path).toBeDefined();
+    expect(path).not.toMatch(/[\r\n]/);
+  });
+
+  it('emits no line beyond its own notice that starts a workflow command', () => {
+    const paths = unverifiedCodePaths([
+      { name: hostile, reason: 'non-source' },
+    ]);
+    const { line, notice } = unverifiedCodeAnnouncement(paths);
+    const lines = [line, notice].join('\n').split(/\r?\n|\r/);
+    expect(lines).toHaveLength(2);
+    expect(lines.filter((l) => l.startsWith('::'))).toEqual([notice]);
+    expect(notice.startsWith('::notice title=')).toBe(true);
+    expect(line).not.toMatch(/[\u0000-\u001f\u007f]/);
+  });
+
+  it('percent-encodes the notice data the way @actions/core does', () => {
+    const { notice } = unverifiedCodeAnnouncement(['a%b.sh']);
+    expect(notice).toContain('a%25b.sh');
   });
 });
 

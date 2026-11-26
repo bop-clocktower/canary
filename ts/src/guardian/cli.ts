@@ -133,7 +133,7 @@ import {
   coverageExemptMatcher,
   renderFindings,
   scopeDiff,
-  unverifiedCodeLine,
+  unverifiedCodeAnnouncement,
   unverifiedCodePaths,
   COMMENT_CHAR_BUDGET,
 } from './pr-check.js';
@@ -1366,9 +1366,9 @@ function announceUnverifiedCode(
   say: (line: string) => void,
   deps: GuardianDeps,
 ): void {
-  const line = unverifiedCodeLine(paths);
+  const { line, notice } = unverifiedCodeAnnouncement(paths);
   say(line);
-  say(`::notice title=Guardian abstained on unverified code::${line}`);
+  say(notice);
   appendStepSummary(deps.env, line);
 }
 

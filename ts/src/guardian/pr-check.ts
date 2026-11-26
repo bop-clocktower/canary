@@ -462,19 +462,47 @@ export function filterSkipped(
  */
 export const UNVERIFIED_CODE_MARKER = 'guardian: abstained on unverified code';
 
-/** The changed executable files the run had to drop as non-source (#1748). */
+/**
+ * Render control characters visibly (`\n` -> `\x0a`). These paths come from
+ * the PR diff and git allows CR/LF in a file name, so an unescaped one could
+ * start its own `::error::` workflow command or break the summary markdown.
+ */
+function escapeControls(text: string): string {
+  return text.replace(
+    /[\u0000-\u001f\u007f]/g,
+    (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`,
+  );
+}
+
+/**
+ * The changed executable files the run had to drop as non-source (#1748),
+ * already display-safe: every sink (stdout, `::notice`, step summary, sticky,
+ * JSON) takes its paths from here, so none can be handed a raw control byte.
+ */
 export function unverifiedCodePaths(skipped: readonly SkipEntry[]): string[] {
   return skipped
     .filter((s) => s.reason === 'non-source' && isScriptPath(s.name))
-    .map((s) => s.name);
+    .map((s) => escapeControls(s.name));
 }
 
-/** The one line every surface prints for {@link unverifiedCodePaths}. */
-export function unverifiedCodeLine(paths: readonly string[]): string {
-  return (
+/** Encode a workflow-command data part the way `@actions/core` does. */
+function workflowCommandData(text: string): string {
+  return text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+}
+
+/** The plain line and its `::notice` for {@link unverifiedCodePaths}. */
+export function unverifiedCodeAnnouncement(paths: readonly string[]): {
+  line: string;
+  notice: string;
+} {
+  const line = escapeControls(
     `${UNVERIFIED_CODE_MARKER}: ${paths.length} changed code file(s) ` +
-    `no coverage rung can check: ${paths.join(', ')}`
+      `no coverage rung can check: ${paths.join(', ')}`,
   );
+  const notice =
+    '::notice title=Guardian abstained on unverified code::' +
+    workflowCommandData(line);
+  return { line, notice };
 }
 
 /**

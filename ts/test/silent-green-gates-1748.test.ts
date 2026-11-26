@@ -159,6 +159,11 @@ describe('ticket-update abstains on a run with zero tests', () => {
     ['PASS with no counts', { result: 'PASS' }],
     ['PASS with total 0', { result: 'PASS', total: 0, passed: 0 }],
     ['PARTIAL with no tests', { result: 'PARTIAL', total: 0 }],
+    // A non-numeric total must not slip past a strict `=== 0` comparison.
+    ['PASS with total "0"', { result: 'PASS', total: '0' }],
+    ['PASS with total null', { result: 'PASS', total: null }],
+    ['PASS with total -1', { result: 'PASS', total: -1 }],
+    ['PASS with total "abc"', { result: 'PASS', total: 'abc' }],
   ])('%s exits 3 and never reaches the updater', async (_name, report) => {
     const file = join(base, 'report.json');
     writeFileSync(file, JSON.stringify(report), 'utf-8');
