@@ -31,11 +31,27 @@ export function classifyTitle(title) {
   return { kind: userFacing ? 'user-facing' : 'exempt', type };
 }
 
-/** Drop HTML comments and fenced code, where a line is an example, not a choice. */
-function stripNonProse(text) {
-  return text
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/^\s*```[\s\S]*?^\s*```/gm, '');
+/**
+ * The body's prose lines: everything outside fenced code and HTML comments,
+ * where a line is an example or a template hint, not the author's choice.
+ *
+ * A line scan, not a regex replace, so nothing is ever spliced back together:
+ * any line touching a comment is dropped whole, and an unterminated `<!--`
+ * hides the rest of the body, as it does when GitHub renders it.
+ */
+function proseLines(text) {
+  const out = [];
+  let fence = false;
+  let comment = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (comment) comment = !line.includes('-->');
+    else if (/^\s*```/.test(line)) fence = !fence;
+    else if (fence) continue;
+    else if (line.includes('<!--'))
+      comment = !line.slice(line.indexOf('<!--')).includes('-->');
+    else out.push(line);
+  }
+  return out.join('\n');
 }
 
 const OPT_OUT = /^[ \t>*-]*changelog:[ \t]*none\b[ \t]*[—–:-]*[ \t]*(.*)$/im;
@@ -47,7 +63,7 @@ const OPT_OUT = /^[ \t>*-]*changelog:[ \t]*none\b[ \t]*[—–:-]*[ \t]*(.*)$/im
  * @returns {{present: boolean, reason?: string|null}}
  */
 export function parseOptOut(body) {
-  const m = OPT_OUT.exec(stripNonProse(String(body ?? '')));
+  const m = OPT_OUT.exec(proseLines(String(body ?? '')));
   if (!m) return { present: false };
   const reason = m[1].trim();
   const placeholder = /^<[^>]*>$/.test(reason);

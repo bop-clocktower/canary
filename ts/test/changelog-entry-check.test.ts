@@ -201,6 +201,21 @@ describe('parseOptOut', () => {
     ).toEqual({ present: true, reason: 'docs only' });
   });
 
+  it('ignores a multi-line comment, and everything after an unclosed one', () => {
+    const multi = '<!--\nChangelog: none — hint\n-->\nsummary';
+    expect(mod.parseOptOut(multi)).toEqual({ present: false });
+    const unclosed = 'summary\n<!-- hint\nChangelog: none — hint';
+    expect(mod.parseOptOut(unclosed)).toEqual({ present: false });
+  });
+
+  it('still reads an opt-out after a closed comment', () => {
+    const body = '<!-- template -->\nChangelog: none — docs only';
+    expect(mod.parseOptOut(body)).toEqual({
+      present: true,
+      reason: 'docs only',
+    });
+  });
+
   it('treats a missing body as no opt-out', () => {
     expect(mod.parseOptOut(null)).toEqual({ present: false });
   });
