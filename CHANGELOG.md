@@ -14,6 +14,19 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`canary heal-test --pattern` reports the right line and leaves blank lines
+  alone (#1310).** Each rule's whitespace could run across newlines. So a blank
+  line above a healed call became the change's reported line. A healed sleep or
+  wait also deleted the blank lines below it, or added one when there were none.
+  Later rules then counted lines on text that earlier rules had already shifted.
+  Every rule now rewrites exactly one line in place. Reported line numbers match
+  the original file, blank lines are kept, and CRLF files keep their `\r`. A
+  sleep or wait call split over several lines is no longer rewritten. The
+  Python-parity golden `pattern-healer.json` is re-baselined for the three cases
+  that pinned the old output (`time_sleep`, `wait_for_timeout`, `multi_fix`).
+
 ### Security
 
 - **`canary critical-areas` escapes control characters in the paths it reports
