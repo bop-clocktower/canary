@@ -83,8 +83,9 @@ cd npm && npm link
 
 ### Claude Code plugin
 
-Canary ships as a Claude Code plugin: 15 agents, 17 skills, and a suite of
-`/canary-*` slash commands, plus the `harness` MCP server. See [Usage](#-usage)
+Canary ships as a Claude Code plugin: agents, skills, and a suite of `/canary-*`
+slash commands, plus the `canary-mcp` MCP server. The exact list is
+[.claude-plugin/plugin.json](.claude-plugin/plugin.json). See [Usage](#-usage)
 below for the full surface organized by use case, or the exhaustive catalog in
 [agents/skills/README.md](agents/skills/README.md). Add it as a local
 marketplace:

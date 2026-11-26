@@ -1,24 +1,11 @@
 # Claude Code — Project Instructions
 
-See [AGENTS.md](AGENTS.md) for full project context, architecture,
-and conventions.
+[AGENTS.md](AGENTS.md) is the canonical guide to this project: context,
+architecture, and conventions. Read it first. This file is only a pointer, so
+the two cannot drift apart.
 
-## Branch Hygiene
-
-Before making any code changes, check the current branch with
-`git branch --show-current`.
-
-If on `main`:
-
-- Do not start writing or modifying code yet.
-- Propose a branch name using the convention in AGENTS.md
-  (`<prefix>/<kebab-case-slug>`).
-- Ask: *"You're on `main`. Should I create branch
-  `<suggested-name>` for this work?"*
-- Wait for confirmation, then create and switch to the branch
-  before proceeding.
-
-`main` is protected on GitHub: all changes, including documentation-only
-commits (`AGENTS.md`, `README.md`, `CLAUDE.md`, etc.), require a pull
-request — direct pushes are rejected. Always create a branch and open a
-PR, even for doc-only changes.
+The rule most often missed: `main` is protected, and every change, docs
+included, goes through a branch and a pull request. Check
+`git branch --show-current` before editing anything. The full procedure is
+[Branch Hygiene Before Code Changes](AGENTS.md#branch-hygiene-before-code-changes)
+in AGENTS.md.

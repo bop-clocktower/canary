@@ -219,11 +219,13 @@ remote deletion is a human act. Worktree pruning waits for #889.
   `LINT-006` (no assertions), and `SOUND-001..003` (#605 — a test that pins a
   value no correct implementation must produce: a non-deterministic value used
   as an expectation, exact equality against an inexact fraction, a ratio pinned
-  to an integer). Every rule blanks string literals **including single-line
-  template literals** before matching — a fixture carrying the pattern it tests
-  is data, not a defect, and on this repo that distinction was half the linter's
-  output. Also exports `enumerateTests`, the single "where does this test end"
-  implementation shared with the vacuity scanner.
+  to an integer). Every rule except the selector rules blanks string literals
+  **including single-line template literals** before matching — a fixture
+  carrying the pattern it tests is data, not a defect, and on this repo that
+  distinction was half the linter's output. `LINT-001..003` are exempt by
+  design: a selector _is_ a string (`'.btn'`, `'#id'`), so blanking would delete
+  those rules outright. Also exports `enumerateTests`, the single "where does
+  this test end" implementation shared with the vacuity scanner.
 - **Vacuity Scanner:**
   [ts/src/core/vacuity-scanner.ts](ts/src/core/vacuity-scanner.ts) — The
   `canary-cassandra` detection (#612). Finds tests that pass without proving
@@ -417,9 +419,15 @@ host Claude Code session via `/canary-write-test` — no API key required.
   (`agents/skills/lib/**`), never the reverse (#1155), and two for the runtime
   CLI: `npm-cli` (`npm/src/**`) may import the published reporter `npm-reporter`
   (`npm/src/reporters/**`, declared first because binding is first-match), never
-  the reverse (#1443). Every pattern is required to match at least one
-  git-tracked file and every tracked source file under each source root
-  (`ts/src`, `agents/skills/lib`, `npm/src`) to belong to a layer
+  the reverse (#1443). Because binding is first-match by filename and `cli`
+  (`ts/src/**/*cli*.ts`) is the first layer, every domain file whose name
+  contains `cli` — `ts/src/history/retention/cli.ts`,
+  `ts/src/briefing/briefing-cli.ts`, even `ts/src/history/cli-deps.ts` — binds
+  to `cli` and gets the `cli` allowlist, not its domain's. That is intended: a
+  domain's command wiring may reach across layers the way the top-level CLI
+  does. Every pattern is required to match at least one git-tracked file and
+  every tracked source file under each source root (`ts/src`,
+  `agents/skills/lib`, `npm/src`) to belong to a layer
   (`ts/test/harness-config-denominator.test.ts`, which prints the per-root
   module count), because a rule that matches nothing still reports as configured
   (#543), and a root no layer matches is never parsed by `harness check-deps` at
@@ -523,10 +531,15 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
 
 ### GitHub Actions (`.github/workflows/`)
 
-The composite action (`action.yml`) was removed in v3.0 — it called
-`canary generate` which no longer exists. Use the Claude Code plugin
-(`/canary-write-test`) instead; generation runs in the developer's own
-authenticated session with no API key required.
+The composite action (`action.yml`) is a **tombstone**. The working action was
+deleted in v3.0 (7cbe32f8), because it called `canary generate`, which v3.0
+removed. v5.0.0 (4c0152e3) put `action.yml` back as a hard-error shim, so a
+consumer still pinned to the action gets an `::error::` with the migration path
+instead of a missing-file failure. Its message says "removed in v5.0.0" because
+that is when the shim shipped; the action has done nothing useful since v3.0. Do
+not add steps to it. Use the Claude Code plugin (`/canary-write-test`) instead;
+generation runs in the developer's own authenticated session with no API key
+required.
 
 ### Mutation testing (advisory, #486)
 
@@ -1438,9 +1451,10 @@ instead of a re-derivation from issue bodies.
 `6be522e`): `quality-warner.js` blocks on real violations, `format-check.js`
 targets the edited file (else the block is a no-op), and `telemetry-reporter.js`
 is kept non-blocking. A `harness init`/regeneration would silently clobber
-these. `scripts/check_hook_customizations.py` (run in `harness-quality.yml`, and
-as a unit test) turns that into a **loud CI failure** — if it trips, re-apply
-the edits from `git show 6be522e`. The durable fix is generator-side
+these. `scripts/check_hook_customizations.mjs` (run as
+`node scripts/check_hook_customizations.mjs` in `harness-quality.yml`; it has no
+unit test of its own) turns that into a **loud CI failure** — if it trips,
+re-apply the edits from `git show 6be522e`. The durable fix is generator-side
 preservation, filed upstream.
 
 **Arch trend surface (#318 C).** `arch-snapshot.yml` runs
@@ -1565,9 +1579,10 @@ Before making any code changes, check the current branch:
      proceeding.
 3. If already on a feature/fix/chore branch, proceed normally.
 
-This applies to code changes. Commits that are purely documentation-only (e.g.,
-updating `AGENTS.md`, `README.md`) may be made directly to `main` if the user
-has not indicated otherwise.
+This applies to documentation too. `main` is protected on GitHub: every change,
+including a documentation-only commit (`AGENTS.md`, `README.md`, `CLAUDE.md`,
+and so on), needs a pull request, and a direct push is rejected. Always create a
+branch and open a PR, even for a one-line doc fix.
 
 ### No silent abstention (the denominator rule)
 
@@ -1754,10 +1769,13 @@ guardian's Tier-0 engine imports no agent module), and nothing may claim it
 without satisfying all three.
 
 `Tier-1` and `Tier-2` are **not** repo-wide vocabulary. They are valid only
-inside `canary-pr-guardian`, where they name the values of
-`canary guardian pr-check --tier 0|1|2`. A skill with internal phases names them
-for what they do — `canary-savant` has a static pass and a confirming pass — and
-states the three axes in prose rather than claiming a number.
+inside `canary-pr-guardian`, where they name that skill's phases (the agent
+audit and the authoring pass). They are not CLI values:
+`canary guardian pr-check` has no `--tier` option, and the engine reads the
+requested tier from `canary.guardian.pr.tier` in `harness.config.json`. A skill
+with internal phases names them for what they do — `canary-savant` has a static
+pass and a confirming pass — and states the three axes in prose rather than
+claiming a number.
 
 Two unrelated scales also use the word "tier" and are out of scope:
 `canary doctor`'s check provenance (engine vs overlay) and the vendored harness

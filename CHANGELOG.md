@@ -113,6 +113,21 @@ under the project's former name) are documented in the
   Python-parity golden `pattern-healer.json` is re-baselined for the three cases
   that pinned the old output (`time_sleep`, `wait_for_timeout`, `multi_fix`).
 
+- **The public wiki's first-run path works again, and the wiki is now a mirror
+  of `docs/wiki` (#1749).** Getting Started asked for Python 3.11 and
+  `pip install -e .` (there is nothing to install that way since v6.0.0) and
+  pointed at a `/canary:generate` command that does not exist. It now links the
+  README's npm and plugin install steps (Node 22+) instead of copying them.
+  Troubleshooting and Understanding the Harness drop the same Python residue,
+  including the retired `scripts/security_ledger.py`. `wiki-sync.yml` used to
+  only add pages, so a page deleted from the repo stayed live; it now clears the
+  wiki's pages before copying, fails the job when the wiki clone fails (instead
+  of silencing it and starting a fresh history), and runs in a `wiki-sync`
+  concurrency group. The README's plugin summary named the wrong counts and the
+  wrong MCP server; it now names `canary-mcp` and links `plugin.json` for the
+  list. `ts/test/public-docs-first-run.test.ts` and
+  `ts/test/wiki-sync-workflow.test.ts` pin all of this.
+
 ### Security
 
 - **`canary critical-areas` escapes control characters in the paths it reports
