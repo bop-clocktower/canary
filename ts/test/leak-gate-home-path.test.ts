@@ -23,7 +23,10 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(REPO_ROOT, 'scripts', 'check_removed_symbols.mjs');
 
 /** A made-up local account, joined at runtime so this file stays clean. */
-const HOME = ['', 'Users', 'jdoe-example', ''].join('/');
+const ACCT = 'jdoe-example';
+const HOME = ['', 'Users', ACCT, ''].join('/');
+const LINUX_HOME = ['', 'home', ACCT, ''].join('/');
+const WIN_HOME = ['C:', 'Users', ACCT, ''].join('\\');
 
 const tempRoots: string[] = [];
 
@@ -70,6 +73,16 @@ describe('#1753 proprietary gate: local home-directory paths', () => {
       'docs/changes/x/provenance.json',
       `{ "worktree": "${HOME}Github/canary-fleet-1" }\n`,
     ],
+    // No trailing slash: end of line, before a quote, before a backtick.
+    ['docs/a.md', `The worktree was ${HOME.slice(0, -1)}\n`],
+    ['src/a.ts', `const root = '${HOME.slice(0, -1)}';\n`],
+    ['docs/b.md', `Ran in \`${HOME.slice(0, -1)}\` first.\n`],
+    // A Windows profile, with either slash, and as a JS string escapes it.
+    ['docs/c.md', `Profile at ${WIN_HOME}AppData\n`],
+    ['docs/d.md', `Profile at ${WIN_HOME.replaceAll('\\', '/')}x\n`],
+    ['src/b.ts', `const p = '${WIN_HOME.replaceAll('\\', '\\\\')}x';\n`],
+    // A Linux account that is not a CI runner or a fixture.
+    ['docs/e.md', `Run from ${LINUX_HOME}src/canary\n`],
   ])('fails on a home path in %s', (rel, body) => {
     const { status, stdout } = runGate(fixtureRepo({ [rel]: body }));
 
@@ -84,9 +97,16 @@ describe('#1753 proprietary gate: local home-directory paths', () => {
         'Run from `<repo>/ts`.',
         'The lane worktree is `../canary-fleet-1`.',
         'Paths like `~/Github/canary-x` and `/Users/<local-user>/` are fine.',
-        // A CI runner path and a Windows-style test fixture are not a home.
+        // CI-runner paths and the placeholders the suite already uses are
+        // not anyone's home.
         'at (/home/runner/work/canary/canary/a.ts:1:1)',
+        'at (/home/ci/work/repo/src/a.ts:4:2)',
+        'path: /home/.canary/overlays and /nonexistent-root/home/fixture-user/x',
         'at file:///C:/Users/fixture/a/b.js:1:1',
+        'at f (C:\\\\Users\\\\fixture\\\\a\\\\b.js:1:1)',
+        "home: '/Users/example', and no `/Users/...` paths remain",
+        // Lowercase `/users/<id>` is a REST route, not a macOS home.
+        'GET /users/1 and /users/:id and /users/nonexistent',
         '',
       ].join('\n'),
     });

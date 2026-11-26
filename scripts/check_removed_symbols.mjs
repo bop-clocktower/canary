@@ -93,11 +93,28 @@ const GENERIC_PROPRIETARY_PATTERNS = [
     "'confidential' marker — proprietary content does not belong in the public repo",
   ],
   // #1753: plans and provenance files recorded their worktree's absolute
-  // path, which on macOS names the local account. `/home/` is left out on
-  // purpose: CI-runner paths (`/home/runner/...`) are legitimate test data.
-  // `fixture` is the one synthetic account name the test suite uses.
+  // path, which names the local account. Each pattern needs a whole account
+  // name (`(?![\w.-])`), so a path with no trailing slash, at end of line or
+  // before a quote, still matches. The exemptions are the placeholders the
+  // suite already uses, and nothing else.
+  //
+  // macOS. Case-SENSITIVE on purpose: macOS homes are always `/Users/`, and
+  // lowercase `/users/<id>` is a REST-route shape that fixtures legitimately
+  // carry. A drive-letter prefix is left to the Windows pattern below.
   [
-    '/Users/(?!fixture/)[\\w.-]+/',
+    '(?<![A-Za-z]:)/Users/(?!(?:fixture|example|\\.\\.\\.)(?![\\w.-]))[\\w.-]+(?![\\w.-])',
+    'local home-directory path — write `<repo>/…`, a relative path, or `~/…`',
+  ],
+  // Windows profile, either slash, including a JS-escaped `\\`. Windows
+  // paths are case-insensitive and the drive letter rules out a URL route.
+  [
+    '(?i)\\b[A-Z]:[\\\\/]+Users[\\\\/]+(?!(?:fixture|example)(?![\\w.-]))[\\w.-]+(?![\\w.-])',
+    'local home-directory path (Windows profile) — write `<repo>/…`, a relative path, or `~/…`',
+  ],
+  // Linux. CI runners (`runner`, `ci`) and the suite's fake homes
+  // (`.canary`, `fixture-user`) are test data, not a person's account.
+  [
+    '/home/(?!(?:runner|ci|fixture[\\w-]*|\\.canary)(?![\\w.-]))[\\w.-]+(?![\\w.-])',
     'local home-directory path — write `<repo>/…`, a relative path, or `~/…`',
   ],
 ];
