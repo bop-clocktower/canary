@@ -170,6 +170,25 @@ under the project's former name) are documented in the
   opt-out with no reason is refused. The job stays green on a missing entry and
   goes red only when it cannot tell: an unclassifiable title, an unreadable
   diff, or no `[Unreleased]` heading.
+- **`canary-katana --check` fails when a static skip has no ledger row
+  (#1319).** It walks the test files and finds every static skip with katana's
+  own skip detection: `it.skip`, `test.skip`, `describe.skip`,
+  `test.describe.skip`, `test.fixme`, `xit`, `xdescribe`, and pytest `skip`,
+  `xfail` and `skipif(True)`. Each skip is matched to a ledger row on
+  `(file, test)`, so a row still matches after the code moves. The check exits
+  `1` and lists each unledgered skip as `file:line`, with its title and the
+  command that records it (`--check --record <file>`). A literal "condition"
+  (`skipIf(true)`, `runIf(false)`, `test.skip(true)`, `test.fixme(!0)`) and an
+  argument-less `test.skip()` are static too. Real runtime conditions are exempt
+  and counted: `skipIf`/`runIf`, Playwright's `test.skip(cond, why)`, and pytest
+  `skipif(cond)`/`xfail(cond)`. A committed `.only`, `fit` or `fdescribe` is
+  reported as `focused` and exits `1`, because it mutes every other test in its
+  scope. A skip inside a comment, string or template literal is not counted.
+  Zero test files read, any PATH that selects no test file, or an unreadable
+  ledger abstains (`3`), unless a finding was made, which outranks it (`1`).
+  `--record` never overwrites a corrupt ledger. A bare `--` is now accepted in
+  diff mode as the end of options. `--json` prints
+  `{checked, skips, ledgered, exempt, unledgered[], focused[], unmatched[]}`.
 
 ### Security
 

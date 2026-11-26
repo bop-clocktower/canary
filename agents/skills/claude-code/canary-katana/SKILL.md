@@ -6,7 +6,8 @@ description:
   commit, why) into an append-only ledger, and alarms in exactly one case — the
   deletion removed the last coverage of a symbol critical-areas.json marks
   high-risk. Silent by default, degrades to recording-only when critical-area
-  data is missing. Self-contained, deterministic, advisory by default.
+  data is missing. `--check` fails when a static skip in the source has no
+  ledger row. Self-contained, deterministic, advisory by default.
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -371,6 +372,123 @@ config the row applies to, say) passes through unchanged, in the row's own key
 order, and the file is rewritten with the indentation it already had (2 spaces
 only for a new or single-line file). An append to a v2 file that supersedes no
 row is therefore a diff of the appended rows alone (#1569).
+
+## Check mode: every static skip has a row (#1319)
+
+Katana records a skip only when it runs on the diff that adds it. Nothing used
+to check the ledger against the source, so a test could be switched off with
+`test.skip` and no row, and CI stayed green. In one consuming repo, 37 tests
+were parked that way before it wrote its own gate.
+
+`--check` walks the test files (`scripts/skipscan.mjs`), finds every **static**
+skip, and matches each one to a ledger row:
+
+```bash
+canary skills run canary-katana -- --check            # whole repo
+canary skills run canary-katana -- --check tests/e2e  # narrowed to PATHs
+canary skills run canary-katana -- --check --json
+```
+
+| Exit | Meaning                                                                                                                 |
+| ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| `0`  | every static skip has a ledger row, and nothing is focused                                                              |
+| `1`  | a static skip has no row (listed as `file:line`, title, marker, and the fix), or a focus marker is committed            |
+| `3`  | abstained: zero test files read, a PATH that selected no test file, or a ledger that is not valid JSON or not an object |
+
+**What counts as static.** The patterns are the ones diffscan uses when it
+records a skip, so the check and the recorder agree on what a skip is:
+`it.skip`, `test.skip('title', …)`, `describe.skip`, `test.describe.skip`,
+`test.fixme('title', …)`, `xit`, `xdescribe`, and, on a `def` or `class`, pytest
+`@pytest.mark.skip`, `@pytest.mark.xfail` with no condition, and
+`@pytest.mark.skipif(True, …)`. A "condition" that is a literal is no condition,
+so these are static too: `skipIf(true)`, `skipIf(1)`, `runIf(false)`,
+`test.skip(true, why)`, `test.fixme(!0)`, `test.skip(() => true)`. So is an
+argument-less `test.skip()` / `test.fixme()`, Playwright's mute for a whole test
+or file. A skip with no title of its own is matched by the title of the nearest
+declaration before it (the test it sits in), or `(file)` when there is none.
+
+**Focus markers fail on their own.** `.only`, `fit` and `fdescribe` (and
+`test.describe.only`) are reported in a separate `focused` bucket and exit `1`.
+A committed focus mutes every _other_ test in its file or block, so it is a
+switched-off-tests event that no ledger row can excuse: remove it.
+
+**Nothing skip-shaped is invisible.** Every match lands in one bucket: static
+(matched against the ledger), `exempt`, or `focused`, and each count is printed.
+
+**What is exempt.** A skip that depends on the run is an environment gate, not a
+quarantine: `it.skipIf(cond)`, `describe.runIf(cond)`, Playwright's
+`test.skip(cond, why)` inside a test, pytest `skipif(cond)` and `xfail(cond)`. A
+non-literal first argument is a condition. They are counted as `exempt` and do
+not fail the check. Ledger one under `env-gated` if a dashboard should know
+where it really runs. A marker inside a comment, string or template literal is
+not a skip. Suites keep fixture source that only looks like one. Python
+triple-quoted bodies are skipped too.
+
+**Identity.** A skip matches a row with the same `file` (repo-relative) and
+`test`: the title in the skip call, or the decorated function's name. That is
+the identity katana writes when it records. Line numbers are reported, not
+matched, so a row still matches after code above it moves. A `removed` row does
+not count, because it records a deletion and the test is still in the file.
+
+**The fix.** Every unledgered skip prints the command that records it:
+
+```text
+✗ tests/cart.test.ts:8  "parks the cart"  (it.skip) has no ledger row
+  fix: canary skills run canary-katana -- --check --record tests/cart.test.ts
+```
+
+`--record` appends one causeless `skipped` row per unledgered skip, as a
+diff-mode capture would have. Provenance comes from `git blame` of the marker
+line: the commit that added the skip, its author, date and subject, and its
+`Ticket:` trailer as `issue`. Outside git, or for an uncommitted line, the
+author is `unknown`. `cause` stays empty, because why a test is out is the
+quarantine producer's call. `--record` never writes over a ledger it cannot
+read. It is refused with `--no-write`. `--diff-file` and `--critical-areas` are
+refused with `--check`, because the check reads the tree and not a diff.
+
+**PATHs never narrow a run to green.** Each PATH must select at least one
+readable test file. If any one selects none (a typo, a moved directory), the run
+abstains with exit `3` and names it, even when the other PATHs matched.
+
+**A finding outranks an abstention** (ADR 0009), as in the rest of the family. A
+run that found a focused marker, or an unledgered skip against a ledger it could
+read, exits `1` even when a PATH matched nothing or the ledger could not be
+read, and it still prints each abstention line. With an unreadable ledger,
+static skips cannot be matched, so they alone abstain (`3`), but a focused
+marker still exits `1`. A bare `--` ends the options, in check mode and in diff
+mode alike.
+
+`--json` shape:
+
+```json
+{
+  "checked": 14,
+  "skips": 2,
+  "ledgered": 1,
+  "exempt": 3,
+  "unledgered": [
+    {
+      "file": "tests/cart.test.ts",
+      "line": 8,
+      "test": "parks the cart",
+      "marker": "it.skip",
+      "fix": "canary skills run canary-katana -- --check --record tests/cart.test.ts"
+    }
+  ],
+  "focused": [],
+  "unmatched": [],
+  "recorded": 0,
+  "abstained": false,
+  "ledger": ".canary/quarantine.json"
+}
+```
+
+`focused` entries have the same shape as `unledgered` ones, without `fix`.
+`unmatched` lists the PATHs that selected no test file. An abstained run adds
+`"error"` when the ledger could not be read. Limits: a module-level `pytestmark`
+and titles built at run time are not seen, and the title must be a string
+literal on a single line. The enclosing test of an untitled skip is the nearest
+declaration before it, which is a heuristic and not a parse.
 
 ## Invocation
 

@@ -408,6 +408,15 @@ via slash commands.
     validated `canary.site/1` feed (index.html + site.json + kit/). An invalid
     feed builds nothing; a non-empty out dir is refused; zero runs reports
     ABSTAINED.
+  - `canary-katana --check` (#1319): the ledger-coverage gate. It walks the test
+    files (`scripts/skipscan.mjs`, using diffscan's own skip patterns) and exits
+    1 when a static skip has no ledger row for its `(file, test)`.
+    Runtime-conditional skips (`skipIf`, Playwright `test.skip(cond)`, pytest
+    `skipif(cond)`) are exempt and counted, but a literal condition is static. A
+    committed `.only`/`fit`/`fdescribe` exits 1 as `focused`
+    (`scripts/jsskips.mjs`). Zero files read, a PATH matching no test file, or
+    an unreadable ledger exits 3. `--record` appends the missing rows, taking
+    provenance from `git blame`.
   - `canary-unquarantine` (#1455): the release half of katana's quarantine
     ledger. `audit` resolves each row's blocker (v2 `issue`, else the comment
     above the marker, the reason, the title), follows hand-offs from closed

@@ -553,6 +553,35 @@ jobs:
             *) echo "::error title=Katana failed::unexpected exit $rc"; exit "$rc" ;;
           esac
 
+      # Advisory (#1319): every static skip in canary's own suites has a ledger
+      # row. Canary has no ledger and no static skips, so this is 0 with its
+      # runtime-conditional skips (skipIf/runIf) counted as exempt. The
+      # unquarantine fixture suite deliberately parks tests with no ledger, so
+      # it is checked separately as a planted positive: a check that cannot
+      # fire there is dead, and that one IS an error.
+      - name: Check static skips are ledgered (advisory)
+        run: |
+          KATANA=agents/skills/claude-code/canary-katana/scripts/cli.mjs
+          set +e
+          node "$KATANA" --check --repo . ts npm rehearsal \
+            agents/skills/test/*.test.ts agents/skills/test/e2e
+          rc=$?
+          echo "--- planted positive (expected: exit 1) ---"
+          node "$KATANA" --check \
+            --repo agents/skills/test/fixtures/unquarantine/suite
+          planted=$?
+          set -e
+          case "$rc" in
+            0) echo "katana: every static skip is ledgered." ;;
+            1) echo "::warning title=Unledgered skips (advisory)::a static skip has no katana ledger row. Non-blocking - see the step log for each one and its fix." ;;
+            3) echo "::notice title=Katana check abstained::no test files were read, or the ledger could not be read. Not a clean run." ;;
+            *) echo "::error title=Katana check failed::unexpected exit $rc"; exit "$rc" ;;
+          esac
+          if [ "$planted" != 1 ]; then
+            echo "::error title=Katana check is dead::the planted fixture suite exited $planted, expected 1"
+            exit 1
+          fi
+
   # --- Branch prune, DRY-RUN only (#836, ADR 0022) ---------------------------
   # Prints the remote deletion set scripts/branch-prune.mjs would propose. It
   # never deletes anything: the script has no remote-deletion flag and this
