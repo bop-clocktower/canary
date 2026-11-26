@@ -157,12 +157,24 @@ describe('blankStringContent', () => {
     ["rf'{g(x)}'", "rf'{g(x)}'"],
     ['Fr"{d["k"]}"', 'Fr"{d[" "]}"'],
     ['f"{{g(x)}}"', 'f"        "'],
-    ['f"{x:>{w}}!"', 'f"{x:>{w}} "'],
+    ['f"{x:>{w}}!"', 'f"{x: {w}  "'],
+    ['f"{d[1:2]}"', 'f"{d[1:2]}"'],
+    ['f"{x!r:^9}"', 'f"{x!r:   "'],
     ['b"{g(x)}"', 'b"      "'],
     ['elif"{g(x)}"', 'elif"      "'],
     ['g(f, "{x}")', 'g(f, "   ")'],
   ])('keeps python f-string fields as code: %s', (code, expected) => {
     expect(blankStringContent(code, { python: true })).toBe(expected);
+  });
+
+  // A format spec is content, not code: its fill may be a quote, and read as
+  // code that quote opened a phantom string that swallowed the next line's
+  // real literal (#1704 review).
+  it('reads a quote fill in a format spec as content, not a delimiter', () => {
+    const code = `x = f"{v:'>10}"\ny = 'secret'`;
+    expect(blankStringContent(code, { python: true })).toBe(
+      `x = f"{v:     "\ny = '      '`,
+    );
   });
 
   it('keeps fields of a triple-quoted f-string across lines', () => {

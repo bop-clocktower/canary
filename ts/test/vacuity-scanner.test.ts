@@ -1035,6 +1035,24 @@ describe('VAC-002 — the comment model reads three code shapes correctly (#1704
     ).toEqual(['counts']);
   });
 
+  it.each([
+    ['a /*/ that does not close', `  /*/\n     makeStore()\n  */\n`],
+    [
+      'a block reopened after code',
+      `  /* a */ x(); /* b\n     makeStore()\n  */\n`,
+    ],
+  ])('reads the next line of %s as comment', (_l, body) => {
+    expect(vac002Tests(body + `  expect(hookSpawns).toBe(0);\n`)).toEqual([
+      'counts',
+    ]);
+  });
+
+  it('counts a call between two closed blocks on one line', () => {
+    expect(
+      vac002Tests(`  /* a */ expect(makeStore()).toBe(1); /* b */\n`),
+    ).toEqual([]);
+  });
+
   it('counts a call that follows the close of a multi-line block', () => {
     expect(
       vac002Tests(`  /*\n     setup\n  */ expect(makeStore()).toBe(1);\n`),
