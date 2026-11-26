@@ -137,6 +137,21 @@ describe('review-test LINT-006 follows a same-file assertion helper', () => {
     expect(rulesAt(findings, 'LINT-006')).toEqual([]);
   });
 
+  it('bounds a semicolon-free helper at the next declaration', () => {
+    // No `;` and no continuation: the helper's body ends where the next
+    // declaration begins, so `noop` does not inherit `check`'s expect.
+    const findings = lint(
+      'e.test.ts',
+      [
+        `const check = (v: number) => expect(v).toBe(1)`,
+        `const noop = (v: number) => v`,
+        `it('checks', () => check(1))`,
+        `it('only runs', () => noop(1))`,
+      ].join('\n'),
+    );
+    expect(rulesAt(findings, 'LINT-006')).toEqual([4]);
+  });
+
   it('still flags a test whose helper never asserts', () => {
     const findings = lint(
       'd.test.ts',
