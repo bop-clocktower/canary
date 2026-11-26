@@ -66,6 +66,10 @@ interface Module {
   }) => Result[];
   exitCode: (results: Result[]) => number;
   render: (results: Result[], maxAgeDays: number) => string;
+  annotations: (
+    results: Result[],
+    env: Record<string, string | undefined>,
+  ) => string[];
   ghApi: (path: string, bin?: string) => unknown;
 }
 
@@ -274,6 +278,23 @@ describe('assessSchedule: late-start warning', () => {
     expect(out).toMatch(/1 fresh \(1 starting late\)/);
     expect(out).toMatch(/LATE\s+w\.yml: /);
     expect(mod.exitCode([r])).toBe(0);
+  });
+
+  it('turns each warning, and only a warning, into a CI annotation', () => {
+    const late = mod.assessSchedule({
+      ...base,
+      runs: [run(hoursAgo(7 * 24 + 20))],
+    });
+    const onTime = mod.assessSchedule({ ...base, runs: [run(hoursAgo(2))] });
+    const ci = { GITHUB_ACTIONS: 'true' };
+    const lines = mod.annotations([late, onTime], ci);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      /^::warning title=w\.yml cron starting late::next run is 20\.0h past/,
+    );
+    expect(mod.annotations([onTime], ci)).toEqual([]);
+    // Off CI the warning stays in the report and adds no workflow command.
+    expect(mod.annotations([late], {})).toEqual([]);
   });
 });
 

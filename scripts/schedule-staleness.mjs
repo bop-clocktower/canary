@@ -35,10 +35,8 @@ import { isMain } from './lib/is-main.mjs';
 
 const DAY_MS = 86_400_000;
 
-// #1753: every watched cron is weekly, and the 8-day window leaves 24h of
-// slack over that period. GitHub's start delay reached 12h11m on 2026-11-23
-// (it was 8h36m when the window was chosen), so a fresh run that has used
-// more than 18h of the slack gets a warning before it turns into a red X.
+// #1753: weekly crons, 24h of slack in the 8-day window, start delay up to
+// 12h11m (2026-11-23): warn once a fresh run has used over 18h of the slack.
 const PERIOD_DAYS = 7;
 const WARN_LATE_HOURS = 18;
 const WORST_SEEN_DELAY = '12h11m';
@@ -276,16 +274,25 @@ function main() {
       ? `${JSON.stringify({ checked: results.length, abstained: code === 3, results }, null, 2)}\n`
       : `${render(results, maxAgeDays)}\n`,
   );
-  // A warning that only lives in the step summary is never seen on a green
-  // run, so CI also gets an annotation. Exit code is unchanged.
-  if (process.env.GITHUB_ACTIONS === 'true') {
-    for (const r of results.filter((x) => x.warning)) {
-      process.stderr.write(
-        `::warning title=${r.workflow} cron starting late::${r.warning}\n`,
-      );
-    }
-  }
+  process.stderr.write(annotations(results, process.env).join(''));
   process.exit(code);
+}
+
+/**
+ * `::warning::` lines for late crons, only under GitHub Actions: a summary
+ * line alone goes unseen on a green run. Exit code unchanged. Pure.
+ *
+ * @param {{workflow: string, warning?: string}[]} results
+ * @param {Record<string, string | undefined>} env
+ * @returns {string[]}
+ */
+export function annotations(results, env) {
+  if (env.GITHUB_ACTIONS !== 'true') return [];
+  return results
+    .filter((r) => r.warning)
+    .map(
+      (r) => `::warning title=${r.workflow} cron starting late::${r.warning}\n`,
+    );
 }
 
 if (isMain(import.meta.url)) main();
