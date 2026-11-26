@@ -147,6 +147,25 @@ assignment is matched anywhere in the file, not only in a hook (#1681):
 a handle (a relative `require(` counts too), and `store = makeStore()` binds
 `store` as a one-level helper of the imported `makeStore`.
 
+Since #1365 and #1751 the import specifier may also be a **name bound to a
+script path**: `const { schedulerStatus } = (await import(SCRIPT_URL)) as T`,
+where `SCRIPT_URL` is `pathToFileURL(join(..., 'install-siren.mjs')).href`, and
+`lib = await import(LIB)`. A name holding a non-script value
+(`import('node:fs')` through a variable) binds nothing.
+
+**Rebinding is not a helper level** (#1751). `const { a, b } = mod as T` makes
+`a` and `b` as direct as `mod`. A `describe.each`/`it.each` table naming a
+target binds the callback parameter that receives it — by column for a table of
+rows, so `(_name, mod)` binds `mod` and leaves the label `_name` a bystander.
+
+**A testkit is not the target** (#1751). When every inferred target is a name
+imported from a `*testkit*` module — shared test plumbing — the inference says
+nothing about the code under test, so the test's `VAC-002`/`VAC-003`/`VAC-005`
+findings become a named skip instead. A workflow-lint suite that parses YAML and
+imports one helper from a testkit is the shape. `// @covers <symbol>` still
+checks such a test, and a real module imported alongside the testkit keeps the
+inference armed.
+
 **Same-file helpers count one level deep** (#1170). A test that calls a helper
 defined in the same file — an arrow, a `function` declaration, or a
 `const`-bound function expression, wrapped across lines or not — invokes the

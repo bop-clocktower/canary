@@ -20,9 +20,24 @@ type ChurnRead = Pick<GitFacts, 'churn' | 'churnAbsentReason'>;
 const SOURCE = /\.(?:[cm]?[jt]sx?|py|php)$/;
 const EXCLUDED_DIR =
   /(?:^|\/)(?:node_modules|vendor|third_party|dist|build|out|coverage|fixtures?|__fixtures__|__mocks__|__tests__|tests?|specs?|e2e)\//;
+// `<tool>.config.<ext>` is tooling, not code under test: canary's own map
+// ranked `agents/skills/vitest.config.ts` #14 on churn alone (#1751).
 const EXCLUDED_FILE =
-  /\.d\.[cm]?ts$|\.min\.js$|\.(?:test|spec)\.[^./]+$|(?:^|\/)test_[^/]+\.py$|_test\.py$|(?:^|\/)conftest\.py$|Test\.php$/;
+  /\.d\.[cm]?ts$|\.min\.js$|\.(?:test|spec)\.[^./]+$|\.config\.[cm]?[jt]s$|(?:^|\/)test_[^/]+\.py$|_test\.py$|(?:^|\/)conftest\.py$|Test\.php$/;
 const MAX_BUFFER = 256 * 1024 * 1024;
+
+/**
+ * `<pkg>/coverage/lcov.info` beside each tracked `package.json`, sorted: where
+ * `npm test` in a package writes its report (#1751). On canary's own tree the
+ * root lookup alone found nothing, while `ts/coverage/lcov.info` matched 232
+ * files. A directory without a `package.json` is not searched.
+ */
+export function packageReportPaths(tracked: string[]): string[] {
+  return tracked
+    .filter((p) => p.endsWith('/package.json'))
+    .map((p) => `${p.slice(0, -'package.json'.length)}coverage/lcov.info`)
+    .sort();
+}
 
 /**
  * Git hooks export these, and each one outranks the working directory, so run

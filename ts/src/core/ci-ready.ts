@@ -62,6 +62,11 @@ export interface CiCheck {
   verdict: CheckVerdict;
   reason: string;
   measure: CheckMeasure | null;
+  /**
+   * The paths `measure.value` counts, when a check names them (#1751): for
+   * coverage-depth, the areas at depth 0. Absent when the count is 0.
+   */
+  subjects?: string[];
 }
 
 export interface CiReadyReport {

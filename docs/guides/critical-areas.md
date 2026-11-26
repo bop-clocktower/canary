@@ -37,6 +37,10 @@ boost = 0.15 * (1 - coverage / 100), when coverage is known
 score = min(1, base + boost), rounded to 2 places
 ```
 
+- Candidate files are tracked JS/TS, Python and PHP source outside test, vendor
+  and build directories. Test files, `.d.ts`, minified bundles and
+  `<tool>.config.<ext>` tool configuration (`vitest.config.ts`) are not
+  candidates (#1751).
 - The maxima are the largest values among candidate files.
 - The boost needs another signal. A file with a `base` of 0 scores 0, because
   being untested alone does not make a file critical.
@@ -75,6 +79,11 @@ its relatives.
 3. `coverage/coverage.json`
 4. `coverage.json`
 5. `coverage.xml`
+
+With none of those at the root, it reads `<pkg>/coverage/lcov.info` beside every
+tracked `package.json` — where `npm test` in a package writes it — and merges
+them; `signal_sources.coverage.report` lists each one read (#1751). A directory
+with no `package.json` is not searched.
 
 A report binds a file by exact repo-relative path, after anchoring its keys to
 where the report sits (a `pkg/coverage/lcov.info` naming `src/a.ts` binds

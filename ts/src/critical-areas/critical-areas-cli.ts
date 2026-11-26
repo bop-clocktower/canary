@@ -26,7 +26,11 @@ import type {
 } from '../guardian/diff-coverage/types.js';
 import type { MainDeps } from '../main-deps.js';
 import { keepSymbols } from './declared-symbols.js';
-import { readGitFacts, type GitFacts } from './git-signals.js';
+import {
+  packageReportPaths,
+  readGitFacts,
+  type GitFacts,
+} from './git-signals.js';
 import { countImporters } from './importers.js';
 import { defaultOut, writeAtomically } from './output-file.js';
 import {
@@ -97,16 +101,29 @@ function readExplicitReport(
   throw new CliExitError(2);
 }
 
-function discoverReport(top: string): CoverageRead | ParsedReport {
+function discoverReport(facts: GitFacts): CoverageRead | ParsedReport[] {
+  const top = facts.top;
   const name = DISCOVERED_REPORTS.find((r) => existsSync(join(top, r)));
-  if (name === undefined) {
-    return absentCoverage(`no report at ${DISCOVERED_REPORTS.join(', ')}`);
-  }
+  if (name === undefined) return discoverPackageReports(facts);
   const path = join(top, name);
   const { index } = readReportIndex(path);
   return index === null
     ? absentCoverage(`${name} could not be parsed`)
-    : { path, index };
+    : [{ path, index }];
+}
+
+/** No root report: `<pkg>/coverage/lcov.info` per tracked package (#1751). */
+function discoverPackageReports({ top, tracked }: GitFacts) {
+  const looked = packageReportPaths(tracked);
+  const reports = looked.flatMap((name) => {
+    const path = join(top, name);
+    const { index } = readReportIndex(path);
+    return index === null ? [] : [{ path, index }];
+  });
+  if (reports.length > 0) return reports;
+  const more = looked.length > 5 ? ` and ${looked.length - 5} more` : '';
+  const named = [...DISCOVERED_REPORTS, ...looked.slice(0, 5)].join(', ');
+  return absentCoverage(`no report at ${named}${more}`);
 }
 
 /**
@@ -125,15 +142,19 @@ function byRepoPath(index: ReportIndex, top: string) {
   return files;
 }
 
-function coverageFrom(report: ParsedReport, facts: GitFacts): CoverageRead {
-  const anchored = anchorIndex(report.index, report.path, facts.top);
-  const files = byRepoPath(anchored, facts.top);
-  const name = relative(facts.top, report.path);
+function coverageFrom(reports: ParsedReport[], facts: GitFacts): CoverageRead {
+  const name = reports
+    .map((r) => relative(facts.top, r.path).split(sep).join('/'))
+    .join(', ');
   const pcts = new Map<string, number>();
-  for (const path of facts.candidates) {
-    const file = files.get(path);
-    const pct = file === undefined ? null : linePct(file);
-    if (pct !== null) pcts.set(path, pct);
+  for (const report of reports) {
+    const anchored = anchorIndex(report.index, report.path, facts.top);
+    const files = byRepoPath(anchored, facts.top);
+    for (const path of facts.candidates) {
+      const file = files.get(path);
+      const pct = file === undefined ? null : linePct(file);
+      if (pct !== null && !pcts.has(path)) pcts.set(path, pct);
+    }
   }
   if (pcts.size === 0) {
     return absentCoverage(
@@ -150,8 +171,8 @@ function loadCoverage(
   explicit: ParsedReport | null,
   facts: GitFacts,
 ): CoverageRead {
-  const report = explicit ?? discoverReport(facts.top);
-  return 'index' in report ? coverageFrom(report, facts) : report;
+  const reports = explicit === null ? discoverReport(facts) : [explicit];
+  return Array.isArray(reports) ? coverageFrom(reports, facts) : reports;
 }
 
 function abstain(deps: MainDeps, why: string): never {

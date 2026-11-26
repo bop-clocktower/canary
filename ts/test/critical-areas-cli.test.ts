@@ -449,6 +449,61 @@ describe('canary critical-areas', () => {
       expect(areaOf(doc, 'pkg/src/a.ts').coverage_pct).toBe(0);
       expect(areaOf(doc, 'src/other.ts').coverage_pct).toBeNull();
     });
+
+    // #1751: `npm test` in a package writes `<pkg>/coverage/lcov.info`, so run
+    // as documented every area read "coverage not measured".
+    it("discovers each package's coverage/lcov.info when the root has none", async () => {
+      repo({
+        'ts/package.json': '{}\n',
+        'ts/src/a.ts': 'export {};\n',
+        'npm/package.json': '{}\n',
+        'npm/src/b.ts': 'export {};\n',
+        'other/src/c.ts': 'export {};\n',
+      });
+      report('ts/coverage/lcov.info', unhit('src/a.ts'));
+      report('npm/coverage/lcov.info', unhit('src/b.ts'));
+      // Not a package: no tracked package.json, so its report is not read.
+      report('other/coverage/lcov.info', unhit('src/c.ts'));
+      const doc = await run();
+      expect(areaOf(doc, 'ts/src/a.ts').coverage_pct).toBe(0);
+      expect(areaOf(doc, 'npm/src/b.ts').coverage_pct).toBe(0);
+      expect(areaOf(doc, 'other/src/c.ts').coverage_pct).toBeNull();
+      expect(doc.signal_sources.coverage).toEqual({
+        status: 'measured',
+        report: 'npm/coverage/lcov.info, ts/coverage/lcov.info',
+        files_matched: 2,
+      });
+    });
+
+    it('prefers a root report over package reports (D11)', async () => {
+      repo({ 'ts/package.json': '{}\n', 'ts/src/a.ts': 'export {};\n' });
+      report(
+        'coverage/lcov.info',
+        'SF:ts/src/a.ts\nDA:1,1\nDA:2,0\nend_of_record\n',
+      );
+      report('ts/coverage/lcov.info', unhit('src/a.ts'));
+      const doc = await run();
+      expect(areaOf(doc, 'ts/src/a.ts').coverage_pct).toBe(50);
+      expect(doc.signal_sources.coverage!.report).toBe('coverage/lcov.info');
+    });
+
+    it('names the package report paths it looked for when none exists', async () => {
+      repo({ 'ts/package.json': '{}\n', 'ts/src/a.ts': 'export {};\n' });
+      const source = (await run()).signal_sources.coverage!;
+      expect(source.status).toBe('absent');
+      expect(source.reason).toContain('ts/coverage/lcov.info');
+    });
+
+    it('names at most 5 package report paths in the absent reason', async () => {
+      const pkgs = Object.fromEntries(
+        Array.from({ length: 7 }, (_, i) => [`p${i}/package.json`, '{}\n']),
+      );
+      repo({ ...pkgs, 'p0/src/a.ts': 'export {};\n' });
+      const reason = (await run()).signal_sources.coverage!.reason!;
+      expect(reason).toContain('p4/coverage/lcov.info');
+      expect(reason).not.toContain('p5/coverage/lcov.info');
+      expect(reason).toMatch(/and 2 more$/);
+    });
   });
 
   describe('a report without a denominator', () => {
