@@ -26,7 +26,7 @@ import {
 import * as diffscan from './diffscan.mjs';
 import * as alarm from './alarm.mjs';
 import { assess, notAssessedToDict } from './alarm.mjs';
-import { DEFAULT_MAX_AGE_DAYS, mapFreshness } from './areas.mjs';
+import { DEFAULT_MAX_AGE_DAYS, loadMapFor, mapFreshness } from './areas.mjs';
 import * as ledger from './ledger.mjs';
 import { checkUsageError, runCheck } from './check.mjs';
 import { abstains, renderText } from './verdict-text.mjs';
@@ -50,7 +50,8 @@ const USAGE =
   '  --repo PATH            repository to inspect (default: .)\n' +
   '  --diff-file PATH       read the diff from a file instead of git\n' +
   '  --ledger PATH          ledger location (default: <repo>/.canary/quarantine.json)\n' +
-  '  --critical-areas PATH  critical-areas.json used to raise alarms\n' +
+  '  --critical-areas PATH  critical-areas.json used to raise alarms (default:\n' +
+  '                         <repo>/.canary/critical-areas.json, when present)\n' +
   '  --max-age-days N       warn when that map is older than N days (default:\n' +
   `                         ${DEFAULT_MAX_AGE_DAYS}); its \`generated\` stamp is the age\n` +
   '  --json                 emit machine-readable output instead of human text\n' +
@@ -225,7 +226,11 @@ export function main(argv = [], deps = {}) {
     }
   }
 
-  const areas = alarm.loadCriticalAreas(args.criticalAreas);
+  const areas = loadMapFor(repo, args.criticalAreas, (file) =>
+    console.error(
+      `${PREFIX} using ${file} (pass --critical-areas to override)`,
+    ),
+  );
   const verdict = assess(deletions, areas, repo, diff);
   const freshness = areas.available
     ? mapFreshness(areas.generated, now(), args.maxAgeDays)

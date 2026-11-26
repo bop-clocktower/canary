@@ -51,7 +51,10 @@ Most test deletions are legitimate — dead feature removal, genuine dedup — s
 alarming on every one is nag fatigue within a week, and a gate people mute is
 worse than no gate. Katana is **silent by default** and alarms only when a
 removed test was the **last coverage** of a symbol listed in
-`critical-areas.json` (produced by `canary-critical-areas`).
+`critical-areas.json` (produced by `canary critical-areas`). With no
+`--critical-areas` flag, katana reads the map that command writes,
+`<repo>/.canary/critical-areas.json`, when it exists, and names the file on
+stderr (`canary-katana: using …`). An explicit flag always wins.
 
 - **name-matched** — the removed test is **tied to the area**: its name matches
   an area symbol and it **belonged to the area** (see below), or it imported the
@@ -216,7 +219,7 @@ When `critical-areas.json` is missing or malformed, katana records everything
 but alarms on nothing, printing:
 
 ```text
-critical-area data unavailable, recording only, not alarming; run `canary critical-areas`, then pass --critical-areas .canary/critical-areas.json
+critical-area data unavailable, recording only, not alarming; run `canary critical-areas` (katana reads .canary/critical-areas.json), or pass --critical-areas PATH
 ```
 
 Degradation never manufactures a failure — even under `--strict`, a degraded run
@@ -496,9 +499,9 @@ declaration before it, which is a heuristic and not a parse.
 # Diff the current branch against its merge-base, record, advise (exit 0):
 canary skills run canary-katana
 
-# Feed an explicit diff and a critical-areas map:
+# Feed an explicit diff and a critical-areas map kept off the default path:
 canary skills run canary-katana -- \
-  --diff-file changes.diff --critical-areas .canary/critical-areas.json
+  --diff-file changes.diff --critical-areas maps/critical-areas.json
 
 # Machine-readable:
 canary skills run canary-katana -- --json
@@ -595,9 +598,8 @@ path every canary gate takes.
 
 ```yaml
 - name: Quarantine deleted tests (advisory)
-  run:
-    canary skills run canary-katana -- --critical-areas
-    .canary/critical-areas.json
+  # Reads .canary/critical-areas.json when `canary critical-areas` wrote it.
+  run: canary skills run canary-katana
 ```
 
 Once the ledger is trusted, add `--strict` and branch on the exit code. Exit 3
