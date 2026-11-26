@@ -53,8 +53,10 @@
       "— a PR cannot merge until its branch is up to date, and the green it",
       "merges on is a verdict about the tree that actually lands.",
       "",
-      "Since when: the ruleset has not been edited since 2026-08-12T23:21-05:00",
-      "(`updated_at`), so `strict` has been true since at least then. This file",
+      "Since when: read 2026-11-26, the ruleset's `updated_at` is",
+      "2026-09-03T12:58:25-05:00, its last edit. When this note was first",
+      "written that field read 2026-08-12T23:21-05:00, so `strict` has been",
+      "true since at least then. This file",
       "recorded `false` in 6fe3b60 at 23:15 the same evening — six minutes",
       "earlier — and stayed wrong until 2026-09-03. Three weeks, noticed only",
       "because a merge was refused for a reason this file said could not happen.",
@@ -243,7 +245,8 @@
 
   "externalStatuses": {
     "$comment": [
-      "#769. Commit statuses posted by a GitHub App rather than by a workflow in",
+      "#769. Commit statuses (and, since #1753, check runs) posted by a GitHub",
+      "App or GitHub-managed workflow rather than by a workflow in",
       "`.github/workflows/`. They sit outside the `required`/`advisory` lists",
       "above BY CONSTRUCTION, because those are keyed to a producing workflow —",
       "which is exactly why one of them could be red on every commit for weeks",
@@ -285,6 +288,44 @@
           "is the durable half — it travels with forks and cannot be undone by a",
           "dashboard click nobody sees. Disconnecting the project is still the",
           "correct end state and is tracked in #769."
+        ]
+      },
+      {
+        "context": "Analyze (actions)",
+        "producer": "CodeQL default setup (GitHub-managed dynamic workflow)",
+        "blocking": false,
+        "expected": "success",
+        "reason": [
+          "#1753. Code scanning default setup posts one `Analyze (<language>)`",
+          "check run per configured language on every PR and on `main`. It is",
+          "a check run, not a commit status, but the producer is the same kind",
+          "of outsider: the workflow lives on GitHub, not in",
+          "`.github/workflows/`, so nothing above can see it. Not a required",
+          "context on ruleset 16189198, and the ruleset has no `code_scanning`",
+          "rule, so a red run or a new alert blocks nothing. Alerts are",
+          "triaged in the Security tab, not gated here."
+        ]
+      },
+      {
+        "context": "Analyze (javascript-typescript)",
+        "producer": "CodeQL default setup (GitHub-managed dynamic workflow)",
+        "blocking": false,
+        "expected": "success",
+        "reason": [
+          "#1753. Same producer and same standing as `Analyze (actions)`:",
+          "advisory, triaged in the Security tab."
+        ]
+      },
+      {
+        "context": "Analyze (python)",
+        "producer": "CodeQL default setup (GitHub-managed dynamic workflow)",
+        "blocking": false,
+        "expected": "success",
+        "reason": [
+          "#1753. Same producer and same standing as `Analyze (actions)`:",
+          "advisory, triaged in the Security tab. The remaining Python is",
+          "a spike and test fixtures, which is why the language is still",
+          "configured."
         ]
       }
     ]

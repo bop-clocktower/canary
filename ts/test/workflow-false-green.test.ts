@@ -407,6 +407,20 @@ describe('workflow false-green invariants', () => {
       expect(overlap).toEqual([]);
     });
 
+    // #1753: CodeQL default setup posts these check runs on every PR and on
+    // `main` from a GitHub-managed workflow, so no file in
+    // `.github/workflows/` names them. Deleting the entries must fail here.
+    it.each([
+      'Analyze (actions)',
+      'Analyze (javascript-typescript)',
+      'Analyze (python)',
+    ])('records the CodeQL default-setup check run %s', (context) => {
+      const entry = statuses.find((s) => s.context === context);
+      expect(entry, `${context} is not written down`).toBeDefined();
+      expect(entry!.producer).toMatch(/CodeQL default setup/);
+      expect(entry!.blocking).toBe(false);
+    });
+
     it('backs an expected:none entry with a repo-side suppression', () => {
       // The Vercel Git integration reads `git.deploymentEnabled` from
       // vercel.json and skips creating a deployment, so no status is posted.
