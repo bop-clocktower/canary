@@ -150,6 +150,14 @@ under the project's former name) are documented in the
 - **`ci-ready` names the areas behind a coverage-depth failure (#1751).** The
   reason lists the areas at depth 0, and `--json` adds an optional `subjects`
   array to the check holding every one of them. Absent when none is at depth 0.
+- **An advisory `CHANGELOG entry` check warns when a user-facing PR has no
+  `[Unreleased]` line (#1418).** A PR titled `feat`, `fix` or `perf`, or marked
+  breaking with `!`, gets a `::warning` and a job-summary line when its diff
+  adds nothing inside `## [Unreleased]`. Entries cite the issue, so no `#N` is
+  required. To opt out, add `Changelog: none — <reason>` to the PR body; an
+  opt-out with no reason is refused. The job stays green on a missing entry and
+  goes red only when it cannot tell: an unclassifiable title, an unreadable
+  diff, or no `[Unreleased]` heading.
 
 ### Security
 

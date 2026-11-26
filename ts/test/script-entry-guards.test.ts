@@ -129,6 +129,11 @@ const CASES: Record<string, Case> = {
     status: 3,
     output: /ABSTAINED/,
   },
+  'scripts/check_changelog_entry.mjs': {
+    args: ['--bogus'],
+    status: 2,
+    output: /usage:/,
+  },
   'scripts/gemini-commands-drift.mjs': {
     args: ['--bogus'],
     status: 2,

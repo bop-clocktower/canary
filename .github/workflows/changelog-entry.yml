@@ -1,0 +1,52 @@
+name: Changelog entry
+
+# Warns when a user-facing PR (a feat, fix or perf title, or any breaking `!`)
+# adds no line under CHANGELOG.md's `## [Unreleased]` (#1418). Every release
+# used to find most user-facing PRs missing from that section and rebuild it by
+# hand at cut time. The logic, the opt-out and the exit codes are documented in
+# `scripts/check_changelog_entry.mjs`; ts/test/changelog-entry-check.test.ts
+# runs this step body under `bash -e`.
+#
+# Advisory, not required. See `.github/required-checks.json` for the reason.
+# There is no `paths:` filter: the title decides, not the files, and the job
+# takes seconds. `edited` re-runs it when the title or body changes, so adding
+# an opt-out line takes effect without a push.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: CHANGELOG entry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The merge commit plus its parents: HEAD^1 is the base tip, so the diff
+      # is exactly what the PR would land. Git reads only, so no token is kept.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Check for an [Unreleased] entry
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        # Exit 1 is a missing entry: the script has already printed the
+        # ::warning and written the job summary, and the check is advisory, so
+        # the job stays green. Exit 3 (abstained) and 2 (usage) fail the job,
+        # because a check that could not look has not passed. A step with no
+        # `shell:` runs as `bash -e`, hence `set +e` around the capture.
+        run: |
+          set -uo pipefail
+          set +e
+          node scripts/check_changelog_entry.mjs --base HEAD^1 --head HEAD
+          code=$?
+          set -e
+          if [ "$code" -eq 1 ]; then exit 0; fi
+          exit "$code"
