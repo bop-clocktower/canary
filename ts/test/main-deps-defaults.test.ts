@@ -120,13 +120,11 @@ describe('defaultMainDeps() process-backed values', () => {
   });
 });
 
-// NOT COVERED, deliberately: `defaultMainDeps().prompt` is the stdin-backed
-// `makeStdinPrompt` reader. Its first call does a blocking `readFileSync(0)`,
-// which under vitest inherits the runner's stdin and hangs the worker rather
-// than returning — there is no way to drive it in-process without redirecting
-// fd 0 for the whole run. The behaviour it implements (consume piped lines,
-// then fall back to the shown default) is covered at the CLI level through the
-// injected `prompt` seam in company-knowledge-cli-branches.test.ts.
+// Not driven here: `defaultMainDeps().prompt` is the stdin-backed
+// `makeStdinPrompt` reader, whose real read blocks until EOF and would hang
+// the worker on the runner's never-closing stdin. It is covered in
+// main-deps-stdin-prompt.test.ts, which mocks `readStdinToEof` in a file of
+// its own so the mock cannot reach the tests above (#1752).
 
 describe('defaultMainDeps() sinks', () => {
   it('writes each line to the real stdout/stderr with a trailing newline', () => {
