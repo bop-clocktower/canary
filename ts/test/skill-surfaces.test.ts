@@ -394,7 +394,7 @@ describe('parseCanaryTarget', () => {
   });
 
   it('splits on runs of whitespace and ignores trailing space', () => {
-    expect(parseCanaryTarget('canary  history\tgaps  ')).toEqual({
+    expect(parseCanaryTarget('canary history \t gaps  ')).toEqual({
       argv: ['history', 'gaps'],
       path: ['history', 'gaps'],
     });
