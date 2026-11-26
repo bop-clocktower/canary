@@ -413,6 +413,66 @@ describe('katana --check: abstention is never a pass', () => {
   });
 });
 
+// The family rule (ADR 0009): a real finding proves a check ran, so it
+// outranks an abstention. The abstention is still printed.
+describe('katana --check: a finding outranks an abstention', () => {
+  it('an unledgered skip under a matched PATH exits 1 even with a typo PATH', () => {
+    const dir = repoWith({ 'tests/cart.test.ts': CART });
+    const r = run(['--check', '--repo', dir, 'tests', 'tsets']);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('parks the cart');
+    expect(r.out).toContain("'tsets'");
+    const { code, doc } = checkJson(dir, ['tests', 'tsets']);
+    expect(code).toBe(1);
+    expect(doc.unmatched).toEqual(['tsets']);
+    expect(doc.abstained).toBe(true);
+  });
+
+  it('a focused marker exits 1 even with a typo PATH', () => {
+    const dir = repoWith({ 'tests/f.test.ts': "it.only('f', () => {});" });
+    const r = run(['--check', '--repo', dir, 'tests', 'tsets']);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('focuses');
+    expect(r.out).toContain("'tsets'");
+  });
+
+  it('a focused marker exits 1 with an unreadable ledger, and says the ledger could not be read', () => {
+    const dir = repoWith({ 'tests/f.test.ts': "it.only('f', () => {});" });
+    fs.mkdirSync(path.join(dir, '.canary'));
+    fs.writeFileSync(path.join(dir, '.canary', 'quarantine.json'), '{nope');
+    const r = run(['--check', '--repo', dir]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('focuses');
+    expect(r.out).toContain('ledger cannot be read');
+  });
+
+  it('an unreadable ledger still abstains on static skips alone: they cannot be matched', () => {
+    const dir = repoWith({ 'tests/cart.test.ts': CART });
+    fs.mkdirSync(path.join(dir, '.canary'));
+    fs.writeFileSync(path.join(dir, '.canary', 'quarantine.json'), '{nope');
+    const r = run(['--check', '--repo', dir]);
+    expect(r.code).toBe(3);
+    expect(r.out).not.toContain('has no ledger row');
+  });
+});
+
+// Enabling --check's PATHs turned on the shared parser's `--` terminator. A
+// bare `--` in diff mode is accepted (it was a usage error before #1319).
+describe('katana diff mode: a bare `--` is accepted', () => {
+  it('runs the diff capture as if `--` were absent', () => {
+    const dir = repoWith({ 'README.md': 'x\n' });
+    const df = path.join(dir, 'changes.diff');
+    fs.writeFileSync(
+      df,
+      'diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1,1 +1,1 @@\n-a\n+b\n',
+    );
+    const r = run(['--repo', dir, '--diff-file', df, '--no-write', '--']);
+    expect(r.code).toBe(0);
+    expect(r.err).not.toContain('unrecognized');
+    expect(r.out).toContain('0 deletion(s) captured');
+  });
+});
+
 describe('katana --check: --json and paths', () => {
   it('emits {checked, skips, ledgered, unledgered[]}', () => {
     const dir = repoWith({

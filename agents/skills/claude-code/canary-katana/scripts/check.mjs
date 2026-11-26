@@ -13,7 +13,8 @@
 //      other test in its scope, and no ledger row can excuse that
 //   3  abstained (ADR 0009): zero test files read, a PATH that selected no test
 //      file, or an unreadable ledger. None is a pass; a corrupt ledger is never
-//      overwritten.
+//      overwritten. A finding outranks this: a run with one exits 1 and still
+//      prints why part of it abstained.
 //
 // `--record` is that command: it appends a causeless `skipped` row per
 // unledgered skip, with provenance from the commit that added the marker line,
@@ -25,7 +26,7 @@ import * as ledger from './ledger.mjs';
 import { scanSkips } from './skipscan.mjs';
 
 const PREFIX = 'canary-katana:';
-const EXIT_UNLEDGERED = 1;
+const EXIT_FINDING = 1;
 const EXIT_ABSTAINED = 3;
 
 const pair = (file, test) => `${file}\u0000${test}`;
@@ -115,22 +116,29 @@ function evaluate(args, positionals, ledgerPath) {
   return result;
 }
 
-/** Why the run cannot vouch for anything, or null. */
-function abstainReason(r) {
+/** Every reason part of the run could not be checked; empty when none. */
+function abstainReasons(r) {
+  const why = [];
   if (r.error !== null)
-    return 'the ledger cannot be read, so no skip could be matched';
+    why.push('the ledger cannot be read, so no skip could be matched');
   if (r.scan.unmatched.length)
-    return `no test file matched ${r.scan.unmatched.map((p) => `'${p}'`).join(', ')}`;
-  if (r.scan.files === 0) return '0 test file(s) scanned';
-  return null;
+    why.push(
+      `no test file matched ${r.scan.unmatched.map((p) => `'${p}'`).join(', ')}`,
+    );
+  if (r.scan.files === 0) why.push('0 test file(s) scanned');
+  return why;
 }
 
-const abstained = (r) => abstainReason(r) !== null;
+const abstained = (r) => abstainReasons(r).length > 0;
 
+/** Unledgered skips are a finding only when the ledger was actually read. */
+const unledgeredFinding = (r) =>
+  r.error === null && r.unledgered.length > 0 && !r.recorded;
+
+/** A finding proves a check ran, so it outranks an abstention (ADR 0009). */
 function exitCode(r) {
-  if (abstained(r)) return EXIT_ABSTAINED;
-  if (r.scan.focused.length) return EXIT_UNLEDGERED;
-  return r.unledgered.length && !r.recorded ? EXIT_UNLEDGERED : 0;
+  if (r.scan.focused.length || unledgeredFinding(r)) return EXIT_FINDING;
+  return abstained(r) ? EXIT_ABSTAINED : 0;
 }
 
 function jsonDoc(args, r, ledgerPath) {
@@ -174,11 +182,10 @@ function unledgeredLines(args, r) {
 }
 
 function renderText(args, r) {
-  const why = abstainReason(r);
   const lines = [summary(r), ...r.scan.focused.map(focusLine)];
-  if (why)
+  if (r.error === null) lines.push(...unledgeredLines(args, r));
+  for (const why of abstainReasons(r))
     lines.push(`\u{26A0} Abstained \u{2014} ${why}; this is not a pass.`);
-  else lines.push(...unledgeredLines(args, r));
   return lines.join('\n');
 }
 

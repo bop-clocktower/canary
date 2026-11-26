@@ -173,8 +173,9 @@ under the project's former name) are documented in the
   reported as `focused` and exits `1`, because it mutes every other test in its
   scope. A skip inside a comment, string or template literal is not counted.
   Zero test files read, any PATH that selects no test file, or an unreadable
-  ledger abstains (`3`), and `--record` never overwrites a corrupt ledger.
-  `--json` prints
+  ledger abstains (`3`), unless a finding was made, which outranks it (`1`).
+  `--record` never overwrites a corrupt ledger. A bare `--` is now accepted in
+  diff mode as the end of options. `--json` prints
   `{checked, skips, ledgered, exempt, unledgered[], focused[], unmatched[]}`.
 
 ### Security

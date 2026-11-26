@@ -450,6 +450,14 @@ refused with `--check`, because the check reads the tree and not a diff.
 readable test file. If any one selects none (a typo, a moved directory), the run
 abstains with exit `3` and names it, even when the other PATHs matched.
 
+**A finding outranks an abstention** (ADR 0009), as in the rest of the family. A
+run that found a focused marker, or an unledgered skip against a ledger it could
+read, exits `1` even when a PATH matched nothing or the ledger could not be
+read, and it still prints each abstention line. With an unreadable ledger,
+static skips cannot be matched, so they alone abstain (`3`), but a focused
+marker still exits `1`. A bare `--` ends the options, in check mode and in diff
+mode alike.
+
 `--json` shape:
 
 ```json
