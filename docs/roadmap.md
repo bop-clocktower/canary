@@ -913,6 +913,72 @@ last_manual_edit: 2026-11-24T20:33:52.210Z
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#1693
 
+### canary-cry: give an unexpected exception its own exit code
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** canary-cry's CLI maps any unexpected exception to exit 1, which `--strict` also uses for a state-verified corruption now that `run` has shipped. Pick a distinct crash code, record it in SKILL.md's exit-code table, and pin it with a test that forces a command to throw. cli.mjs is at 299/300 perf lines.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1716
+
+### Vendored 9.7.0 savant/katana/contracts defects from the downstream review
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ten review findings on code a downstream consumer vendors byte-identical, so they must be fixed here: savant restoration.mjs over-broad covers(), katana ledger.mjs indent churn, dropped v1 tickets, lost concurrent rows and truncate-then-write, and contracts validate.mjs/document.mjs TTY and EAGAIN hangs, UTF-16 refusal and a stale ADR reference.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1718
+
+### cassandra VAC-002: comment model misreads four code shapes
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Four comment-handling gaps in ts/src/core/vacuity-scanner.ts give false or hidden VAC-002 findings; one failing-first test per gap, with #1697's comment behaviour unchanged. Same file as #1703, so land this first and serially.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1704
+
+### cassandra: it.each run-on, unrecognised skip forms and surviving mutants
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Follow-ups from the fc1124c review: non-skipped it.each not split as a declaration, xit.each/describe.skip.each/tagged-template .each skip forms, an untested closingParenOf fail-safe, two surviving mutants, and a Python trailing # that #1697 may already cover (verify by probe first).
+- **Blockers:** cassandra VAC-002: comment model misreads four code shapes
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#1703
+
+### deep siren: name a marketplace dir with no .git as present but not a clone
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** hooks/canary-deep-siren.sh still reports "checkout missing" when $MKT exists without .git; port #1698's session-siren remedy and add a test in ts/test/install-siren.test.ts for the present-but-not-a-clone case.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#1700
+
+### Ingest reporter: remove the legacy `TESTTRACKER_*` env aliases
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Breaking removal of the `TESTTRACKER_*` aliases promised for one release in 9.1.0. A build lane stops at the issue's step 1 until the human confirms the consumer suites have moved to `CANARY_INGEST_*`; then pick the release vehicle, change the alias tests to an inert-with-warning legacy env, and update the wiki and CHANGELOG.
+- **Blockers:** Human confirmation that consumer suites have migrated to `CANARY_INGEST_*`
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#1713
+
 ## Engine and Platform
 
 ## Product Surface Gaps

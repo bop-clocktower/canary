@@ -1,0 +1,28 @@
+{
+  "issues": [1310],
+  "route": "bug",
+  "stages": ["debugging"],
+  "fleet": "roadmap-fleet",
+  "run": "fc1125",
+  "reproducingTest": {
+    "path": "ts/test/pattern-healer.test.ts",
+    "describe": "blank lines around a healed line",
+    "tests": [
+      "reports the line of the call, not a blank line above it",
+      "keeps the blank lines that follow a healed wait",
+      "does not insert a blank line after a healed wait with none below it",
+      "counts a later rule's line against the original file, not the rewritten one",
+      "leaves a multi-line wait call alone rather than collapsing its lines",
+      "keeps CRLF line endings and still heals the line"
+    ],
+    "origin": "bug-fleet repro commit 84e1580eeeb12d7977368ef75e73994de4848fa5 (first two tests), extended here"
+  },
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Root cause is `\\s` used where the rules mean horizontal whitespace on one line; the fix uses `[ \\t]` and keeps every rule a line-for-line substitution, so line counts are invariant across passes and lineOf on rewritten text equals the original line (this is how the stale-line-count defect is fixed, rather than a separate offset map).",
+    "HEAL-001/002 sleep/wait arguments no longer cross a newline (`[^)\\n]*`): a multi-line time.sleep(...) or page.waitForTimeout(...) is now left untouched instead of being collapsed to one line. HEAL-003 keeps its multi-line argument match because it only inserts `await` and never changes the line count.",
+    "The line end accepts an optional `\\r` so CRLF files still heal and keep their `\\r`; previously `\\s*` silently stripped it.",
+    "Re-baselining the frozen Python-parity golden ts/test/fixtures/core-golden/pattern-healer.json (time_sleep, wait_for_timeout, multi_fix) is accepted: the human-confirmed decision to fix all three defects requires it, and only the blank-line, leading-newline and line-number fields change.",
+    "`HealChange.before` is now exactly the matched line text (it never contains a newline), so the rstripNewlines helper was removed."
+  ]
+}

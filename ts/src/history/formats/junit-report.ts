@@ -23,6 +23,7 @@
  * Any other encoding (e.g. retries written to separate report files) is
  * recorded per attempt, as whatever each file says.
  */
+import { clipFailureText } from '../../util/redact.js';
 import {
   makeRunId,
   type RecordContext,
@@ -211,7 +212,7 @@ function toRow(
     duration_ms: toMs(c.attrs.get('time')),
     ...(c.errorText === undefined
       ? {}
-      : { error_text: c.errorText.slice(0, ERROR_TEXT_LIMIT) }),
+      : { error_text: clipFailureText(c.errorText, ERROR_TEXT_LIMIT) }),
   };
 }
 
