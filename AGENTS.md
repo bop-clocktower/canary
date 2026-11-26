@@ -1076,6 +1076,15 @@ Three traps, each of which produced a confident wrong answer during #731:
   count over `ts/src` + `npm/src` with test code excluded, so extracting ~310
   lines of `analysis/cli.ts` into a sibling moved it _up_ (32936 → 32989) — a
   new file brings its own header and imports.
+- **The per-module ceiling is per directory, not per subtree (#1752).** The
+  `module-size` threshold in `harness.config.json` (`maxLoc: 1800`,
+  `maxFiles: 12`) is applied by harness to each directory's own files. Files in
+  subfolders are not counted. On 2026-11-26 `check-arch` measured
+  `ts/src/history` at 1111 lines across 10 files, while the whole tree was 5116
+  lines across 34 files. So the ceiling does not bound a tree, and moving code
+  into a subfolder (as `history/retention/` did) gets under it without making
+  the tree any smaller. Read the threshold as a limit on one folder. A tree's
+  total is bounded only by the repo-wide `module-size` ratchet above.
 
 One consequence worth expecting rather than rediscovering: a clean tree
 short-circuits the comparison, so a green `arch` on untouched `main` confirms

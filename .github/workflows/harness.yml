@@ -79,10 +79,14 @@ jobs:
       # failure is not swallowed: the summariser reads a missing, empty or
       # field-less report as an ABSTENTION and exits 3.
       #
-      # On main this command is permanently red (#1208): 12 pre-existing
-      # complexity violations, 0 new, against a baseline that still records 45
-      # since-resolved ones. That is the stale-baseline state the summariser
-      # reports as BASELINE TRIP and exits 0 on; only `newViolations` blocks.
+      # On main this command is permanently red (#1208): pre-existing
+      # violations, none new, against a baseline that still records
+      # since-resolved ones. The live counts are `totalViolations` and
+      # `resolvedViolations` in this step's `check-arch --json` output, and the
+      # floor is `.harness/arch/baselines.json`; they are not copied here
+      # because a copy goes stale (#1752). That is the stale-baseline state the
+      # summariser reports as BASELINE TRIP and exits 0 on; only
+      # `newViolations` blocks.
       # Refreshing the baseline is a human, label-gated step
       # (`refresh-arch-baseline.yml`), never something this step does.
       #
