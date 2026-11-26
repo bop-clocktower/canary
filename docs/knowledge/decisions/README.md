@@ -103,4 +103,5 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0044](0044-npm-latest-dist-tag-waits-for-bin-verification.md)             | The npm `latest` dist-tag waits for bin verification                                  | accepted |
 | [0045](0045-tool-review-ledger-first-contract.md)                          | `canary.tool-review/1` is a ledger-first review contract                              | accepted |
 | [0046](0046-live-target-skills-confirmed-manifest-no-replay-no-finding.md) | Live-target skills run behind a confirmed manifest; no replay, no finding             | accepted |
+| [0047](0047-refresh-commit-pushes-with-per-run-app-token.md)               | The refresh commit pushes with a per-run GitHub App token                             | accepted |
 | [0048](0048-tool-review-unowned-checks-live-in-the-cli.md)                 | Unowned tool-review checks live in the CLI; the contract stays `canary.tool-review/1` | accepted |
