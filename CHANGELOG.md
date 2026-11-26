@@ -16,6 +16,23 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary skills run` runs the seven skills whose `cli:` is a canary
+  subcommand (#1766).** `canary-batwoman`, `canary-clocktower`,
+  `canary-judomaster`, `canary-manhunter`, `canary-mission-briefing`,
+  `canary-rewind` and `canary-shiva` were refused with "cli target does not
+  exist", though `skills verify` accepted them. `run` now starts the subcommand
+  with the args after `--` and returns its exit code. It checks the subcommand
+  against the same command list `verify` uses, so an unknown one still exits 4.
+  `--allow-executable-skills` is still required in CI.
+- **canary-katana reads the map `canary critical-areas` writes without being
+  told where it is (#1558).** With no `--critical-areas`, katana uses
+  `<repo>/.canary/critical-areas.json` when it exists and prints
+  `canary-katana: using <path>` on stderr. An explicit flag still wins, a
+  missing file still degrades to recording-only, and a stale discovered map
+  abstains under `--strict` like a passed one. The degraded notice now says
+  katana reads that path, and that `--critical-areas PATH` is for a map kept
+  anywhere else.
+
 - **Four gates no longer go green after checking nothing (#1748).**
   - `review-test`, `flake-check`, `vacuity-check` and `canary inventory` now
     collect pytest's `*_test.py` as well as `test_*.py`. Before this, a

@@ -5,6 +5,7 @@
 // one entry makes only that area not assessed. Neither is guessed past.
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 import {
   normSymbol,
@@ -81,6 +82,28 @@ export function loadCriticalAreas(filePath) {
     reason: '',
     generated: data.generated,
   };
+}
+
+// Where `canary critical-areas` writes the map by default (#1558).
+const GENERATED_MAP = ['.canary', 'critical-areas.json'];
+
+/**
+ * The map for this run: the `--critical-areas` path when one was given, else
+ * the generated map under `repo` when it exists (#1558). Without the fallback
+ * the documented setup (generate, then run katana) stayed recording-only, so
+ * `announce` is told which file was picked up: a map read without being named
+ * must still be visible. With neither, this degrades as before.
+ * @param {string} repo
+ * @param {string | null | undefined} explicit
+ * @param {(file: string) => void} announce
+ * @returns {CriticalAreas}
+ */
+export function loadMapFor(repo, explicit, announce) {
+  if (explicit != null) return loadCriticalAreas(explicit);
+  const generated = path.join(repo, ...GENERATED_MAP);
+  if (!fs.existsSync(generated)) return loadCriticalAreas(null);
+  announce(generated);
+  return loadCriticalAreas(generated);
 }
 
 // --- freshness (#1325) -------------------------------------------------------

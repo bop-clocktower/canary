@@ -305,6 +305,22 @@ export type CanaryCommandResolver = (path: readonly string[]) => boolean;
 /** `cli: canary <subcmd> [...]` targets the canary CLI itself, not a file. */
 const CANARY_SUBCOMMAND = /^canary\s+(\S.*)$/;
 
+/**
+ * A `cli: canary <subcmd> [...]` target, split: `argv` is every token after
+ * `canary` (what `skills run` spawns), `path` the non-option ones (what a
+ * {@link CanaryCommandResolver} checks). `null` for a file target. Shared by
+ * `skills verify` and `skills run` so the two read a target the same way
+ * (#1766).
+ */
+export function parseCanaryTarget(
+  cli: string,
+): { argv: string[]; path: string[] } | null {
+  const sub = CANARY_SUBCOMMAND.exec(cli);
+  if (!sub) return null;
+  const argv = sub[1]!.trim().split(/\s+/);
+  return { argv, path: argv.filter((t) => !t.startsWith('-')) };
+}
+
 /** Findings for one declaration's `cli:` target. */
 function cliFindings(
   decl: SurfaceDeclaration,
@@ -312,11 +328,11 @@ function cliFindings(
   canaryCommands: CanaryCommandResolver | undefined,
 ): SurfaceFinding[] {
   if (decl.cli === null) return [];
-  const sub = CANARY_SUBCOMMAND.exec(decl.cli);
+  const sub = parseCanaryTarget(decl.cli);
   // With no command tree to resolve against, fall through to the file check
   // and report it missing: an unresolvable target is never assumed valid.
   if (sub && canaryCommands) {
-    const path = sub[1]!.split(/\s+/).filter((t) => !t.startsWith('-'));
+    const { path } = sub;
     if (canaryCommands(path)) return [];
     return [
       {

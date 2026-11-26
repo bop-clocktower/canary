@@ -337,6 +337,13 @@ executable skills with their own CLI entry point (`cli:` in frontmatter).
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help
 ```
 
+Seven skills point `cli:` at a `canary` subcommand instead of a script:
+`canary-batwoman`, `canary-clocktower`, `canary-judomaster`, `canary-manhunter`,
+`canary-mission-briefing`, `canary-rewind`, and `canary-shiva`.
+`canary skills run <name> -- <args>` runs that subcommand with the args, and
+`canary skills verify` checks it against the same command list, so a skill
+verify accepts is one run can start.
+
 For the rest — generation, review, healing, and analysis — there is no
 standalone `generate`/orchestrator command; that pipeline was removed in v3.0
 and now runs through the Claude Code plugin (`/canary-write-test` and friends)

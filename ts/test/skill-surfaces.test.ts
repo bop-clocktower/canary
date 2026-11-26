@@ -51,6 +51,7 @@ import {
   SurfaceKind,
   checkSurfaces,
   collectSurfaces,
+  parseCanaryTarget,
 } from '../src/core/skill-surfaces.js';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
@@ -372,5 +373,30 @@ describe('checkSurfaces', () => {
     );
 
     expect(checkSurfaces(root).findings).toEqual([]);
+  });
+});
+
+/**
+ * The one reading of a `cli: canary ...` target that verify and run share
+ * (#1766): run spawns `argv`, the resolver checks `path`.
+ */
+describe('parseCanaryTarget', () => {
+  it('is null for a file target', () => {
+    expect(parseCanaryTarget('scripts/cli.mjs')).toBeNull();
+    expect(parseCanaryTarget('canary')).toBeNull();
+  });
+
+  it('keeps option tokens in argv and drops them from the command path', () => {
+    expect(parseCanaryTarget('canary history gaps --json')).toEqual({
+      argv: ['history', 'gaps', '--json'],
+      path: ['history', 'gaps'],
+    });
+  });
+
+  it('splits on runs of whitespace and ignores trailing space', () => {
+    expect(parseCanaryTarget('canary history \t gaps  ')).toEqual({
+      argv: ['history', 'gaps'],
+      path: ['history', 'gaps'],
+    });
   });
 });
