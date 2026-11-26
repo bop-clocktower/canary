@@ -72,4 +72,5 @@ definition of done.
   workflow per the proposal). Until it is, the drift guarantee is unenforced,
   and that should be stated rather than assumed.
 - Nothing is built by this ADR. `brand/`, `generate-brand.mjs` and
-  `ts/src/core/flair.ts` do not exist on main as of 6aa3158d.
+  `ts/src/core/flair.ts` do not exist on main as of 6aa3158d. Implementation
+  is tracked in #1763.

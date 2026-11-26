@@ -78,4 +78,4 @@ reorders the chain.
   may surprise users. Provenance is reported per value, not once per resolution,
   for that reason.
 - Nothing is built by this ADR. `flair.ts` does not exist on main as of
-  6aa3158d.
+  6aa3158d. Implementation is tracked in #1763.
