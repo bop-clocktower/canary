@@ -88,7 +88,10 @@ describe('wiki-sync.yml', () => {
 
   it('fails loudly on a clone failure: no silenced clone, no git init fallback', () => {
     const lines = codeLines(syncScript());
-    const clone = lines.filter((l) => l.includes('git clone'));
+    // `git clone` or `git -c <k>=<v> clone`.
+    const clone = lines.filter((l) =>
+      /\bgit\b(\s+-c\s+\S+)*\s+clone\b/.test(l),
+    );
     expect(clone, 'the wiki is cloned').not.toHaveLength(0);
     for (const l of clone) {
       expect(l, 'clone stderr is not discarded').not.toMatch(
@@ -104,6 +107,20 @@ describe('wiki-sync.yml', () => {
       lines.some((l) => /\bgit push\b.*(--force|\s-f\b)/.test(l)),
       'never force-pushes the wiki',
     ).toBe(false);
+  });
+
+  it('never puts the token in a URL (git can echo a URL in an error)', () => {
+    const script = syncScript();
+    expect(script).not.toMatch(/https:\/\/[^\s"']*@/);
+    expect(script).not.toMatch(/x-access-token:\$\{?GH_TOKEN\}?@/);
+    // The credential rides an http.extraheader instead, on the clone and in
+    // the cloned repo's config for the push.
+    const lines = codeLines(script);
+    const clone = lines.find((l) => l.includes('git') && l.includes('clone'));
+    expect(clone).toMatch(/http\.extraheader/);
+    expect(lines.some((l) => /git config .*http\.extraheader/.test(l))).toBe(
+      true,
+    );
   });
 
   it('serializes runs with a concurrency group', () => {

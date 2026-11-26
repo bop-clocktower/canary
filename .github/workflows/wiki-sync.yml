@@ -37,14 +37,20 @@ jobs:
           git config --global user.email \
             "github-actions[bot]@users.noreply.github.com"
 
-          WIKI_URL="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git"
+          # The credential rides an HTTP header, never the URL: git can echo a
+          # URL (userinfo included) in a clone or push error, and the Actions
+          # secret mask is a backstop, not the control. The encoded form is a
+          # new string, so mask it too.
+          WIKI_URL="https://github.com/${REPO}.wiki.git"
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::${AUTH_HEADER#AUTHORIZATION: basic }"
 
           # The wiki already exists (it has published pages since the first
           # sync), so a failed clone is an error to report, not a first run to
           # paper over. The old fallback silenced the clone and `git init`ed a
           # fresh history, which -- with the mirror below -- would try to
           # publish a history unrelated to the real wiki (#1749).
-          if ! git clone "$WIKI_URL" wiki-repo; then
+          if ! git -c http.extraheader="$AUTH_HEADER" clone "$WIKI_URL" wiki-repo; then
             echo "::error::Could not clone ${REPO}.wiki.git -- nothing was synced."
             exit 1
           fi
@@ -57,6 +63,9 @@ jobs:
           cp docs/wiki/*.md wiki-repo/
 
           cd wiki-repo
+          # The push needs the same header; keep it in this clone's config so
+          # the remote URL stays credential-free.
+          git config http.extraheader "$AUTH_HEADER"
           git add -A
           if git diff --cached --exit-code; then
             echo "No wiki changes to push."
