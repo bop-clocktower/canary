@@ -67,8 +67,7 @@ const USAGE =
   '  --seed N    shuffle seed for --confirm (default: random)\n' +
   '\n' +
   baseline.BASELINE_HELP +
-  '\n  (--confirm victims are never baselined: --strict still fails on one)\n' +
-  '\n' +
+  '\n\n' +
   'rules:\n' +
   RULES.map((r) => `  ${r.ruleId} (${r.severity})`).join('\n');
 
@@ -205,9 +204,8 @@ function runConfirm(paths, opts) {
     ? opts.seed
     : Math.floor(Math.random() * 1e6);
   const dyn = confirm(paths, { seed });
-  // Phase 3: name the polluter behind each confirmed victim. pytest only -
-  // vitest has no CLI-driven ordered per-test execution, so it gets victim
-  // detection (Phase 2) but not polluter bisection.
+  // Phase 3: name the polluter behind each victim. pytest only - vitest has
+  // no CLI-driven ordered per-test run, so it gets victims but no bisection.
   if (dyn.status === 'ok' && dyn.victims.length && dyn.framework === 'pytest') {
     dyn.victims = locatePolluters(
       dyn.victims,
