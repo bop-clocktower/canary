@@ -198,7 +198,11 @@ describe('review-test / flake-check (injected linter)', () => {
       deps: { makeLinter: () => fake({ lint: () => [finding()] }) },
     });
     expect(res.code).toBe(0);
-    expect(Array.isArray(JSON.parse(res.stdout))).toBe(true);
+    // #1748: an envelope with its denominator, never a bare array.
+    const out = JSON.parse(res.stdout);
+    expect(out.files).toBe(1);
+    expect(out.checked).toBe(1);
+    expect(out.findings).toHaveLength(1);
   });
 
   it('review-test over a directory walks for files', async () => {
@@ -1071,7 +1075,12 @@ describe('review-test / flake-check: remaining render branches', () => {
         deps: { makeLinter: () => fake({ lint }) },
       });
       expect(res.code).toBe(0);
-      expect(JSON.parse(res.stdout)).toEqual([]);
+      // #1748: two collected, one read -- the envelope says which.
+      expect(JSON.parse(res.stdout)).toEqual({
+        files: 2,
+        checked: 1,
+        findings: [],
+      });
       expect(res.stderr).toContain('Not every collected file was read');
       expect(res.stderr).toContain('EACCES');
     } finally {

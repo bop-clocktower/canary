@@ -79,14 +79,20 @@ describe('collectTestFiles', () => {
     ]);
   });
 
-  it('collects pytest-style test_*.py and nothing else Python', () => {
+  it('collects both pytest default names and nothing else Python (#1748)', () => {
+    // pytest's default `python_files` is `test_*.py *_test.py`. Collecting only
+    // the first half made `review-test`/`flake-check` report a directory of
+    // `*_test.py` files clean without ever opening one.
     const root = tree({
       'test_thing.py': '',
       'thing_test.py': '',
       'app.py': '',
+      'conftest.py': '',
+      'latest.py': '',
     });
     expect(collectTestFiles(root).map((p) => basename(p))).toEqual([
       'test_thing.py',
+      'thing_test.py',
     ]);
   });
 
@@ -127,6 +133,7 @@ describe('SCANNABLE_DESC', () => {
     // Derived from the extension list, so it cannot drift behind it -- an
     // abstention whose remedy names the wrong glob sends the reader nowhere.
     expect(SCANNABLE_DESC).toContain('test_*.py');
+    expect(SCANNABLE_DESC).toContain('*_test.py');
     for (const ext of ['ts', 'js', 'mjs', 'cjs']) {
       expect(SCANNABLE_DESC).toContain(ext);
     }

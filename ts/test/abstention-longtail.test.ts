@@ -101,8 +101,13 @@ describe('review-test: zero collected files abstains (gate)', () => {
         { deps: { makeLinter: () => noFindings as never } },
       );
       expect(res.code).toBe(EXIT_ABSTAINED);
-      // stdout stays a parseable array -- the notice rides stderr.
-      expect(Array.isArray(JSON.parse(res.stdout))).toBe(true);
+      // stdout stays parseable -- the notice rides stderr. #1748: the
+      // envelope's zero denominators are what tell this from a clean run.
+      expect(JSON.parse(res.stdout)).toEqual({
+        files: 0,
+        checked: 0,
+        findings: [],
+      });
     } finally {
       rmTmp(base);
     }
@@ -588,8 +593,11 @@ async function expectJsonAbstention(command: string): Promise<void> {
   try {
     const res = await invokeCanary([command, missingTest(base), '--json']);
     expect(res.code).toBe(EXIT_ABSTAINED);
-    // stdout stays a parseable array -- the notice rides stderr.
-    expect(JSON.parse(res.stdout)).toEqual([]);
+    // stdout stays parseable -- the notice rides stderr. `review-test` emits
+    // its `{files, checked, findings}` envelope (#1748); `flake-check` an array.
+    expect(JSON.parse(res.stdout)).toEqual(
+      command === 'review-test' ? { files: 1, checked: 0, findings: [] } : [],
+    );
     expect(res.stderr).toContain('ENOENT');
   } finally {
     rmTmp(base);

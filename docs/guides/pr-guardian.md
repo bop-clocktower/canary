@@ -240,6 +240,18 @@ Set `canary.guardian.pr.enabled` to `true` and run
 Docs/config-only diffs (matching `skipGlobs`) are skipped with a "nothing to
 verify" notice.
 
+A diff with no findings-eligible units exits 3 (abstained) for one of two
+reasons, and since [#1748] the run tells you which. If the diff held only docs,
+tests or config, there was nothing to check. If it changed an executable script
+that no coverage rung can reach (`.sh`, `.bash`, `.zsh`, `.ps1`, `.psm1`, kept
+below the source floor since #933), guardian prints a line that starts
+`guardian: abstained on unverified code:` and names the paths. It also emits a
+`::notice`, appends the line to the step summary, and adds
+`unverified_code: [<paths>]` to `--format json`. That field is `[]` on the
+nothing-to-check case. The sticky headline reads `not verified`, not
+`nothing to test`. Both cases still exit 3, and canary's own workflow maps both
+to a green job with different warning titles.
+
 Canary's own `.github/workflows/guardian.yml` is the self-hosted version, not a
 drop-in template. It builds canary from `ts/` (`npm --prefix ts ci` and
 `run build`), runs canary's own test suite to produce `ts/coverage/lcov.info`,
@@ -578,6 +590,7 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#738]: https://github.com/bop-clocktower/canary/issues/738
 [#747]: https://github.com/bop-clocktower/canary/issues/747
 [#761]: https://github.com/bop-clocktower/canary/issues/761
+[#1748]: https://github.com/bop-clocktower/canary/issues/1748
 [#1305]: https://github.com/bop-clocktower/canary/issues/1305
 [#1467]: https://github.com/bop-clocktower/canary/issues/1467
 [#1478]: https://github.com/bop-clocktower/canary/issues/1478

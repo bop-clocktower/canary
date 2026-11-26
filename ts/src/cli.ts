@@ -360,7 +360,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     )
     .option(
       '--result <path>',
-      'Path to canary report JSON (default: none, and the run counts as FAIL).',
+      'Path to canary report JSON (default: none, and the run counts as FAIL). A PASS or PARTIAL that counted 0 tests abstains (exit 3): nothing is posted or transitioned.',
     )
     .option('--dry-run', "Show what would be posted/transitioned; don't write.")
     .option('--comment-only', 'Post comment but skip transition.')

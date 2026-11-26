@@ -54,7 +54,9 @@ function writeProbe(base: string, ext: string): string {
  */
 async function findingsFor(file: string): Promise<unknown[]> {
   const res = await invokeCanary(['review-test', file, '--json']);
-  const findings = JSON.parse(res.stdout) as Record<string, unknown>[];
+  const { findings } = JSON.parse(res.stdout) as {
+    findings: Record<string, unknown>[];
+  };
   return findings.map(({ file: _file, ...rest }) => rest);
 }
 
@@ -129,7 +131,9 @@ describe('directory discovery', () => {
 
       const res = await invokeCanary(['review-test', dir, '--json']);
       expect(res.code).not.toBe(EXIT_ABSTAINED);
-      const findings = JSON.parse(res.stdout) as { file: string }[];
+      const { findings } = JSON.parse(res.stdout) as {
+        findings: { file: string }[];
+      };
       const files = new Set(findings.map((f) => f.file));
       expect(files.size).toBe(2);
     } finally {
@@ -147,7 +151,9 @@ describe('directory discovery', () => {
       writeFileSync(join(vendored, 'theirs.test.js'), ASSERTION_FREE, 'utf-8');
 
       const res = await invokeCanary(['review-test', dir, '--json']);
-      const findings = JSON.parse(res.stdout) as { file: string }[];
+      const { findings } = JSON.parse(res.stdout) as {
+        findings: { file: string }[];
+      };
       expect(findings.length).toBeGreaterThan(0);
       expect(findings.every((f) => !f.file.includes('node_modules'))).toBe(
         true,

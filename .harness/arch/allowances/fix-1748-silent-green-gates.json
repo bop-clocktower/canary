@@ -1,0 +1,8 @@
+{
+  "reason": "#1748 (PR #1755): module-size 60451->60637 (+186). Both values were measured with `harness check-arch --json` (CLI 14.1.1), summing the 53 module-size scopes: once on main a75517a6 and once on this branch rebased onto it. The printed `60637 > 59901 (delta: 736)` uses the floor as its left operand and overstates the change (see AGENTS.md, '`baselines.json` is the FLOOR'). newViolations is [] and the only regression is this aggregate. The +186 is the fix itself: a shared pytest-aware test-file predicate in core, guardian naming unverified shipped code on its step-summary, notice, JSON and sticky-comment surfaces, control-character escaping for diff paths reaching workflow commands, and the ticket-update zero-total abstention. Trimming would mean dropping one of those surfaces, which weakens a false-green fix. Human-approved 2026-11-26.",
+  "categories": {
+    "module-size": 60637
+  },
+  "violationIds": [],
+  "createdFrom": "a75517a6"
+}

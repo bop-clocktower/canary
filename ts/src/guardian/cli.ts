@@ -133,6 +133,8 @@ import {
   coverageExemptMatcher,
   renderFindings,
   scopeDiff,
+  unverifiedCodeAnnouncement,
+  unverifiedCodePaths,
   COMMENT_CHAR_BUDGET,
 } from './pr-check.js';
 import { isRecord } from './diff-coverage/types.js';
@@ -1354,6 +1356,23 @@ const PR_CHECK_ABSTAIN_REMEDIATION = [
 ];
 
 /**
+ * #1748: the abstention that changed code is said on its own line, as a
+ * `::notice` and in the step summary, so it never reads as a docs-only PR. The
+ * exit code is still 3: failing the required check on it is a merge-policy call
+ * this producer does not make on the maintainer's behalf.
+ */
+function announceUnverifiedCode(
+  paths: readonly string[],
+  say: (line: string) => void,
+  deps: GuardianDeps,
+): void {
+  const { line, notice } = unverifiedCodeAnnouncement(paths);
+  say(line);
+  say(notice);
+  appendStepSummary(deps.env, line);
+}
+
+/**
  * Exit 3 with the structural abstention line + remediation (#508). Nothing was
  * eligible (docs, tests, config), so under `--post-comment` it also upserts the
  * ✅ "nothing to test" sticky and an earlier ⚠️ one cannot linger (#928).
@@ -1375,6 +1394,8 @@ async function abstainPrCheck(
   // #761: state the range, so "correctly abstained" and "wrong diff" differ.
   if (provenance) say(provenanceLine(provenance));
   for (const line of PR_CHECK_ABSTAIN_REMEDIATION) say(line);
+  const unverified = unverifiedCodePaths(skipped);
+  if (unverified.length > 0) announceUnverifiedCode(unverified, say, deps);
   if (opts.postComment) {
     const coverage = { requested: null, found: false, parsed: false };
     await postStickyComment([], NO_TIER, deps, {
@@ -1401,6 +1422,9 @@ async function abstainPrCheck(
             checked: 0,
             abstained: true,
             skipped,
+            // #1748: `[]` on a nothing-to-check abstention, so the two exit-3
+            // cases are told apart without parsing prose.
+            unverified_code: unverified,
             // #761: `null` when no diff was resolved -- never absent, so a
             // reader can tell "not applicable" from "this producer is old".
             provenance,

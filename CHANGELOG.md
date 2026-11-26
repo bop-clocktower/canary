@@ -16,6 +16,37 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Four gates no longer go green after checking nothing (#1748).**
+  - `review-test`, `flake-check`, `vacuity-check` and `canary inventory` now
+    collect pytest's `*_test.py` as well as `test_*.py`. Before this, a
+    directory whose only flaky test was in `bad_test.py` reported clean. The
+    guardian's `isTestPath` now uses the same file-name predicate, so a diff
+    that adds `pkg/calc_test.py` no longer draws "no test file references
+    calc_test". A `*_test.py` missing from an inventory now retires from the
+    flakiness score like any other collected test, where before the name guard
+    kept it scored.
+  - A clean `review-test` or `flake-check` prints how many files it read:
+    `No issues found (N file(s) checked).`
+  - **BREAKING `--json`: `review-test --json` prints
+    `{files, checked, findings}` instead of a bare findings array.** A clean run
+    and a run that read nothing used to print the same `[]`. `files` is the
+    number collected and `checked` the number opened. To migrate, read
+    `.findings`. The `flake-check --json` output is still an array.
+  - `ticket-update` abstains (exit 3) when the report counts 0 tests and its
+    result is `PASS` or `PARTIAL`. Nothing is posted and nothing is
+    transitioned. Before this, `{"result":"PASS"}` alone defaulted `total` to 0
+    and moved the ticket to `qa_passed`. A 0-test `FAIL` still posts, because it
+    never transitions and a runner that died before counting is a failure the
+    ticket should hear about.
+  - When `guardian pr-check` abstains on a diff that changed an executable
+    script no coverage rung can reach (`.sh`, `.bash`, `.zsh`, `.ps1`, `.psm1`),
+    it now says so. It prints `guardian: abstained on unverified code: …` with
+    the paths, emits a `::notice`, writes the line to the step summary, adds
+    `unverified_code` to `--format json`, and the sticky says `not verified`,
+    not `nothing to test`. The exit code is still 3. canary's own `guardian.yml`
+    gives that case its own warning title. Whether it should fail the required
+    check is still an open question.
+
 - **canary-katana: a stale critical-areas map no longer reads as a clean run
   (#1325).** katana scored every diff against `critical-areas.json` however old
   it was, so a map written months ago reported `0 findings` under `--strict` and

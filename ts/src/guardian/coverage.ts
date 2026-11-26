@@ -63,6 +63,7 @@ export {
   type ResolvedCoverage,
 } from './diff-coverage/orchestrator.js';
 export {
+  isScriptPath,
   isSourcePath,
   isTestPath,
   isTestSupportPath,

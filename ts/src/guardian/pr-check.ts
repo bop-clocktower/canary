@@ -43,6 +43,7 @@ import {
   coverageDeltaStatus,
   coverageCauses,
   coverageStatus,
+  isScriptPath,
   isSourcePath,
   isTestPath,
   isTestSupportPath,
@@ -447,6 +448,61 @@ export function filterSkipped(
     }
   }
   return [kept, skipped];
+}
+
+/**
+ * The greppable prefix of the unverified-code abstention line (#1748).
+ *
+ * Exit 3 has two very different meanings on a PR. A docs-only diff had nothing
+ * to check, and abstaining is the honest green. A diff that changed a shell
+ * hook changed shipped behaviour that no coverage rung can reach, and the same
+ * exit 3 used to read identically -- 14 of 36 green `guardian` runs were
+ * abstentions, one of them on a hook change. This line, and the `::notice`
+ * and step-summary copies of it, are how the second case stays countable.
+ */
+export const UNVERIFIED_CODE_MARKER = 'guardian: abstained on unverified code';
+
+/**
+ * Render control characters visibly (`\n` -> `\x0a`). These paths come from
+ * the PR diff and git allows CR/LF in a file name, so an unescaped one could
+ * start its own `::error::` workflow command or break the summary markdown.
+ */
+function escapeControls(text: string): string {
+  return text.replace(
+    /[\u0000-\u001f\u007f]/g,
+    (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`,
+  );
+}
+
+/**
+ * The changed executable files the run had to drop as non-source (#1748),
+ * already display-safe: every sink (stdout, `::notice`, step summary, sticky,
+ * JSON) takes its paths from here, so none can be handed a raw control byte.
+ */
+export function unverifiedCodePaths(skipped: readonly SkipEntry[]): string[] {
+  return skipped
+    .filter((s) => s.reason === 'non-source' && isScriptPath(s.name))
+    .map((s) => escapeControls(s.name));
+}
+
+/** Encode a workflow-command data part the way `@actions/core` does. */
+function workflowCommandData(text: string): string {
+  return text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+}
+
+/** The plain line and its `::notice` for {@link unverifiedCodePaths}. */
+export function unverifiedCodeAnnouncement(paths: readonly string[]): {
+  line: string;
+  notice: string;
+} {
+  const line = escapeControls(
+    `${UNVERIFIED_CODE_MARKER}: ${paths.length} changed code file(s) ` +
+      `no coverage rung can check: ${paths.join(', ')}`,
+  );
+  const notice =
+    '::notice title=Guardian abstained on unverified code::' +
+    workflowCommandData(line);
+  return { line, notice };
 }
 
 /**
@@ -1289,6 +1345,21 @@ function perCauseHeadline(
 }
 
 /**
+ * #1748: a run that judged nothing but dropped changed code (a shell hook) is
+ * never "nothing to test" -- that ✅ is the false green this replaces.
+ */
+function unverifiedHeadline(
+  state: CoverageInputState | null,
+  unverified: readonly string[],
+): string | null {
+  if (unverified.length === 0 || state?.unitsTotal !== 0) return null;
+  return (
+    `${WARNING} not verified: ${unverified.length} changed code file(s) ` +
+    `no coverage rung can check (${unverified.join(', ')})`
+  );
+}
+
+/**
  * The comment body for a run with zero active findings. The notice goes in the
  * body, not only a `<sub>` footer, which is read as boilerplate (#554).
  */
@@ -1297,10 +1368,13 @@ function noGapsLines(
   suppressedCount: number,
   abstained = false,
   checked = 0,
+  unverified: readonly string[] = [],
 ): string[] {
   const notice = coverageState ? coverageDegradedNotice(coverageState) : null;
   const [cause, counts] = coverageHeadline(coverageState, notice);
-  const headline = abstained ? abstentionHeadline(checked) : cause;
+  const headline = abstained
+    ? abstentionHeadline(checked)
+    : (unverifiedHeadline(coverageState, unverified) ?? cause);
   const lines = [
     `## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ${headline}`,
     ...counts,
@@ -1452,7 +1526,13 @@ export function renderFindings(
 
     if (active.length === 0) {
       lines.push(
-        ...noGapsLines(coverageState, suppressed.length, abstained, checked),
+        ...noGapsLines(
+          coverageState,
+          suppressed.length,
+          abstained,
+          checked,
+          unverifiedCodePaths(gateMeta?.skipped ?? []),
+        ),
       );
     } else {
       const noun = fileCount === 1 ? 'file needs' : 'files need';

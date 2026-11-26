@@ -94,10 +94,11 @@ jobs:
                 broke=1
                 continue
               fi
-              # Two --json shapes are in play. `review-test` and `flake-check`
-              # emit a bare array; `vacuity-check` emits an envelope
-              # {files, checked, abstained, findings, skipped} that carries its
-              # own denominators (#1084: files resolved AND tests scanned). Reading `.length` off the envelope yields
+              # Two --json shapes are in play. `flake-check` emits a bare
+              # array; `review-test` emits {files, checked, findings} (#1748)
+              # and `vacuity-check` {files, checked, abstained, findings,
+              # skipped}, envelopes that carry their own denominators (#1084:
+              # files resolved AND tests scanned). Reading `.length` off an envelope yields
               # `undefined`, which shell arithmetic then quietly treats as 0 --
               # the check would have run, reported nothing, and looked clean.
               # An unreadable count now trips `broke` instead of counting zero,
