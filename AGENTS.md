@@ -1953,6 +1953,34 @@ after `agent/` was deleted in the v6.0.0 cutover, so `npm run lint` at the root
 reported on nothing. Ignore any root manifest, or delete it. The invariants are
 pinned by `ts/test/root-manifest-not-a-gate.test.ts`.
 
+### CHANGELOG entries
+
+**A user-facing PR writes its own `CHANGELOG.md` entry under
+`## [Unreleased]`.** User-facing means the PR title is a Conventional Commit of
+type `feat`, `fix` or `perf`, or any type marked breaking with `!`. `chore`,
+`docs`, `test`, `ci`, `refactor`, `style` and `build` are exempt. Put the bullet
+under `### Added`, `### Changed` or `### Fixed` and cite the **issue** number:
+the release cut matches entries by issue, not by PR. Agent lanes (bug-fleet,
+roadmap-fleet and the rest) write the entry in the same PR as the change.
+
+The advisory `CHANGELOG entry` check (`changelog-entry.yml`, #1418) warns when a
+user-facing PR adds no line inside that section. It parses the section
+boundaries of the file at the PR head, so a line added under a released version
+does not count, and a blank line or a bare `###` heading does not either. To opt
+out, put this line in the PR body (not in a code block or HTML comment):
+
+```text
+Changelog: none — <reason>
+```
+
+The reason is required. An opt-out without one is refused and still warns. A
+missing entry leaves the job green, with a `::warning` and a job-summary line.
+The job goes red only when the check **abstains** (exit 3): the title is not a
+Conventional Commit of a known type, git cannot read the diff, the diff lists no
+files, or `CHANGELOG.md` has no `## [Unreleased]` heading. The logic is in
+`scripts/check_changelog_entry.mjs`, tested by
+`ts/test/changelog-entry-check.test.ts`.
+
 ### Workflow steps
 
 1. **Requirement Analysis:** User provides natural language requirements.

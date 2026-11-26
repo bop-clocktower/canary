@@ -39,6 +39,11 @@ The parts you are most likely to want:
   example `fix/843-fork-pr-note`.
 - `main` is protected. Every change lands through a pull request, including
   documentation-only ones.
+- A `feat`, `fix` or `perf` PR (or any breaking `!` PR) adds a bullet under
+  `## [Unreleased]` in `CHANGELOG.md` that cites the issue number. The advisory
+  `CHANGELOG entry` check warns when it is missing. If the change really has
+  nothing for users, put `Changelog: none — <reason>` on its own line in the PR
+  body. See `AGENTS.md`, _CHANGELOG entries_.
 
 ### Reporting a problem with a gate
 
