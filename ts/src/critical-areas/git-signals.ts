@@ -27,6 +27,19 @@ const EXCLUDED_FILE =
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 /**
+ * `<pkg>/coverage/lcov.info` beside each tracked `package.json`, sorted: where
+ * `npm test` in a package writes its report (#1751). On canary's own tree the
+ * root lookup alone found nothing, while `ts/coverage/lcov.info` matched 232
+ * files. A directory without a `package.json` is not searched.
+ */
+export function packageReportPaths(tracked: string[]): string[] {
+  return tracked
+    .filter((p) => p.endsWith('/package.json'))
+    .map((p) => `${p.slice(0, -'package.json'.length)}coverage/lcov.info`)
+    .sort();
+}
+
+/**
  * Git hooks export these, and each one outranks the working directory, so run
  * from a hook this command would read the hook's repository. `--root` decides.
  */

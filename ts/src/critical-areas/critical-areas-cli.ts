@@ -26,7 +26,11 @@ import type {
 } from '../guardian/diff-coverage/types.js';
 import type { MainDeps } from '../main-deps.js';
 import { keepSymbols } from './declared-symbols.js';
-import { readGitFacts, type GitFacts } from './git-signals.js';
+import {
+  packageReportPaths,
+  readGitFacts,
+  type GitFacts,
+} from './git-signals.js';
 import { countImporters } from './importers.js';
 import { defaultOut, writeAtomically } from './output-file.js';
 import {
@@ -108,29 +112,15 @@ function discoverReport(facts: GitFacts): CoverageRead | ParsedReport[] {
     : [{ path, index }];
 }
 
-/**
- * With no root report, `<pkg>/coverage/lcov.info` beside each tracked
- * `package.json` -- where `npm test` writes it (#1751). On canary's own tree the
- * root lookup alone found nothing, so every area read "coverage not measured"
- * while `ts/coverage/lcov.info` matched 232 files. Every report found is read;
- * a package without a `package.json` is not searched.
- */
-function discoverPackageReports(
-  facts: GitFacts,
-): CoverageRead | ParsedReport[] {
-  const looked = facts.tracked
-    .filter((p) => p.endsWith('/package.json'))
-    .map((p) => `${p.slice(0, -'package.json'.length)}coverage/lcov.info`)
-    .sort();
+/** No root report: `<pkg>/coverage/lcov.info` per tracked package (#1751). */
+function discoverPackageReports({ top, tracked }: GitFacts) {
+  const looked = packageReportPaths(tracked);
   const reports = looked.flatMap((name) => {
-    const path = join(facts.top, name);
-    const { index } = existsSync(path)
-      ? readReportIndex(path)
-      : { index: null };
+    const path = join(top, name);
+    const { index } = readReportIndex(path);
     return index === null ? [] : [{ path, index }];
   });
   if (reports.length > 0) return reports;
-  // A monorepo can track hundreds of package.json files; name the first few.
   const more = looked.length > 5 ? ` and ${looked.length - 5} more` : '';
   const named = [...DISCOVERED_REPORTS, ...looked.slice(0, 5)].join(', ');
   return absentCoverage(`no report at ${named}${more}`);

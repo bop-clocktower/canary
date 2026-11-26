@@ -916,7 +916,9 @@ function assertingHelperCall(code: string): RegExp | null {
     .filter((d) => ASSERT_JS.test(d.body))
     .flatMap((d) => d.names);
   if (names.length === 0) return null;
-  const alternatives = names.map((n) => n.replace(/\$/g, '\\$')).join('|');
+  const alternatives = names
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
   return new RegExp(`(?<![\\w$.])(?:${alternatives})\\s*\\(`);
 }
 
