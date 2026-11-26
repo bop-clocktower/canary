@@ -208,15 +208,110 @@ describe('katana --check: what is not a static skip', () => {
     expect(code).toBe(0);
     expect(doc.skips).toBe(0);
   });
+});
 
-  it('.only and fit focus a test; they do not switch one off', () => {
+// A committed `.only` mutes every OTHER test in its file or block, so it is
+// a switched-off-tests event in its own right. It is not a ledger matter: a
+// row cannot make it acceptable.
+describe('katana --check: focus markers fail on their own', () => {
+  const FOCUS = [
+    "it('muted sibling', () => {});",
+    "it.only('focused', () => {});",
+    "fit('also focused', () => {});",
+    "fdescribe('focused block', () => {});",
+    "test.describe.only('focused pw block', () => {});",
+    "// it.only('commented out', () => {});",
+  ].join('\n');
+
+  it('reports each focused marker in its own bucket and exits 1', () => {
+    const dir = repoWith({ 'tests/focus.test.ts': FOCUS });
+    const { code, doc } = checkJson(dir);
+    expect(code).toBe(1);
+    expect(doc.skips).toBe(0);
+    expect(doc.focused.map((f: { marker: string }) => f.marker)).toEqual([
+      'it.only',
+      'fit',
+      'fdescribe',
+      'describe.only',
+    ]);
+    expect(doc.focused[0]).toMatchObject({
+      file: 'tests/focus.test.ts',
+      line: 2,
+      test: 'focused',
+    });
+  });
+
+  it('says why in text, and a ledger row does not excuse it', () => {
     const dir = repoWith({
-      'tests/focus.test.ts': [
-        "it.only('focused', () => {});",
-        "fit('also focused', () => {});",
+      'tests/focus.test.ts': "it.only('focused', () => {});",
+    });
+    writeLedger(dir, [row('tests/focus.test.ts', 'focused')]);
+    const r = run(['--check', '--repo', dir]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('tests/focus.test.ts:1');
+    expect(r.out).toContain('focuses');
+    expect(r.out).toContain('remove');
+  });
+});
+
+describe('katana --check: a literal condition is not a condition', () => {
+  it('skipIf(true), runIf(false), test.skip(true) and friends are static', () => {
+    const dir = repoWith({
+      'tests/literal.test.ts': [
+        "it.skipIf(true)('always skipped', () => {});",
+        "describe.skipIf(1)('one block', () => {});",
+        "describe.runIf(false)('never runs', () => {});",
+        "test('pw literal', async () => {",
+        "  test.skip(true, 'parked');",
+        '});',
+        "test('pw negated zero', async () => {",
+        '  test.fixme(!0);',
+        '});',
+        "test('pw callback', async () => {",
+        '  test.skip(() => true);',
+        '});',
       ].join('\n'),
     });
-    expect(checkJson(dir).doc.skips).toBe(0);
+    const { code, doc } = checkJson(dir);
+    expect(code).toBe(1);
+    expect(doc.exempt).toBe(0);
+    expect(doc.unledgered.map((u: { test: string }) => u.test)).toEqual([
+      'always skipped',
+      'one block',
+      'never runs',
+      'pw literal',
+      'pw negated zero',
+      'pw callback',
+    ]);
+  });
+
+  it('an argument-less test.skip() mutes its enclosing test, matched by that title', () => {
+    const dir = repoWith({
+      'e2e/mute.spec.ts': [
+        "test('enclosing', async ({ page }) => {",
+        '  test.skip();',
+        '  await page.goto("/");',
+        '});',
+      ].join('\n'),
+    });
+    const first = checkJson(dir);
+    expect(first.code).toBe(1);
+    expect(first.doc.unledgered[0]).toMatchObject({
+      file: 'e2e/mute.spec.ts',
+      line: 2,
+      test: 'enclosing',
+      marker: 'test.skip()',
+    });
+    writeLedger(dir, [row('e2e/mute.spec.ts', 'enclosing')]);
+    expect(checkJson(dir).code).toBe(0);
+  });
+
+  it('a file-level test.skip() before any test is recorded as (file)', () => {
+    const dir = repoWith({
+      'e2e/whole.spec.ts': "test.skip();\ntest('a', async () => {});",
+    });
+    const { doc } = checkJson(dir);
+    expect(doc.unledgered[0]).toMatchObject({ test: '(file)', line: 1 });
   });
 });
 
@@ -305,6 +400,17 @@ describe('katana --check: abstention is never a pass', () => {
     const dir = repoWith({ 'tests/cart.test.ts': CART });
     expect(run(['--check', '--repo', dir, 'nowhere']).code).toBe(3);
   });
+
+  it('one typo among good paths still abstains, naming the unmatched path', () => {
+    const dir = repoWith({ 'tests/ok.test.ts': "it('ok', () => {});" });
+    const r = run(['--check', '--repo', dir, 'tests', 'tsets']);
+    expect(r.code).toBe(3);
+    expect(r.out).toContain('tsets');
+    const { code, doc } = checkJson(dir, ['tests', 'tsets']);
+    expect(code).toBe(3);
+    expect(doc.abstained).toBe(true);
+    expect(doc.unmatched).toEqual(['tsets']);
+  });
 });
 
 describe('katana --check: --json and paths', () => {
@@ -321,6 +427,8 @@ describe('katana --check: --json and paths', () => {
       skips: 2,
       ledgered: 1,
       exempt: 0,
+      focused: [],
+      unmatched: [],
       abstained: false,
     });
     expect(doc.unledgered).toHaveLength(1);

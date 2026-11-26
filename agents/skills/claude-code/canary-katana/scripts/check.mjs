@@ -9,8 +9,11 @@
 //
 //   0  every static skip has a row
 //   1  at least one has none -- each is listed with the command that records it
-//   3  abstained (ADR 0009): zero test files read, or the ledger is unreadable.
-//      Neither is a pass, and a corrupt ledger is never overwritten.
+//      -- or a focus marker (.only, fit, fdescribe) is committed: it mutes every
+//      other test in its scope, and no ledger row can excuse that
+//   3  abstained (ADR 0009): zero test files read, a PATH that selected no test
+//      file, or an unreadable ledger. None is a pass; a corrupt ledger is never
+//      overwritten.
 //
 // `--record` is that command: it appends a causeless `skipped` row per
 // unledgered skip, with provenance from the commit that added the marker line,
@@ -112,10 +115,21 @@ function evaluate(args, positionals, ledgerPath) {
   return result;
 }
 
-const abstained = (r) => r.error !== null || r.scan.files === 0;
+/** Why the run cannot vouch for anything, or null. */
+function abstainReason(r) {
+  if (r.error !== null)
+    return 'the ledger cannot be read, so no skip could be matched';
+  if (r.scan.unmatched.length)
+    return `no test file matched ${r.scan.unmatched.map((p) => `'${p}'`).join(', ')}`;
+  if (r.scan.files === 0) return '0 test file(s) scanned';
+  return null;
+}
+
+const abstained = (r) => abstainReason(r) !== null;
 
 function exitCode(r) {
   if (abstained(r)) return EXIT_ABSTAINED;
+  if (r.scan.focused.length) return EXIT_UNLEDGERED;
   return r.unledgered.length && !r.recorded ? EXIT_UNLEDGERED : 0;
 }
 
@@ -129,6 +143,8 @@ function jsonDoc(args, r, ledgerPath) {
       ...s,
       fix: fixCommand(args, s.file),
     })),
+    focused: r.scan.focused,
+    unmatched: r.scan.unmatched,
     recorded: r.recorded,
     abstained: abstained(r),
     ledger: String(ledgerPath),
@@ -136,31 +152,33 @@ function jsonDoc(args, r, ledgerPath) {
   };
 }
 
-function renderText(args, r) {
-  const { files, skips, exempt } = r.scan;
-  const lines = [
+function summary(r) {
+  const { files, skips, exempt, focused } = r.scan;
+  return (
     `canary-katana --check: ${skips.length} static skip(s) in ${files} test file(s); ` +
-      `${skips.length - r.unledgered.length} ledgered, ${r.unledgered.length} unledgered; ` +
-      `${exempt} runtime-conditional skip(s) exempt.`,
-  ];
-  if (r.error)
-    lines.push(
-      `\u{26A0} Abstained \u{2014} the ledger cannot be read, so no skip could be matched; this is not a pass.`,
-    );
-  else if (!files)
-    lines.push(
-      '\u{26A0} Abstained \u{2014} 0 test file(s) scanned; this is not a pass.',
-    );
-  else if (r.recorded)
-    lines.push(`recorded ${r.recorded} skip(s) into the ledger.`);
-  else {
-    for (const s of r.unledgered) {
-      lines.push(
-        `\u{2717} ${s.file}:${s.line}  "${s.test}"  (${s.marker}) has no ledger row`,
-      );
-      lines.push(`  fix: ${fixCommand(args, s.file)}`);
-    }
-  }
+    `${skips.length - r.unledgered.length} ledgered, ${r.unledgered.length} unledgered; ` +
+    `${focused.length} focused; ${exempt} runtime-conditional skip(s) exempt.`
+  );
+}
+
+const focusLine = (f) =>
+  `\u{2717} ${f.file}:${f.line}  "${f.test}"  (${f.marker}) focuses a test, ` +
+  'muting every other test in its scope; remove it (a ledger row cannot excuse it)';
+
+function unledgeredLines(args, r) {
+  if (r.recorded) return [`recorded ${r.recorded} skip(s) into the ledger.`];
+  return r.unledgered.flatMap((s) => [
+    `\u{2717} ${s.file}:${s.line}  "${s.test}"  (${s.marker}) has no ledger row`,
+    `  fix: ${fixCommand(args, s.file)}`,
+  ]);
+}
+
+function renderText(args, r) {
+  const why = abstainReason(r);
+  const lines = [summary(r), ...r.scan.focused.map(focusLine)];
+  if (why)
+    lines.push(`\u{26A0} Abstained \u{2014} ${why}; this is not a pass.`);
+  else lines.push(...unledgeredLines(args, r));
   return lines.join('\n');
 }
 

@@ -63,7 +63,7 @@ export function isTestFile(p) {
 const PY_DEF_TEST = /^(?:async\s+)?def\s+(test\w*)\s*\(/;
 export const PY_DEF_ANY = /^(?:async\s+)?def\s+(\w+)\s*\(/;
 export const PY_SKIP_DEC = /^@(pytest\.mark\.(?:skip|skipif|xfail)\b.*)$/;
-const JS_DECL =
+export const JS_DECL =
   /\b(?:describe|context|it|test)(?:\.\w+)?\s*\(\s*(['"`])(.*?)\1/;
 export const JS_SKIP =
   /\b(xit|xdescribe|fit|fdescribe|(?:it|test|describe|context)\.(?:skip|only|fixme))\s*\(\s*(['"`])(.*?)\2/g;

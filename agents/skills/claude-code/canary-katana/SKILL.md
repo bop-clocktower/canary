@@ -389,27 +389,40 @@ canary skills run canary-katana -- --check tests/e2e  # narrowed to PATHs
 canary skills run canary-katana -- --check --json
 ```
 
-| Exit | Meaning                                                                           |
-| ---- | --------------------------------------------------------------------------------- |
-| `0`  | every static skip has a ledger row                                                |
-| `1`  | at least one has none; each is listed as `file:line`, title, marker, and the fix  |
-| `3`  | abstained: zero test files read, or the ledger is not valid JSON or not an object |
+| Exit | Meaning                                                                                                                 |
+| ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| `0`  | every static skip has a ledger row, and nothing is focused                                                              |
+| `1`  | a static skip has no row (listed as `file:line`, title, marker, and the fix), or a focus marker is committed            |
+| `3`  | abstained: zero test files read, a PATH that selected no test file, or a ledger that is not valid JSON or not an object |
 
 **What counts as static.** The patterns are the ones diffscan uses when it
 records a skip, so the check and the recorder agree on what a skip is:
 `it.skip`, `test.skip('title', …)`, `describe.skip`, `test.describe.skip`,
 `test.fixme('title', …)`, `xit`, `xdescribe`, and, on a `def` or `class`, pytest
 `@pytest.mark.skip`, `@pytest.mark.xfail` with no condition, and
-`@pytest.mark.skipif(True, …)`. `.only`, `fit` and `fdescribe` focus a test;
-they do not switch it off, so they are not counted.
+`@pytest.mark.skipif(True, …)`. A "condition" that is a literal is no condition,
+so these are static too: `skipIf(true)`, `skipIf(1)`, `runIf(false)`,
+`test.skip(true, why)`, `test.fixme(!0)`, `test.skip(() => true)`. So is an
+argument-less `test.skip()` / `test.fixme()`, Playwright's mute for a whole test
+or file. A skip with no title of its own is matched by the title of the nearest
+declaration before it (the test it sits in), or `(file)` when there is none.
+
+**Focus markers fail on their own.** `.only`, `fit` and `fdescribe` (and
+`test.describe.only`) are reported in a separate `focused` bucket and exit `1`.
+A committed focus mutes every _other_ test in its file or block, so it is a
+switched-off-tests event that no ledger row can excuse: remove it.
+
+**Nothing skip-shaped is invisible.** Every match lands in one bucket: static
+(matched against the ledger), `exempt`, or `focused`, and each count is printed.
 
 **What is exempt.** A skip that depends on the run is an environment gate, not a
 quarantine: `it.skipIf(cond)`, `describe.runIf(cond)`, Playwright's
-`test.skip(cond, why)` inside a test, pytest `skipif(cond)` and `xfail(cond)`.
-They are counted as `exempt` and do not fail the check. Ledger one under
-`env-gated` if a dashboard should know where it really runs. A marker inside a
-comment, string or template literal is not a skip. Suites keep fixture source
-that only looks like one. Python triple-quoted bodies are skipped too.
+`test.skip(cond, why)` inside a test, pytest `skipif(cond)` and `xfail(cond)`. A
+non-literal first argument is a condition. They are counted as `exempt` and do
+not fail the check. Ledger one under `env-gated` if a dashboard should know
+where it really runs. A marker inside a comment, string or template literal is
+not a skip. Suites keep fixture source that only looks like one. Python
+triple-quoted bodies are skipped too.
 
 **Identity.** A skip matches a row with the same `file` (repo-relative) and
 `test`: the title in the skip call, or the decorated function's name. That is
@@ -433,6 +446,10 @@ quarantine producer's call. `--record` never writes over a ledger it cannot
 read. It is refused with `--no-write`. `--diff-file` and `--critical-areas` are
 refused with `--check`, because the check reads the tree and not a diff.
 
+**PATHs never narrow a run to green.** Each PATH must select at least one
+readable test file. If any one selects none (a typo, a moved directory), the run
+abstains with exit `3` and names it, even when the other PATHs matched.
+
 `--json` shape:
 
 ```json
@@ -450,16 +467,20 @@ refused with `--check`, because the check reads the tree and not a diff.
       "fix": "canary skills run canary-katana -- --check --record tests/cart.test.ts"
     }
   ],
+  "focused": [],
+  "unmatched": [],
   "recorded": 0,
   "abstained": false,
   "ledger": ".canary/quarantine.json"
 }
 ```
 
-An abstained run adds `"error"` when the ledger could not be read. Limits: skips
-with no title of their own (a bare `test.skip()` in a test body), a module-level
-`pytestmark`, and titles built at run time are not seen. The title must be a
-string literal on a single line.
+`focused` entries have the same shape as `unledgered` ones, without `fix`.
+`unmatched` lists the PATHs that selected no test file. An abstained run adds
+`"error"` when the ledger could not be read. Limits: a module-level `pytestmark`
+and titles built at run time are not seen, and the title must be a string
+literal on a single line. The enclosing test of an untitled skip is the nearest
+declaration before it, which is a heuristic and not a parse.
 
 ## Invocation
 

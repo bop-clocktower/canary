@@ -165,13 +165,17 @@ under the project's former name) are documented in the
   `xfail` and `skipif(True)`. Each skip is matched to a ledger row on
   `(file, test)`, so a row still matches after the code moves. The check exits
   `1` and lists each unledgered skip as `file:line`, with its title and the
-  command that records it (`--check --record <file>`). Runtime-conditional skips
-  are exempt and counted: `skipIf`/`runIf`, Playwright's `test.skip(cond, why)`,
-  and pytest `skipif(cond)`/`xfail(cond)`. A skip inside a comment, string or
-  template literal is not counted. Zero test files read, or an unreadable
-  ledger, abstains (`3`), and `--record` never overwrites a corrupt ledger.
-  `--json` prints `{checked, skips, ledgered, exempt, unledgered[]}`, and
-  optional PATHs narrow the scan.
+  command that records it (`--check --record <file>`). A literal "condition"
+  (`skipIf(true)`, `runIf(false)`, `test.skip(true)`, `test.fixme(!0)`) and an
+  argument-less `test.skip()` are static too. Real runtime conditions are exempt
+  and counted: `skipIf`/`runIf`, Playwright's `test.skip(cond, why)`, and pytest
+  `skipif(cond)`/`xfail(cond)`. A committed `.only`, `fit` or `fdescribe` is
+  reported as `focused` and exits `1`, because it mutes every other test in its
+  scope. A skip inside a comment, string or template literal is not counted.
+  Zero test files read, any PATH that selects no test file, or an unreadable
+  ledger abstains (`3`), and `--record` never overwrites a corrupt ledger.
+  `--json` prints
+  `{checked, skips, ledgered, exempt, unledgered[], focused[], unmatched[]}`.
 
 ### Security
 
