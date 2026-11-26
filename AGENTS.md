@@ -425,9 +425,19 @@ host Claude Code session via `/canary-write-test` — no API key required.
   `ts/src/briefing/briefing-cli.ts`, even `ts/src/history/cli-deps.ts` — binds
   to `cli` and gets the `cli` allowlist, not its domain's. That is intended: a
   domain's command wiring may reach across layers the way the top-level CLI
-  does. Every pattern is required to match at least one git-tracked file and
-  every tracked source file under each source root (`ts/src`,
-  `agents/skills/lib`, `npm/src`) to belong to a layer
+  does. It also means an edge from a domain's `*cli*.ts` file proves nothing
+  about the domain layer, so domain edges are declared on the domain (#1752):
+  `critical-areas` allows `guardian` because it reuses guardian's coverage
+  report reader (`guardian/diff-coverage/report-tier.ts` and its types) rather
+  than a copy in `core`. `critical-areas-cli.ts`'s `import type` of
+  `../main-deps.js` (`composition`) stays a `cli`-binding edge, and the domain
+  layer does not get `composition`. No two layers may allow each other
+  (`harness-config-denominator.test.ts`): `adoption` no longer allows `cli`.
+  `briefing <-> cli` is the one named exception, because `briefing/comment.ts`
+  and `briefing/deliver.ts` really do import helpers from `guardian/cli.ts` and
+  `cli-common.ts` (#1760). Every pattern is required to match at least one
+  git-tracked file and every tracked source file under each source root
+  (`ts/src`, `agents/skills/lib`, `npm/src`) to belong to a layer
   (`ts/test/harness-config-denominator.test.ts`, which prints the per-root
   module count), because a rule that matches nothing still reports as configured
   (#543), and a root no layer matches is never parsed by `harness check-deps` at
@@ -1066,6 +1076,15 @@ Three traps, each of which produced a confident wrong answer during #731:
   count over `ts/src` + `npm/src` with test code excluded, so extracting ~310
   lines of `analysis/cli.ts` into a sibling moved it _up_ (32936 → 32989) — a
   new file brings its own header and imports.
+- **The per-module ceiling is per directory, not per subtree (#1752).** The
+  `module-size` threshold in `harness.config.json` (`maxLoc: 1800`,
+  `maxFiles: 12`) is applied by harness to each directory's own files. Files in
+  subfolders are not counted. On 2026-11-26 `check-arch` measured
+  `ts/src/history` at 1111 lines across 10 files, while the whole tree was 5116
+  lines across 34 files. So the ceiling does not bound a tree, and moving code
+  into a subfolder (as `history/retention/` did) gets under it without making
+  the tree any smaller. Read the threshold as a limit on one folder. A tree's
+  total is bounded only by the repo-wide `module-size` ratchet above.
 
 One consequence worth expecting rather than rediscovering: a clean tree
 short-circuits the comparison, so a green `arch` on untouched `main` confirms
