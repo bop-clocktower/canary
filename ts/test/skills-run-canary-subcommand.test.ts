@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   SurfaceFindingKind,
@@ -161,24 +161,26 @@ describe('verify accepts => run dispatches, for every repo skill (#1766)', () =>
     (d) =>
       d.kind === SurfaceKind.Skill && d.cli !== null && /^canary\s/.test(d.cli),
   );
-  let verifyMissing: string[] = [];
-
-  beforeAll(async () => {
-    const verify = await invokeCanary([
+  // One verify run, read lazily and shared: a memoized read-only result, not
+  // a hook, so no state is acquired that a teardown would have to release.
+  let verified: Promise<string[]> | null = null;
+  const verifyMissing = (): Promise<string[]> =>
+    (verified ??= invokeCanary([
       'skills',
       'verify',
       '--root',
       REPO_ROOT,
       '--json',
       '--no-run-examples',
-    ]);
-    const report = JSON.parse(verify.stdout) as {
-      surfaces: { findings: Array<{ kind: string; name: string }> };
-    };
-    verifyMissing = report.surfaces.findings
-      .filter((f) => f.kind === SurfaceFindingKind.CliMissing)
-      .map((f) => f.name);
-  });
+    ]).then((verify) =>
+      (
+        JSON.parse(verify.stdout) as {
+          surfaces: { findings: Array<{ kind: string; name: string }> };
+        }
+      ).surfaces.findings
+        .filter((f) => f.kind === SurfaceFindingKind.CliMissing)
+        .map((f) => f.name),
+    ));
 
   it('the denominator is the seven known skills, not zero', () => {
     expect(canarySkills.length).toBeGreaterThanOrEqual(7);
@@ -187,7 +189,7 @@ describe('verify accepts => run dispatches, for every repo skill (#1766)', () =>
   it.each(canarySkills.map((d) => [d.name, d.cli!, d.path] as const))(
     '%s (%s): verify accepts it, and run dispatches it',
     async (name, cli, skillMd) => {
-      expect(verifyMissing).not.toContain(name);
+      expect(await verifyMissing()).not.toContain(name);
       const info = new SkillInfo({
         name,
         path: skillMd,
