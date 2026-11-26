@@ -42,6 +42,7 @@ import {
   testtrackerCmd,
   upgradeCmd,
   vacuityCheckCmd,
+  VACUITY_EXIT_HELP,
   versionCmd,
 } from './cli-commands.js';
 import { COMMANDS } from './commands/cli.js';
@@ -254,7 +255,14 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .argument('<path>', 'Test file or directory to scan.')
     .option('--json', 'Output the verdict and its denominator as JSON.')
     .option('--verbose', 'List every skipped test with its file:line.')
-    .action((path: string, opts: { json?: boolean; verbose?: boolean }) => {
+    .option('--baseline <file>', 'Fail only on findings <file> does not hold.')
+    .option(
+      '--update-baseline <file>',
+      'Write <file> from this scan (refuses growth).',
+    )
+    .option('--allow-growth', 'Let --update-baseline add new findings.')
+    .addHelpText('after', VACUITY_EXIT_HELP)
+    .action((path: string, opts: Parameters<typeof vacuityCheckCmd>[1]) => {
       vacuityCheckCmd(path, opts, deps);
     });
 

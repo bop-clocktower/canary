@@ -28,6 +28,7 @@ import {
 } from './core/gate-result.js';
 import { promotionVerdict } from './core/promotion-verdict.js';
 import { scanVacuity, type VacuityFinding } from './core/vacuity-scanner.js';
+import * as scanBaseline from './core/scan-baseline-run.js';
 import { ckInitCmd } from './company-knowledge-cli.js';
 import { extractFrameworkHint } from './core/classifier.js';
 import { VALID_CATEGORIES, buildFeedback } from './core/feedback.js';
@@ -1011,6 +1012,37 @@ export function flakeCheckCmd(
 
 // --- vacuity-check (canary-cassandra, #612) ----------------------------------
 
+/** The exit-code table `canary vacuity-check --help` prints (#1322). */
+export const VACUITY_EXIT_HELP = scanBaseline.BASELINE_EXIT_HELP;
+
+/**
+ * `--baseline` / `--update-baseline` for vacuity-check (#1322): the shared
+ * ratchet, keyed on the test NAME so the identity survives line drift. Null
+ * when neither flag was given; a bad flag or baseline file exits 2 here.
+ */
+function vacuityBaseline(
+  opts: scanBaseline.BaselineOpts,
+  checked: number,
+  findings: VacuityFinding[],
+  deps: MainDeps,
+): scanBaseline.BaselineRun | null {
+  const ids = findings.map((f) => ({
+    file: f.file,
+    rule: f.rule,
+    anchor: f.test,
+  }));
+  const usage = scanBaseline.baselineFlagError(opts);
+  const run = usage
+    ? null
+    : scanBaseline.runBaseline('canary vacuity-check', opts, checked, ids);
+  const error = usage ?? run?.error;
+  if (error) {
+    deps.err(`canary vacuity-check: ${error}`);
+    throw new CliExitError(2);
+  }
+  return run;
+}
+
 /**
  * The CLI surface of the vacuity scanner.
  *
@@ -1032,7 +1064,7 @@ export function flakeCheckCmd(
  */
 export function vacuityCheckCmd(
   path: string,
-  opts: { json?: boolean; verbose?: boolean },
+  opts: { json?: boolean; verbose?: boolean } & scanBaseline.BaselineOpts,
   deps: MainDeps,
 ): void {
   const json = opts.json === true;
@@ -1083,8 +1115,10 @@ export function vacuityCheckCmd(
       : `${verdictLine} (${skipped.length} skipped: ${groups})` +
         (verbose ? '' : ` ${pc.dim('(--verbose to list skipped tests)')}`);
   // `advisory` keeps findings at exit 0; the abstention still has to be loud, so
-  // the exit code for a zero denominator is taken from the gate contract.
-  const exitCode = outcome.abstained ? EXIT_ABSTAINED : 0;
+  // the exit code for a zero denominator is taken from the gate contract. A
+  // baseline run owns the exit code instead (0 / 1 new / 3 abstained).
+  const bl = vacuityBaseline(opts, checked, findings, deps);
+  const exitCode = bl?.exitCode ?? (outcome.abstained ? EXIT_ABSTAINED : 0);
 
   if (json) {
     deps.out(
@@ -1094,6 +1128,7 @@ export function vacuityCheckCmd(
         abstained: outcome.abstained,
         findings,
         skipped,
+        ...(bl && { baseline: scanBaseline.baselineJson(bl) }),
       }),
     );
     if (exitCode !== 0) throw new CliExitError(exitCode);
@@ -1118,6 +1153,7 @@ export function vacuityCheckCmd(
       ? pc.bold(pc.yellow(summaryLine))
       : `${pc.bold(summaryLine)}`,
   );
+  if (bl) deps.out(scanBaseline.renderBaselineText(bl));
   if (exitCode !== 0) throw new CliExitError(exitCode);
 }
 

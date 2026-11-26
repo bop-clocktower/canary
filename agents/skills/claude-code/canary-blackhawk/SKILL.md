@@ -215,6 +215,68 @@ Exit codes:
 }
 ```
 
+## Baseline mode (ratchet)
+
+An advisory scanner whose count nobody watches stops being read. Baseline mode
+commits today's findings to a file and fails only on a finding that file does
+not hold, so the backlog can shrink without blocking anyone while a new offender
+still fails the PR (#1322). The same file format, comparison and exit codes are
+shared by `canary-savant`, `canary-blackhawk` and `canary vacuity-check`.
+
+```bash
+# Record the current findings (refuses to grow an existing file):
+canary skills run canary-blackhawk -- tests --update-baseline .canary/canary-blackhawk-baseline.json
+
+# In CI: fail only on findings the baseline does not hold:
+canary skills run canary-blackhawk -- tests --baseline .canary/canary-blackhawk-baseline.json
+
+# Accept new findings on purpose:
+canary skills run canary-blackhawk -- tests \
+  --update-baseline .canary/canary-blackhawk-baseline.json --allow-growth
+```
+
+- **Identity** is `(file, rule, anchor)`, never the line number. The anchor is
+  the offending source line with whitespace runs collapsed, so adding an import
+  above a finding or re-indenting it keeps it baselined. Paths are stored
+  relative to the working directory, so run from the same place (normally the
+  repo root) every time.
+- **Duplicates count.** Identical identities form a multiset: a file holding one
+  baselined line that gains a second copy has one new finding.
+- **Fixed findings never fail.** They are reported as shrinkage; run
+  `--update-baseline` to lock the smaller file in.
+- The file is JSON with sorted entries, so it diffs cleanly in review:
+
+  ```json
+  {
+    "schemaVersion": 1,
+    "tool": "canary-blackhawk",
+    "findings": [
+      {
+        "file": "tests/a.spec.ts",
+        "rule": "<rule id>",
+        "anchor": "<line>",
+        "count": 1
+      }
+    ]
+  }
+  ```
+
+- `--json` adds a `baseline` block: `file`, `mode`, `verdict`, the counts
+  `checked` (files scanned), `new`, `fixed`, `baselined`, and `entries.new` /
+  `entries.fixed`.
+
+With `--baseline` or `--update-baseline`, the baseline owns the exit code:
+
+| Code | Meaning                                                                          |
+| ---- | -------------------------------------------------------------------------------- |
+| `0`  | No finding outside the baseline (fixed ones never fail), or the file was written |
+| `1`  | A finding outside the baseline, or `--update-baseline` refused to grow the file  |
+| `2`  | Usage error, or a baseline file that is missing, unreadable or malformed         |
+| `3`  | The scan checked zero files: abstained, never a pass. Nothing is written         |
+
+A malformed baseline, or one written by a different tool, is exit 2, never an
+empty baseline: a broken file must not be a quiet way to switch the check off.
+
 ## CI wiring (GitHub Actions)
 
 Advisory first, then promote to blocking once the backlog is drained and the

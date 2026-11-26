@@ -273,7 +273,7 @@ Use, process, escalation) lives in
 | ----------------------------------------- | -------------------------------------------------------------------------------- |
 | `/canary-review-test <file\|description>` | Claude Code — `canary-test-reviewer`; brittleness, anti-patterns, coverage gaps. |
 | `canary review-test <path>`               | CLI, deterministic — static lint only, no LLM.                                   |
-| `canary vacuity-check <path>`             | CLI, deterministic — tests that pass without proving anything; advisory.         |
+| `canary vacuity-check <path>`             | CLI, deterministic — passing tests that prove nothing; `--baseline` ratchets.    |
 | `canary ci-ready`                         | CLI, deterministic — five CI-readiness checks; missing inputs skip, never pass.  |
 | `canary inventory [testDir]`              | CLI, deterministic — writes `.canary/test-inventory.json` for `ci-ready`.        |
 | `canary critical-areas`                   | CLI, deterministic — writes `.canary/critical-areas.json` for `canary-katana`.   |
