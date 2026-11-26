@@ -121,6 +121,16 @@ the recorder (`ts/src/history` has no arch headroom, #1074).
   `timeout`, `network`, `other`). A failure with no error text gets no category:
   writing `other` with no evidence would make `failure-categories` read `fed`
   when it is not.
+- **`error_text`** is redacted before it is stored or pushed (#1566), with the
+  same rules the ingest reporter applies to failure text (emails, JWTs, named
+  secrets from `CANARY_INGEST_REDACT_ENV`, bare credentials; see
+  [Ingest Reporter](../wiki/Ingest-Reporter.md#redaction)). ANSI escapes are
+  stripped, and an absolute path is rewritten repo-relative when it lies under
+  the working directory, or to `<path>/<file name>` when it does not. Redaction
+  runs before the 2,000-character cut, and `history push` re-applies it, so rows
+  recorded before the fix are redacted on their way to the remote store.
+  `CANARY_INGEST_REDACT=0` turns it off. `failure_category` is computed from the
+  redacted text.
 - **`tags`** has no automatic writer. It stays in the schema for callers of the
   store API, and nothing reads it yet.
 

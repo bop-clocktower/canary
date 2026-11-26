@@ -27,6 +27,31 @@ under the project's former name) are documented in the
   Python-parity golden `pattern-healer.json` is re-baselined for the three cases
   that pinned the old output (`time_sleep`, `wait_for_timeout`, `multi_fix`).
 
+### Security
+
+- **`canary critical-areas` escapes control characters in the paths it reports
+  as dropped (#1575).** The "Dropped symbols" lines print paths read from an
+  existing `.canary/critical-areas.json`, which a scanned tree controls. An ESC
+  sequence, BEL, newline or other C0/C1 control in such a path reached the
+  terminal raw (CWE-150), so it could recolour or rewrite the screen or forge an
+  output line. Bidi overrides, zero-width characters and U+2028/U+2029 could
+  likewise reorder, hide or split a path. Each path now prints double-quoted,
+  with `\` and `"` escaped, and every control, format or separator character
+  shown as `\xHH` or `\u{H…}`. The odd path stays visible, a literal backslash
+  cannot pass for an escape, and a comma inside a path cannot pass for a second
+  entry.
+
+- **Run history no longer stores or pushes credentials echoed in failure text
+  (#1566).** `error_text` now goes through the same redaction as the TestTracker
+  path (#1354) before `canary history record` writes `history-v2.jsonl` and
+  before `canary history push` upserts to the remote store: emails (`<email>`),
+  JWTs and bare 32+-character credentials (`<token>`), and the values of the env
+  vars named in `CANARY_INGEST_REDACT_ENV` (`<secret:NAME>`). ANSI escapes are
+  stripped, and absolute paths outside the working directory become
+  `<path>/<file name>` (paths inside it become repo-relative). Redaction runs
+  before truncation, so a cut never leaves a fragment. `CANARY_INGEST_REDACT=0`
+  turns it off, as it does for the ingest reporter.
+
 ## [9.8.0] - 2026-11-25
 
 ### Added
