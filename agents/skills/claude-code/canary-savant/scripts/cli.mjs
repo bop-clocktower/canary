@@ -26,6 +26,7 @@ import {
   EXIT_USAGE,
 } from '../../../lib/parse-args.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
+import * as baseline from '../../../lib/scan-baseline-run.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -48,8 +49,9 @@ const PREFIX = 'canary-savant:';
 // The rules block is GENERATED from RULES, never hand-typed, so a new rule
 // appears in --help the moment it is registered.
 const USAGE =
-  'usage: canary-savant [-h] [--json] [--strict] [--confirm] [--seed N] [--]\n' +
-  '                     [path ...]\n' +
+  'usage: canary-savant [-h] [--json] [--strict] [--confirm] [--seed N]\n' +
+  '                     [--baseline FILE | --update-baseline FILE\n' +
+  '                     [--allow-growth]] [--] [path ...]\n' +
   '\n' +
   'Order-dependence and isolation detector: flags the shared-state smells that\n' +
   'predict order-dependent tests, and optionally confirms them dynamically.\n' +
@@ -63,6 +65,9 @@ const USAGE =
   '  --strict    exit 1 when there are findings (default is advisory: exit 0)\n' +
   '  --confirm   run the opt-in Tier-2 dynamic confirmer (executes the suite)\n' +
   '  --seed N    shuffle seed for --confirm (default: random)\n' +
+  '\n' +
+  baseline.BASELINE_HELP +
+  '\n  (--confirm victims are never baselined: --strict still fails on one)\n' +
   '\n' +
   'rules:\n' +
   RULES.map((r) => `  ${r.ruleId} (${r.severity})`).join('\n');
@@ -139,8 +144,12 @@ export const CLI_SPEC = {
     '--json': 'json',
     '--strict': 'strict',
     '--confirm': 'confirm',
+    ...baseline.BASELINE_FLAGS.booleans,
   },
-  values: { '--seed': { key: 'seed', type: 'int' } },
+  values: {
+    '--seed': { key: 'seed', type: 'int' },
+    ...baseline.BASELINE_FLAGS.values,
+  },
   positionals: { key: 'paths', defaults: ['.'] },
 };
 
@@ -191,8 +200,63 @@ export function renderConfirm(dyn) {
   return lines.join('\n');
 }
 
+function runConfirm(paths, opts) {
+  const seed = Number.isFinite(opts.seed)
+    ? opts.seed
+    : Math.floor(Math.random() * 1e6);
+  const dyn = confirm(paths, { seed });
+  // Phase 3: name the polluter behind each confirmed victim. pytest only -
+  // vitest has no CLI-driven ordered per-test execution, so it gets victim
+  // detection (Phase 2) but not polluter bisection.
+  if (dyn.status === 'ok' && dyn.victims.length && dyn.framework === 'pytest') {
+    dyn.victims = locatePolluters(
+      dyn.victims,
+      dyn.order,
+      realPolluterSeams(paths),
+    );
+  }
+  return dyn;
+}
+
+function emit(opts, result, dyn, bl) {
+  if (!opts.json) {
+    const text = renderText(result) + (dyn ? renderConfirm(dyn) : '');
+    console.log(baseline.withBaselineText(text, bl));
+    return;
+  }
+  const payload = {
+    schema_version: SCHEMA_VERSION,
+    findings: result.findings.map(toJson),
+    summary: summary(result),
+  };
+  if (dyn) {
+    payload.dynamic = {
+      status: dyn.status,
+      seed: dyn.seed,
+      victims: dyn.victims,
+      nondeterministic: dyn.nondeterministic,
+      reproduce: dyn.reproduce,
+      ...(dyn.message ? { message: dyn.message } : {}),
+    };
+  }
+  if (bl) payload.baseline = baseline.baselineJson(bl);
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function exitCodeFor(opts, result, dyn, bl) {
+  const victims = (dyn?.victims.length ?? 0) > 0;
+  // Ratchet mode owns the static exit code (#1322); victims stay --strict's.
+  if (bl) return bl.exitCode === 0 && opts.strict && victims ? 1 : bl.exitCode;
+  // Advisory by default (D3); --strict inherits EXIT_ABSTAINED (3) on a
+  // collapsed denominator, distinct from 1 ("found something real").
+  if (opts.strict && !result.filesScanned) return 3;
+  return opts.strict && (result.findings.length > 0 || victims) ? 1 : 0;
+}
+
 export function main(argv = []) {
-  const { positionals: paths, opts, help, error } = parseArgs(argv);
+  const parsed = parseArgs(argv);
+  const { positionals: paths, opts, help } = parsed;
+  const error = parsed.error ?? baseline.baselineFlagError(opts);
 
   // Usage and parse errors resolve before any filesystem work, so `--help`
   // never reports a missing path and a typo never half-runs a scan.
@@ -214,56 +278,14 @@ export function main(argv = []) {
   }
 
   const result = scanPaths(paths);
-
-  let dyn;
-  if (opts.confirm) {
-    const seed = Number.isFinite(opts.seed)
-      ? opts.seed
-      : Math.floor(Math.random() * 1e6);
-    dyn = confirm(paths, { seed });
-    // Phase 3: name the polluter behind each confirmed victim. pytest only -
-    // vitest has no CLI-driven ordered per-test execution, so it gets victim
-    // detection (Phase 2) but not polluter bisection.
-    if (
-      dyn.status === 'ok' &&
-      dyn.victims.length &&
-      dyn.framework === 'pytest'
-    ) {
-      dyn.victims = locatePolluters(
-        dyn.victims,
-        dyn.order,
-        realPolluterSeams(paths),
-      );
-    }
+  const bl = baseline.skillBaseline(CLI_SPEC.prog, opts, result);
+  if (bl?.error) {
+    console.error(`${PREFIX} ${bl.error}`);
+    return EXIT_USAGE;
   }
-
-  if (opts.json) {
-    const payload = {
-      schema_version: SCHEMA_VERSION,
-      findings: result.findings.map(toJson),
-      summary: summary(result),
-    };
-    if (dyn) {
-      payload.dynamic = {
-        status: dyn.status,
-        seed: dyn.seed,
-        victims: dyn.victims,
-        nondeterministic: dyn.nondeterministic,
-        reproduce: dyn.reproduce,
-        ...(dyn.message ? { message: dyn.message } : {}),
-      };
-    }
-    console.log(JSON.stringify(payload, null, 2));
-  } else {
-    console.log(renderText(result) + (dyn ? renderConfirm(dyn) : ''));
-  }
-
-  const hasViolation =
-    result.findings.length > 0 || (dyn?.victims.length ?? 0) > 0;
-  // Advisory by default (D3); --strict inherits EXIT_ABSTAINED (3) on a
-  // collapsed denominator, distinct from 1 ("found something real").
-  if (opts.strict && !result.filesScanned) return 3;
-  return opts.strict && hasViolation ? 1 : 0;
+  const dyn = opts.confirm ? runConfirm(paths, opts) : undefined;
+  emit(opts, result, dyn, bl);
+  return exitCodeFor(opts, result, dyn, bl);
 }
 
 // Direct execution (the skill runner execs this file via its shebang).
