@@ -64,6 +64,7 @@ jobs:
     # the job that kept every fork PR red.
     name: No removed-symbol or proprietary leaks
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       # #1582. `edited` also fires on title/body edits, including edits to a
       # PR that has already merged or closed. Scanning that PR's old head
@@ -124,14 +125,14 @@ jobs:
             fi
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Base ref only (see invariant 1). Full history so that the
           # authorship scan can resolve `origin/<base>`. A shallow clone makes
           # it abstain and fail rather than pass on zero commits.
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
       - name: Fetch the PR head commit as data (never checked out)

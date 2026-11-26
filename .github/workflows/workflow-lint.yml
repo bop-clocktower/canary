@@ -21,8 +21,9 @@ permissions:
 jobs:
   actionlint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The version and the SHA-256 are both pinned. A new actionlint release
       # can add rules, so a release must never turn this job red when nothing
       # in this repo changed. A git tag can be moved, so the tarball is checked
