@@ -78,6 +78,11 @@ interface SkillGateRow {
   command: string;
   /** Success copy that must NEVER appear on a zero denominator. */
   forbid: string[];
+  /**
+   * The CLI's own abstention copy, which MUST appear. Optional: rows whose
+   * abstention is the generic "abstained" line need nothing more (#1739).
+   */
+  require?: string[];
   /** Build the zero-denominator fixture and run the real CLI (advisory). */
   run: (base: string) => { code: number; stdout: string };
   /** The same fixture under `--strict`, which must inherit exit 3. */
@@ -116,6 +121,20 @@ const ROWS: SkillGateRow[] = [
         emptyDiff(base),
         '--strict',
       ]),
+  },
+  {
+    // #1325: a scanned diff and a valid map, but the map carries no
+    // `generated` stamp, so katana cannot tell how much has changed since it
+    // was written. Clock-free on purpose: "undated" holds at any wall time.
+    command: 'canary-katana (undated critical-areas map)',
+    // A dated map's summary says how old it is; an undated one never may.
+    forbid: ['day(s) old (limit'],
+    require: [
+      'Cannot verify critical-areas map freshness',
+      'from a map of unknown age',
+    ],
+    run: (base) => run(katanaMain, undatedMapArgs(base)),
+    strict: (base) => run(katanaMain, [...undatedMapArgs(base), '--strict']),
   },
   {
     // The store exists and parses; it simply holds no run for the branch. That
@@ -313,6 +332,32 @@ function emptyDiff(base: string): string {
   return file;
 }
 
+/** katana argv over a one-line diff and a map with no `generated` stamp. */
+function undatedMapArgs(base: string): string[] {
+  const diff = path.join(base, 'change.diff');
+  fs.writeFileSync(
+    diff,
+    'diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n' +
+      '@@ -1,1 +1,1 @@\n-a\n+b\n',
+    'utf-8',
+  );
+  const map = path.join(base, 'critical-areas.json');
+  fs.writeFileSync(
+    map,
+    JSON.stringify({ areas: [{ path: 'src/billing.ts', risk_score: 0.9 }] }),
+    'utf-8',
+  );
+  return [
+    '--repo',
+    base,
+    '--diff-file',
+    diff,
+    '--no-write',
+    '--critical-areas',
+    map,
+  ];
+}
+
 /** A valid flows.json that declares no flow: zero scenarios to schedule. */
 function emptyFlows(base: string): string {
   const file = path.join(base, 'flows.json');
@@ -350,6 +395,9 @@ describe('gate conformance registry -- skill layer (#508)', () => {
       expect(res.stdout.toLowerCase()).toContain('abstained');
       for (const text of row.forbid) {
         expect(res.stdout).not.toContain(text);
+      }
+      for (const text of row.require ?? []) {
+        expect(res.stdout).toContain(text);
       }
       // Advisory by default: the line is loud, the exit is not (D3).
       expect(res.code).toBe(0);

@@ -16,7 +16,13 @@ import { fileURLToPath } from 'node:url';
 import * as diffscan from '../claude-code/canary-katana/scripts/diffscan.mjs';
 import * as alarm from '../claude-code/canary-katana/scripts/alarm.mjs';
 import * as ledger from '../claude-code/canary-katana/scripts/ledger.mjs';
-import { main } from '../claude-code/canary-katana/scripts/cli.mjs';
+import { main as katanaMain } from '../claude-code/canary-katana/scripts/cli.mjs';
+
+// #1325: katana measures the map's age against a clock. Every run here uses a
+// frozen one, a day after `areasFile`'s `generated`, so no assertion depends
+// on the wall clock (the map-age behaviour itself is canary-katana-freshness).
+const FIXTURE_NOW = () => new Date('2026-07-21T00:00:00Z');
+const main = (argv: string[]) => katanaMain(argv, { now: FIXTURE_NOW });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = path.join(HERE, '..', 'claude-code', 'canary-katana');

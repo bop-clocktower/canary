@@ -74,7 +74,60 @@ export function loadCriticalAreas(filePath) {
       `critical-area file malformed: ${fileErrors.join('; ')}`,
     );
   }
-  return { available: true, areas: [...data.areas], problems, reason: '' };
+  return {
+    available: true,
+    areas: [...data.areas],
+    problems,
+    reason: '',
+    generated: data.generated,
+  };
+}
+
+// --- freshness (#1325) -------------------------------------------------------
+//
+// A map is a snapshot: an area added or reshaped after `generated` can never
+// alarm, so a stale map turns "0 findings" into a claim nobody checked.
+
+export const DEFAULT_MAX_AGE_DAYS = 30;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Strict ISO-8601 (#1739 review): a calendar date, or a date-time with seconds
+// optional and an explicit offset -- what `canary critical-areas` writes.
+// Date.parse alone also takes engine-specific forms ("Nov 1 2026",
+// "2026/11/01", text in parentheses), so readers would disagree on what a map
+// says; anything else is undated. A date-time without an offset is local time
+// and so ambiguous, and is rejected too.
+const ISO_8601 =
+  /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+
+/**
+ * How current a map is, judged against an injected clock. `unknown` (with a
+ * `why`) when `generated` is missing, not a date, or more than a day in the
+ * future: freshness that cannot be verified is reported, never assumed. Under
+ * a day ahead is clock skew and reads as age 0.
+ * `at` is the parsed instant in canonical ISO form -- the only rendering of
+ * the stamp text output may print, since `generated` is author-written.
+ * @returns {{status: 'fresh'|'stale'|'unknown', ageDays: number|null,
+ *            maxAgeDays: number, generated: unknown, at?: string,
+ *            why?: string}}
+ */
+export function mapFreshness(generated, now, maxAgeDays) {
+  const base = { generated: generated ?? null, maxAgeDays };
+  const unknown = (why) => ({ ...base, status: 'unknown', ageDays: null, why });
+  if (generated === undefined || generated === null) {
+    return unknown('it has no `generated` field');
+  }
+  const strict = typeof generated === 'string' && ISO_8601.test(generated);
+  const at = strict ? Date.parse(generated) : NaN;
+  if (Number.isNaN(at)) {
+    return unknown('its `generated` is not an ISO-8601 date');
+  }
+  const elapsed = now.getTime() - at;
+  if (elapsed < -DAY_MS) return unknown('its `generated` is in the future');
+  const ageDays = Math.max(0, Math.floor(elapsed / DAY_MS));
+  const status = ageDays > maxAgeDays ? 'stale' : 'fresh';
+  return { ...base, status, ageDays, at: new Date(at).toISOString() };
 }
 
 const basename = (p) => toPosix(p).split('/').pop() || '';
