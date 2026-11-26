@@ -253,7 +253,7 @@ describe('#1750 release.yml publishes only commits that are on main', () => {
     expect(gate?.shell).toBe('bash');
   });
 
-  it('runs before anything installs, builds, or publishes', () => {
+  it('sits ahead of every install, build, and publish step', () => {
     const first = steps.findIndex(
       (s, i) => i > 0 && (s.uses !== undefined || /\bnpm\b/.test(s.run ?? '')),
     );
