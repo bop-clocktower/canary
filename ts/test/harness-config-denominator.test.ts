@@ -334,6 +334,51 @@ describe('harness.config.json architecture rules govern real files (#543)', () =
       }
     });
   });
+
+  /**
+   * The allowlists say which way an edge may point (#1752). Two layers that
+   * allow each other leave only the file-level cycle check between them and
+   * a real two-way import, so a pair may be mutual only when it is named
+   * here. `adoption` never needed `cli` back: its command file binds to `cli`
+   * (first-match) and nothing else in the domain imports a `*cli*` file.
+   *
+   * `briefing <-> cli` is the one known exception, and it is real, not slack:
+   * `briefing/comment.ts` and `briefing/deliver.ts` import `prContextFromEnv`
+   * and `identityFromEnv` from `guardian/cli.ts` and `jsonIndent2` from
+   * `cli-common.ts`, all of which bind to `cli`. Dropping the edge needs those
+   * helpers moved out of `*cli*` files first (#1760). The list
+   * may shrink; it must never grow.
+   */
+  describe('layer allowlists point one way (#1752)', () => {
+    const KNOWN_MUTUAL = ['briefing <-> cli'];
+    const byName = new Map(LAYERS.map((l) => [l.name, l]));
+    const allows = (from: string, to: string): boolean =>
+      (byName.get(from)?.allowedDependencies ?? []).includes(to);
+
+    it('no two layers allow each other, beyond the named exception', () => {
+      const mutual = LAYERS.flatMap((l) =>
+        (l.allowedDependencies ?? [])
+          .filter((dep) => l.name < dep && allows(dep, l.name))
+          .map((dep) => `${l.name} <-> ${dep}`),
+      );
+      expect(mutual.filter((pair) => !KNOWN_MUTUAL.includes(pair))).toEqual([]);
+    });
+
+    it('adoption does not allow cli; cli allows adoption', () => {
+      expect(byName.has('adoption')).toBe(true);
+      expect(allows('adoption', 'cli')).toBe(false);
+      expect(allows('cli', 'adoption')).toBe(true);
+    });
+
+    // The decision recorded in AGENTS.md: critical-areas reuses guardian's
+    // coverage-report reader (report-tier) rather than a copy in core, so the
+    // edge is declared on the domain layer, not left to the `cli` binding of
+    // critical-areas-cli.ts. guardian must never import it back.
+    it('critical-areas allows guardian, and guardian does not allow critical-areas', () => {
+      expect(allows('critical-areas', 'guardian')).toBe(true);
+      expect(allows('guardian', 'critical-areas')).toBe(false);
+    });
+  });
 });
 
 /**

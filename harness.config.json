@@ -75,12 +75,12 @@
     {
       "name": "adoption",
       "pattern": "ts/src/adoption/**",
-      "allowedDependencies": ["cli", "composition", "core", "ui", "util"]
+      "allowedDependencies": ["composition", "core", "ui", "util"]
     },
     {
       "name": "critical-areas",
       "pattern": "ts/src/critical-areas/**",
-      "allowedDependencies": ["core"]
+      "allowedDependencies": ["guardian", "core"]
     },
     {
       "name": "guardian",
