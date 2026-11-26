@@ -148,6 +148,28 @@ describe('canary vacuity-check --baseline', () => {
     expect(wrong.stderr).toMatch(/canary-savant/);
   });
 
+  it('names the new findings in text mode, capped with a --json pointer', async () => {
+    put('tests/a.test.ts', vacuous('proves nothing'));
+    await run('--update-baseline', 'bl.json');
+    for (let i = 0; i < 22; i++)
+      put(`tests/n${i}.test.ts`, vacuous(`new ${i}`));
+    const res = await run('--baseline', 'bl.json');
+    expect(res.code).toBe(1);
+    expect(res.stdout).toMatch(
+      /NEW {4}tests\/n0\.test\.ts {2}VAC-001 {2}new 0/,
+    );
+    expect(res.stdout).toMatch(/\.\.\. and 2 more \(--json lists all\)/);
+    expect(res.stdout).toMatch(/22 finding\(s\) not in the baseline/);
+  });
+
+  it('errors (exit 2) on a baseline path it cannot read', async () => {
+    put('tests/a.test.ts', vacuous('proves nothing'));
+    mkdirSync(join(home, 'dir.json'));
+    const res = await run('--baseline', 'dir.json');
+    expect(res.code).toBe(2);
+    expect(res.stderr).toMatch(/dir\.json is unreadable/);
+  });
+
   it('rejects contradictory flags as a usage error', async () => {
     put('tests/a.test.ts', vacuous('proves nothing'));
     const both = await run('--baseline', 'a', '--update-baseline', 'b');
