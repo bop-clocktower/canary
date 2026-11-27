@@ -1,5 +1,6 @@
 /** Builds the evidence pack from source reports (#855). Pure given a catalogue. */
 
+import { loadCatalogue } from './sources.js';
 import type {
   CatalogueRow,
   EvidencePack,
@@ -20,7 +21,7 @@ function withoutItems(source: SourceReport): Omit<SourceReport, 'items'> {
 export function buildPack(
   sources: SourceReport[],
   scope: Scope,
-  catalogue: CatalogueRow[],
+  catalogue: CatalogueRow[] = loadCatalogue(),
 ): EvidencePack {
   const controlsFor = (source: SourceReport['id']): string[] =>
     catalogue.filter((c) => c.sources.includes(source)).map((c) => c.id);
