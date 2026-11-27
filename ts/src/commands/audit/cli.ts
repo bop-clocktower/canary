@@ -13,6 +13,7 @@ import { buildBatwomanCommand } from '../../batwoman-cli.js';
 import { buildRewindCommand } from '../../rewind/rewind-cli.js';
 import { buildOrderCommand } from '../../order/order-cli.js';
 import { buildCriticalAreasCommand } from '../../critical-areas/critical-areas-cli.js';
+import { buildEvidenceCommand } from '../../evidence/cli.js';
 import type { MainDeps } from '../../main-deps.js';
 
 export const AUDIT_COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
@@ -20,4 +21,5 @@ export const AUDIT_COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
   (deps) => buildRewindCommand(deps),
   (deps) => buildOrderCommand(deps),
   (deps) => buildCriticalAreasCommand(deps),
+  (deps) => buildEvidenceCommand(deps),
 ];

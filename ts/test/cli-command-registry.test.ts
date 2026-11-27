@@ -58,6 +58,7 @@ const EXPECTED_COMMANDS = [
   'rewind',
   'order',
   'critical-areas',
+  'evidence',
   'scaling-curve',
   'permission-matrix',
   'ci-ready',

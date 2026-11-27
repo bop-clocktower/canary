@@ -528,6 +528,25 @@ const ROWS: GateRow[] = [
     // #1529: not a git repository -> zero files to rank, and nothing written.
     run: (base) => invokeCanary(['critical-areas', '--root', base]),
   },
+  {
+    // #855: no source holds a record, so the pack lists six controls and no
+    // evidence. It is still written, but an "evidence: N" line here would be a
+    // count of nothing.
+    command: 'evidence export (root holding none of its four sources)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['evidence: '],
+    run: (base) =>
+      invokeCanary([
+        'evidence',
+        'export',
+        '--since',
+        '2026-01-01',
+        '--root',
+        base,
+      ]),
+  },
 ];
 
 describe('gate conformance registry (#508)', () => {
