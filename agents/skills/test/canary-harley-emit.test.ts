@@ -147,7 +147,10 @@ describe('canary-harley emit: planEmit', () => {
     const first = idOf(proposal, 'round-trip', 'encodeToken');
     const second = idOf(proposal, 'idempotence', 'normalizeSlug');
     const hex = createHash('sha256').update(first).digest('hex');
-    const derived = parseInt(hex.slice(0, 8), 16);
+    // 31 bits: fast-check prints a seed outside the int32 range differently
+    // from the one recorded in the file, and the two must match.
+    const derived = parseInt(hex.slice(0, 8), 16) >>> 1;
+    expect(derived).toBeLessThanOrEqual(0x7fffffff);
     const byDefault = plan(proposal, { ids: [first] });
     expect(byDefault.files[0].text).toContain(`const SEED = ${derived};\n`);
     expect(byDefault.files[0].text).toContain('const NUM_RUNS = 100;\n');

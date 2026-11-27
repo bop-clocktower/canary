@@ -112,7 +112,7 @@ function roundTrip(sig, all) {
 
 function determinism(sig) {
   const result = call(sig, argNames(sig));
-  const statement = `${result} returns the same result for the same input`;
+  const statement = `${result} gives the same result, or the same error, for the same input`;
   return [single('determinism', sig, statement)];
 }
 

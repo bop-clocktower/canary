@@ -24,9 +24,26 @@ const BODIES = {
     `expect(${f}(${a})).toHaveLength(${a}.length);`,
   'total-predicate': ([f], args) =>
     `expect(typeof ${f}(${args.join(', ')})).toBe('boolean');`,
-  determinism: ([f], args) =>
-    `expect(${f}(${args.join(', ')})).toEqual(${f}(${args.join(', ')}));`,
+  determinism: ([f], args) => [
+    `const first = outcome(() => ${f}(${args.join(', ')}));`,
+    `expect(outcome(() => ${f}(${args.join(', ')}))).toEqual(first);`,
+  ],
 };
+
+// A function that throws on some input is still deterministic when it throws
+// the same error twice, so determinism compares outcomes, not return values.
+const OUTCOME = [
+  'const outcome = (run: () => unknown) => {',
+  '  try {',
+  '    return { value: run() };',
+  '  } catch (error) {',
+  '    return { threw: String(error) };',
+  '  }',
+  '};',
+  '',
+];
+
+const PRELUDES = { determinism: OUTCOME };
 
 /** `a`, `b`, `c` by position. */
 const argNames = (sig) =>
@@ -74,7 +91,7 @@ function testBlock(spec) {
     "  it('holds for generated inputs', () => {",
     '    fc.assert(',
     `      fc.property(${generators.join(', ')}, (${args.join(', ')}) => {`,
-    `        ${body}`,
+    ...[body].flat().map((line) => `        ${line}`),
     '      }),',
     '      { seed: SEED, numRuns: NUM_RUNS },',
     '    );',
@@ -95,6 +112,7 @@ export function renderFastCheck(spec) {
     '',
     ...constants(spec),
     '',
+    ...(PRELUDES[spec.candidate.kind] ?? []),
     ...testBlock(spec),
   ];
   return `${lines.join('\n')}\n`;

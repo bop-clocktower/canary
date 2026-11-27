@@ -243,14 +243,33 @@ describe('canary-harley emit: renderFastCheck', () => {
       'expect(sortScores(a)).toHaveLength(a.length);',
     ],
     ['total-predicate', 'isSlug', "expect(typeof isSlug(a)).toBe('boolean');"],
-    [
-      'determinism',
-      'mergeCounts',
-      'expect(mergeCounts(a, b)).toEqual(mergeCounts(a, b));',
-    ],
   ])('writes the %s body', (kind, fn, line) => {
     const out = renderFastCheck(specOf(TS_PROPOSAL, kind, fn));
     expect(out.split('\n').map((l) => l.trim())).toContain(line);
+    expect(out).not.toContain('outcome');
+  });
+
+  // A parser that throws on bad input is still deterministic. Comparing the
+  // two calls directly would fail on the first throw, for a reason unrelated
+  // to the invariant, so both outcomes are captured and compared.
+  it('compares outcomes for determinism, so a repeated throw passes', () => {
+    const out = renderFastCheck(
+      specOf(TS_PROPOSAL, 'determinism', 'mergeCounts'),
+    );
+    expect(out).toContain(
+      'const outcome = (run: () => unknown) => {\n' +
+        '  try {\n' +
+        '    return { value: run() };\n' +
+        '  } catch (error) {\n' +
+        '    return { threw: String(error) };\n' +
+        '  }\n' +
+        '};\n',
+    );
+    const lines = out.split('\n').map((l) => l.trim());
+    expect(lines).toContain('const first = outcome(() => mergeCounts(a, b));');
+    expect(lines).toContain(
+      'expect(outcome(() => mergeCounts(a, b))).toEqual(first);',
+    );
   });
 
   it('generates one argument per parameter', () => {
@@ -350,14 +369,27 @@ describe('canary-harley emit: renderHypothesis', () => {
       'assert len(sort_scores(a)) == len(a)',
     ],
     ['total-predicate', 'is_slug', 'assert isinstance(is_slug(a), bool)'],
-    [
-      'determinism',
-      'merge_counts',
-      'assert merge_counts(a, b) == merge_counts(a, b)',
-    ],
   ])('writes the %s body', (kind, fn, line) => {
     const out = renderHypothesis(specOf(PY_PROPOSAL, kind, fn));
     expect(out.split('\n').map((l) => l.trim())).toContain(line);
+    expect(out).not.toContain('_outcome');
+  });
+
+  it('compares outcomes for determinism, so a repeated raise passes', () => {
+    const out = renderHypothesis(
+      specOf(PY_PROPOSAL, 'determinism', 'merge_counts'),
+    );
+    expect(out).toContain(
+      'def _outcome(run):\n' +
+        '    try:\n' +
+        '        return ("value", run())\n' +
+        '    except Exception as error:\n' +
+        '        return ("raised", type(error).__name__, str(error))\n',
+    );
+    expect(out).toContain(
+      '    first = _outcome(lambda: merge_counts(a, b))\n' +
+        '    assert _outcome(lambda: merge_counts(a, b)) == first\n',
+    );
   });
 
   it('generates one keyword argument per parameter', () => {

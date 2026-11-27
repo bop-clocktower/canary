@@ -12,9 +12,11 @@ import { renderHypothesis } from './emit-hypothesis.mjs';
 
 const RENDERERS = { typescript: renderFastCheck, python: renderHypothesis };
 
-/** The first 8 hex digits of SHA-256 of the id, read as an integer. */
+// The first 31 bits of SHA-256 of the id. 31, not 32: fast-check reports a
+// seed outside the int32 range as a different number, and the seed a failing
+// run prints must be the one recorded in the file.
 const derivedSeed = (id) =>
-  parseInt(createHash('sha256').update(id).digest('hex').slice(0, 8), 16);
+  parseInt(createHash('sha256').update(id).digest('hex').slice(0, 8), 16) >>> 1;
 
 /**
  * @param {string} lang `typescript` or `python`

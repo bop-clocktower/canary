@@ -23,9 +23,25 @@ const BODIES = {
   'length-preserving': ([f], [a]) => `assert len(${f}(${a})) == len(${a})`,
   'total-predicate': ([f], args) =>
     `assert isinstance(${f}(${args.join(', ')}), bool)`,
-  determinism: ([f], args) =>
-    `assert ${f}(${args.join(', ')}) == ${f}(${args.join(', ')})`,
+  determinism: ([f], args) => [
+    `first = _outcome(lambda: ${f}(${args.join(', ')}))`,
+    `assert _outcome(lambda: ${f}(${args.join(', ')})) == first`,
+  ],
 };
+
+// A function that raises on some input is still deterministic when it raises
+// the same error twice, so determinism compares outcomes, not return values.
+const OUTCOME = [
+  'def _outcome(run):',
+  '    try:',
+  '        return ("value", run())',
+  '    except Exception as error:',
+  '        return ("raised", type(error).__name__, str(error))',
+  '',
+  '',
+];
+
+const PRELUDES = { determinism: OUTCOME };
 
 /** `a`, `b`, `c` by position. */
 const argNames = (sig) =>
@@ -80,7 +96,9 @@ function testBlock(spec) {
     '@settings(max_examples=MAX_EXAMPLES, database=None, deadline=None)',
     `@given(${given.join(', ')})`,
     `def test_${name}(${args.join(', ')}):`,
-    `    ${BODIES[candidate.kind](candidate.functions, args)}`,
+    ...[BODIES[candidate.kind](candidate.functions, args)]
+      .flat()
+      .map((line) => `    ${line}`),
   ];
 }
 
@@ -97,6 +115,7 @@ export function renderHypothesis(spec) {
     ...constants(spec),
     '',
     '',
+    ...(PRELUDES[spec.candidate.kind] ?? []),
     ...testBlock(spec),
   ];
   return `${lines.join('\n')}\n`;

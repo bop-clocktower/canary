@@ -105,6 +105,9 @@ project.
 A `round-trip` pair whose two types are equal is proposed only when a name pair
 matches. Without that rule every two string functions would qualify.
 
+A `determinism` test compares outcomes, not return values: a parser that throws
+the same error for the same bad input twice is deterministic, and passes.
+
 ## Safety properties
 
 - **File-derived text is inert.** Type text, paths and command-line values are
@@ -140,8 +143,10 @@ Every generated file fixes its seed and run count as named constants (`SEED`,
 the framework (`fc.assert(..., { seed: SEED, numRuns: NUM_RUNS })` or
 `@seed(SEED)`). An unseeded generator is a flake source.
 
-- The default seed is the first 8 hex digits of SHA-256 of the candidate id,
-  read as an integer. It is stable across runs and differs between tests.
+- The default seed is the first 31 bits of SHA-256 of the candidate id. It is
+  stable across runs and differs between tests. It stays inside the int32 range
+  so the seed fast-check prints on a failure is the one in the file; a larger
+  `--seed` still runs, but fast-check reports it as a different number.
 - `--seed N` overrides it for every id in one `emit` call.
 - Hypothesis output sets `database=None` and `deadline=None`. The example
   database and the timing deadline both vary between runs.
