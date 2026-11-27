@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { main } from '../claude-code/canary-harley/scripts/cli.mjs';
 import { planEmit } from '../claude-code/canary-harley/scripts/emit.mjs';
 import { buildProposal } from '../claude-code/canary-harley/scripts/proposal.mjs';
+import { renderTest } from '../claude-code/canary-harley/scripts/render-test.mjs';
 
 const CODEC_TS = `export function encodeToken(text: string): Uint8Array {
   return new TextEncoder().encode(text);
@@ -493,5 +494,35 @@ describe('canary-harley cli: emit', () => {
     expect(r.code).toBe(3);
     expect(r.stderr).toContain('cannot read');
     expect(fs.readdirSync(root)).toEqual([]);
+  });
+});
+
+describe('canary-harley render-test: the seed in one generated test', () => {
+  const shared = { importPath: '../../../src/codec', stem: 'codec', runs: 50 };
+
+  it('derives a stable 31-bit seed that differs between candidates', () => {
+    const proposal = tsProposal();
+    const [first, second] = proposal.candidates;
+    const seedOf = (candidate: (typeof proposal.candidates)[number]) => {
+      const text = renderTest('typescript', proposal, candidate, {
+        ...shared,
+        seed: null,
+      });
+      return Number(/const SEED = (\d+);/.exec(text)?.[1]);
+    };
+    expect(seedOf(first)).toBe(seedOf(first));
+    expect(seedOf(first)).not.toBe(seedOf(second));
+    expect(seedOf(first)).toBeLessThanOrEqual(0x7fffffff);
+    expect(Number.isInteger(seedOf(second))).toBe(true);
+  });
+
+  it('writes a given seed as it is, zero included', () => {
+    const proposal = tsProposal();
+    const text = renderTest('typescript', proposal, proposal.candidates[0], {
+      ...shared,
+      seed: 0,
+    });
+    expect(text).toContain('const SEED = 0;\n');
+    expect(text).toContain('const NUM_RUNS = 50;\n');
   });
 });

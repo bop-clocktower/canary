@@ -421,3 +421,33 @@ describe('canary-harley signatures: JavaScript', () => {
     ]);
   });
 });
+
+// The names come from the engine's extractor, which yields identifiers. The
+// reader must still treat a name as text, never as a pattern: a name with a
+// regex character must not match another function, and must not throw.
+describe('canary-harley signatures: a name is text, not a pattern', () => {
+  const TS =
+    'export function encode(text: string): string {\n  return text;\n}\n';
+  const PY = 'def encode(text: str) -> str:\n    return text\n';
+
+  it.each([
+    ['typescript', TS, 'enc.de'],
+    ['typescript', TS, 'en\\w+'],
+    ['typescript', TS, 'encode|x'],
+    ['typescript', TS, 'a(b'],
+    ['python', PY, 'enc.de'],
+    ['python', PY, 'en\\w+'],
+    ['python', PY, 'encode|x'],
+    ['python', PY, 'a(b'],
+  ] as const)('%s: %s does not read %s as a pattern', (lang, source, name) => {
+    const result = readSignatures(source, lang, [name]);
+    expect(result.signatures).toEqual([]);
+  });
+
+  it('still reads a name that holds a dollar sign', () => {
+    const source =
+      'export function (text: string): string {\n  return text;\n}\n';
+    const result = readSignatures(source, 'typescript', ['']);
+    expect(result.signatures).toHaveLength(1);
+  });
+});

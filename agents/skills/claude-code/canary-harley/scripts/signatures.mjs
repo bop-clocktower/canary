@@ -32,8 +32,12 @@ export function langOf(file) {
   return LANGS.get(path.extname(file).toLowerCase()) ?? null;
 }
 
-/** `$` is the one identifier character a regex reads as syntax. */
-const escapeName = (name) => name.replace(/\$/g, '\\$');
+/**
+ * A name is matched as text. The extractor yields identifiers, where `$` is
+ * the one character a regex reads as syntax, but every such character is
+ * escaped (the backslash included) so no name can act as a pattern.
+ */
+const escapeName = (name) => name.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
 
 // Indent, then an optional `export`: groups 1 and 2 of both patterns.
 const TS_HEAD = '^([ \\t]*)(export\\s+)?';
@@ -133,7 +137,7 @@ const TS_READER = {
  */
 function findPyDeclarations(source, name) {
   const pattern = new RegExp(
-    `^([ \\t]*)(async\\s+)?def\\s+${name}\\s*\\(`,
+    `^([ \\t]*)(async\\s+)?def\\s+${escapeName(name)}\\s*\\(`,
     'gm',
   );
   return [...source.matchAll(pattern)]
