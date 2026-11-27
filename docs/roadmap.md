@@ -167,8 +167,8 @@ last_manual_edit: 2026-11-24T20:33:52.210Z
 
 ### canary dev-pipeline orchestrator for dev-time skills
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** planned
+- **Spec:** docs/changes/666-canary-dev-pipeline/proposal.md
 - **Summary:** Add an advisory dev pipeline that orchestrates the Canary skills useful while writing code (edge-case discovery, gap analysis), alongside the validation-shaped canary-test-pipeline and never acting as a gate.
 - **Blockers:** —
 - **Plan:** —
