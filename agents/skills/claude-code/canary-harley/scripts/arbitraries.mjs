@@ -21,7 +21,7 @@ const hex = (code, width) => code.toString(16).padStart(width, '0');
  * @param {boolean} [wide] write astral characters as Python's `\UXXXXXXXX`
  * @returns {string}
  */
-export function quote(text, wide = false) {
+function quote(text, wide = false) {
   // JSON.stringify escapes quotes, backslashes, control characters and lone
   // surrogates; a well-formed pair is left raw and is rewritten here.
   const json = JSON.stringify(text);
