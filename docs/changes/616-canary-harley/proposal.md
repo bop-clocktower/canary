@@ -139,6 +139,45 @@ recommended option and is recorded in `provenance.json`.
 | Emit for untyped JavaScript?                                  | No, propose only (D10)                                    |
 | Resolve same-file interfaces and aliases in this slice?       | No. Named as unresolved; a follow-up can add the resolver |
 
+### Amendments after review
+
+Review and a real run of the generated tests changed the shipped behaviour in
+these places. The decisions above are kept as first written.
+
+- **A1 (layout).** Twenty-two script modules, not eleven. Each stays under 300
+  lines and cyclomatic complexity 10, and `proposal.mjs` and `emit.mjs` were
+  split (`derive`, `failure`, `out-dir`, `targets`, `render-test`, `write-plan`)
+  so no module but the CLI entry trips the coupling rule. The guide's module map
+  lists all of them.
+- **A2 (D12).** Exit 1 exists: an output file (`--json-out`, or a generated
+  test) could not be written. It is the skill family's runtime-failure code.
+- **A3 (injection).** Text taken from the analysed file, its path or the command
+  line is printed as one inert line: in the markdown proposal (every string of
+  the proposal goes through `safe()` before a line is built), in the `abstained`
+  reason, in every `emit` refusal, and in every stderr line, which the CLI
+  writes through one helper. The JSON output keeps raw values as escaped JSON
+  strings; nothing renders it as markdown.
+- **A4 (generated code).** Text reaches a generated test only as an escaped
+  string literal, a one-line comment, or a name checked to be an identifier.
+  `emit` exits 2 without writing when the source path or `--out-dir` holds a
+  control character.
+- **A5 (`--json-out`).** The path is the operator's and is not contained,
+  matching `canary-sweep`, `canary-starling` and `canary-question`. Only
+  `--out-dir` is contained (D11).
+- **A6 (D11).** The write is all-or-nothing: files are staged beside their
+  targets, moved into place together, and rolled back on failure. A backup an
+  interrupted run left behind is dropped before staging and never restored.
+- **A7 (D9).** The derived seed is the first 31 bits of SHA-256 of the id,
+  not 32. fast-check reports a seed outside the int32 range as a different
+  number, and the seed a failing run prints must be the one recorded in the
+  file.
+- **A8 (`determinism`).** The generated test compares outcomes (the value, or
+  the error thrown), not return values. Run against a parser that throws on bad
+  input, the first version failed for a reason unrelated to the invariant.
+- **A9 (D13).** The generated tests were executed once by hand, outside CI, in a
+  scratch project with `fast-check`, `vitest`, `hypothesis` and `pytest`
+  installed. CI still checks syntax only.
+
 ## Technical design
 
 ### Layout

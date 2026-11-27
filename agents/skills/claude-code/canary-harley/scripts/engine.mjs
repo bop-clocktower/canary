@@ -48,6 +48,15 @@ export function engineCandidates(root = ROOT, env = process.env) {
 
 const failure = (error) => ({ ok: false, error });
 
+/** The engine module, or null when importing it throws. */
+async function importEngine(dir) {
+  try {
+    return await import(pathToFileURL(path.join(dir, MODULE)).href);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * @param {string[]} [candidates] directories to try, in order
  * @returns {Promise<{ ok: boolean, dir?: string, error?: string,
@@ -64,7 +73,13 @@ export async function loadEngine(candidates = engineCandidates()) {
         `Tried: ${candidates.join(', ')}. ${FIX}`,
     );
   }
-  const engine = await import(pathToFileURL(path.join(dir, MODULE)).href);
+  const engine = await importEngine(dir);
+  if (engine === null) {
+    return failure(
+      `the engine at ${dir} could not be loaded, so no function list was ` +
+        `read. ${FIX}`,
+    );
+  }
   if (typeof engine.extractFileFunctions !== 'function') {
     return failure(
       `the engine at ${dir} does not export extractFileFunctions, so no ` +

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { main } from '../claude-code/canary-harley/scripts/cli.mjs';
+import { loadEngine } from '../claude-code/canary-harley/scripts/engine.mjs';
 import { buildProposal } from '../claude-code/canary-harley/scripts/proposal.mjs';
 import { safe } from '../claude-code/canary-harley/scripts/safe.mjs';
 import { writePlan } from '../claude-code/canary-harley/scripts/write-plan.mjs';
@@ -66,7 +67,7 @@ function writeSource(relative: string, text: string): string {
 }
 
 /** Call `main` and capture what it prints. */
-async function run(argv: string[]) {
+async function run(argv: string[], deps: { engineDirs?: string[] } = {}) {
   const out: string[] = [];
   const err: string[] = [];
   vi.spyOn(console, 'log').mockImplementation(
@@ -79,7 +80,7 @@ async function run(argv: string[]) {
     out.push(String(chunk));
     return true;
   });
-  const code = await main(argv);
+  const code = await main(argv, deps);
   vi.mocked(console.log).mockRestore();
   vi.mocked(console.error).mockRestore();
   vi.mocked(process.stdout.write).mockRestore();
@@ -289,5 +290,35 @@ describe('canary-harley hardening: error lines stay inert', () => {
     const source = fs.readFileSync(CLI, 'utf8');
     expect(source.match(/console\.error\(/g)).toHaveLength(1);
     expect(source).toMatch(/console\.error\(`\$\{PROG\}: \$\{safe\(/);
+  });
+});
+
+describe('canary-harley hardening: a broken engine and odd file names', () => {
+  it('abstains, and does not throw, when the engine module cannot load', async () => {
+    const dir = path.join(root, 'engine');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'mcp-server.js'), 'export const = ;\n');
+    const loaded = await loadEngine([dir]);
+    expect(loaded.ok).toBe(false);
+    expect(loaded.error).toContain('could not be loaded');
+    expect(loaded.error).toContain(dir);
+    const file = writeSource('src/codec.ts', CODEC_TS);
+    const r = await run(['propose', file, '--root', root], {
+      engineDirs: [dir],
+    });
+    expect(r.code).toBe(3);
+    expect(r.stdout).toBe('');
+    expect(r.stderr.trimEnd().split('\n')).toHaveLength(1);
+  });
+
+  it('prints the written path as inert text', async () => {
+    const name = 'co' + TICK + 'dec';
+    const file = writeSource('src/' + name + '.ts', CODEC_TS);
+    const ids = await proposedIds(file);
+    const r = await run(['emit', file, '--root', root, '--confirm', ids[0]]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toContain(TICK);
+    expect(r.stdout).toContain('wrote tests/generated/property/co');
+    expect(listing(path.join(root, 'tests'))).toHaveLength(1);
   });
 });

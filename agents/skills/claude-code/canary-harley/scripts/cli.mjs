@@ -190,7 +190,7 @@ async function emit(opts, file, ctx) {
   const outDir = path.dirname(plan.files[0].path);
   if (writeFailed(outDir, () => writePlan(plan.files))) return EXIT_FAILED;
   const wrote = plan.files.map(
-    (written) => `wrote ${displayPath(written.path, loaded.root)}`,
+    (written) => `wrote ${safe(displayPath(written.path, loaded.root))}`,
   );
   console.log([...wrote, NEXT_STEPS].join('\n'));
   return 0;

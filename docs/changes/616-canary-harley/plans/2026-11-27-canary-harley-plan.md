@@ -142,7 +142,7 @@ No human was available. Each fork below took the recommended option.
   new dependency and no lockfile change.
 - Registration lists are append-only. If another lane added a row first, keep
   both.
-- Work only in `/Users/bs/Github/canary-616`.
+- Work only in `<repo>`.
 
 ## File Map
 
@@ -239,8 +239,7 @@ clampLevel, isSlug.
 
 ## Tasks
 
-Every code task runs this loop. Paths are relative to
-`/Users/bs/Github/canary-616`.
+Every code task runs this loop. Paths are relative to `<repo>`.
 
 1. Write the test cases into the named test file.
 2. Run `cd agents/skills && npx vitest run test/<file>` and see it fail for the
@@ -1118,13 +1117,12 @@ integration
 integration
 
 Run each ratchet the way `.github/workflows/harness-quality.yml` and
-`harness.yml` do. `BASE` is
-`/private/tmp/claude-501/-Users-bs-Github-canary/8440812d-6183-4961-8c60-ceb3d4a8cda4/scratchpad/lane-616/base`;
-`OUT` is its parent directory. `VER` is `harness --version | tail -n 1`
-(expected 14.1.1, the version the baselines record).
+`harness.yml` do. `BASE` is `<scratch>/lane-616/base`; `OUT` is its parent
+directory. `VER` is `harness --version | tail -n 1` (expected 14.1.1, the
+version the baselines record).
 
 1. Create the base worktree and run the four ratchets from the worktree root
-   (`ROOT=/Users/bs/Github/canary-616`):
+   (`ROOT=<repo>`):
 
    ```bash
    git -C "$ROOT" worktree add --detach "$BASE" ea020e5e
