@@ -2,6 +2,9 @@
 
 import type { EvidencePack } from './types.js';
 
+/** Items listed per source (D11); the JSON carries all of them. */
+const ITEM_CAP = 25;
+
 /** Source text is untrusted: keep it on one line and out of table syntax. */
 const cell = (text: string): string =>
   text.replace(/[\u0000-\u001F\u007F]+/g, ' ').replace(/\|/g, '\\|');
@@ -39,6 +42,22 @@ function controlsTable(pack: EvidencePack): string[] {
   return table(head, rows);
 }
 
+function sourceSection(pack: EvidencePack, id: string): string[] {
+  const items = pack.items.filter((item) => item.source === id);
+  if (items.length === 0)
+    return [`### ${id}`, '', 'No items in the window.', ''];
+  const shown = items.slice(0, ITEM_CAP).map((item) => {
+    const { kind, id: refId, commit, url } = item.ref;
+    const sha = commit === undefined ? '' : `, commit \`${cell(commit)}\``;
+    const link = url === undefined ? '' : ` ([commit](${url}))`;
+    return `- ${item.at}: ${cell(item.summary)} (${kind} \`${cell(refId)}\`${sha})${link}`;
+  });
+  const more = items.length - shown.length;
+  const tail =
+    more > 0 ? [`${more} more item(s) are in evidence-pack.json.`, ''] : [];
+  return [`### ${id}`, '', ...shown, '', ...tail];
+}
+
 export function renderMarkdown(pack: EvidencePack): string {
   const { since, until } = pack.window;
   const lines = [
@@ -48,6 +67,8 @@ export function renderMarkdown(pack: EvidencePack): string {
     ...sourcesTable(pack),
     '## Controls\n',
     ...controlsTable(pack),
+    '## Evidence by source\n',
+    ...pack.sources.flatMap((s) => sourceSection(pack, s.id)),
   ];
   return `${lines.join('\n').trimEnd()}\n`;
 }
