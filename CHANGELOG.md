@@ -14,6 +14,19 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary evidence export --since <date>` writes a control-mapped audit
+  evidence pack (#855).** It reads saved `canary batwoman --json` reports, the
+  katana ledger, the run-history store and the `ci-ready` score for a time
+  window, and writes `evidence-pack.json` and `evidence-pack.md`. Each item is
+  mapped to the NIST SP 800-40, ISO/IEC 27001, CIS and SOC 2 controls it
+  supports and names the commit, run or ledger entry it came from. A control
+  with no evidence prints `NO EVIDENCE`, and a source that is missing or cannot
+  be read is listed with the reason. The pack is an aid, not an attestation: it
+  counts evidence and never grades it. See the
+  [guide](docs/guides/audit-evidence-export.md).
+
 ## [10.0.0] - 2026-11-26
 
 A major release. It comes from a cross-dimensional audit of the repo: several

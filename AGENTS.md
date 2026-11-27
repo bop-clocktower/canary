@@ -154,7 +154,7 @@ remote deletion is a human act. Worktree pruning waits for #889.
   `recommend`, `frameworks`, `feedback`, `run`, `init`, `migrate`, `setup`,
   `skills list`, `env-setup` (alias for `setup`), `version`, `review-test`,
   `flake-check`, `heal-test`, `vacuity-check`, `promote-check`, `ci-ready`,
-  `inventory`, `gen-data`, `php floor`, `php audit`.
+  `inventory`, `gen-data`, `php floor`, `php audit`, `evidence export`.
 
 ### Core Services (`ts/src/core/`)
 
