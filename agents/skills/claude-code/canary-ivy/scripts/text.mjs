@@ -1,0 +1,60 @@
+// text -- the one escaping helper canary-ivy routes every input value through.
+//
+// Test names, file paths, fixture bodies, coverage keys and history fields are
+// text a hostile branch controls. Before any of it reaches Markdown, JSON,
+// stdout or stderr it passes through `plain` (JSON, terminal) or `md`
+// (Markdown), so a value can never add a report line, emit a terminal escape,
+// forge a link or a table cell, or flood the output (spec D10).
+//
+// Source stays ASCII: every special character is written as an escape.
+
+/** Default clamp, in code points. */
+export const MAX_TEXT = 160;
+
+// CSI (ESC [ ... final), OSC (ESC ] ... BEL or ESC \), then any other
+// two-byte ESC sequence.
+const ANSI =
+  /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|\u001b[@-_]/g;
+
+// C0, DEL, C1, Unicode line/paragraph separators and bidi controls.
+const CONTROL =
+  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+// Markdown metacharacters that can start emphasis, code, links, headings,
+// HTML, tables or entities mid-line. Dots and hyphens only matter at the start
+// of a line, and ivy never starts a line with a value.
+const MD_META = /[\\`*_[\]()#+!|<>~{}&]/g;
+
+function clamp(text, max) {
+  const points = [...text];
+  if (points.length <= max) return text;
+  return points.slice(0, Math.max(0, max - 3)).join('') + '...';
+}
+
+/**
+ * One line of inert text: no escape sequence, no control character, no line
+ * break, at most `max` code points.
+ *
+ * @param {unknown} value
+ * @param {number} [max]
+ * @returns {string}
+ */
+export function plain(value, max = MAX_TEXT) {
+  const text = String(value ?? '')
+    .replace(ANSI, '')
+    .replace(CONTROL, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clamp(text, max);
+}
+
+/**
+ * `plain`, then Markdown-escaped, for any value that lands in Markdown.
+ *
+ * @param {unknown} value
+ * @param {number} [max]
+ * @returns {string}
+ */
+export function md(value, max = MAX_TEXT) {
+  return plain(value, max).replace(MD_META, '\\$&');
+}

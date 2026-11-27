@@ -65,11 +65,11 @@ last_manual_edit: 2026-11-24T20:33:52.210Z
 
 ### canary-ivy — suite overgrowth and pruning
 
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Ideation rank 10 (score 2.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Detect metastasized suites: duplicated fixtures, tests covering nothing not already covered, and runtime creep over time. PREMISE NEEDS RESHAPING BEFORE SPEC - the objection is severe enough to invalidate the current framing. Accepted risk to handle in spec: recommending test DELETION is the most dangerous advice a test tool can give, because a "redundant by coverage" test may be the only one asserting the behavior that breaks - line coverage does not capture assertion intent, and this directly contradicts canary's own target problem (coverage overlap is not equivalent proof). Reframe toward runtime/duplication reporting without deletion recommendations, or drop. Medium effort / medium confidence. Next: reshape premise, then /harness:brainstorming.
+- **Status:** done
+- **Spec:** docs/changes/615-canary-ivy/proposal.md
+- **Summary:** Ideation rank 10 (score 2.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Detect metastasized suites: duplicated fixtures, tests covering nothing not already covered, and runtime creep over time. PREMISE NEEDS RESHAPING BEFORE SPEC - the objection is severe enough to invalidate the current framing. Accepted risk to handle in spec: recommending test DELETION is the most dangerous advice a test tool can give, because a "redundant by coverage" test may be the only one asserting the behavior that breaks - line coverage does not capture assertion intent, and this directly contradicts canary's own target problem (coverage overlap is not equivalent proof). Reframe toward runtime/duplication reporting without deletion recommendations, or drop. Medium effort / medium confidence. Premise reshaped by ADR 0039 (report only, never a deletion recommendation); shipped as the report-only canary-ivy skill.
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/615-canary-ivy/plans/2026-11-27-canary-ivy-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#615
 
