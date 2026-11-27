@@ -211,22 +211,20 @@ automatically (A12)._
 
 Conventions for every task:
 
-- Work only in `/Users/bs/Github/canary-855`. Use absolute paths.
+- Work only in `<repo>`. Use absolute paths.
 - Write each file exactly as given. The code is already formatted for prettier
   (single quotes, 80 columns, trailing commas).
 - When a step inserts a block above a declaration or appends one to a file,
   leave one blank line between the block and its neighbour.
 - Every `npx vitest`, `npx prettier` and `npm run` command in Tasks 1 to 9 runs
-  from `/Users/bs/Github/canary-855/ts`. A test command has the form
-  `cd /Users/bs/Github/canary-855/ts && npx vitest run test/<file>`.
+  from `<repo>/ts`. A test command has the form
+  `cd <repo>/ts && npx vitest run test/<file>`.
 - If `prettier --check` reports a file, run `npx prettier --write` on that file
   only, then check again.
-- `harness validate` and `harness check-deps` run from the repo root,
-  `/Users/bs/Github/canary-855`.
-- Commit only the task's files: `git -C /Users/bs/Github/canary-855 add` with
-  the paths listed in the task header, then `git commit -m` with the message
-  given. No co-author trailer. Never `--no-verify`. If a hook fails, fix the
-  cause.
+- `harness validate` and `harness check-deps` run from the repo root, `<repo>`.
+- Commit only the task's files: `git -C <repo> add` with the paths listed in the
+  task header, then `git commit -m` with the message given. No co-author
+  trailer. Never `--no-verify`. If a hook fails, fix the cause.
 - Test files must not call `new Date()` with no argument or `Date.now()`.
   Fixtures are synthetic (`acme/widgets`, `Sam Example`).
 
@@ -357,8 +355,7 @@ export interface EvidencePack {
 }
 ```
 
-**Step 3.** Run `cd /Users/bs/Github/canary-855/ts && npm run typecheck`. Expect
-no errors.
+**Step 3.** Run `cd <repo>/ts && npm run typecheck`. Expect no errors.
 
 **Step 4.** Run `npx prettier --check src/analysis/evidence/types.ts`.
 
@@ -2854,10 +2851,10 @@ edit `harness.config.json`.
 **Step 1.** Four gates, from `ts/`:
 
 ```bash
-cd /Users/bs/Github/canary-855/ts && npm run build
-cd /Users/bs/Github/canary-855/ts && npm run typecheck
-cd /Users/bs/Github/canary-855/ts && npm run format:check
-cd /Users/bs/Github/canary-855/ts && npm test
+cd <repo>/ts && npm run build
+cd <repo>/ts && npm run typecheck
+cd <repo>/ts && npm run format:check
+cd <repo>/ts && npm test
 ```
 
 Expect all four to pass. The five new test files hold 78 tests between them.
@@ -2865,7 +2862,7 @@ Expect all four to pass. The five new test files hold 78 tests between them.
 **Step 2.** The built command, which proves the catalogue ships in `dist/`:
 
 ```bash
-cd /Users/bs/Github/canary-855/ts && node bin/canary.js evidence export --since 2026-01-01 --root "$(mktemp -d)"
+cd <repo>/ts && node bin/canary.js evidence export --since 2026-01-01 --root "$(mktemp -d)"
 ```
 
 Expect exit 0, six `NO EVIDENCE` lines, an `Abstained` line and two `Wrote`
@@ -2874,7 +2871,7 @@ lines.
 **Step 3.** The line budget:
 
 ```bash
-/bin/bash -c 'cd /Users/bs/Github/canary-855 && total=0 && for f in $(git diff --name-only 45b59eef -- ts/src | grep "\.ts$"); do after=$(grep -cv "^[[:space:]]*$" "$f"); before=$(git show "45b59eef:$f" 2>/dev/null | grep -cv "^[[:space:]]*$"); total=$((total + after - before)); echo "$((after - before)) $f"; done; echo "net $total"'
+/bin/bash -c 'cd <repo> && total=0 && for f in $(git diff --name-only 45b59eef -- ts/src | grep "\.ts$"); do after=$(grep -cv "^[[:space:]]*$" "$f"); before=$(git show "45b59eef:$f" 2>/dev/null | grep -cv "^[[:space:]]*$"); total=$((total + after - before)); echo "$((after - before)) $f"; done; echo "net $total"'
 ```
 
 Expect seven files and `net 477`. Anything above 480 fails the task.
@@ -2885,7 +2882,7 @@ Expect seven files and `net 477`. Anything above 480 fails the task.
 **Step 5.** The arch verdict, from the repo root:
 
 ```bash
-cd /Users/bs/Github/canary-855 && out="$(mktemp -d)" && (harness check-arch --json > "$out/arch.json" || true) && node scripts/arch-verdict.mjs "$out/arch.json"
+cd <repo> && out="$(mktemp -d)" && (harness check-arch --json > "$out/arch.json" || true) && node scripts/arch-verdict.mjs "$out/arch.json"
 ```
 
 Expect exit 0 and no line naming a file under `ts/src/evidence/` or
@@ -2897,7 +2894,7 @@ stop and report it, because the fix is an allowance this plan may not add.
 **Step 6.** The perf count, from the repo root:
 
 ```bash
-cd /Users/bs/Github/canary-855 && out="$(mktemp -d)" && (harness check-perf > "$out/perf.txt" 2>&1 || true) && head -1 "$out/perf.txt" && (grep -n -A1 "evidence/" "$out/perf.txt" || echo "no finding under evidence/")
+cd <repo> && out="$(mktemp -d)" && (harness check-perf > "$out/perf.txt" 2>&1 || true) && head -1 "$out/perf.txt" && (grep -n -A1 "evidence/" "$out/perf.txt" || echo "no finding under evidence/")
 ```
 
 Expect `Validation failed (200 issues)`, the count measured on this branch
@@ -2908,7 +2905,7 @@ last of the headroom and two fail the gate.
 **Step 7.** Entropy, from the repo root:
 
 ```bash
-cd /Users/bs/Github/canary-855 && out="$(mktemp -d)" && (harness cleanup --findings-json > "$out/entropy.txt" 2>&1 || true) && (grep -n "evidence/" "$out/entropy.txt" || echo "no finding under evidence/")
+cd <repo> && out="$(mktemp -d)" && (harness cleanup --findings-json > "$out/entropy.txt" 2>&1 || true) && (grep -n "evidence/" "$out/entropy.txt" || echo "no finding under evidence/")
 ```
 
 Expect `no finding under evidence/`. A dead-export or unreachable-file finding
@@ -2917,7 +2914,7 @@ on a new module means an export lost its importer.
 **Step 8.** Docs coverage, from the repo root:
 
 ```bash
-cd /Users/bs/Github/canary-855 && out="$(mktemp -d)" && (harness check-docs --json --min-coverage 0 > "$out/docs.json" || true) && node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log(d.coveragePercent, d.undocumented.filter((f) => f.startsWith("ts/src/") && f.includes("evidence")));' "$out/docs.json"
+cd <repo> && out="$(mktemp -d)" && (harness check-docs --json --min-coverage 0 > "$out/docs.json" || true) && node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log(d.coveragePercent, d.undocumented.filter((f) => f.startsWith("ts/src/") && f.includes("evidence")));' "$out/docs.json"
 ```
 
 Expect a number of 27 or more followed by `[]`. The floor in
@@ -2927,15 +2924,14 @@ five new source files are documented.
 **Step 9.** The two strict scanners, from the repo root:
 
 ```bash
-cd /Users/bs/Github/canary-855 && node agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs ts/test agents/skills/test --strict
-cd /Users/bs/Github/canary-855 && node agents/skills/claude-code/canary-savant/scripts/cli.mjs ts/test agents/skills/test --strict
+cd <repo> && node agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs ts/test agents/skills/test --strict
+cd <repo> && node agents/skills/claude-code/canary-savant/scripts/cli.mjs ts/test agents/skills/test --strict
 ```
 
 Expect no finding in the five new test files.
 
-**Step 10.** Confirm the worktree is clean with
-`git -C /Users/bs/Github/canary-855 status --short`. Nothing to commit in this
-task.
+**Step 10.** Confirm the worktree is clean with `git -C <repo> status --short`.
+Nothing to commit in this task.
 
 ## Traceability
 
