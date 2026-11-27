@@ -1,7 +1,7 @@
 /** Builds the evidence pack (#855). `buildPack` is pure given a catalogue; `exportPack` reads the sources and writes the files. */
 
 import type { CiReadyReport } from '../../core/ci-ready.js';
-import { writePack } from './render.js';
+import { plain, writePack } from './render.js';
 import {
   loadCatalogue,
   noItems,
@@ -24,6 +24,17 @@ export const DISCLAIMER =
   'compliance. A listed item shows that a check ran and what it recorded; ' +
   'it does not show that a control is met.';
 
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+/** Header values and item times are printed, so they are checked, not trusted. */
+function malformed(scope: Scope, times: string[] = []): string | null {
+  const all = [scope.since, scope.until, scope.at, ...times];
+  const bad = all.find((time) => !INSTANT.test(time));
+  if (bad !== undefined) return `${bad} is not an ISO 8601 instant`;
+  const ok = scope.commit === null || /^[0-9a-f]{7,64}$/.test(scope.commit);
+  return ok ? null : `commit ${scope.commit} is not a hex SHA`;
+}
+
 function withoutItems(source: SourceReport): Omit<SourceReport, 'items'> {
   const { items: _items, ...rest } = source;
   return rest;
@@ -43,6 +54,11 @@ export function buildPack(
     .flatMap((s) => s.items)
     .sort((a, b) => key(b).localeCompare(key(a)))
     .map((item) => ({ ...item, controls: controlsFor(item.source) }));
+  const bad = malformed(
+    scope,
+    items.map((i) => i.at),
+  );
+  if (bad !== null) throw new TypeError(plain(`evidence: ${bad}`));
   // Every catalogue row is kept: dropping an empty one would hide the gap (D5).
   const controls = catalogue.map((row) => {
     const count = items.filter((i) => i.controls.includes(row.id)).length;
@@ -78,8 +94,9 @@ function ciReadySource(scope: Scope, score: () => CiReadyReport) {
 }
 
 export function exportPack(scope: Scope, score: () => CiReadyReport): Outcome {
-  const problem = typo(scope);
-  if (problem !== null) return { exit: 2, lines: [`evidence: ${problem}`] };
+  const problem = typo(scope) ?? malformed(scope);
+  if (problem !== null)
+    return { exit: 2, lines: [plain(`evidence: ${problem}`)] };
   const sources = [
     readBatwoman(scope),
     readLedger(scope),

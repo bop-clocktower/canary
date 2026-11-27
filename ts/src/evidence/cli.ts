@@ -24,7 +24,9 @@ const ISO =
   /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
 
 function fail(deps: Deps, exit: number, lines: string[]): never {
-  for (const line of lines) deps.err(line);
+  // Flag values and paths are echoed: keep each message on one line.
+  for (const line of lines)
+    deps.err(line.replace(/[\u0000-\u001F\u007F-\u009F]+/g, ' '));
   throw new CliExitError(exit);
 }
 

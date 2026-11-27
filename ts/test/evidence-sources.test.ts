@@ -307,7 +307,8 @@ describe('readBatwoman', () => {
 
   it('lists a not-exercised report as an item with its statuses (criterion 11)', () => {
     write(join(REPORTS, '12.json'), savedReport());
-    const report = readBatwoman(scope);
+    // The URL comes from the repository the caller gave, never from the file.
+    const report = readBatwoman({ ...scope, repo: 'acme/widgets' });
     expect(report).toMatchObject({ state: 'read', read: 1, inWindow: 1 });
     expect(report.items[0]?.summary).toBe(
       'issue #12 (PR #34) from 12.json: not-exercised: 2',

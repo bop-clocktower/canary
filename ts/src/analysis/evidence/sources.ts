@@ -22,7 +22,16 @@ type Raw = { date: unknown; summary: string; ref: Ref; repo?: unknown };
 type Loaded = (Raw | string)[] | SourceReport;
 
 const REPO_SLUG = /^[\w.-]+\/[\w.-]+$/;
-const SHA = /^[0-9a-f]{7,64}$/i;
+const FULL_SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+/** Mirrors CAUSES in canary-katana's ledger.mjs; evidence-injection.test.ts fails if they drift. */
+export const CAUSES = [
+  'flaky',
+  'product-defect',
+  'blocked-data',
+  'pending-feature',
+  'obsolete',
+  'env-gated',
+];
 const ZERO = { read: 0, inWindow: 0, undated: 0, items: [] };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -39,15 +48,27 @@ export function noItems(src: Src, state: Dark, reason: string): SourceReport {
   return { id: src.id, path: src.path, state, reason, ...ZERO };
 }
 
-/** A commit URL is built only from a well-formed slug and SHA, never guessed (D13). */
+const shaOf = (ref: Ref): string =>
+  ref.kind === 'commit' ? ref.id : (ref.commit ?? '');
+
+/**
+ * A commit URL is built only from the repository the caller gave and a full
+ * SHA (D13). A `repo` inside a data file is never linked to; one that differs
+ * from the caller's is said to be unverified.
+ */
 function toItem(src: Src, raw: Raw, ms: number): EvidenceItem {
-  const repo = src.scope.repo ?? raw.repo;
-  const sha = raw.ref.kind === 'commit' ? raw.ref.id : (raw.ref.commit ?? '');
-  const ok = typeof repo === 'string' && REPO_SLUG.test(repo) && SHA.test(sha);
-  const url = `https://github.com/${String(repo)}/commit/${sha}`;
+  const repo = src.scope.repo ?? '';
+  const sha = shaOf(raw.ref);
+  const foreign =
+    repo !== '' && typeof raw.repo === 'string' && raw.repo !== repo;
+  const ok = !foreign && REPO_SLUG.test(repo) && FULL_SHA.test(sha);
+  const url = `https://github.com/${repo}/commit/${sha}`;
   const ref = ok ? { ...raw.ref, url } : raw.ref;
+  const note = foreign
+    ? ` [unverified: the report names ${String(raw.repo)}, not ${repo}]`
+    : '';
   const at = new Date(ms).toISOString();
-  return { source: src.id, at, summary: raw.summary, ref };
+  return { source: src.id, at, summary: raw.summary + note, ref };
 }
 
 export function oneItem(src: Src, raw: Raw): SourceReport {
@@ -132,7 +153,9 @@ function ledgerRaw(entry: unknown): Raw {
     return typeof value === 'string' && value !== '' ? value : fallback;
   };
   const [file, test, commit] = [text('file'), text('test'), text('commit')];
-  const why = text('cause', text('reason', 'no reason recorded'));
+  const cause = text('cause');
+  const known = CAUSES.includes(cause) ? cause : 'unrecognised cause';
+  const why = cause === '' ? text('reason', 'no reason recorded') : known;
   const id = file && test ? `${file}::${test}` : '';
   return {
     date: row.date,

@@ -115,7 +115,7 @@ describe('evidence by source', () => {
       summary: 'skipped a | b\n## Forged heading',
     };
     const md = render([hostile]);
-    expect(md).toContain('skipped a \\| b ## Forged heading');
+    expect(md).toContain('skipped a &#124; b ## Forged heading');
     expect(md.split('\n')).not.toContain('## Forged heading');
   });
 });

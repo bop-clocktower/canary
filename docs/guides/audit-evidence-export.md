@@ -104,12 +104,16 @@ handed to.
 - `at`: the time it is dated at.
 - `summary`: what the source recorded. A run carries its counts and never its
   failure text, which can hold secrets. A ledger row carries the author the
-  ledger recorded. A batwoman report carries its per-file statuses, including
-  `not-exercised`.
+  ledger recorded and its cause, when the cause is one canary-katana defines; a
+  cause it does not define is printed as `unrecognised cause`. A row with no
+  cause carries the reason the ledger derived from the commit subject. A
+  batwoman report carries its per-file statuses, including `not-exercised`.
 - `ref`: a run id, a ledger key `file::test`, or a commit SHA, so the item can
-  be found again in its source. A commit gets a GitHub URL only when the
-  repository is known from `--repo`, `GITHUB_REPOSITORY`, or the `repo` field of
-  a batwoman report. A URL is never guessed from a git remote.
+  be found again in its source. A commit gets a GitHub URL only from the
+  repository you gave (`--repo`, else `GITHUB_REPOSITORY`) and a full SHA. A
+  `repo` field inside a saved report is never linked to; when it differs from
+  yours, the item says it is unverified. A URL is never guessed from a git
+  remote.
 - `controls`: the catalogue ids the item supports.
 
 A failed run, a `not-ready` score and a report whose files were never exercised
@@ -117,6 +121,27 @@ are all items. The pack does not choose what an auditor sees.
 
 The Markdown lists at most 25 items per source, newest first, and then says how
 many more are in the JSON. The JSON holds all of them.
+
+## Untrusted text
+
+Ledger rows, run records and saved reports are written by other tools and by
+people, and the pack is read by auditors and by agents. So every value that came
+from a source is printed as inert text:
+
+- In the Markdown, the characters Markdown and HTML read as syntax are written
+  as numeric entities (`|` becomes `&#124;`), control characters and newlines
+  become a space, and ids and commits sit in code spans a backtick cannot close.
+  A viewer shows the original text; nothing becomes a heading, a link, an image
+  or an extra table cell.
+- A commit link is written only for the exact
+  `https://github.com/<owner>/<name>/commit/<sha>` form.
+- On stdout and stderr, each message stays on one line, with control and ANSI
+  sequences removed and long text clamped.
+- The window, the export time and the commit are checked before anything is
+  rendered. A value that is not an ISO 8601 instant or a hex SHA is a usage
+  error.
+
+The JSON file holds the values as recorded. JSON encoding keeps them as data.
 
 ## Exit codes
 

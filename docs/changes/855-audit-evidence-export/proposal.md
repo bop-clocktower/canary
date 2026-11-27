@@ -192,6 +192,23 @@ interface EvidencePack {
   `node:fs` and all three engine modules imported by the CLI file,
   `harness check-arch` reported a new coupling violation on it. `buildPack` and
   `renderMarkdown` stay pure. The behaviour is unchanged.
+- **A4 (D13, security review).** A commit URL is built only from the repository
+  the caller gave (`--repo`, else `GITHUB_REPOSITORY`) and a full SHA. D13's
+  fallback to the `repo` field of a batwoman report is withdrawn: a data file
+  must not choose where the pack links. A report naming a different repository
+  is listed without a link and marked unverified.
+- **A5 (security review).** Every value that came from a source is rendered as
+  inert text through one helper family in `render.ts`: `md` for Markdown text,
+  `code` for code spans, `plain` for terminal lines. `buildPack` refuses a
+  window, export time, item time or commit that is not an ISO 8601 instant or a
+  hex SHA, and `exportPack` turns that into exit 2. A ledger `cause` outside
+  canary-katana's list is printed as `unrecognised cause`.
+- **Open question (D12).** The ledger summary still carries the recorded
+  `author` and, when a row has no cause, the free-text `reason`. The issue asks
+  for proof that "a skipped test had an owner and a reason", so neither was
+  dropped. The alternatives are a stable non-personal handle in place of the
+  author, and the enumerated cause alone in place of the free-text reason. This
+  needs a maintainer decision.
 - **A3 (D6, D10).** When every `ci-ready` check skipped, the source is `absent`
   with the reason `no check scored`. `out-of-window` is used for `ci-ready`
   only; a file source with records but none in the window is `read` with zero
