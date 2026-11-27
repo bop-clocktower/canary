@@ -103,6 +103,17 @@ function exitCodeFor(report: CiReadyReport): number {
   return report.verdict === 'not-ready' ? 1 : 0;
 }
 
+/** `canary evidence export` scores through this too (#855). */
+export function ciReadyReportFor(root: string): CiReadyReport {
+  return scoreCiReady({
+    runs: readRuns(root),
+    historyPath: HISTORY_FILE,
+    inventory: loadInput(root, 'test-inventory.json', parseInventory),
+    criticalAreas: loadInput(root, 'critical-areas.json', parseCriticalAreas),
+    workingTree: workingTreeAt(root),
+  });
+}
+
 export function buildCiReadyCommand(deps: MainDeps): Command {
   const command = new Command('ci-ready');
   command
@@ -115,18 +126,7 @@ export function buildCiReadyCommand(deps: MainDeps): Command {
     )
     .option('--json', 'Output the verdict and every check as JSON.')
     .action((opts: { root?: string; json?: boolean }) => {
-      const root = opts.root ?? deps.cwd();
-      const report = scoreCiReady({
-        runs: readRuns(root),
-        historyPath: HISTORY_FILE,
-        inventory: loadInput(root, 'test-inventory.json', parseInventory),
-        criticalAreas: loadInput(
-          root,
-          'critical-areas.json',
-          parseCriticalAreas,
-        ),
-        workingTree: workingTreeAt(root),
-      });
+      const report = ciReadyReportFor(opts.root ?? deps.cwd());
       if (opts.json === true) {
         // When the checks ran, so a feed can order reports (#1151 phase 2).
         const stamped = { observed_at: new Date().toISOString(), ...report };
