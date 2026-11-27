@@ -22,11 +22,17 @@ import {
   EXIT_USAGE,
 } from '../../../lib/parse-args.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
+import { planEmit, writePlan } from './emit.mjs';
 import { engineCandidates, loadEngine } from './engine.mjs';
 import { buildProposal, renderJson, renderMarkdown } from './proposal.mjs';
 
 const PROG = 'canary-harley';
 const EXIT_ABSTAINED = 3;
+
+const NEXT_STEPS =
+  'Run the tests, then refine them with harness-property-test ' +
+  '(conventions, shrinking, arbitrary design) and promote the keepers ' +
+  'with canary-promote-test.';
 
 const USAGE =
   'usage: canary-harley [-h] {propose,emit} FILE [--function NAME]\n' +
@@ -134,8 +140,28 @@ async function propose(opts, file, ctx) {
   return proposal.abstained === null ? 0 : abstain(proposal.abstained);
 }
 
-function emit() {
-  return Promise.resolve(EXIT_ABSTAINED);
+async function emit(opts, file, ctx) {
+  const loaded = await loadProposal(opts, file, ctx);
+  if (loaded.reason !== null) return abstain(loaded.reason);
+  const plan = planEmit(loaded.proposal, {
+    ids: confirmedIds(opts.confirm),
+    file: path.resolve(file),
+    root: loaded.root,
+    outDir: opts.outDir,
+    seed: opts.seed,
+    runs: opts.runs,
+    force: opts.force,
+  });
+  if (plan.error !== null) {
+    console.error(`${PROG}: ${plan.error.message}`);
+    return plan.error.exit;
+  }
+  writePlan(plan.files);
+  const wrote = plan.files.map(
+    (written) => `wrote ${displayPath(written.path, loaded.root)}`,
+  );
+  console.log([...wrote, NEXT_STEPS].join('\n'));
+  return 0;
 }
 
 const COMMANDS = { propose, emit };
