@@ -88,7 +88,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-failure-impact`      | shipped  | —     | Downstream blast radius of an undetected failure                           |
 | `canary-fleet-health`        | shipped  | —     | Fleet-wide test health summary across suites                               |
 | `canary-generate-test`       | shipped  | —     | Batch test generation through the classify → recommend → generate pipeline |
-| `canary-harley`              | reserved | 616   | Property-based and fuzz test generation                                    |
+| `canary-harley`              | shipped  | 616   | Invariants proposed from a signature; seeded property tests on confirm     |
 | `canary-hawk-dove`           | reserved | 618   | Gate threshold auto-tuner                                                  |
 | `canary-huntress`            | reserved | 617   | Targeted regression pursuit                                                |
 | `canary-instrument`          | shipped  | —     | OpenTelemetry instrumentation of a Playwright run                          |
