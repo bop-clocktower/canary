@@ -22,10 +22,11 @@ function runOne(member, ctx) {
 /**
  * @param {object} ctx shared run context handed to every member
  * @param {Array<{name: string, skill: string, run: Function}>} members
- * @param {{clock: () => number, budgetMs: number}} opts
+ * @param {{clock: () => number, budgetMs: number, start?: number}} opts
+ *   `start` is when the run began (target resolution counts against the
+ *   budget too); it defaults to now.
  */
-export function runMembers(ctx, members, { clock, budgetMs }) {
-  const start = clock();
+export function runMembers(ctx, members, { clock, budgetMs, start = clock() }) {
   return members.map((member) => {
     const result =
       clock() - start > budgetMs

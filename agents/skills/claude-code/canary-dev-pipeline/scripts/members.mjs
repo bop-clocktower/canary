@@ -39,7 +39,7 @@ export function loadMap(root) {
   if (!fs.existsSync(file)) {
     return {
       available: false,
-      reason: `no map at ${MAP_REL}; run \`canary critical-areas\` to create it`,
+      reason: `no map at ${MAP_REL}; run canary critical-areas to create it`,
     };
   }
   const map = loadCriticalAreas(file);

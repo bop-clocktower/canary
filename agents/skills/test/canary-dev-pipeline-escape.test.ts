@@ -51,7 +51,7 @@ describe('clean', () => {
 describe('md', () => {
   it('escapes Markdown metacharacters after cleaning', () => {
     expect(md('a*b_c`d[e](f)<g>|h#i~j!k&l\\m')).toBe(
-      'a\\*b\\_c\\`d\\[e\\]\\(f\\)\\<g\\>\\|h\\#i\\~j\\!k\\&l\\\\m',
+      'a\\*b\\_c\\`d\\[e\\](f)\\<g\\>\\|h\\#i\\~j\\!k\\&l\\\\m',
     );
   });
 

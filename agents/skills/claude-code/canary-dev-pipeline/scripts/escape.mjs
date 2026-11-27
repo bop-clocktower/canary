@@ -23,9 +23,9 @@ const ANSI =
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 
 // Markdown metacharacters that can open emphasis, code, a link, an image, raw
-// HTML, a heading, a table cell or an entity. The backslash comes first in the
-// class only for readability; replacement is a single pass.
-const MD_META = /[\\`*_[\]()<>|#~!&]/g;
+// HTML, a heading, a table cell or an entity. Parentheses are left alone: they
+// only form a link right after a `]`, and every `]` is escaped.
+const MD_META = /[\\`*_[\]<>|#~!&]/g;
 
 /**
  * One plain line: escapes removed, controls flattened, length clamped by code
