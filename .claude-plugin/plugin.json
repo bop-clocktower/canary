@@ -23,6 +23,7 @@
     "./agents/skills/claude-code/canary-company-knowledge",
     "./agents/skills/claude-code/canary-critical-areas",
     "./agents/skills/claude-code/canary-cry",
+    "./agents/skills/claude-code/canary-dev-pipeline",
     "./agents/skills/claude-code/canary-edge-case-discovery",
     "./agents/skills/claude-code/canary-fail-fast",
     "./agents/skills/claude-code/canary-failure-impact",

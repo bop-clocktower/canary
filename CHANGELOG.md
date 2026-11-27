@@ -14,6 +14,16 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary-dev-pipeline`, advisory test guidance for the change in front of you
+  (#666).** Run `canary skills run canary-dev-pipeline` with no arguments. It
+  reads the working diff and, within a 5-second budget, reports critical-areas
+  risk and which changed source files no test ties to. It also runs
+  canary-savant and canary-blackhawk over changed tests and suggests which agent
+  skill to run next. It composes existing skills and runs no test. Findings
+  never change the exit code; an empty diff abstains with exit 3.
+
 ## [10.0.0] - 2026-11-26
 
 A major release. It comes from a cross-dimensional audit of the repo: several
