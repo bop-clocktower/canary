@@ -13,20 +13,14 @@
 //
 // Invoked via `canary skills run canary-ivy -- [paths] [--coverage PATH] ...`.
 
-import fs from 'node:fs';
-import path from 'node:path';
-
 import {
   createParser,
   formatUsageError,
   EXIT_USAGE,
 } from '../../../lib/parse-args.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
-import { scanFixtures } from './fixtures.mjs';
-import { groupOverlaps, loadCoverage } from './coverage.mjs';
-import { DEFAULT_HISTORY, analyzeRuntime, readStore } from './runtime.mjs';
-import { assembleReport, renderJson } from './report.mjs';
-import { renderMarkdown } from './render.mjs';
+import { DEFAULT_HISTORY, gather } from './inputs.mjs';
+import { produce, writeArtifact } from './output.mjs';
 import { plain } from './text.mjs';
 
 const PREFIX = 'canary-ivy:';
@@ -72,44 +66,6 @@ export const CLI_SPEC = {
 
 const parseArgs = createParser(CLI_SPEC);
 
-/** @returns {string|null} null on success */
-function writeArtifact(out, text) {
-  try {
-    fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-    fs.writeFileSync(out, text, 'utf8');
-    return null;
-  } catch (exc) {
-    return `cannot write artifact: ${exc.message}`;
-  }
-}
-
-function readCoverage(file) {
-  if (file === null) return null;
-  const { tests, note } = loadCoverage(file);
-  return { note, overlaps: groupOverlaps(tests) };
-}
-
-function readRuntime(file) {
-  const store = readStore(file ?? DEFAULT_HISTORY, file !== null);
-  if (store.dark) return { dark: store.dark, analysis: null };
-  return { dark: null, analysis: analyzeRuntime(store.runs) };
-}
-
-/** Read every input, or return the message naming the one that failed. */
-function gather(args, paths) {
-  try {
-    return {
-      raw: {
-        fixtures: scanFixtures(paths, process.cwd()),
-        coverage: readCoverage(args.coverage),
-        runtime: readRuntime(args.history),
-      },
-    };
-  } catch (exc) {
-    return { error: exc.message };
-  }
-}
-
 function fail(message) {
   console.error(`${PREFIX} ${plain(message, 400)}`);
   return 1;
@@ -127,12 +83,11 @@ export function main(argv = []) {
   }
   const { raw, error: readError } = gather(args, paths);
   if (readError) return fail(readError);
-  const report = assembleReport(raw);
-  const text = args.json ? renderJson(report) : renderMarkdown(report);
+  const { abstained, text } = produce(raw, args.json);
   console.log(text);
   const failure = args.out ? writeArtifact(args.out, text) : null;
   if (failure) return fail(failure);
-  return report.abstained ? EXIT_ABSTAINED : 0;
+  return abstained ? EXIT_ABSTAINED : 0;
 }
 
 // `process.exitCode`, not `process.exit()`: a large payload exceeds the pipe
