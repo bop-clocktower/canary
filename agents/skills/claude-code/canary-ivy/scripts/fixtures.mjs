@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 /** A body shorter than this is never reported. */
-export const MIN_BODY_LINES = 2;
+const MIN_BODY_LINES = 2;
 
 /**
  * Every forward scan from a match is bounded (security review on #615): a

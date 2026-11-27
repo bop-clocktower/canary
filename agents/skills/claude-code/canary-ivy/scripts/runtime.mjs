@@ -156,20 +156,30 @@ function push(map, key, point) {
 }
 
 /** Per-test points and per-file per-run sums, oldest run first. */
+const timedTestsOf = (run) =>
+  (Array.isArray(run.tests) ? run.tests : []).filter(
+    (t) => isPlainObject(t) && isDuration(t.duration_ms),
+  );
+
+const fileOf = (t) => String(t.test_file ?? NO_FILE);
+
+/** Add one run's timed tests to the per-test series and its per-file sums. */
+function addRun(run, tests, files) {
+  const at = atOf(run);
+  const perFile = new Map();
+  for (const t of timedTestsOf(run)) {
+    const file = fileOf(t);
+    const key = JSON.stringify([file, String(t.test_name ?? '')]);
+    push(tests, key, { ms: t.duration_ms, at });
+    perFile.set(file, (perFile.get(file) ?? 0) + t.duration_ms);
+  }
+  for (const [file, ms] of perFile) push(files, file, { ms, at });
+}
+
 function buildSeries(runs) {
   const tests = new Map();
   const files = new Map();
-  for (const run of [...runs].sort(byTimestamp)) {
-    const perFile = new Map();
-    for (const t of Array.isArray(run.tests) ? run.tests : []) {
-      if (!isPlainObject(t) || !isDuration(t.duration_ms)) continue;
-      const file = String(t.test_file ?? NO_FILE);
-      const key = JSON.stringify([file, String(t.test_name ?? '')]);
-      push(tests, key, { ms: t.duration_ms, at: atOf(run) });
-      perFile.set(file, (perFile.get(file) ?? 0) + t.duration_ms);
-    }
-    for (const [file, ms] of perFile) push(files, file, { ms, at: atOf(run) });
-  }
+  for (const run of [...runs].sort(byTimestamp)) addRun(run, tests, files);
   return { tests, files };
 }
 

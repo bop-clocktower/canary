@@ -11,7 +11,7 @@ import { CAVEAT } from './coverage.mjs';
 import { THRESHOLDS } from './runtime.mjs';
 import { plain } from './text.mjs';
 
-export const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 1;
 
 const notAssessed = (reason, denominator = {}) => ({
   status: 'not_assessed',
