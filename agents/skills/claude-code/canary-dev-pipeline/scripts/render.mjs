@@ -185,12 +185,14 @@ function notesLines(brief) {
 }
 
 function abstainedLines(brief) {
+  const notes = notesLines(brief);
   return [
     ABSTAINED_LINE,
     '',
     `Reason: ${md(brief.reason)}.`,
     '',
     'Make a change, or name a file: `canary skills run canary-dev-pipeline -- <path>`.',
+    ...(notes.length ? ['', ...notes] : []),
   ];
 }
 

@@ -161,6 +161,14 @@ describe('abstention (SC2) -- exit 3, never an all-clear', () => {
     expect(r.stdout).toMatch(/no member checked any of the 1 file/);
   });
 
+  it('keeps the per-path notes when named paths select nothing', () => {
+    const dir = repo();
+    const r = run(['--repo', dir, 'nope.ts'], { cwd: dir });
+    expect(r.code).toBe(3);
+    expect(r.stdout).toContain('the given paths select no file');
+    expect(r.stdout).toContain('- path not found: nope.ts');
+  });
+
   it('abstains when the budget is spent before any member runs', () => {
     let t = 0;
     const r = run(['--repo', busyRepo(), '--budget-ms', '0'], {
