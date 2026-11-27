@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CAVEAT } from '../claude-code/canary-ivy/scripts/coverage.mjs';
 import {
-  assembleReport,
+  assembleReport as assembleTyped,
   renderJson,
 } from '../claude-code/canary-ivy/scripts/report.mjs';
 import {
@@ -16,13 +16,16 @@ import {
   renderMarkdown,
 } from '../claude-code/canary-ivy/scripts/render.mjs';
 
+// Sections are a union of assessed and not-assessed shapes; tests read both.
+const assembleReport = (raw: unknown): any => assembleTyped(raw as never);
+
 const at = {
   timestamp: '2026-01-05T00:00:00Z',
   commit_sha: 'c0ffee04',
   run_id: 'r4',
 };
 
-function fullRaw() {
+function fullRaw(): any {
   return {
     fixtures: {
       filesScanned: 3,
@@ -93,7 +96,7 @@ function fullRaw() {
   };
 }
 
-const emptyRaw = () => ({
+const emptyRaw = (): any => ({
   fixtures: { filesScanned: 0, setupBlocks: 0, unread: [], groups: [] },
   coverage: null,
   runtime: { dark: 'no history store at x.jsonl', analysis: null },

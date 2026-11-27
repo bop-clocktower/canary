@@ -92,7 +92,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-hawk-dove`           | reserved | 618   | Gate threshold auto-tuner                                                  |
 | `canary-huntress`            | reserved | 617   | Targeted regression pursuit                                                |
 | `canary-instrument`          | shipped  | —     | OpenTelemetry instrumentation of a Playwright run                          |
-| `canary-ivy`                 | reserved | 615   | Suite overgrowth and pruning                                               |
+| `canary-ivy`                 | shipped  | 615   | Suite overgrowth report (never a deletion list, ADR 0039)                  |
 | `canary-judomaster`          | shipped  | 614   | Incident to regression test                                                |
 | `canary-katana`              | shipped  | —     | Quarantine ledger for deleted and newly-skipped tests                      |
 | `canary-manhunter`           | shipped  | 611   | Release quality dossier                                                    |

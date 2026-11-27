@@ -35,7 +35,7 @@ afterEach(() => {
 
 const STEP = [800, 810, 790, 805, 2400, 2390, 2410, 2405];
 
-function run(i: number, tests: object[]) {
+function run(i: number, tests: unknown[]) {
   return {
     schema_version: 3,
     run_id: `unit-c0ffee0${i}-170000000${i}`,

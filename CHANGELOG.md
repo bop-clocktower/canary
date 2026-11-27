@@ -14,6 +14,21 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **canary-ivy: suite overgrowth report** (#615).
+  `canary skills run canary-ivy -- tests --coverage coverage.json --history <jsonl>`
+  reports setup bodies repeated across files, tests whose covered lines are
+  identical, and test and file durations that grew over the run-history store,
+  with where suite time went and the run at which each grew. Per-test coverage
+  comes from coverage.py `--show-contexts` JSON or a neutral
+  `{"schema_version": 1, "tests": ...}` map. Report only, under ADR 0039: no
+  output says which test should go, nothing is ranked by how needed it is, every
+  overlap finding says shared coverage does not show shared assertions, and it
+  is never a gate. A section with no input prints as not assessed; no input at
+  all abstains with exit 3. A planted test scans every output against a
+  deletion-vocabulary denylist.
+
 ## [10.0.0] - 2026-11-26
 
 A major release. It comes from a cross-dimensional audit of the repo: several
