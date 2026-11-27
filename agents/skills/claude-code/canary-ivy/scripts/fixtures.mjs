@@ -85,8 +85,29 @@ export function walkTestFiles(paths) {
 const indentOf = (line) => line.length - line.trimStart().length;
 const squash = (line) => line.trim().replace(/\s+/g, ' ');
 
-function normalize(lines, commentPrefix) {
-  return lines.map(squash).filter((l) => l && !l.startsWith(commentPrefix));
+/**
+ * Per-line facts computed ONCE per file, so the bounded scan from each match
+ * does integer work only. Without this, a file that is one long run of matches
+ * re-trims and re-reads up to MAX_BLOCK_LINES lines per match.
+ */
+function lineFacts(lines) {
+  return lines.map((line) => {
+    const text = squash(line);
+    let net = 0;
+    let opens = false;
+    for (const ch of line) {
+      if (ch === '{') [net, opens] = [net + 1, true];
+      else if (ch === '}') net -= 1;
+    }
+    return { text, indent: text ? indentOf(line) : -1, net, opens };
+  });
+}
+
+function bodyOf(facts, from, to, commentPrefix) {
+  return facts
+    .slice(from, to)
+    .map((f) => f.text)
+    .filter((t) => t && !t.startsWith(commentPrefix));
 }
 
 const PY_DEF = /^(\s*)(?:async\s+)?def\s+(\w+)\s*\(/;
@@ -97,15 +118,15 @@ const PY_SETUP = /^(\s*)def\s+(setUp|setup_method|setUpClass|setup_class)\s*\(/;
  * past MAX_BLOCK_LINES: the same cap the brace scan uses, so no match can scan
  * to end of file and a file of many matches stays linear, not quadratic.
  */
-function pythonBody(lines, at) {
-  const indent = indentOf(lines[at]);
-  const last = Math.min(lines.length, at + 1 + MAX_BLOCK_LINES);
+function pythonBody(facts, at) {
+  const indent = facts[at].indent;
+  const last = Math.min(facts.length, at + 1 + MAX_BLOCK_LINES);
   let i = at + 1;
-  while (i < last && !(lines[i].trim() && indentOf(lines[i]) <= indent)) {
+  while (i < last && !(facts[i].indent >= 0 && facts[i].indent <= indent)) {
     i += 1;
   }
-  if (i === last && last < lines.length) return null;
-  return normalize(lines.slice(at + 1, i), '#');
+  if (i === last && last < facts.length) return null;
+  return bodyOf(facts, at + 1, i, '#');
 }
 
 /**
@@ -113,27 +134,27 @@ function pythonBody(lines, at) {
  * and blank lines -- at most MAX_DECORATOR_RUN of them, so a wall of
  * decorators cannot make every one of them scan the whole wall.
  */
-function decoratedDef(lines, at) {
+function decoratedDef(lines, facts, at) {
   const last = Math.min(lines.length, at + 1 + MAX_DECORATOR_RUN);
   for (let i = at + 1; i < last; i += 1) {
-    const t = lines[i].trim();
+    const t = facts[i].text;
     if (!t || t.startsWith('@')) continue;
     return PY_DEF.test(lines[i]) ? i : -1;
   }
   return -1;
 }
 
-function pythonBlocks(lines) {
+function pythonBlocks(lines, facts) {
   const blocks = [];
   lines.forEach((line, i) => {
     let at = -1;
     let kind = 'setup';
     if (/^\s*@pytest\.fixture\b/.test(line)) {
-      at = decoratedDef(lines, i);
+      at = decoratedDef(lines, facts, i);
       kind = 'pytest-fixture';
     } else if (PY_SETUP.test(line)) at = i;
     if (at === -1) return;
-    const body = pythonBody(lines, at);
+    const body = pythonBody(facts, at);
     if (!body) return;
     const name = PY_DEF.exec(lines[at])[2];
     blocks.push({ kind, name, line: at + 1, body });
@@ -141,16 +162,17 @@ function pythonBlocks(lines) {
   return blocks;
 }
 
-/** Index of the line that closes the brace block opened on `at`, or -1. */
-function closingLine(lines, at) {
+/**
+ * Index of the line that closes the brace block opened on `at`, or -1. Depth
+ * is only judged at line ends, so per-line net counts are exact here.
+ */
+function closingLine(facts, at) {
   let depth = 0;
   let opened = false;
-  const last = Math.min(lines.length, at + MAX_BLOCK_LINES);
+  const last = Math.min(facts.length, at + MAX_BLOCK_LINES);
   for (let i = at; i < last; i += 1) {
-    for (const ch of lines[i]) {
-      if (ch === '{') [depth, opened] = [depth + 1, true];
-      else if (ch === '}') depth -= 1;
-    }
+    depth += facts[i].net;
+    opened = opened || facts[i].opens;
     if (opened && depth <= 0) return i;
   }
   return -1;
@@ -159,14 +181,14 @@ function closingLine(lines, at) {
 const JS_HOOK = /\b(beforeEach|beforeAll)\s*\(/;
 const PHP_SETUP = /\bfunction\s+(setUp|set_up)\s*\(/;
 
-function braceBlocks(lines, pattern, kindOf) {
+function braceBlocks(lines, facts, pattern, kindOf) {
   const blocks = [];
   lines.forEach((line, i) => {
     const m = pattern.exec(line);
     if (!m) return;
-    const end = closingLine(lines, i);
+    const end = closingLine(facts, i);
     if (end <= i + 1) return;
-    const body = normalize(lines.slice(i + 1, end), '//');
+    const body = bodyOf(facts, i + 1, end, '//');
     blocks.push({ kind: kindOf(m[1]), name: m[1], line: i + 1, body });
   });
   return blocks;
@@ -181,12 +203,13 @@ function braceBlocks(lines, pattern, kindOf) {
  */
 export function extractBlocks(text, file) {
   const lines = text.split(/\r\n|\r|\n/);
+  const facts = lineFacts(lines);
   let blocks = [];
-  if (file.endsWith('.py')) blocks = pythonBlocks(lines);
+  if (file.endsWith('.py')) blocks = pythonBlocks(lines, facts);
   else if (file.endsWith('.php'))
-    blocks = braceBlocks(lines, PHP_SETUP, (n) => `php-${n}`);
+    blocks = braceBlocks(lines, facts, PHP_SETUP, (n) => `php-${n}`);
   else if (/\.[cm]?[jt]sx?$/.test(file))
-    blocks = braceBlocks(lines, JS_HOOK, (n) => n);
+    blocks = braceBlocks(lines, facts, JS_HOOK, (n) => n);
   return blocks.filter((b) => b.body.length >= MIN_BODY_LINES);
 }
 

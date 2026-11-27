@@ -72,6 +72,20 @@ describe('bounded fixture scan', () => {
     BUDGET_MS,
   );
 
+  it(
+    'finishes a wall of unclosed JS hooks inside the budget',
+    () => {
+      // Every line opens a block that never closes, so every match scans
+      // MAX_BLOCK_LINES lines. Brace counts are precomputed once per file, so
+      // that scan is integer work, not a re-read of each line's characters.
+      const line = `beforeEach(() => { const padding = '${'p'.repeat(10)}';`;
+      const text = repeat(line, MAX_FILE_LINES - 1).join('\n');
+      expect(text.length).toBeLessThan(MAX_FILE_BYTES);
+      expect(extractBlocks(text, 'wall.test.ts')).toEqual([]);
+    },
+    BUDGET_MS,
+  );
+
   it('abandons a decorator whose def is past the decorator run', () => {
     const text = [
       '@pytest.fixture',
