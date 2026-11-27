@@ -11,9 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { main } from '../claude-code/canary-harley/scripts/cli.mjs';
-import { writePlan } from '../claude-code/canary-harley/scripts/emit.mjs';
 import { buildProposal } from '../claude-code/canary-harley/scripts/proposal.mjs';
 import { safe } from '../claude-code/canary-harley/scripts/safe.mjs';
+import { writePlan } from '../claude-code/canary-harley/scripts/write-plan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(
@@ -137,6 +137,21 @@ describe('canary-harley hardening: writePlan is all-or-nothing', () => {
     ];
     expect(() => writePlan(files)).toThrow();
     expect(fs.readFileSync(first, 'utf8')).toBe('old a\n');
+    expect(listing(root)).toEqual(['blocker', 'out/a.test.ts']);
+  });
+
+  it('never restores a backup an interrupted run left behind', () => {
+    // An earlier run died after placing a.test.ts and before dropping its
+    // backup, so the backup is OLDER than the target. This run then fails.
+    fs.writeFileSync(path.join(root, 'blocker'), 'a file\n');
+    const first = writeSource('out/a.test.ts', 'current a\n');
+    writeSource('out/.a.test.ts.harley-bak', 'stale a\n');
+    const files = [
+      { path: first, text: 'new a\n' },
+      { path: path.join(root, 'blocker', 'b.test.ts'), text: 'new b\n' },
+    ];
+    expect(() => writePlan(files)).toThrow();
+    expect(fs.readFileSync(first, 'utf8')).toBe('current a\n');
     expect(listing(root)).toEqual(['blocker', 'out/a.test.ts']);
   });
 

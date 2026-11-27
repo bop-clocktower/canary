@@ -19,10 +19,11 @@ import path from 'node:path';
 
 import { createParser, EXIT_USAGE } from '../../../lib/parse-args.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
-import { planEmit, writePlan } from './emit.mjs';
+import { planEmit } from './emit.mjs';
 import { engineCandidates, loadEngine } from './engine.mjs';
 import { buildProposal, renderJson, renderMarkdown } from './proposal.mjs';
 import { safe } from './safe.mjs';
+import { writePlan } from './write-plan.mjs';
 
 const PROG = 'canary-harley';
 const EXIT_ABSTAINED = 3;

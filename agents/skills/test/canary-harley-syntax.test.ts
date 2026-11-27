@@ -25,7 +25,7 @@ const SCRIPTS = path.join(
   'scripts',
 );
 const CLI = path.join(SCRIPTS, 'cli.mjs');
-const SCRIPT_COUNT = 16;
+const SCRIPT_COUNT = 22;
 
 const KINDS = [
   'commutativity',

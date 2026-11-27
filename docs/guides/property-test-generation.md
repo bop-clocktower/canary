@@ -201,5 +201,17 @@ The skill's scripts live in `agents/skills/claude-code/canary-harley/scripts/`.
   the text of a TypeScript fast-check test.
 - [emit-hypothesis.mjs](../../agents/skills/claude-code/canary-harley/scripts/emit-hypothesis.mjs):
   the text of a Python Hypothesis test.
+- [derive.mjs](../../agents/skills/claude-code/canary-harley/scripts/derive.mjs):
+  from a source text and its function names to signatures and candidates.
 - [emit.mjs](../../agents/skills/claude-code/canary-harley/scripts/emit.mjs):
-  confirmation lookup, seed, output containment and the write.
+  resolves confirmed ids into the plan of files to write, or a refusal.
+- [failure.mjs](../../agents/skills/claude-code/canary-harley/scripts/failure.mjs):
+  a refusal: an exit code and one inert message line.
+- [out-dir.mjs](../../agents/skills/claude-code/canary-harley/scripts/out-dir.mjs):
+  output containment, the control-character check and the overwrite refusal.
+- [targets.mjs](../../agents/skills/claude-code/canary-harley/scripts/targets.mjs):
+  the generated file's name and the import of the function under test.
+- [render-test.mjs](../../agents/skills/claude-code/canary-harley/scripts/render-test.mjs):
+  the text of one generated test, with its seed fixed.
+- [write-plan.mjs](../../agents/skills/claude-code/canary-harley/scripts/write-plan.mjs):
+  writes every planned file or none, restoring what a failed run replaced.

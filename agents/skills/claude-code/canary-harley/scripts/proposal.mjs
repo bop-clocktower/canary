@@ -7,34 +7,14 @@
  */
 import { createHash } from 'node:crypto';
 
-import { BOUNDARY, boundarySkip } from './cues.mjs';
-import { deriveCandidates } from './invariants.mjs';
+import { BOUNDARY } from './cues.mjs';
+import { deriveFrom } from './derive.mjs';
 import { safe, safeView } from './safe.mjs';
-import { langOf, readSignatures } from './signatures.mjs';
 
 const SCHEMA = 'canary.harley-proposal/1';
 
 // The engine's extractor returns at most this many names.
 const EXTRACTOR_CAP = 20;
-
-/** Names outside the CRUD/UI boundary are skipped before they are read. */
-function partition(names) {
-  const reasons = names.map((name) => ({ name, reason: boundarySkip(name) }));
-  return {
-    kept: reasons.filter((row) => row.reason === null).map((row) => row.name),
-    skipped: reasons.filter((row) => row.reason !== null),
-  };
-}
-
-function read(source, lang, names) {
-  if (lang === null) return { signatures: [], skipped: [] };
-  return readSignatures(source, lang, names);
-}
-
-function filterOnly(candidates, only) {
-  if (only === null) return candidates;
-  return candidates.filter((candidate) => candidate.functions.includes(only));
-}
 
 // Checked in order; the first match is the reason the proposal abstains.
 const ABSTENTIONS = [
@@ -80,26 +60,23 @@ function abstention(parts) {
  */
 export function buildProposal(input) {
   const only = input.only ?? null;
-  const lang = langOf(input.path);
-  const split = partition(input.names);
-  const result = read(input.source, lang, split.kept);
-  const candidates = filterOnly(deriveCandidates(result.signatures), only);
+  const derived = deriveFrom(input.path, input.source, input.names, only);
   const sha256 = createHash('sha256').update(input.source).digest('hex');
   return {
     schema: SCHEMA,
     source: { path: input.path, sha256 },
     functions: input.names,
-    signatures: result.signatures,
-    skipped: [...split.skipped, ...result.skipped],
-    candidates,
+    signatures: derived.signatures,
+    skipped: derived.skipped,
+    candidates: derived.candidates,
     boundary: BOUNDARY,
     abstained: abstention({
       path: input.path,
       names: input.names,
-      kept: split.kept,
-      lang,
+      kept: derived.kept,
+      lang: derived.lang,
       only,
-      candidates,
+      candidates: derived.candidates,
     }),
     capped: input.names.length >= EXTRACTOR_CAP,
   };
