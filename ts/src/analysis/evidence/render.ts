@@ -1,6 +1,9 @@
-/** Renders the evidence pack as Markdown for a reviewer who reads it cold (#855). Pure. */
+/** Renders the evidence pack for a reviewer who reads it cold, and writes both files (#855). */
 
-import type { EvidencePack } from './types.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+
+import { errnoCode, gateOutcome } from '../../core/gate-result.js';
+import type { EvidencePack, Outcome } from './types.js';
 
 /** Items listed per source (D11); the JSON carries all of them. */
 const ITEM_CAP = 25;
@@ -71,4 +74,37 @@ export function renderMarkdown(pack: EvidencePack): string {
     ...pack.sources.flatMap((s) => sourceSection(pack, s.id)),
   ];
   return `${lines.join('\n').trimEnd()}\n`;
+}
+
+/** Stdout: every control, every source that is not `read`, and a warning when nothing was found (D8). */
+function summaryLines(pack: EvidencePack): string[] {
+  const lines = pack.controls.map((c) => {
+    const n = c.status === 'evidence' ? `evidence: ${c.items}` : 'NO EVIDENCE';
+    return `${c.id}  ${n}`;
+  });
+  const dark = pack.sources.filter((s) => s.state !== 'read');
+  lines.push(...dark.map((s) => `source ${s.id}: ${s.state} (${s.reason})`));
+  if (pack.items.length > 0) return lines;
+  const { summaryLine } = gateOutcome({ checked: 0, findings: [] }, 'advisory');
+  const cause = pack.sources.map((s) => `${s.id} ${s.state}`).join(', ');
+  const step = 'record a run with `canary history record`, or widen --since';
+  const why = `No source produced an item in the window (${cause})`;
+  return [...lines, `${summaryLine} ${why}. First step: ${step}.`];
+}
+
+export function writePack(out: string, pack: EvidencePack): Outcome {
+  const json = `${out}/evidence-pack.json`;
+  const md = `${out}/evidence-pack.md`;
+  try {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(json, `${JSON.stringify(pack, null, 2)}\n`);
+    writeFileSync(md, renderMarkdown(pack));
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code === null) throw err;
+    const line = `evidence: cannot write the pack to ${out} (${code})`;
+    return { exit: 1, lines: [line] };
+  }
+  const lines = [...summaryLines(pack), `Wrote ${json}`, `Wrote ${md}`];
+  return { exit: 0, lines };
 }

@@ -3,16 +3,20 @@
  * with the window, so the cap is tested at a size that exceeds it.
  * Fixtures are synthetic.
  */
-import { describe, expect, it } from 'vitest';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildPack } from '../src/analysis/evidence/pack.js';
-import { renderMarkdown } from '../src/analysis/evidence/render.js';
+import { renderMarkdown, writePack } from '../src/analysis/evidence/render.js';
 import type {
   CatalogueRow,
   EvidenceItem,
   Scope,
   SourceReport,
 } from '../src/analysis/evidence/types.js';
+import { mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 const CATALOGUE: CatalogueRow[] = [
   {
@@ -113,5 +117,91 @@ describe('evidence by source', () => {
     const md = render([hostile]);
     expect(md).toContain('skipped a \\| b ## Forged heading');
     expect(md.split('\n')).not.toContain('## Forged heading');
+  });
+});
+
+describe('writePack', () => {
+  let out: string;
+
+  beforeEach(() => {
+    out = join(mkTmp(), 'packs');
+  });
+
+  afterEach(() => rmTmp(join(out, '..')));
+
+  const packOf = (items: EvidenceItem[]) =>
+    buildPack([history(items)], SCOPE, CATALOGUE);
+
+  const emptyPack = () => {
+    const absent: SourceReport = {
+      ...history([]),
+      state: 'absent',
+      reason: 'nothing at test-results/reports/history-v2.jsonl',
+    };
+    return buildPack([absent], SCOPE, CATALOGUE);
+  };
+
+  it('writes the JSON and the Markdown, and reports both paths', () => {
+    const pack = packOf([runItem(1)]);
+    const done = writePack(out, pack);
+    const json = readFileSync(join(out, 'evidence-pack.json'), 'utf-8');
+    expect(done.exit).toBe(0);
+    expect(JSON.parse(json)).toEqual(pack);
+    expect(json.endsWith('}\n')).toBe(true);
+    expect(readFileSync(join(out, 'evidence-pack.md'), 'utf-8')).toBe(
+      renderMarkdown(pack),
+    );
+    expect(done.lines.slice(-2)).toEqual([
+      `Wrote ${out}/evidence-pack.json`,
+      `Wrote ${out}/evidence-pack.md`,
+    ]);
+  });
+
+  it('prints one line per control with its item count, and no warning', () => {
+    const done = writePack(out, packOf([runItem(1), runItem(2)]));
+    expect(done.lines[0]).toBe('soc2-cc7.1  evidence: 2');
+    expect(done.lines.join('\n')).not.toContain('Abstained');
+    expect(done.lines.join('\n')).not.toContain('source history');
+  });
+
+  it('names each source that is not read, with its reason', () => {
+    const done = writePack(out, emptyPack());
+    expect(done.lines).toContain('soc2-cc7.1  NO EVIDENCE');
+    expect(done.lines).toContain(
+      'source history: absent (nothing at test-results/reports/history-v2.jsonl)',
+    );
+  });
+
+  it('warns with the cause and the first step when no source produced an item (criterion 9)', () => {
+    const done = writePack(out, emptyPack());
+    const warning = done.lines.find((line) => line.includes('Abstained'));
+    expect(done.exit).toBe(0);
+    expect(warning).toContain('No source produced an item in the window');
+    expect(warning).toContain('(history absent)');
+    expect(warning).toContain('First step: record a run with');
+    expect(done.lines.join('\n')).not.toContain('evidence: ');
+    expect(readFileSync(join(out, 'evidence-pack.md'), 'utf-8')).toContain(
+      'NO EVIDENCE',
+    );
+  });
+
+  it('replaces the previous pack in the same directory (criterion 10)', () => {
+    writePack(out, packOf([runItem(1)]));
+    writePack(out, packOf([runItem(2)]));
+    const json = readFileSync(join(out, 'evidence-pack.json'), 'utf-8');
+    const md = readFileSync(join(out, 'evidence-pack.md'), 'utf-8');
+    expect(json).toContain('"r2"');
+    expect(json).not.toContain('"r1"');
+    expect(md).not.toContain('`r1`');
+  });
+
+  it('exits 1 naming the directory and the errno when it cannot write', () => {
+    const blocker = join(out, '..', 'blocker');
+    writeFileSync(blocker, 'a file where the directory should go');
+    const done = writePack(join(blocker, 'packs'), packOf([runItem(1)]));
+    expect(done.exit).toBe(1);
+    expect(done.lines).toHaveLength(1);
+    expect(done.lines[0]).toContain(join(blocker, 'packs'));
+    expect(done.lines[0]).toMatch(/ENOTDIR|EEXIST/);
   });
 });
