@@ -25,76 +25,78 @@ const at = {
   run_id: 'r4',
 };
 
-function fullRaw(): any {
-  return {
-    fixtures: {
-      filesScanned: 3,
-      setupBlocks: 4,
-      unread: [
-        {
-          file: 'big/conftest.py',
-          reason: 'longer than 20000 lines, not parsed',
-        },
-      ],
+// Module scope, not a function body: the arch complexity rule measures test
+// functions too, and one 70-line literal builder trips its length and nesting.
+const FULL_RAW = {
+  fixtures: {
+    filesScanned: 3,
+    setupBlocks: 4,
+    unread: [
+      {
+        file: 'big/conftest.py',
+        reason: 'longer than 20000 lines, not parsed',
+      },
+    ],
+    groups: [
+      {
+        kind: 'pytest-fixture',
+        body_lines: 3,
+        first_line: 'conn = make_db()',
+        locations: [
+          { file: 'a/conftest.py', line: 4, name: 'db' },
+          { file: 'b/conftest.py', line: 4, name: 'database' },
+        ],
+      },
+    ],
+  },
+  coverage: {
+    note: null,
+    overlaps: {
+      testsWithCoverage: 3,
       groups: [
         {
-          kind: 'pytest-fixture',
-          body_lines: 3,
-          first_line: 'conn = make_db()',
-          locations: [
-            { file: 'a/conftest.py', line: 4, name: 'db' },
-            { file: 'b/conftest.py', line: 4, name: 'database' },
-          ],
+          tests: ['t::a', 't::b'],
+          line_count: 5,
+          shared_lines: [{ file: 'src/cart.py', ranges: '3-5,9' }],
+          caveat: CAVEAT,
         },
       ],
     },
-    coverage: {
-      note: null,
-      overlaps: {
-        testsWithCoverage: 3,
-        groups: [
-          {
-            tests: ['t::a', 't::b'],
-            line_count: 5,
-            shared_lines: [{ file: 'src/cart.py', ranges: '3-5,9' }],
-            caveat: CAVEAT,
-          },
-        ],
-      },
+  },
+  runtime: {
+    dark: null,
+    analysis: {
+      denominator: { runs: 8, timed_tests: 2, series_long_enough: 2 },
+      where_time_went: [
+        { file: 'tests/dash.spec.ts', median_ms: 2400, share: 0.96 },
+      ],
+      creep: [
+        {
+          scope: 'test',
+          file: 'tests/dash.spec.ts',
+          test: 'loads the dashboard',
+          before_median_ms: 802.5,
+          after_median_ms: 2402.5,
+          gap_ms: 1600,
+          observations: 8,
+          grew_at: at,
+        },
+        {
+          scope: 'file',
+          file: 'tests/dash.spec.ts',
+          test: null,
+          before_median_ms: 900,
+          after_median_ms: 2500,
+          gap_ms: 1600,
+          observations: 8,
+          grew_at: { timestamp: null, commit_sha: null, run_id: null },
+        },
+      ],
     },
-    runtime: {
-      dark: null,
-      analysis: {
-        denominator: { runs: 8, timed_tests: 2, series_long_enough: 2 },
-        where_time_went: [
-          { file: 'tests/dash.spec.ts', median_ms: 2400, share: 0.96 },
-        ],
-        creep: [
-          {
-            scope: 'test',
-            file: 'tests/dash.spec.ts',
-            test: 'loads the dashboard',
-            before_median_ms: 802.5,
-            after_median_ms: 2402.5,
-            gap_ms: 1600,
-            observations: 8,
-            grew_at: at,
-          },
-          {
-            scope: 'file',
-            file: 'tests/dash.spec.ts',
-            test: null,
-            before_median_ms: 900,
-            after_median_ms: 2500,
-            gap_ms: 1600,
-            observations: 8,
-            grew_at: { timestamp: null, commit_sha: null, run_id: null },
-          },
-        ],
-      },
-    },
-  };
-}
+  },
+};
+
+const fullRaw = (): any => structuredClone(FULL_RAW);
 
 const emptyRaw = (): any => ({
   fixtures: { filesScanned: 0, setupBlocks: 0, unread: [], groups: [] },
