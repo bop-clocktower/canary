@@ -435,6 +435,17 @@ via slash commands.
     `flows.json`, pauses for the human at the gate and triages findings with
     Playwright MCP, and never produces a verdict. See
     [the spec](docs/changes/canary-cry/proposal.md).
+  - `canary-harley` (#616): property tests from confirmed invariants. `propose`
+    reads the function signatures in one TypeScript or Python file (the function
+    list is the engine's `extractFileFunctions`, the extractor behind
+    `analyze_file`) and prints a ranked, heuristic list of candidate invariants.
+    `emit --confirm <id>` writes one seeded fast-check or Hypothesis test per
+    confirmed id under `tests/generated/property/`, and nothing without
+    `--confirm` (exit 2). An id hashes the signature, so a changed type
+    invalidates the confirmation. A type with no generator is named, never
+    guessed; no engine, no functions or no candidates exits 3. The agent
+    presents the list and stops: only a human supplies `--confirm`. See
+    [the guide](docs/guides/property-test-generation.md).
 - **Slash commands:** `commands/*.md`, loaded by the default `commands/` scan.
 - **Activate:** load the repo root as a Claude Code plugin.
 
