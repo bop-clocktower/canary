@@ -4,6 +4,7 @@ description: >
   Proposes ranked, heuristic candidate invariants from the function signatures
   in one source file, and writes a seeded property test only for a candidate a
   human has confirmed.
+cli: scripts/cli.mjs
 requires: [node>=20]
 ---
 
