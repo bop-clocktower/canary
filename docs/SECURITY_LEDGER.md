@@ -13,7 +13,7 @@ to refresh.
 - **Commit:** `78ab2be35fa7`
 - **Score:** 100
 - **Findings:** 0 (error: 0, warning: 0, info: 0)
-- **Supply chain:** not measured (no audit recorded)
+- **Supply chain:** 0 (critical: 0, high: 0, moderate: 0, low: 0, info: 0) across 3 lockfiles, audited 2026-11-27 at `a04953ef863e`
 - **Suppressions:** 0
 
 ## Recent Snapshots (last 10)
