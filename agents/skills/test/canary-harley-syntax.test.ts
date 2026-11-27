@@ -170,7 +170,7 @@ const pythonMissing = (error: Error | undefined) =>
 const inCi = () => !['', '0', 'false'].includes(process.env.CI ?? '');
 
 describe('canary-harley syntax: shipped scripts', () => {
-  it('are ASCII, all sixteen of them', () => {
+  it('are ASCII, all twenty-two of them', () => {
     const files = fs.readdirSync(SCRIPTS).filter((n) => n.endsWith('.mjs'));
     // Counted first, so an empty listing cannot pass.
     expect(files).toHaveLength(SCRIPT_COUNT);
