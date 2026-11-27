@@ -25,7 +25,7 @@ const SCRIPTS = path.join(
   'scripts',
 );
 const CLI = path.join(SCRIPTS, 'cli.mjs');
-const SCRIPT_COUNT = 15;
+const SCRIPT_COUNT = 16;
 
 const KINDS = [
   'commutativity',
@@ -170,7 +170,7 @@ const pythonMissing = (error: Error | undefined) =>
 const inCi = () => !['', '0', 'false'].includes(process.env.CI ?? '');
 
 describe('canary-harley syntax: shipped scripts', () => {
-  it('are ASCII, all fifteen of them', () => {
+  it('are ASCII, all sixteen of them', () => {
     const files = fs.readdirSync(SCRIPTS).filter((n) => n.endsWith('.mjs'));
     // Counted first, so an empty listing cannot pass.
     expect(files).toHaveLength(SCRIPT_COUNT);

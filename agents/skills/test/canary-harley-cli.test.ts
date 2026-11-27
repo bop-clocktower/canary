@@ -257,6 +257,21 @@ describe('canary-harley cli: propose', () => {
     expect(fs.readFileSync(out, 'utf8')).toBe(json.stdout);
   });
 
+  it('exits 1 without printing when --json-out cannot be written', async () => {
+    const file = writeFile('src/codec.ts', CODEC_TS);
+    // The parent of the target is a regular file, so no directory can be made.
+    const blocker = writeFile('blocker', 'not a directory\n');
+    const out = path.join(blocker, 'out.json');
+    const r = await run(['propose', file, '--root', root, '--json-out', out]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/^canary-harley: cannot write /);
+    expect(r.stderr).toContain(out);
+    // The write is tried first, as canary-sweep does: a failed run prints no
+    // proposal that a caller could take for a complete result.
+    expect(r.stdout).toBe('');
+    expect(fs.readFileSync(blocker, 'utf8')).toBe('not a directory\n');
+  });
+
   it('keeps one function with --function', async () => {
     const file = writeFile('src/codec.ts', CODEC_TS);
     const argv = ['propose', file, '--root', root, '--json'];

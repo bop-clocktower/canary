@@ -472,6 +472,18 @@ describe('canary-harley cli: emit', () => {
     expect(fs.readdirSync(root)).toEqual(['src']);
   });
 
+  it('exits 1 when the output directory cannot be made', async () => {
+    const file = writeSource('src/codec.ts', CODEC_TS);
+    const id = (await proposedIds(file)).get('round-trip:encodeToken') ?? '';
+    // A regular file sits where the directory would go.
+    writeSource('tests/generated', 'not a directory\n');
+    const r = await run(['emit', file, '--root', root, '--confirm', id]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/^canary-harley: cannot write /);
+    expect(r.stderr).toContain(generated());
+    expect(r.stdout).toBe('');
+  });
+
   it('abstains on a source it cannot read', async () => {
     const file = path.join(root, 'src', 'absent.ts');
     const r = await run(['emit', file, '--root', root, '--confirm', 'x']);

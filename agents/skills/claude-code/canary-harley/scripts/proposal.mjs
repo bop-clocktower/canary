@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 
 import { BOUNDARY, boundarySkip } from './cues.mjs';
 import { deriveCandidates } from './invariants.mjs';
+import { safeView } from './safe.mjs';
 import { langOf, readSignatures } from './signatures.mjs';
 
 const SCHEMA = 'canary.harley-proposal/1';
@@ -126,7 +127,8 @@ function header(proposal) {
     `- signatures read: ${proposal.signatures.length}`,
     `- skipped: ${proposal.skipped.length}`,
     '',
-    proposal.boundary,
+    // Fixed prose comes from the constant, whole.
+    BOUNDARY,
     '',
     'Scores are heuristic: a fixed prior per kind, raised by a name cue. ' +
       'Nothing here measures whether an invariant holds.',
@@ -186,11 +188,15 @@ function nextLines(proposal) {
  * @returns {string} the proposal as markdown, ending with one newline
  */
 export function renderMarkdown(proposal) {
+  // An agent reads this text. Every line below is built from the sanitized
+  // view and never from `proposal`, so no value taken from the analysed
+  // file, its path or the command line can start a line or a block.
+  const view = safeView(proposal);
   const lines = [
-    ...header(proposal),
-    ...candidateLines(proposal),
-    ...skippedLines(proposal),
-    ...nextLines(proposal),
+    ...header(view),
+    ...candidateLines(view),
+    ...skippedLines(view),
+    ...nextLines(view),
   ];
   return `${lines.join('\n')}\n`;
 }

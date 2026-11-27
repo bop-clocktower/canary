@@ -9,7 +9,8 @@
 //
 // Exit codes: 0 proposed or emitted, 2 usage error (a missing --confirm is
 // one), 3 abstained (no engine, unreadable file, no candidates, an id that is
-// not derivable now, or a candidate that cannot be emitted).
+// not derivable now, or a candidate that cannot be emitted), 1 an output file
+// (--json-out, or a generated test) could not be written.
 //
 // Invoked via `canary skills run canary-harley -- <command> FILE [options]`.
 
@@ -28,6 +29,8 @@ import { buildProposal, renderJson, renderMarkdown } from './proposal.mjs';
 
 const PROG = 'canary-harley';
 const EXIT_ABSTAINED = 3;
+// The family's runtime-failure code: an output file could not be written.
+const EXIT_FAILED = 1;
 
 const NEXT_STEPS =
   'Run the tests, then refine them with harness-property-test ' +
@@ -63,7 +66,8 @@ const USAGE =
   '  --runs N              emit: runs per property (default: 100)\n' +
   '  --force               emit: overwrite an existing generated file\n' +
   '\n' +
-  'exit codes: 0 proposed or emitted, 2 usage error, 3 abstained';
+  'exit codes: 0 proposed or emitted, 1 an output file could not be\n' +
+  'written, 2 usage error, 3 abstained';
 
 export const CLI_SPEC = {
   prog: PROG,
@@ -124,16 +128,34 @@ async function loadProposal(opts, file, ctx) {
   return { reason: null, proposal, root };
 }
 
+/** Run one write; a failure is exit 1 with the path named, never a throw. */
+function writeFailed(target, write) {
+  try {
+    write();
+    return false;
+  } catch (exc) {
+    console.error(`${PROG}: cannot write ${target}: ${exc.message}`);
+    return true;
+  }
+}
+
+/**
+ * `--json-out` is the operator's path, as it is across the skill family: any
+ * location, its directory created. (Only `emit --out-dir` is contained.)
+ */
 function writeJson(target, proposal) {
   fs.mkdirSync(path.dirname(path.resolve(target)), { recursive: true });
-  fs.writeFileSync(target, renderJson(proposal));
+  fs.writeFileSync(target, renderJson(proposal), 'utf8');
 }
 
 async function propose(opts, file, ctx) {
   const loaded = await loadProposal(opts, file, ctx);
   if (loaded.reason !== null) return abstain(loaded.reason);
   const proposal = loaded.proposal;
-  if (opts.jsonOut !== null) writeJson(opts.jsonOut, proposal);
+  // Written before anything is printed, so a failed run prints no proposal.
+  const target = opts.jsonOut;
+  if (target !== null && writeFailed(target, () => writeJson(target, proposal)))
+    return EXIT_FAILED;
   const render = opts.json ? renderJson : renderMarkdown;
   // Both renderers end with one newline; console.log would add a second.
   process.stdout.write(render(proposal));
@@ -156,7 +178,8 @@ async function emit(opts, file, ctx) {
     console.error(`${PROG}: ${plan.error.message}`);
     return plan.error.exit;
   }
-  writePlan(plan.files);
+  const outDir = path.dirname(plan.files[0].path);
+  if (writeFailed(outDir, () => writePlan(plan.files))) return EXIT_FAILED;
   const wrote = plan.files.map(
     (written) => `wrote ${displayPath(written.path, loaded.root)}`,
   );
