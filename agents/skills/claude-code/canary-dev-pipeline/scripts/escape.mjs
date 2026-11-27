@@ -57,6 +57,36 @@ export function md(value, max = MAX_TEXT) {
 }
 
 /**
+ * The first of `key`, `key~2`, `key~3`, ... not already in `taken`. Two keys
+ * that differ only by a control character, or past the clamp, clean to the
+ * same text; overwriting one with the other would drop or forge a finding.
+ */
+function uniqueKey(key, taken) {
+  if (!taken.has(key)) return key;
+  let n = 2;
+  while (taken.has(`${key}~${n}`)) n += 1;
+  return `${key}~${n}`;
+}
+
+/** Keys and values cleaned at the JSON limit; colliding keys all survive. */
+function cleanObject(value) {
+  const out = new Map();
+  const raw = Object.entries(value);
+  // Reserve every key that is already clean first, so a suffix minted for a
+  // collision can never take the place of a real key spelled `k~2`.
+  const taken = new Set(
+    raw.map(([k]) => k).filter((k) => clean(k, MAX_JSON_TEXT) === k),
+  );
+  for (const [k, v] of raw) {
+    const cleaned = clean(k, MAX_JSON_TEXT);
+    const key = cleaned === k ? k : uniqueKey(cleaned, taken);
+    taken.add(key);
+    out.set(key, cleanDeep(v));
+  }
+  return Object.fromEntries(out);
+}
+
+/**
  * `clean` applied to every string (keys included) in a JSON-shaped value.
  *
  * @param {unknown} value
@@ -66,9 +96,7 @@ export function cleanDeep(value) {
   if (typeof value === 'string') return clean(value, MAX_JSON_TEXT);
   if (Array.isArray(value)) return value.map(cleanDeep);
   if (value === null || typeof value !== 'object') return value;
-  return Object.fromEntries(
-    Object.entries(value).map(([k, v]) => [clean(k), cleanDeep(v)]),
-  );
+  return cleanObject(value);
 }
 
 /**

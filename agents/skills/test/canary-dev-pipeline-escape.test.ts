@@ -85,6 +85,39 @@ describe('cleanDeep', () => {
   it('cleans keys as well as values', () => {
     expect(cleanDeep({ 'k\n1': 'v' })).toEqual({ 'k 1': 'v' });
   });
+
+  it('never lets two keys that collide after cleaning overwrite each other', () => {
+    // Two file paths that differ only by a control character clean to the
+    // same text. Both findings must survive; the later key gets a suffix.
+    const out = cleanDeep({
+      'src/a\nb.ts': 'first',
+      'src/a\rb.ts': 'second',
+      'src/a\tb.ts': 'third',
+    }) as Record<string, string>;
+    expect(Object.values(out).sort()).toEqual(['first', 'second', 'third']);
+    expect(Object.keys(out)).toEqual([
+      'src/a b.ts',
+      'src/a b.ts~2',
+      'src/a b.ts~3',
+    ]);
+  });
+
+  it('never collides a suffixed key with a real key of the same text', () => {
+    const out = cleanDeep({
+      'k\n': 1,
+      'k ~2': 2,
+      'k\r': 3,
+    }) as Record<string, number>;
+    expect(Object.values(out).sort()).toEqual([1, 2, 3]);
+    expect(new Set(Object.keys(out)).size).toBe(3);
+  });
+
+  it('clamps keys at the JSON limit, not the display limit', () => {
+    const a = `${'x'.repeat(MAX_TEXT + 10)}A`;
+    const b = `${'x'.repeat(MAX_TEXT + 10)}B`;
+    const out = cleanDeep({ [a]: 1, [b]: 2 }) as Record<string, number>;
+    expect(Object.keys(out)).toEqual([a, b]);
+  });
 });
 
 describe('escapeRegExp', () => {
