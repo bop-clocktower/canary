@@ -48,6 +48,9 @@ Do not carry them into other skills.
   want the guardian to author the missing tests for you (at the desk only).
 - NOT in CI for Tier-2 write-back — that is a NON-GOAL. CI runs Tier-0 only (the
   `CANARY_GUARDIAN_AGENT` env is unset there).
+- NOT for advisory guidance while a change is still being written. Use
+  [`canary-dev-pipeline`](../canary-dev-pipeline/SKILL.md) for that: it never
+  blocks. Anything that should block stays here.
 
 ## Safety model (non-negotiable)
 

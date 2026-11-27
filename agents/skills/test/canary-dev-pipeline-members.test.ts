@@ -153,7 +153,9 @@ describe('tiesMember (katana tie rules)', () => {
         test_count: 1,
       },
     ]);
-    expect(r.detail).toMatch(/1 test file\(s\) indexed/);
+    expect((r as { detail?: string }).detail).toMatch(
+      /1 test file\(s\) indexed/,
+    );
   });
 
   it('is not-checked when no source file changed', () => {

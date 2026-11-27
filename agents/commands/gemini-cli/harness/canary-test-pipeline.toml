@@ -36,6 +36,10 @@ health report on exit.
 
 - When asked to "bring this suite to CI-ready"
 
+- NOT for quick advisory guidance mid-change. That is
+  [`canary-dev-pipeline`](../canary-dev-pipeline/SKILL.md), which reads the
+  working diff within a time budget, runs no test, and never loops.
+
 ## Phases
 
 ### Phase 0 — Probe, then gate (`/canary-ci-ready`)

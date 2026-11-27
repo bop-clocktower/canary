@@ -37,6 +37,7 @@ import { main as starlingMain } from '../claude-code/canary-starling/scripts/cli
 import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
 import { main as unquarantineMain } from '../claude-code/canary-unquarantine/scripts/cli.mjs';
 import { main as cryMainAny } from '../claude-code/canary-cry/scripts/cli.mjs';
+import { main as devPipelineMain } from '../claude-code/canary-dev-pipeline/scripts/cli.mjs';
 
 // Only a confirmed `run` returns a Promise; these argv never confirm.
 const cryMain = (argv: string[]) => cryMainAny(argv) as number;
@@ -85,8 +86,15 @@ interface SkillGateRow {
   require?: string[];
   /** Build the zero-denominator fixture and run the real CLI (advisory). */
   run: (base: string) => { code: number; stdout: string };
+  /**
+   * The exit code of `run`. Advisory skills exit 0 (D3) unless they have no
+   * `--strict` to carry the contract, in which case the default run itself
+   * exits 3 -- canary-dev-pipeline (#666), whose maintainer decision is that
+   * nothing analysed abstains with exit 3 while findings never fail a run.
+   */
+  advisoryCode?: number;
   /** The same fixture under `--strict`, which must inherit exit 3. */
-  strict: (base: string) => { code: number; stdout: string };
+  strict?: (base: string) => { code: number; stdout: string };
 }
 
 const ROWS: SkillGateRow[] = [
@@ -207,6 +215,22 @@ const ROWS: SkillGateRow[] = [
     forbid: ['7 panels,'],
     run: (base) => run(bardaMain, bardaArgs(base)),
     strict: (base) => run(bardaMain, [...bardaArgs(base), '--strict']),
+  },
+  {
+    // No --strict: the skill is never a gate, so the abstention exit is the
+    // default (#666). Outside a repository with no path, nothing is analysed.
+    command: 'canary-dev-pipeline (no repository, no path)',
+    forbid: ['Checked', 'No finding'],
+    require: ['not a git repository'],
+    advisoryCode: EXIT_ABSTAINED,
+    run: (base) => run(devPipelineMain, ['--repo', base]),
+  },
+  {
+    command: 'canary-dev-pipeline (paths that select no file)',
+    forbid: ['Checked', 'No finding'],
+    require: ['the given paths select no file'],
+    advisoryCode: EXIT_ABSTAINED,
+    run: (base) => run(devPipelineMain, ['--repo', base, `${base}/missing`]),
   },
   {
     // flows.json parses and validates but declares no flow, so the matrix
@@ -400,12 +424,15 @@ describe('gate conformance registry -- skill layer (#508)', () => {
         expect(res.stdout).toContain(text);
       }
       // Advisory by default: the line is loud, the exit is not (D3).
-      expect(res.code).toBe(0);
+      expect(res.code).toBe(row.advisoryCode ?? 0);
     });
 
-    it(`${row.command} inherits exit 3 under --strict`, () => {
-      const res = row.strict(tmp());
-      expect(res.code).toBe(EXIT_ABSTAINED);
-    });
+    const strict = row.strict;
+    if (strict) {
+      it(`${row.command} inherits exit 3 under --strict`, () => {
+        const res = strict(tmp());
+        expect(res.code).toBe(EXIT_ABSTAINED);
+      });
+    }
   }
 });

@@ -108,6 +108,7 @@ export default defineConfig({
         'claude-code/canary-starling/scripts/**/*.mjs',
         'claude-code/canary-barda/scripts/**/*.mjs',
         'claude-code/canary-question/scripts/**/*.mjs',
+        'claude-code/canary-dev-pipeline/scripts/*.mjs',
         'claude-code/canary-sweep/scripts/**/*.mjs',
       ],
       exclude: ['**/*.test.*'],

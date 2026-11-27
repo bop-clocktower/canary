@@ -105,7 +105,7 @@ describe('resolveTarget -- the working diff (default)', () => {
       'src/staged.ts',
       'tests/new.test.ts',
     ]);
-    expect(t.files.map((f) => f.kind)).toEqual([
+    expect(t.files.map((f: { kind: string }) => f.kind)).toEqual([
       'source',
       'source',
       'source',

@@ -31,6 +31,12 @@ reasoning behind its membership.
 ## Usage
 
 ```bash
+canary skills run canary-dev-pipeline -- --help
+```
+
+<!-- canary:illustrative -->
+
+```bash
 canary skills run canary-dev-pipeline                 # the working diff
 canary skills run canary-dev-pipeline -- src/cart.ts  # a named file or directory
 canary skills run canary-dev-pipeline -- --json --out brief.json

@@ -83,6 +83,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-company-knowledge`   | shipped  | —     | Scaffold the org-specific `.canary/company.json` pointer file              |
 | `canary-critical-areas`      | shipped  | —     | Risk-based test prioritisation                                             |
 | `canary-cry`                 | shipped  | 608   | Pre-launch exploratory "try to break it" sweep                             |
+| `canary-dev-pipeline`        | shipped  | 666   | Advisory dev-time brief over the working diff (never a gate)               |
 | `canary-edge-case-discovery` | shipped  | —     | Edge-case surfacing across six categories                                  |
 | `canary-fail-fast`           | shipped  | —     | Loud, early failure surfacing for Playwright runs                          |
 | `canary-failure-impact`      | shipped  | —     | Downstream blast radius of an undetected failure                           |
