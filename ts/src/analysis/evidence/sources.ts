@@ -1,6 +1,6 @@
 /** File readers for the evidence pack (#855). A bad source is reported with its reason, never skipped. */
 
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 
 import { errnoCode } from '../../core/gate-result.js';
 import {
@@ -123,4 +123,76 @@ export function readHistory(scope: Scope): SourceReport {
   return read({ id: 'history', path, scope }, hint, (file) =>
     new NdjsonHistoryStore(file).readAll().map(runRaw),
   );
+}
+
+function ledgerRaw(entry: unknown): Raw {
+  const row = isRecord(entry) ? entry : {};
+  const text = (key: string, fallback = ''): string => {
+    const value = row[key];
+    return typeof value === 'string' && value !== '' ? value : fallback;
+  };
+  const [file, test, commit] = [text('file'), text('test'), text('commit')];
+  const why = text('cause', text('reason', 'no reason recorded'));
+  const id = file && test ? `${file}::${test}` : '';
+  return {
+    date: row.date,
+    summary: `${text('kind', 'recorded')} ${test} in ${file} by ${text('author', 'unknown author')}: ${why}`,
+    ref: { kind: 'ledger-entry', id, ...(commit ? { commit } : {}) },
+  };
+}
+
+export function readLedger(scope: Scope): SourceReport {
+  const src: Src = { id: 'katana', path: '.canary/quarantine.json', scope };
+  return read(src, 'canary-katana writes it', (file) => {
+    const doc: unknown = JSON.parse(readFileSync(file, 'utf-8'));
+    const entries = isRecord(doc) && doc.schema_version === 2 ? doc.entries : 0;
+    if (Array.isArray(entries)) return entries.map(ledgerRaw);
+    return noItems(src, 'unreadable', 'not a katana v2 ledger with entries');
+  });
+}
+
+function statusTally(files: unknown[]): string {
+  const statuses = files.map((f) => (isRecord(f) ? String(f.status) : '?'));
+  const times = (s: string): number => statuses.filter((x) => x === s).length;
+  const tally = [...new Set(statuses)].map((s) => `${s}: ${times(s)}`);
+  return tally.join(', ') || 'no files';
+}
+
+function reportRaw(dir: string, name: string): Raw | string {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(readFileSync(`${dir}/${name}`, 'utf-8'));
+  } catch (err) {
+    return `${name}: ${problemOf(err, name) || 'gone before it was read'}`;
+  }
+  const r = isRecord(doc) ? doc : {};
+  const { issue, mergeSha, mergedAt, files, pullRequest, repo } = r;
+  const shaped = typeof issue === 'number' && typeof mergeSha === 'string';
+  if (!shaped || typeof mergedAt !== 'string' || !Array.isArray(files)) {
+    return `${name}: lacks issue, mergeSha, mergedAt or files`;
+  }
+  const summary = `issue #${issue} (PR #${String(pullRequest)}) from ${name}: ${statusTally(files)}`;
+  const ref = { kind: 'commit' as const, id: mergeSha };
+  return { date: mergedAt, summary, ref, repo };
+}
+
+/** D9: a path or slug the caller typed that is wrong is a usage error, never an absent source. */
+export function typo(scope: Scope): string | null {
+  const paths = [scope.root, scope.batwoman ?? scope.root];
+  const gone = paths.find((path) => !existsSync(path));
+  if (gone !== undefined) return `${gone} does not exist`;
+  const slug = scope.repo === undefined || REPO_SLUG.test(scope.repo);
+  return slug ? null : `${scope.repo} is not an owner/name slug`;
+}
+
+export function readBatwoman(scope: Scope): SourceReport {
+  const path = scope.batwoman ?? '.canary/batwoman';
+  const src: Src = { id: 'batwoman', path, scope };
+  const hint = `save one with \`canary batwoman --issue <n> --json > ${path}/<n>.json\``;
+  const load: Loader = (dir) => {
+    const names = readdirSync(dir).filter((n) => n.endsWith('.json'));
+    if (names.length > 0) return names.sort().map((n) => reportRaw(dir, n));
+    return noItems(src, 'absent', `no *.json report; ${hint}`);
+  };
+  return read(src, hint, load, scope.batwoman);
 }
