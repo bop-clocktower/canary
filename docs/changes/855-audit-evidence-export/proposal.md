@@ -175,8 +175,27 @@ interface EvidencePack {
 - `analysis/evidence/pack.ts` is pure. It takes the source reports, the
   catalogue and the window and returns the `EvidencePack`.
 - `analysis/evidence/render.ts` is pure. It renders the Markdown report.
-- `evidence/cli.ts` parses the flags, scores `ci-ready` through a function
-  exported from `ts/src/ci-ready-cli.ts`, resolves `HEAD`, and writes the files.
+- `evidence/cli.ts` parses the flags, resolves `HEAD`, and hands the engine the
+  `ci-ready` scorer exported from `ts/src/ci-ready-cli.ts`.
+
+### Amendments after planning
+
+- **A1 (D3, D10). The `ci-ready` item is inside the window when
+  `since <= export time <= until`.** D3 makes the window half-open and defaults
+  `--until` to the export time; D10 dates the one `ci-ready` item at the export
+  time. Read together, a default export would always report `ci-ready` as
+  `out-of-window`. Resolved: dated records (runs, ledger rows, batwoman reports)
+  keep the half-open rule of criterion 6, and the single `ci-ready` item is
+  closed at `until`. Accepted by the fleet orchestrator.
+- **A2 (modules).** The files are written by `writePack` in `render.ts` and the
+  readers are run by `exportPack` in `pack.ts`, not by `evidence/cli.ts`. With
+  `node:fs` and all three engine modules imported by the CLI file,
+  `harness check-arch` reported a new coupling violation on it. `buildPack` and
+  `renderMarkdown` stay pure. The behaviour is unchanged.
+- **A3 (D6, D10).** When every `ci-ready` check skipped, the source is `absent`
+  with the reason `no check scored`. `out-of-window` is used for `ci-ready`
+  only; a file source with records but none in the window is `read` with zero
+  items in the window. The remaining small assumptions are listed in the plan.
 
 ### Item rules
 
