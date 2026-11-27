@@ -14,6 +14,15 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary-harley`: property tests from confirmed invariants (#616).**
+  `canary skills run canary-harley -- propose FILE` reads the function
+  signatures in one TypeScript or Python file and prints a ranked, heuristic
+  list of candidate invariants. `emit FILE --confirm ID` writes one fast-check
+  or Hypothesis test per confirmed id and nothing for any other; without
+  `--confirm` it exits 2. Every generated test carries a fixed, recorded seed.
+
 ## [10.0.0] - 2026-11-26
 
 A major release. It comes from a cross-dimensional audit of the repo: several

@@ -13,7 +13,7 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (38)
+├── claude-code/                    # Claude Code skills (39)
 │   ├── canary-add-framework/
 │   ├── canary-barda/
 │   ├── canary-batwoman/
@@ -29,6 +29,7 @@ agents/skills/
 │   ├── canary-failure-impact/
 │   ├── canary-fleet-health/
 │   ├── canary-generate-test/
+│   ├── canary-harley/
 │   ├── canary-instrument/
 │   ├── canary-judomaster/
 │   ├── canary-katana/
@@ -95,6 +96,12 @@ slash-command entry points.
   — Surface edge cases worth testing across six categories, for a feature
   description, function signature, or existing test suite. Invoked by
   `/canary-edge-cases`; also Phase 2 of `canary-test-pipeline`.
+- [`canary-harley`](./claude-code/canary-harley/SKILL.md) — Bundled executable
+  skill (`scripts/cli.mjs`). `propose` reads the function signatures in one
+  TypeScript or Python file and prints a ranked, heuristic list of candidate
+  invariants (round-trip, idempotence, commutativity and four more). `emit`
+  writes one seeded fast-check or Hypothesis test per candidate a human
+  confirmed with `--confirm`, and nothing for any other.
 - [`canary-failure-impact`](./claude-code/canary-failure-impact/SKILL.md) —
   Trace the downstream blast radius of a test, function, or code path failing
   undetected; produces a severity label. Invoked by `/canary-failure-impact`;
@@ -327,11 +334,11 @@ Most skills here are documentation, not executable artifacts — they describe
 _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
 `canary-barda`, `canary-blackhawk`, `canary-cassandra`, `canary-cry`,
-`canary-fail-fast`, `canary-instrument`, `canary-katana`, `canary-misfit`,
-`canary-question`, `canary-savant`, `canary-screech`, `canary-shadow`,
-`canary-signal`, `canary-starling`, `canary-strix`, `canary-sweep`,
-`canary-test-reporter`, and `canary-unquarantine` all ship a Node entry
-(`scripts/cli.mjs`). Run those directly, e.g.:
+`canary-fail-fast`, `canary-harley`, `canary-instrument`, `canary-katana`,
+`canary-misfit`, `canary-question`, `canary-savant`, `canary-screech`,
+`canary-shadow`, `canary-signal`, `canary-starling`, `canary-strix`,
+`canary-sweep`, `canary-test-reporter`, and `canary-unquarantine` all ship a
+Node entry (`scripts/cli.mjs`). Run those directly, e.g.:
 
 ```bash
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help
