@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 
 import { BOUNDARY, boundarySkip } from './cues.mjs';
 import { deriveCandidates } from './invariants.mjs';
-import { safeView } from './safe.mjs';
+import { safe, safeView } from './safe.mjs';
 import { langOf, readSignatures } from './signatures.mjs';
 
 const SCHEMA = 'canary.harley-proposal/1';
@@ -65,7 +65,9 @@ const ABSTENTIONS = [
 
 function abstention(parts) {
   const hit = ABSTENTIONS.find(([applies]) => applies(parts));
-  return hit ? hit[1](parts) : null;
+  // The reason holds the path and the --function text. It is made one inert
+  // line here, so the JSON field and the stderr line are covered as well.
+  return hit ? safe(hit[1](parts)) : null;
 }
 
 /**

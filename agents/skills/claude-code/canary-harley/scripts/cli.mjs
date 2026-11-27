@@ -17,15 +17,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import {
-  createParser,
-  formatUsageError,
-  EXIT_USAGE,
-} from '../../../lib/parse-args.mjs';
+import { createParser, EXIT_USAGE } from '../../../lib/parse-args.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
 import { planEmit, writePlan } from './emit.mjs';
 import { engineCandidates, loadEngine } from './engine.mjs';
 import { buildProposal, renderJson, renderMarkdown } from './proposal.mjs';
+import { safe } from './safe.mjs';
 
 const PROG = 'canary-harley';
 const EXIT_ABSTAINED = 3;
@@ -87,8 +84,19 @@ export const CLI_SPEC = {
 
 const parseArgs = createParser(CLI_SPEC);
 
+const STDERR_MAX = 2000;
+
+/**
+ * The one way this CLI writes to stderr. A message can echo argv, a path, a
+ * system error or type text from the analysed file, and an agent reads it,
+ * so the text after the program name is always one inert line.
+ */
+function report(text) {
+  console.error(`${PROG}: ${safe(text, STDERR_MAX)}`);
+}
+
 function abstain(reason) {
-  console.error(`${PROG}: abstained: ${reason}`);
+  report(`abstained: ${reason}`);
   return EXIT_ABSTAINED;
 }
 
@@ -134,7 +142,7 @@ function writeFailed(target, write) {
     write();
     return false;
   } catch (exc) {
-    console.error(`${PROG}: cannot write ${target}: ${exc.message}`);
+    report(`cannot write ${target}: ${exc.message}`);
     return true;
   }
 }
@@ -175,7 +183,7 @@ async function emit(opts, file, ctx) {
     force: opts.force,
   });
   if (plan.error !== null) {
-    console.error(`${PROG}: ${plan.error.message}`);
+    report(plan.error.message);
     return plan.error.exit;
   }
   const outDir = path.dirname(plan.files[0].path);
@@ -255,7 +263,8 @@ export function main(argv = [], deps = {}) {
   }
   const bad = usageError(parsed.error, parsed.positionals, parsed.opts);
   if (bad !== null) {
-    console.error(formatUsageError(PROG, bad));
+    // The argparse form the skill family prints: `prog: error: message`.
+    report(`error: ${bad}`);
     return EXIT_USAGE;
   }
   const [command, file] = parsed.positionals;
