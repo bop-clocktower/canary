@@ -96,7 +96,7 @@ function ciReadySource(scope: Scope, score: () => CiReadyReport) {
 export function exportPack(scope: Scope, score: () => CiReadyReport): Outcome {
   const problem = typo(scope) ?? malformed(scope);
   if (problem !== null)
-    return { exit: 2, lines: [plain(`evidence: ${problem}`)] };
+    return { exit: 2, lines: [plain(`evidence: ${problem}`, 2000)] };
   const sources = [
     readBatwoman(scope),
     readLedger(scope),

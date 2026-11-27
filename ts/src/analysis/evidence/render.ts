@@ -102,7 +102,9 @@ function summaryLines(pack: EvidencePack): string[] {
     return `${c.id}  ${n}`;
   });
   const dark = pack.sources.filter((s) => s.state !== 'read');
-  lines.push(...dark.map((s) => `source ${s.id}: ${s.state} (${s.reason})`));
+  lines.push(
+    ...dark.map((s) => `source ${s.id}: ${s.state} (${plain(s.reason ?? '')})`),
+  );
   if (pack.items.length > 0) return lines;
   const { summaryLine } = gateOutcome({ checked: 0, findings: [] }, 'advisory');
   const cause = pack.sources.map((s) => `${s.id} ${s.state}`).join(', ');
@@ -122,8 +124,8 @@ export function writePack(out: string, pack: EvidencePack): Outcome {
     const code = errnoCode(err);
     if (code === null) throw err;
     const line = `evidence: cannot write the pack to ${out} (${code})`;
-    return { exit: 1, lines: [plain(line)] };
+    return { exit: 1, lines: [plain(line, 2000)] };
   }
   const lines = [...summaryLines(pack), `Wrote ${json}`, `Wrote ${file}`];
-  return { exit: 0, lines: lines.map((line) => plain(line)) };
+  return { exit: 0, lines: lines.map((line) => plain(line, 2000)) };
 }

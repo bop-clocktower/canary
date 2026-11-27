@@ -1,0 +1,58 @@
+{
+  "issues": [855],
+  "route": "feature",
+  "runId": "roadmap-fleet-2026-11-27",
+  "stages": [
+    "brainstorming",
+    "soundness-review",
+    "autopilot",
+    "planning",
+    "execution",
+    "security-fixes",
+    "verification",
+    "review"
+  ],
+  "specArtifact": "docs/changes/855-audit-evidence-export/proposal.md",
+  "planPath": "docs/changes/855-audit-evidence-export/plans/2026-11-27-audit-evidence-export-plan.md",
+  "branch": "feat/855-audit-evidence-export",
+  "base": "ea020e5e",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "All four sources, all four frameworks, both output formats and the three accepted-risk constraints from the issue ship. HTML is deferred by maintainer decision and named as a non-goal.",
+  "stageNotes": {
+    "brainstorming": "Run by the lane following the harness-brainstorming skill. Session autonomy resolved to supervised, so record_auto_decision was not available; every question was self-answered with the recommended option and listed as an assumption.",
+    "planning": "Delegated to the harness-planner persona agent.",
+    "execution": "Tasks 1 to 12 delegated to the harness-task-executor persona agent, test first, one commit per task.",
+    "security-fixes": "Done inline by the lane, test first, after an automated commit review reported findings relayed by the fleet orchestrator.",
+    "verification": "Done inline by the lane: the four gates from ts/, harness validate and check-deps, the arch, perf, entropy and docs ratchets, blackhawk and savant strict, the leak gate.",
+    "review": "Done inline by the lane as a read of the full diff. The harness-code-review and security-review skills fan out to sub-agents and were not dispatched, because the maintainer capped the session at two concurrent agents. No independent reviewer read this change."
+  },
+  "assumptions": [
+    "Spec and plan sign-off were taken without a human (fleet lane). The fleet orchestrator accepted the planner's concerns 1 to 5 and assumptions A2 to A11.",
+    "Approach A: the export composes saved outputs from local files and never reaches the network. Batwoman evidence comes from saved `canary batwoman --issue N --json` reports, by default under .canary/batwoman/.",
+    "The surface is the engine command `canary evidence export`, with no skill and no Birds of Prey name in v1.",
+    "The command is advisory: exit 0 with an Abstained warning line when no source produced an item, 2 on a usage error, 1 when the pack cannot be written.",
+    "Six catalogue rows: NIST SP 800-40 Rev. 4 sections 2.3.3 and 2.3.4 (section numbers checked against the published PDF), ISO/IEC 27001:2022 A.8.8, CIS Controls v8 Control 7 as one row naming Safeguards 7.2 and 7.7, SOC 2 CC7.1 and CC8.1. The ISO, CIS and SOC 2 descriptions are paraphrases.",
+    "A1: dated records use the half-open window [since, until); the single ci-ready item, dated at the export, is inside when since <= export time <= until.",
+    "A2: when every ci-ready check skipped the source is absent with the reason `no check scored`.",
+    "A3: ci-ready states are decided in the order out-of-window, unreadable (no HEAD), absent, read.",
+    "A4: out-of-window is used for ci-ready only; a file source with records but none in the window is read with zero items in the window.",
+    "A5: a record with a date but no identifier is not an item and makes its source partial.",
+    "A6: a date-time with no zone is a usage error.",
+    "A7: source paths in the pack are root-relative.",
+    "A8: a commit URL is built only from an owner/name slug and a full SHA; a --repo or GITHUB_REPOSITORY that is not a slug exits 2.",
+    "A9: a --batwoman path that exists but is not a directory is unreadable (ENOTDIR), not exit 2.",
+    "A10: items are ordered newest first, with source and id breaking ties.",
+    "A11: the catalogue is a JSON data file read at runtime.",
+    "Security review: commit URLs come only from the repository the caller gave; the fallback to a batwoman report's own repo field (spec D13 as first written) was withdrawn.",
+    "The pack omits run failure text. It keeps the ledger author and, for a row with no cause, the ledger's free-text reason, because the issue asks for an owner and a reason. Whether to replace them with a non-personal handle and the enumerated cause only is an open question for the maintainer.",
+    "The module layout differs from the first spec draft (files are written by render.ts and sources are run by pack.ts) to stay under the arch coupling ratio with no allowance.",
+    "docs/roadmap.md was edited by hand for the #855 row only, because manage_roadmap promote rewrote every row."
+  ],
+  "ratchets": {
+    "measuredWith": "harness CLI 14.1.1, locally",
+    "moduleSize": "62036 against a ceiling of 62062 (baselines.json 61448 plus 1 percent); 61500 at the merge base. No allowance file added.",
+    "perf": "200 at head and at the base, ceiling 201; no finding in the new files.",
+    "entropy": "100 at head and at the base, maxFindings 116.",
+    "docsCoverage": "27.78 percent (145 of 522) against a floor of 26.73."
+  }
+}
