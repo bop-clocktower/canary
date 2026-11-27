@@ -16,35 +16,17 @@
 //
 // Invoked via `canary skills run canary-dev-pipeline -- [path ...]`.
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { performance } from 'node:perf_hooks';
-
 import {
   createParser,
   formatUsageError,
   EXIT_USAGE,
 } from '../../../lib/parse-args.mjs';
 import { isMain } from '../../../lib/is-main.mjs';
-import { clean } from './escape.mjs';
-import { resolveTarget } from './target.mjs';
-import { riskMember, tiesMember } from './members.mjs';
-import { isolationMember, temporalMember } from './scans.mjs';
-import { DEFAULT_BUDGET_MS, runMembers } from './budget.mjs';
-import {
-  ABSTAINED_LINE,
-  buildBrief,
-  renderJson,
-  renderMarkdown,
-} from './render.mjs';
+import { DEFAULT_BUDGET_MS } from './budget.mjs';
+import { execute } from './run.mjs';
 
-const PREFIX = 'canary-dev-pipeline:';
-
-const EXIT_WRITE = 1;
-const EXIT_ABSTAINED = 3;
-
-/** Cheapest first, so a spent budget drops the most expensive member. */
-const MEMBERS = [riskMember, isolationMember, temporalMember, tiesMember];
+// The work lives in run.mjs -> brief.mjs -> members.mjs, so no module imports
+// more than four others (the perf ratchet's coupling rule).
 
 const USAGE =
   'usage: canary-dev-pipeline [-h] [--repo DIR] [--json] [--out PATH]\n' +
@@ -78,17 +60,6 @@ export const CLI_SPEC = {
 
 const parseArgs = createParser(CLI_SPEC);
 
-/** @returns {string|null} null on success */
-function writeArtifact(out, text) {
-  try {
-    fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-    fs.writeFileSync(out, `${text}\n`, 'utf8');
-    return null;
-  } catch (exc) {
-    return `cannot write artifact: ${exc.message}`;
-  }
-}
-
 function usageError(argv) {
   const { opts, positionals, help, error } = parseArgs(argv);
   if (help || error) return { help, error, opts };
@@ -96,37 +67,6 @@ function usageError(argv) {
     return { error: 'argument --budget-ms: must be 0 or more', opts };
   }
   return { opts: { ...opts, paths: positionals } };
-}
-
-function brief(opts, { clock, cwd }) {
-  const start = clock();
-  const target = resolveTarget({ repo: opts.repo, paths: opts.paths, cwd });
-  const ctx = { root: target.root, files: target.files };
-  const members = target.abstain
-    ? []
-    : runMembers(ctx, MEMBERS, { clock, budgetMs: opts.budgetMs, start });
-  return buildBrief({
-    target,
-    members,
-    budgetMs: opts.budgetMs,
-    elapsedMs: Math.round(clock() - start),
-  });
-}
-
-function emit(opts, result) {
-  const text = opts.json ? renderJson(result) : renderMarkdown(result);
-  console.log(text);
-  // The abstention goes to stderr as well: a brief redirected to a file must
-  // still say, where a person will see it, that nothing was checked.
-  if (result.abstained) {
-    console.error(`${PREFIX} ${ABSTAINED_LINE} ${clean(result.reason)}`);
-  }
-  const failure = opts.out ? writeArtifact(opts.out, text) : null;
-  if (failure) {
-    console.error(`${PREFIX} ${clean(failure)}`);
-    return EXIT_WRITE;
-  }
-  return result.abstained ? EXIT_ABSTAINED : 0;
 }
 
 /**
@@ -144,9 +84,7 @@ export function main(argv = [], deps = {}) {
     console.error(formatUsageError(CLI_SPEC.prog, error));
     return EXIT_USAGE;
   }
-  const clock = deps.clock ?? (() => performance.now());
-  const cwd = deps.cwd ?? process.cwd();
-  return emit(opts, brief(opts, { clock, cwd }));
+  return execute(opts, deps);
 }
 
 // `process.exitCode`, not `process.exit()`: a large brief can exceed the pipe

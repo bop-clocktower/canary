@@ -7,15 +7,10 @@
 // what it means when katana grades a deletion. Dev-time gap analysis is the
 // product of the two: an untied file with high risk is the one to think about.
 
-import fs from 'node:fs';
-import path from 'node:path';
-
-import {
-  areaContext,
-  loadCriticalAreas,
-} from '../../canary-katana/scripts/areas.mjs';
+import { areaContext, loadMapFor } from '../../canary-katana/scripts/areas.mjs';
 import { covers } from '../../canary-katana/scripts/ties.mjs';
 import { scopeOf } from '../../canary-katana/scripts/testindex.mjs';
+import { isolationMember, temporalMember } from './scans.mjs';
 
 /** Where `canary critical-areas` writes the map, relative to the repo. */
 export const MAP_REL = '.canary/critical-areas.json';
@@ -35,15 +30,16 @@ const sourcesOf = ({ files }) =>
 
 /** The critical-areas map, or why it is unavailable. Never throws. */
 export function loadMap(root) {
-  const file = path.join(root, MAP_REL);
-  if (!fs.existsSync(file)) {
-    return {
-      available: false,
-      reason: `no map at ${MAP_REL}; run canary critical-areas to create it`,
-    };
-  }
-  const map = loadCriticalAreas(file);
-  return map.available ? map : { available: false, reason: map.reason };
+  let found = false;
+  const map = loadMapFor(root, null, () => {
+    found = true;
+  });
+  if (found)
+    return map.available ? map : { available: false, reason: map.reason };
+  return {
+    available: false,
+    reason: `no map at ${MAP_REL}; run canary critical-areas to create it`,
+  };
 }
 
 /** Usable areas by path; an area with contract problems is left out. */
@@ -111,3 +107,11 @@ export const tiesMember = {
     };
   },
 };
+
+/** Cheapest first, so a spent budget drops the most expensive member. */
+export const MEMBERS = [
+  riskMember,
+  isolationMember,
+  temporalMember,
+  tiesMember,
+];
