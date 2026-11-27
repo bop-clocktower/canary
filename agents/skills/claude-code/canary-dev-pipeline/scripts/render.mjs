@@ -8,7 +8,7 @@
 
 import { cleanDeep, md } from './escape.mjs';
 
-export const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 1;
 
 export const ABSTAINED_LINE =
   '\u{26A0} Abstained \u{2014} verified zero items; this is not a pass.';
@@ -17,7 +17,7 @@ export const ABSTAINED_LINE =
 export const MAX_ROWS = 25;
 
 /** risk_score at or above which failure impact is suggested (katana's). */
-export const HIGH_RISK = 0.7;
+const HIGH_RISK = 0.7;
 
 const MAX_EDGE_SUGGESTIONS = 5;
 
