@@ -1,0 +1,46 @@
+{
+  "controls": [
+    {
+      "id": "nist-800-40r4-2.3.3",
+      "framework": "NIST SP 800-40 Rev. 4",
+      "reference": "2.3.3 Verify Deployment",
+      "supports": "A fix has executed since it merged",
+      "sources": ["batwoman"]
+    },
+    {
+      "id": "nist-800-40r4-2.3.4",
+      "framework": "NIST SP 800-40 Rev. 4",
+      "reference": "2.3.4 Monitor the Deployed Patches",
+      "supports": "Tests kept running after the change",
+      "sources": ["history", "ci-ready"]
+    },
+    {
+      "id": "iso-27001-2022-a.8.8",
+      "framework": "ISO/IEC 27001:2022",
+      "reference": "Annex A 8.8, Management of technical vulnerabilities",
+      "supports": "Fixes were verified and changes were tested",
+      "sources": ["batwoman", "history"]
+    },
+    {
+      "id": "cis-v8-7",
+      "framework": "CIS Controls v8",
+      "reference": "Control 7 (Safeguards 7.2 and 7.7)",
+      "supports": "Remediation was followed through to a verified result",
+      "sources": ["batwoman"]
+    },
+    {
+      "id": "soc2-cc7.1",
+      "framework": "SOC 2",
+      "reference": "CC7.1, detection and monitoring",
+      "supports": "Test runs and readiness checks that detect regressions ran",
+      "sources": ["history", "ci-ready"]
+    },
+    {
+      "id": "soc2-cc8.1",
+      "framework": "SOC 2",
+      "reference": "CC8.1, change management",
+      "supports": "Changes were tested; removed and skipped tests were recorded",
+      "sources": ["history", "katana", "ci-ready"]
+    }
+  ]
+}
