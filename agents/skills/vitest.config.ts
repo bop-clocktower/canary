@@ -109,6 +109,7 @@ export default defineConfig({
         'claude-code/canary-barda/scripts/**/*.mjs',
         'claude-code/canary-question/scripts/**/*.mjs',
         'claude-code/canary-sweep/scripts/**/*.mjs',
+        'claude-code/canary-harley/scripts/**/*.mjs',
         'claude-code/canary-ivy/scripts/**/*.mjs',
       ],
       exclude: ['**/*.test.*'],

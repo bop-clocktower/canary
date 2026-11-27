@@ -75,11 +75,11 @@ last_manual_edit: 2026-11-24T20:33:52.210Z
 
 ### canary-harley — property-based and fuzz test generation
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** planned
+- **Spec:** docs/changes/616-canary-harley/proposal.md
 - **Summary:** Ideation rank 11 (score 2.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Generate property-based tests (fast-check, Hypothesis) with shrinking rather than example-based cases - input-level chaos, distinct from canary-cry's user-flow exploration and from canary-edge-case-discovery's reasoning about named cases. Accepted risk to handle in spec: property-based testing needs an INVARIANT, and articulating the invariant is the entire hard part - generating framework boilerplate around a weak or wrong property produces confident nonsense that shrinks to a meaningless minimal case. The real output should be a proposed invariant the human confirms, with codegen downstream of that confirmation. Medium effort / medium confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/616-canary-harley/plans/2026-11-27-canary-harley-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#616
 

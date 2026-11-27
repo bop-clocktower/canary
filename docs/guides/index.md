@@ -114,6 +114,16 @@ signature; a first-run pass is flagged as vacuous.
 **Best for:** Converting an escaped defect into a regression test that was
 watched failing for the right reason.
 
+### [Property Test Generation Guide](./property-test-generation.md)
+
+`canary-harley` — proposes ranked, heuristic candidate invariants from the
+function signatures in one TypeScript or Python file. It writes a seeded
+fast-check or Hypothesis test only for a candidate a human confirmed with
+`--confirm`.
+
+**Best for:** Getting a first property test for a parser, serializer, encoder or
+validator without writing an unconfirmed invariant into the suite.
+
 ### [Rewind Guide](./rewind.md)
 
 `canary rewind` — reruns one failed test from run history at its recorded

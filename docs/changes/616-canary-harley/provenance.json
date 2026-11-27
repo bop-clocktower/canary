@@ -1,0 +1,43 @@
+{
+  "issues": [616],
+  "route": "feature",
+  "runId": "roadmap-fleet-2026-11-27",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd",
+    "execution",
+    "verification",
+    "review",
+    "review-fixes",
+    "ratchets"
+  ],
+  "specArtifact": "docs/changes/616-canary-harley/proposal.md",
+  "planPath": "docs/changes/616-canary-harley/plans/2026-11-27-canary-harley-plan.md",
+  "branch": "feat/616-canary-harley",
+  "base": "ea020e5e",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "The issue's remaining delta (its first comment) is four bullets: read the signature through the analyze_file path, propose ranked candidate invariants, emit fast-check and Hypothesis arbitraries, and hand authoring conventions to harness-property-test. All four ship, with the fixed recorded seed the same comment makes a v1 requirement. The model-based offline-sync case in the second comment is a named example for the spec by the maintainer's decision, not a v1 build requirement; it is recorded in the spec, the skill and the guide as out of scope.",
+  "assumptions": [
+    "No human was available. Brainstorming sign-off, plan approval (25 tasks, past the 15-task review signal) and every pause in the pipeline were taken autonomously with the recommended option.",
+    "Shape: a self-contained script skill (agents/skills/claude-code/canary-harley/scripts/*.mjs) run with `canary skills run canary-harley -- propose|emit`, not a new top-level `canary` subcommand. READINESS_COMMANDS already holds 12 imports (the cap in ts/test/cli-command-registry.test.ts), and new ts/src code would grow the arch module-size ratchet, which needs an allowance file this lane may not write.",
+    "'Reuse the analyze_file path' is met by loading `extractFileFunctions` from the built engine's mcp-server.js (the extractor behind analyze_file's `file_functions`), the way canary-cassandra loads its engine modules. That extractor returns names only and caps at 20, so harley reads parameter and return types itself and reports when the list may be cut short. No engine means exit 3.",
+    "A confirmation is a candidate id passed to `emit --confirm`. The id hashes the kind and the parameter and return types (not parameter names), and `emit` re-derives the candidates from the file, so a changed signature invalidates the confirmation. The CLI cannot tell who typed the flag: the human-only pause lives in SKILL.md, as it does for canary-cry.",
+    "Ranking is a fixed prior per kind plus a name-cue boost, labelled `heuristic`. Nothing measures whether an invariant holds.",
+    "Seven candidate kinds: round-trip, idempotence, involution, commutativity, length-preserving, total-predicate, determinism. A same-type round-trip pair is proposed only with a name pair.",
+    "Unresolved types (named, imported, aliased, generic, any, unknown, function types) are named and never given a generator; such candidates are listed and cannot be emitted. Async functions, methods, generics, overloads and rest or destructured parameters are skipped by name. Untyped JavaScript is proposed (determinism only) and cannot be emitted. Resolving same-file interfaces and aliases is a follow-up.",
+    "CRUD- and UI-shaped functions are skipped by first name token (create, fetch, list, update, delete, remove, save, insert, upsert, store, find; render, draw, mount, unmount, paint, show, hide, handle, on, use). get, set, read and load are left out because they prefix many pure parsers.",
+    "The default seed is the first 31 bits of SHA-256 of the candidate id; `--seed` overrides it for every id in a call. 31 bits because fast-check reports a seed outside the int32 range as a different number. Hypothesis output also sets database=None and deadline=None. Generated floats exclude NaN.",
+    "Generated tests go to <root>/tests/generated/property/. `--out-dir` is contained in <root>/tests/generated/ by path and real path; an existing file needs `--force`; the write is all-or-nothing with rollback.",
+    "Exit codes: 0 proposed or emitted, 1 an output file could not be written, 2 usage (a missing --confirm included), 3 abstained. Exit 1 was added during review and is the skill family's runtime-failure code.",
+    "`--json-out` is an operator-chosen path with no containment, matching canary-sweep, canary-starling and canary-question; a failed write prints `cannot write <path>` and exits 1.",
+    "Text from the analysed file, its path or argv is printed as one inert line in the markdown proposal, the abstained reason, emit refusals and every stderr line. The JSON output keeps raw values as escaped JSON strings because nothing renders it as markdown.",
+    "A determinism test compares outcomes (value, or the error thrown), not return values. Found by running the generated tests: the first version failed on a parser that throws for bad input.",
+    "No new dependency and no lockfile change. CI checks the generated tests for syntax only (TypeScript transpile, Python ast.parse). They were executed once by hand in a scratch project outside the repository (fast-check + vitest, hypothesis + pytest); that run is not a CI gate.",
+    "Twenty-two script modules, not the spec's eleven, to stay under the 300-line, complexity-10 and coupling thresholds. No ratchet baseline, allowance or ceiling was edited; `cli.mjs` is covered by the existing `agents/skills/claude-code/*/scripts/cli.mjs` coupling allowance.",
+    "Measured against merge base ea020e5e with CLI 14.1.1: perf delta +1 (the allowed cli.mjs coupling finding), 201 against a ceiling of 201; entropy 100 against 100; docs coverage 164/539 against a 26.73 floor; arch 0 new violations. The ratchets invite lowering the entropy ceiling and restamping the docs floor; neither was done here, since baseline files are out of this lane's scope.",
+    "CHANGELOG.md has one bullet under Unreleased/Added, per AGENTS.md (a feat PR writes its own entry). The roadmap row was edited by hand (status planned, spec and plan links); no roadmap sync was run.",
+    "Autopilot's plan and execution stages were delegated to harness-planner and harness-task-executor. After the maintainer capped the session at two agents, verification, code review, security review and the remaining fixes were done inline by the lane, not by separate reviewer agents."
+  ]
+}

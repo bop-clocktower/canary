@@ -16,6 +16,12 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary-harley`: property tests from confirmed invariants (#616).**
+  `canary skills run canary-harley -- propose FILE` reads the function
+  signatures in one TypeScript or Python file and prints a ranked, heuristic
+  list of candidate invariants. `emit FILE --confirm ID` writes one fast-check
+  or Hypothesis test per confirmed id and nothing for any other; without
+  `--confirm` it exits 2. Every generated test carries a fixed, recorded seed.
 - **canary-ivy: suite overgrowth report** (#615).
   `canary skills run canary-ivy -- tests --coverage coverage.json --history <jsonl>`
   reports setup bodies repeated across files, tests whose covered lines are
