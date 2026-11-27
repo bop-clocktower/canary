@@ -133,6 +133,16 @@ gap list.
 
 **Best for:** Asking "why is this history-backed report empty or one bucket?"
 
+### [Audit Evidence Export Guide](./audit-evidence-export.md)
+
+`canary evidence export` — writes one evidence pack for a time window from saved
+batwoman reports, the katana ledger, run history and the `ci-ready` score, with
+each item mapped to the controls it supports. Covers the window, the five source
+states, the control catalogue and why an empty control still prints.
+
+**Best for:** Handing an auditor or a procurement reviewer the record of what
+ran, without claiming a control is met.
+
 ### [LLM Providers Guide](./llm-providers.md)
 
 **Removed in v3.0.** The `agent/llm/` provider layer was deleted — there are no
