@@ -1,9 +1,20 @@
-/** Builds the evidence pack from source reports (#855). Pure given a catalogue. */
+/** Builds the evidence pack (#855). `buildPack` is pure given a catalogue; `exportPack` reads the sources and writes the files. */
 
-import { loadCatalogue } from './sources.js';
+import type { CiReadyReport } from '../../core/ci-ready.js';
+import { writePack } from './render.js';
+import {
+  loadCatalogue,
+  noItems,
+  oneItem,
+  readBatwoman,
+  readHistory,
+  readLedger,
+  typo,
+} from './sources.js';
 import type {
   CatalogueRow,
   EvidencePack,
+  Outcome,
   Scope,
   SourceReport,
 } from './types.js';
@@ -48,4 +59,33 @@ export function buildPack(
     controls,
     items,
   };
+}
+
+/** D10: one item, dated at the export and linked to HEAD; a score that scored nothing is no item. */
+function ciReadySource(scope: Scope, score: () => CiReadyReport) {
+  const src = { id: 'ci-ready' as const, path: '.', scope };
+  const { at, commit } = scope;
+  // Closed at `until`: the default window ends at the export time itself.
+  const outside = at < scope.since || at > scope.until;
+  if (outside) return noItems(src, 'out-of-window', `scored at ${at}`);
+  if (commit === null) return noItems(src, 'unreadable', 'no HEAD commit');
+  const report = score();
+  if (report.checked === 0) return noItems(src, 'absent', 'no check scored');
+  const checks = report.checks.map((c) => `${c.name} ${c.verdict}`).join(', ');
+  const summary = `ci-ready ${report.verdict}: ${report.checked} of ${report.checks.length} checks scored (${checks})`;
+  const ref = { kind: 'commit' as const, id: commit };
+  return oneItem(src, { date: at, summary, ref });
+}
+
+export function exportPack(scope: Scope, score: () => CiReadyReport): Outcome {
+  const problem = typo(scope);
+  if (problem !== null) return { exit: 2, lines: [`evidence: ${problem}`] };
+  const sources = [
+    readBatwoman(scope),
+    readLedger(scope),
+    readHistory(scope),
+    ciReadySource(scope, score),
+  ];
+  const out = scope.out ?? `${scope.root}/.canary/evidence`;
+  return writePack(out, buildPack(sources, scope));
 }
