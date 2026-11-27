@@ -153,14 +153,18 @@ abstains. Exit 3 means "verified zero items" and nothing else, which stays true.
 
 ### Layout — `agents/skills/claude-code/canary-dev-pipeline/`
 
-| File                  | Role                                                                                                                                        |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SKILL.md`            | Frontmatter `cli: scripts/cli.mjs`, `requires: [node>=20]`; usage, members, boundary, agent-layer steps                                     |
-| `scripts/cli.mjs`     | `CLI_SPEC`, `main(argv, deps)`, budget loop, exit codes, `--out`                                                                            |
-| `scripts/escape.mjs`  | `clean` (strip ANSI, control and newline characters; clamp length), `md` (clean, then escape Markdown metacharacters), `cleanDeep` for JSON |
-| `scripts/target.mjs`  | Working-diff and explicit-path resolution; git through `execFileSync` argv only                                                             |
-| `scripts/members.mjs` | The four deterministic members: risk, isolation, temporal, ties                                                                             |
-| `scripts/render.mjs`  | Markdown and JSON briefs, suggestions                                                                                                       |
+| File                  | Role                                                                                                                                                                                                                    |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SKILL.md`            | Frontmatter `cli: scripts/cli.mjs`, `requires: [node>=20]`; usage, members, boundary, agent-layer steps                                                                                                                 |
+| `scripts/cli.mjs`     | `CLI_SPEC`, `main(argv, deps)`, usage errors                                                                                                                                                                            |
+| `scripts/run.mjs`     | Print the brief, the stderr abstention line, `--out`, exit codes                                                                                                                                                        |
+| `scripts/brief.mjs`   | One run: target, members inside the budget, brief, format                                                                                                                                                               |
+| `scripts/budget.mjs`  | `runMembers`: budget checked before each member; a throwing member becomes an `error` row                                                                                                                               |
+| `scripts/escape.mjs`  | `clean` (strip ANSI, control and newline characters; clamp length), `md` (clean, then escape Markdown metacharacters), `cleanDeep` for JSON (colliding keys are suffixed `~2`, `~3`, never overwritten), `escapeRegExp` |
+| `scripts/target.mjs`  | Working-diff and explicit-path resolution; git through `execFileSync` argv only                                                                                                                                         |
+| `scripts/members.mjs` | Risk and ties, and the `MEMBERS` order                                                                                                                                                                                  |
+| `scripts/scans.mjs`   | Isolation (savant) and temporal (blackhawk) on changed tests                                                                                                                                                            |
+| `scripts/render.mjs`  | Markdown and JSON briefs, suggestions                                                                                                                                                                                   |
 
 ### CLI
 
@@ -209,6 +213,12 @@ canary skills run canary-dev-pipeline -- [path ...] [--repo DIR] [--json]
 run: time budget spent) or `error` (the member threw; its message is reported
 and the run continues). The run abstains when the target is empty, or when the
 members checked zero items between them.
+
+The CLI is split along that chain (cli → run → brief → members → scans) so that
+no module imports more than four others: the perf ratchet flags a module whose
+coupling ratio exceeds 0.7 (measured here: it fired on modules importing five or
+more; the threshold is inferred, not documented), and the skill CLI allowance
+covers only the merge-base delta, not the absolute ceiling.
 
 ### Security
 
