@@ -92,7 +92,9 @@ decision is needed.
 | File                                            | Responsibility                                                              |
 | ----------------------------------------------- | --------------------------------------------------------------------------- |
 | `agents/skills/claude-code/canary-ivy/SKILL.md` | Contract, invocation, exit codes, invariant, boundaries.                    |
-| `.../canary-ivy/scripts/cli.mjs`                | `CLI_SPEC`, I/O orchestration, exit codes, `--out`.                         |
+| `.../canary-ivy/scripts/cli.mjs`                | `CLI_SPEC`, usage, exit codes (five imports, under the perf coupling rule). |
+| `.../canary-ivy/scripts/inputs.mjs`             | Read the three inputs; a named input that cannot be read becomes exit 1.    |
+| `.../canary-ivy/scripts/output.mjs`             | Produce the printed text and write `--out` (`cannot write artifact`).       |
 | `.../canary-ivy/scripts/text.mjs`               | The one escaping helper (`plain`, `md`).                                    |
 | `.../canary-ivy/scripts/fixtures.mjs`           | Test-file walk, setup-block extraction, identical-body grouping.            |
 | `.../canary-ivy/scripts/coverage.mjs`           | Read both coverage formats, invert to per-test line sets, group equal sets. |
