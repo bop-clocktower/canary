@@ -8,7 +8,8 @@
 //           no finding id -- a gate cannot have an id for what it never saw
 //
 // Each returns `{code}` or `{usage}` (the CLI formats usage errors). Every
-// value printed goes through escape.mjs.
+// value printed goes through escape.mjs. Validation is a table of checks per
+// command, so no command function branches on its options itself.
 
 import { appendRecords, loadLedger } from './ledger.mjs';
 import { readRun } from './ingest.mjs';
@@ -33,18 +34,47 @@ const fail = (msg, code = EXIT_REJECTED) => {
   return { code };
 };
 
-function checkGate(gate) {
+function checkGate({ gate }) {
   if (!gate) return 'argument --gate: required';
   return GATE_RE.test(gate)
     ? null
     : 'argument --gate: lower-case letters, digits and -, at most 40';
 }
 
+/** `--by` is the provenance "who"; `derived` is reserved for derived rules. */
 function checkBy(by, required) {
   if (!by) return required ? 'argument --by: required' : null;
   if (by === 'derived') return 'argument --by: "derived" is reserved';
   return BY_RE.test(by) ? null : 'argument --by: letters, digits and ._@+-';
 }
+
+const need = (key, flag) => (opts) =>
+  opts[key] ? null : `argument ${flag}: required`;
+
+const CHECKS = {
+  record: [
+    checkGate,
+    need('from', '--from'),
+    ({ pr }) =>
+      pr == null || pr > 0 ? null : 'argument --pr: must be 1 or more',
+    ({ by }) => checkBy(by, false),
+  ],
+  label: [
+    ({ args }) => (args.length === 2 ? null : 'label: expected one finding id'),
+    ({ outcome }) =>
+      LABEL_OUTCOMES.includes(outcome)
+        ? null
+        : `argument --outcome: one of ${LABEL_OUTCOMES.join(', ')}`,
+    ({ by }) => checkBy(by, true),
+    need('evidence', '--evidence'),
+  ],
+  escape: [
+    ({ args }) => (args.length === 1 ? null : 'escape: takes no finding id'),
+    checkGate,
+    ({ by }) => checkBy(by, true),
+    need('evidence', '--evidence'),
+  ],
+};
 
 /** The provenance time: `--at` (ISO 8601) or now. */
 function timeOf(opts, deps) {
@@ -56,9 +86,13 @@ function timeOf(opts, deps) {
   return { at: new Date(ms).toISOString() };
 }
 
-function checkEvidence(opts) {
-  if (!opts.evidence) return 'argument --evidence: required';
-  return null;
+/** `{usage}` for the first failing check, else `{at}`. */
+function validate(command, opts, deps) {
+  for (const check of CHECKS[command]) {
+    const usage = check(opts);
+    if (usage) return { usage };
+  }
+  return timeOf(opts, deps);
 }
 
 /** Load the ledger, or print why it cannot be used. */
@@ -68,9 +102,12 @@ function open(opts) {
   return { led };
 }
 
-function append(opts, led, records) {
+/** Append, then print `done` -- or the reason the ledger was not written. */
+function commit(opts, led, records, done) {
   const err = appendRecords(opts.repo, opts.ledger, records, led.endsClean);
-  return err ? fail(`ledger ${err}`, EXIT_WRITE) : null;
+  if (err) return fail(`ledger ${err}`, EXIT_WRITE);
+  console.log(clean(done, 400));
+  return { code: 0 };
 }
 
 function newFindings(state, findings) {
@@ -91,7 +128,7 @@ function runRecord(state, parsed, meta) {
     pr: meta.pr ?? null,
     at: meta.at,
     by: meta.by ?? null,
-    source: clean(meta.source, 300),
+    source: clean(parsed.source, 300),
     findings: parsed.findings.map(({ id, suppressed, reason }) => ({
       id,
       suppressed,
@@ -112,108 +149,64 @@ function recordSummary(run, fresh, derived, notRead) {
 
 /** `record --gate G --from FILE [--pr N] [--by WHO] [--at ISO]` */
 export function record(opts, deps) {
-  const usage =
-    checkGate(opts.gate) ??
-    (opts.from ? null : 'argument --from: required') ??
-    (opts.pr == null || opts.pr > 0
-      ? null
-      : 'argument --pr: must be 1 or more') ??
-    checkBy(opts.by, false);
-  const time = timeOf(opts, deps);
-  if (usage || time.usage) return { usage: usage ?? time.usage };
+  const time = validate('record', opts, deps);
+  if (time.usage) return time;
   const parsed = readRun(opts.repo, opts.from, opts.gate);
   if (parsed.error) return fail(parsed.error);
   const { led, err } = open(opts);
   if (err) return err;
-  const meta = { ...opts, at: time.at, source: parsed.source };
-  const run = runRecord(led.state, parsed, meta);
-  const derived = deriveLabels({
-    state: led.state,
-    run,
-    at: time.at,
-    repo: opts.repo,
-  });
+  const run = runRecord(led.state, parsed, { ...opts, at: time.at });
+  const at = time.at;
+  const derived = deriveLabels({ state: led.state, run, at, repo: opts.repo });
   const fresh = newFindings(led.state, parsed.findings);
-  const failed = append(opts, led, [...fresh, run, ...derived.labels]);
-  if (failed) return failed;
-  console.log(
-    clean(recordSummary(run, fresh.length, derived, parsed.notRead), 400),
-  );
-  return { code: 0 };
+  const summary = recordSummary(run, fresh.length, derived, parsed.notRead);
+  return commit(opts, led, [...fresh, run, ...derived.labels], summary);
 }
 
-function labelRecord(fields) {
+/** One explicit label record; evidence and note are cleaned and clamped. */
+function labelRecord(opts, at, finding, gate, outcome) {
   return {
     v: 1,
     kind: 'label',
     rule: 'explicit',
-    ...fields,
-    evidence: clean(fields.evidence, MAX_EVIDENCE),
-    note: fields.note ? clean(fields.note, MAX_NOTE) : null,
+    finding,
+    gate,
+    outcome,
+    by: opts.by,
+    at,
+    evidence: clean(opts.evidence, MAX_EVIDENCE),
+    note: opts.note ? clean(opts.note, MAX_NOTE) : null,
   };
-}
-
-function labelUsage(opts, id) {
-  if (!id) return 'label: expected one finding id';
-  if (!LABEL_OUTCOMES.includes(opts.outcome)) {
-    return `argument --outcome: one of ${LABEL_OUTCOMES.join(', ')}`;
-  }
-  return checkBy(opts.by, true) ?? checkEvidence(opts);
 }
 
 /** `label <finding-id> --outcome O --by WHO --evidence REF [--note T] [--at ISO]` */
 export function addLabel(opts, deps) {
-  const id = opts.args[1];
-  const usage =
-    labelUsage(opts, id) ??
-    (opts.args.length > 2 ? 'label: one finding id only' : null);
-  const time = timeOf(opts, deps);
-  if (usage || time.usage) return { usage: usage ?? time.usage };
+  const time = validate('label', opts, deps);
+  if (time.usage) return time;
   const { led, err } = open(opts);
   if (err) return err;
+  const id = opts.args[1];
   const finding = ID_RE.test(id) ? led.state.findings.get(id) : undefined;
   if (!finding) {
     return fail(
       `unknown finding id ${id}: record the gate run that produced it first`,
     );
   }
-  const rec = labelRecord({
-    finding: id,
-    gate: finding.gate,
-    outcome: opts.outcome,
-    by: opts.by,
-    at: time.at,
-    evidence: opts.evidence,
-    note: opts.note,
-  });
-  const failed = append(opts, led, [rec]);
-  if (failed) return failed;
-  console.log(clean(`labelled ${id} (${finding.gate}) ${opts.outcome}`));
-  return { code: 0 };
+  const rec = labelRecord(opts, time.at, id, finding.gate, opts.outcome);
+  return commit(
+    opts,
+    led,
+    [rec],
+    `labelled ${id} (${finding.gate}) ${opts.outcome}`,
+  );
 }
 
 /** `escape --gate G --by WHO --evidence REF [--note T] [--at ISO]` */
 export function addEscape(opts, deps) {
-  const usage =
-    checkGate(opts.gate) ??
-    checkBy(opts.by, true) ??
-    checkEvidence(opts) ??
-    (opts.args.length > 1 ? 'escape: takes no finding id' : null);
-  const time = timeOf(opts, deps);
-  if (usage || time.usage) return { usage: usage ?? time.usage };
+  const time = validate('escape', opts, deps);
+  if (time.usage) return time;
   const { led, err } = open(opts);
   if (err) return err;
-  const rec = labelRecord({
-    finding: null,
-    gate: opts.gate,
-    outcome: 'escape',
-    by: opts.by,
-    at: time.at,
-    evidence: opts.evidence,
-    note: opts.note,
-  });
-  const failed = append(opts, led, [rec]);
-  if (failed) return failed;
-  console.log(clean(`recorded an escape for ${opts.gate}`));
-  return { code: 0 };
+  const rec = labelRecord(opts, time.at, null, opts.gate, 'escape');
+  return commit(opts, led, [rec], `recorded an escape for ${opts.gate}`);
 }

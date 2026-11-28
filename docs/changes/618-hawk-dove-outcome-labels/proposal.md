@@ -101,7 +101,8 @@ In:
 
 Out (remaining for #618): threshold tuning or recommendation of any kind;
 derived labels for gates other than the guardian; a scheduled workflow that
-records guardian runs automatically.
+records guardian runs automatically; and a committed, durable home for this
+repository's own ledger.
 
 ## Design
 
@@ -203,6 +204,10 @@ stderr so a redirected report still says it. Markdown by default; `--json` emits
 - A run without `--pr` still feeds the suppression rules, but never
   `guardian-covered-later`, which needs a first and a later run for one PR.
 - When labels for one finding disagree, the latest one wins.
+- The default ledger path follows canary-katana's `.canary/` convention. That
+  directory is gitignored here, so the SKILL.md says to commit the ledger or
+  point `--ledger` at a tracked path. Choosing that home is left to the tuner
+  follow-up.
 - The registry status becomes `shipped`, because
   `ts/test/bop-name-registry.test.ts` requires it once the directory exists
   (precedent: #1779). The claim note says the tuner is deferred.

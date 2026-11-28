@@ -49,14 +49,17 @@ function parseError(text, name) {
 
 const str = (v) => (typeof v === 'string' ? v : null);
 
+// Which input fields hold (file, rule, anchor) for each shape.
+const GUARDIAN_FIELDS = ['path', 'kind', 'unit'];
+const SCAN_FIELDS = ['file', 'rule', 'anchor'];
+
 /** One raw entry as an identity, or null when it cannot be one. */
 function identityFrom(entry, gate) {
   if (entry === null || typeof entry !== 'object') return null;
-  const file = str(gate === 'guardian' ? entry.path : entry.file);
+  const [f, r, a] = gate === 'guardian' ? GUARDIAN_FIELDS : SCAN_FIELDS;
+  const file = str(entry[f]);
   if (!file) return null;
-  const rule = gate === 'guardian' ? entry.kind : entry.rule;
-  const anchor = gate === 'guardian' ? entry.unit : entry.anchor;
-  return { file, rule: str(rule) ?? '', anchor: str(anchor) ?? '' };
+  return { file, rule: str(entry[r]) ?? '', anchor: str(entry[a]) ?? '' };
 }
 
 /** One stored finding: id from the raw identity, display fields clamped. */

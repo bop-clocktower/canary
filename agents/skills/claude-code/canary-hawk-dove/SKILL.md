@@ -62,6 +62,12 @@ Every command also takes `--repo DIR` (default `.`) and `--ledger PATH` (default
 take `--note TEXT`, and the writers take `--at ISO` for the provenance time
 (default: now).
 
+**Labels only count if the ledger survives.** The default path sits beside
+canary-katana's `.canary/quarantine.json`, and many repositories (this one
+included) gitignore `.canary/`. Commit the ledger (`git add -f`) or point
+`--ledger` at a tracked path. A ledger that lives only on a CI runner is lost
+with the runner, which is the persistence failure ADR 0025 records.
+
 ## Inputs
 
 - `--gate guardian` reads `canary guardian pr-check` JSON. A finding's identity
