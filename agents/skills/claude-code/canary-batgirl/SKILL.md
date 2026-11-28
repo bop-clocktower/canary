@@ -56,6 +56,10 @@ Without it the ratio has no denominator and the dimension is not assessed.
 ## Usage
 
 ```bash
+canary skills run canary-batgirl -- --help
+```
+
+```bash
 canary skills run canary-batgirl --                      # conventional paths
 canary skills run canary-batgirl -- --cassandra vac.json --batwoman audits/
 canary skills run canary-batgirl -- --json --out reports/scorecard.json
