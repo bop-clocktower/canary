@@ -1,16 +1,29 @@
-// read -- bounded reads of every input canary-batgirl scores (spec D9).
+// read -- bounded, contained reads of every input canary-batgirl scores
+// (spec D9, Security).
 //
 // Every result is tagged, never thrown, so the caller decides what each case
 // means for its dimension:
 //
 //   missing     the path does not exist
-//   unreadable  it exists but cannot be read as the expected kind
-//   not-read    it is over a limit, so it was deliberately not read
-//   invalid     it was read but is not valid JSON
+//   unreadable  outside the working directory, or not a regular file
+//   not-read    a symlink, or over a limit: deliberately not read
+//   invalid     read, but not valid JSON
 //   ok          `value` holds the text, the parsed JSON, or a file list
 //
-// An input over a limit is not read at all: a value computed from its first N
-// rows would misrepresent the whole, and the bound is what keeps every later
+// CONTAINMENT. Every path, the operator's own and each directory entry, must
+// resolve strictly inside the working directory (`root`), and no segment
+// below the root may be a symlink: each is `lstat`ed from the root down, never
+// `stat`ed, because a symlinked parent reaches the same place a symlinked
+// file does. A realpath check then confirms the read stays under the
+// realpath'd root. Same convention as canary-unquarantine (`within` in
+// markers.mjs, `symlinkOnPath` in git.mjs).
+//
+// NO CONTENT IN ERRORS. A JSON parse error is reported by name and position
+// only: the parser's own message quotes the bytes it failed on. A filesystem
+// error is reported by its code.
+//
+// BOUNDS. An input over a limit is not read at all: a value computed from its
+// first N rows would misrepresent the whole, and the bound keeps every later
 // scan linear in a size batgirl chose.
 
 import fs from 'node:fs';
@@ -24,25 +37,73 @@ export const LIMITS = Object.freeze({
   files: 500,
 });
 
-function statOf(file) {
-  try {
-    return { stat: fs.statSync(file) };
-  } catch (exc) {
-    if (exc.code === 'ENOENT') return { result: { kind: 'missing' } };
-    return { result: { kind: 'unreadable', reason: exc.message } };
+const SYMLINK = { kind: 'not-read', reason: 'not read: symlink' };
+const OUTSIDE = { kind: 'unreadable', reason: 'outside the working directory' };
+const NOT_REGULAR = { kind: 'unreadable', reason: 'not a regular file' };
+
+const cannot = (exc) => ({
+  kind: 'unreadable',
+  reason: `cannot read: ${exc.code ?? exc.name}`,
+});
+
+/** `p` relative to `base` when it is `base` or inside it; null otherwise. */
+function within(base, p) {
+  const rel = path.relative(base, p);
+  const up = rel === '..' || rel.startsWith(`..${path.sep}`);
+  return up || path.isAbsolute(rel) ? null : rel;
+}
+
+/** Whether a segment of `rel` below `root` is a symlink; null if missing. */
+function symlinkOnPath(root, rel) {
+  let cur = root;
+  for (const seg of rel.split(path.sep).filter(Boolean)) {
+    cur = path.join(cur, seg);
+    const st = fs.lstatSync(cur, { throwIfNoEntry: false });
+    if (!st) return null;
+    if (st.isSymbolicLink()) return true;
   }
+  return false;
 }
 
 /**
- * Read a file as UTF-8 text, if it is a file within the byte limit.
+ * Resolve `file` against `root` and judge it before anything is read.
+ *
+ * @returns {{abs: string, stat: fs.Stats} | {result: object}}
+ */
+function locate(file, root) {
+  try {
+    const base = path.resolve(root);
+    const abs = path.resolve(base, String(file));
+    const rel = within(base, abs);
+    if (rel === null) return { result: OUTSIDE };
+    const link = symlinkOnPath(base, rel);
+    if (link === null) return { result: { kind: 'missing' } };
+    if (link) return { result: SYMLINK };
+    if (within(fs.realpathSync(base), fs.realpathSync(abs)) === null) {
+      return { result: SYMLINK };
+    }
+    return { abs, stat: fs.lstatSync(abs) };
+  } catch (exc) {
+    return { result: cannot(exc) };
+  }
+}
+
+const ctxOf = (ctx) => ({
+  root: ctx.root ?? process.cwd(),
+  limits: ctx.limits ?? LIMITS,
+});
+
+/**
+ * Read a regular file as UTF-8 text, if it is within the byte limit.
  *
  * @param {string} file
- * @param {typeof LIMITS} [limits]
+ * @param {{root?: string, limits?: typeof LIMITS}} [ctx]
  */
-export function readText(file, limits = LIMITS) {
-  const { stat, result } = statOf(file);
+export function readText(file, ctx = {}) {
+  const { root, limits } = ctxOf(ctx);
+  const { abs, stat, result } = locate(file, root);
   if (result) return result;
-  if (!stat.isFile()) return { kind: 'unreadable', reason: 'not a file' };
+  if (!stat.isFile()) return NOT_REGULAR;
   if (stat.size > limits.bytes) {
     return {
       kind: 'not-read',
@@ -50,36 +111,46 @@ export function readText(file, limits = LIMITS) {
     };
   }
   try {
-    return { kind: 'ok', value: fs.readFileSync(file, 'utf8') };
+    return { kind: 'ok', value: fs.readFileSync(abs, 'utf8') };
   } catch (exc) {
-    return { kind: 'unreadable', reason: exc.message };
+    return cannot(exc);
   }
 }
+
+/** Only a number is taken from the parser's message, never its text. */
+const POSITION = /position (\d+)/;
 
 /**
- * `readText`, then JSON.parse. A parse failure is `invalid`, with the parser's
- * message (which may quote file content: callers escape it before printing).
+ * JSON.parse, tagged. A failure names the error and the position, and quotes
+ * none of the input.
  */
-export function readJson(file, limits = LIMITS) {
-  const text = readText(file, limits);
-  if (text.kind !== 'ok') return text;
+export function parseJson(text) {
   try {
-    return { kind: 'ok', value: JSON.parse(text.value) };
+    return { kind: 'ok', value: JSON.parse(text) };
   } catch (exc) {
-    return { kind: 'invalid', reason: `not valid JSON: ${exc.message}` };
+    const at = POSITION.exec(String(exc.message));
+    const where = at ? `at position ${at[1]}` : '(no position given)';
+    return { kind: 'invalid', reason: `not valid JSON: ${exc.name} ${where}` };
   }
 }
 
-function listDirectory(dir, prefix, limits) {
+/** `readText`, then `parseJson`. */
+export function readJson(file, ctx = {}) {
+  const text = readText(file, ctx);
+  return text.kind === 'ok' ? parseJson(text.value) : text;
+}
+
+const gated = (name, prefix) =>
+  name.startsWith(prefix) && name.endsWith('.json');
+
+function listDirectory(abs, prefix, limits) {
   let names;
   try {
-    names = fs.readdirSync(dir);
+    names = fs.readdirSync(abs);
   } catch (exc) {
-    return { kind: 'unreadable', reason: exc.message };
+    return cannot(exc);
   }
-  const picked = names
-    .filter((n) => n.startsWith(prefix) && n.endsWith('.json'))
-    .sort();
+  const picked = names.filter((n) => gated(n, prefix)).sort();
   if (picked.length > limits.files) {
     return {
       kind: 'not-read',
@@ -90,27 +161,34 @@ function listDirectory(dir, prefix, limits) {
 }
 
 /**
- * One JSON file, or every `<prefix>*.json` in a directory, each read with
- * `readJson`. The list is `[{name, read}]` in sorted name order.
+ * One `<prefix>*.json` file, or every such file in a directory, each read with
+ * `readJson` under the same containment. The list is `[{name, read}]` in
+ * sorted name order; a symlinked or non-regular entry is listed with its
+ * not-read or unreadable result, never followed.
  *
  * @param {string} target file or directory
- * @param {string} prefix file-name prefix a directory entry must carry
- * @param {typeof LIMITS} [limits]
+ * @param {string} prefix file-name prefix every file must carry
+ * @param {{root?: string, limits?: typeof LIMITS}} [ctx]
  */
-export function readJsonFiles(target, prefix, limits = LIMITS) {
-  const { stat, result } = statOf(target);
+export function readJsonFiles(target, prefix, ctx = {}) {
+  const { root, limits } = ctxOf(ctx);
+  const { abs, stat, result } = locate(target, root);
   if (result) return result;
-  if (!stat.isDirectory()) {
-    const name = path.basename(target);
-    return { kind: 'ok', value: [{ name, read: readJson(target, limits) }] };
+  if (stat.isFile()) {
+    const name = path.basename(abs);
+    if (!gated(name, prefix)) {
+      return { kind: 'unreadable', reason: `not a ${prefix}*.json file` };
+    }
+    return { kind: 'ok', value: [{ name, read: readJson(abs, ctx) }] };
   }
-  const listed = listDirectory(target, prefix, limits);
+  if (!stat.isDirectory()) return NOT_REGULAR;
+  const listed = listDirectory(abs, prefix, limits);
   if (listed.kind !== 'ok') return listed;
   return {
     kind: 'ok',
     value: listed.value.map((name) => ({
       name,
-      read: readJson(path.join(target, name), limits),
+      read: readJson(path.join(abs, name), ctx),
     })),
   };
 }

@@ -50,13 +50,29 @@ export function plain(value, max = MAX_TEXT) {
   return clamp(text, max);
 }
 
+// GFM extended autolinks need no Markdown metacharacter at all: a scheme URL
+// (`https://`), a `www.` host, or a bare email turns into a live link on its
+// own. Each trigger is defanged with escaped brackets, the convention security
+// reports use (`https[:]//`, `www[.]`, `a[@]b`), so the value still reads but
+// no longer links.
+const AUTOLINKS = [
+  [/:\/\//g, '\\[:\\]//'],
+  [/\b(www)\./gi, '$1\\[.\\]'],
+  [/@/g, '\\[@\\]'],
+];
+
 /**
- * `plain`, then Markdown-escaped, for any value that lands in Markdown.
+ * `plain`, then Markdown-escaped and autolink-defanged, for any value that
+ * lands in Markdown.
  *
  * @param {unknown} value
  * @param {number} [max]
  * @returns {string}
  */
 export function md(value, max = MAX_TEXT) {
-  return plain(value, max).replace(MD_META, '\\$&');
+  let text = plain(value, max).replace(MD_META, '\\$&');
+  for (const [trigger, defanged] of AUTOLINKS) {
+    text = text.replace(trigger, defanged);
+  }
+  return text;
 }

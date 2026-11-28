@@ -712,4 +712,22 @@ describe('escapes section', () => {
     );
     expect(s.eyes).toEqual(['ESC-1: totals rounded wrong (found 2026-08-02)']);
   });
+
+  it('accepts the caught array canary-batgirl adds, and leaves it out (#619)', () => {
+    // batgirl's escaped-defect ratio needs the defects caught before release
+    // as its denominator, so it extends this log with `caught`. The dossier
+    // must keep reading the same file unchanged: an unknown key is not a
+    // reason to go dark, and a caught defect is not an escape.
+    const s = escapesSection(
+      write('e.json', {
+        schema_version: 1,
+        tracked_since: '2026-07-01',
+        escapes: [{ id: 'ESC-1', summary: 's', found_at: '2026-08-02' }],
+        caught: [{ id: 'CAU-1', summary: 'c', found_at: '2026-08-03' }],
+      }),
+    );
+    expect(s.status).toBe('fed');
+    expect(s.facts).toContain('1 escape recorded since 2026-07-01');
+    expect(s.eyes).toEqual(['ESC-1: s (found 2026-08-02)']);
+  });
 });
