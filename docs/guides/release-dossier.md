@@ -107,6 +107,12 @@ Canary holds no incident data, so escaped defects are recorded by hand:
 `tracked_since` is the denominator. An empty `escapes` list with it reads as "0
 escapes recorded since 2026-07-01". Without it, the section is dark.
 
+The same log may also hold a `caught` array, the defects found before release,
+in the same `{id, summary, found_at}` shape. The dossier ignores it;
+[canary-batgirl](../../agents/skills/claude-code/canary-batgirl/SKILL.md) needs
+it as the denominator of its escaped-defect ratio, and without it that dimension
+is not assessed.
+
 ## The content digest
 
 The JSON dossier carries `digest`: sha256 over the canonical JSON (keys sorted

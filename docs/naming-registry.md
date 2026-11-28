@@ -73,7 +73,7 @@ Status is one of `shipped` (a directory exists under
 | ---------------------------- | -------- | ----- | -------------------------------------------------------------------------- |
 | `canary-add-framework`       | shipped  | —     | Add a testing framework to the registry end-to-end                         |
 | `canary-barda`               | shipped  | 1151  | QA site builder (static site from a validated canary.site/1 feed)          |
-| `canary-batgirl`             | reserved | 619   | Developer and team quality scorecard                                       |
+| `canary-batgirl`             | shipped  | 619   | Team quality scorecard (team-level only, no composite)                     |
 | `canary-batwoman`            | shipped  | 749   | Closure-verification detector (renamed out of the 2026-08-23 collision)    |
 | `canary-blackalice`          | reserved | 1524  | QA tool review from six personas' seats (job catalog, Q1–Q4, ledger-first) |
 | `canary-blackhawk`           | shipped  | —     | Temporal-dependency linter for test files                                  |
