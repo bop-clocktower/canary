@@ -1,0 +1,49 @@
+{
+  "issues": [618],
+  "route": "feature",
+  "runId": "roadmap-fleet-2026-11-27",
+  "status": "parked",
+  "parkedReason": "The perf ratchet cannot be satisfied without an allowance or ceiling edit, which the lane brief forbids. Measured in clean detached worktrees: 200 findings at the merge base a04953ef, 202 at the head (ceiling 201), delta +2. Both new findings are fan-in on shared skill libraries: agents/skills/lib/parse-args.mjs and agents/skills/lib/is-main.mjs are each imported by 21 files against a threshold of 20. canary-ivy (#1778) took each to exactly 20, so any new cli skill that uses the shared parser and entry guard now adds these two findings. The four complexity findings the first cut added were fixed. Unblocking it takes a maintainer decision: a reviewed deltaAllowances entry for the two lib fan-in findings plus one finding of ceiling headroom, or paying down existing findings and accepting the lib fan-in as structural.",
+  "stages": [
+    "brainstorming (inline: spike of the labeling question, spec)",
+    "autopilot (inline)",
+    "planning (inline)",
+    "execution (inline, test-first, one commit per task)",
+    "verification (inline: skills test/typecheck/format, ts build/typecheck/format, blackhawk and savant --strict, rehearse, ratchets in clean worktrees)",
+    "review (inline self-review of the full diff for correctness and security)",
+    "review-fixes (inline: perf complexity refactor; ledger persistence note)"
+  ],
+  "inlineNote": "The session was capped at 2 concurrent agents, so every stage ran inline in the lane agent: no harness-planner, harness-task-executor, harness-verifier, harness-code-reviewer or parallel code-review agents were dispatched. harness-soundness-review was not run as a tool; the spec was self-reviewed.",
+  "specArtifact": "docs/changes/618-hawk-dove-outcome-labels/proposal.md",
+  "planPath": "docs/changes/618-hawk-dove-outcome-labels/plans/2026-11-27-hawk-dove-outcome-labels-plan.md",
+  "closingKeyword": "Refs",
+  "closingKeywordWhy": "This is the labels-first slice of #618. The threshold auto-tuner the issue is named for is deliberately not built: the report never prints or proposes a threshold, and tuning stays blocked until a gate holds 30 adjudicated labels.",
+  "followUps": [
+    "Threshold tuning for #618, once a gate reaches the 30-label floor",
+    "A durable, committed home for this repository's ledger, and a scheduled workflow that records guardian runs",
+    "Derived labels for gates other than the guardian"
+  ],
+  "deviations": [
+    "Naming registry: canary-hawk-dove marked shipped, not reserved, because ts/test/bop-name-registry.test.ts requires shipped once agents/skills/claude-code/canary-hawk-dove exists (precedent #1779). Claim note: 'slice: outcome labels and report; tuner deferred, #618'. Coordinator-approved."
+  ],
+  "assumptions": [
+    "No human was available; routine questions took the recommended option.",
+    "Derived rules follow ADR 0025 and ts/src/guardian/adjudication.ts, as the coordinator corrected: fp: suppression is noise, any other reasoned suppression is intentional (excluded from precision), and a coverage-verified finding gone from a later vouching run of the same PR while its file is still in that run's diff is real.",
+    "Rejected and not built: 'a later fix: commit touches the flagged path means real', because its false-label risk is high on high-churn files.",
+    "Floor: 30 adjudicated (real + noise) labels per gate, mirroring PRECISION_FLOOR. Skills ship without the engine, so the constant cannot be imported across the package boundary; it is mirrored and a parity test reads ts/src/guardian/adjudication.ts.",
+    "Finding identity reuses agents/skills/lib/scan-baseline.mjs identityOf (file, rule, anchor), hashed with the gate. For the guardian the fields are path, kind and unit. An id names an identity, not an occurrence.",
+    "When labels for one finding disagree, the latest ledger line wins; earlier ones stay for audit.",
+    "Default ledger path .canary/hawk-dove/ledger.jsonl follows canary-katana's .canary/ convention; SKILL.md says to commit it, since .canary/ is gitignored here.",
+    "Report exit codes 0/1/2/3 with exit 3 as the default abstention (no --strict), expressed by an optional advisoryCode on the skill gate-conformance row (the same shape #1779 adds; whichever lands second resolves a small conflict).",
+    "No directory walk exists: --from must be a single regular .json file, and a directory is rejected by name.",
+    "GFM autolinks are broken by inserting U+200B into every ://, www. and @ in Markdown output."
+  ],
+  "ratchets": {
+    "base": "a04953ef",
+    "head": "d10a8378",
+    "perf": "200 -> 202 (ceiling 201), delta +2: lib fan-in on parse-args.mjs and is-main.mjs (21 importers, threshold 20). FAIL.",
+    "entropy": "100 -> 100 (+0), baseline 116. OK.",
+    "archModuleSize": "agents/skills 122 -> 123 (+1, the vitest.config.ts coverage include); newViolations 0; project complexity 22 -> 22, coupling 69 -> 69.",
+    "docs": "143/526 -> 145/536, floor 26.73%, head 27.05%. OK."
+  }
+}
