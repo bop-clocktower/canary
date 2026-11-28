@@ -12,7 +12,7 @@
 import { readJson, readJsonFiles, readText } from './read.mjs';
 
 /** One row per dimension: its flag, default path and reader. */
-export const INPUTS = Object.freeze([
+const INPUTS = Object.freeze([
   {
     id: 'escaped-defects',
     flag: '--escapes',

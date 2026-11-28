@@ -16,7 +16,7 @@ import {
   unexplainedSwitchOffs,
   vacuousTests,
 } from '../claude-code/canary-batgirl/scripts/suite.mjs';
-import { redMainlineCommits } from '../claude-code/canary-batgirl/scripts/mainline.mjs';
+import { redMainlineCommits } from '../claude-code/canary-batgirl/scripts/suite.mjs';
 
 const OPTS = { limits: LIMITS, branch: 'main' };
 

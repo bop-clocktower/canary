@@ -1,18 +1,21 @@
-// suite -- the two dimensions read from what canary records about the suite
-// itself: tests switched off with no usable reason (katana ledger) and tests
-// that pass without proving anything (cassandra report).
+// suite -- the three count dimensions read from what canary records about the
+// suite itself: tests switched off with no usable reason (katana ledger),
+// tests that pass without proving anything (cassandra report), and mainline
+// commits with a failing run (run-history store).
 //
-// Both are ABSOLUTE COUNTS on purpose (spec D4). A share over ledger rows is
-// diluted by padding the ledger with caused rows; a share over tests checked
-// is diluted by adding assertion-free tests, which cassandra does not flag (a
-// zero-assertion test is review-test LINT-006, not a VAC finding). A count is
-// moved by neither.
+// All three are ABSOLUTE COUNTS on purpose (spec D4). A share over ledger rows
+// is diluted by padding the ledger with caused rows; a share over tests
+// checked is diluted by adding assertion-free tests, which cassandra does not
+// flag (a zero-assertion test is review-test LINT-006, not a VAC finding); a
+// share over commits is diluted by a stream of small green commits. A count is
+// moved by none of them.
 //
 // The ledger's `author` field is never read (spec D1): only `cause` and
-// `issue` are.
+// `issue` are. From history only `branch`, `commit_sha` and `failed` are read;
+// commit messages and test names never leave this module.
 
 import { isRecord, plural } from './dimension.mjs';
-import { overEntries } from './read.mjs';
+import { LIMITS, overEntries, parseJson } from './read.mjs';
 
 /** Mirrors CAUSES in canary-katana/scripts/ledger.mjs. */
 const CAUSES = [
@@ -128,6 +131,87 @@ export function vacuousTests(report, { limits }) {
       tests_checked: checked,
       findings: report.findings.length,
       vacuous_tests: value,
+    },
+  };
+}
+
+/** Mirrors SUPPORTED_SCHEMA_VERSIONS in ts/src/history/record.ts. */
+const SUPPORTED_SCHEMA_VERSIONS = [2, 3];
+
+function recordProblem(record) {
+  if (!isRecord(record)) return 'not an object';
+  const version = record.schema_version ?? 2;
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
+    return `unsupported schema_version ${JSON.stringify(version)}`;
+  }
+  return null;
+}
+
+/** Parse each non-blank line, or say which line failed and why. */
+function parseRuns(lines) {
+  const runs = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const parsed = parseJson(line);
+    if (parsed.kind !== 'ok') {
+      return { reason: `history line ${i + 1} is ${parsed.reason}` };
+    }
+    const problem = recordProblem(parsed.value);
+    if (problem) return { reason: `history line ${i + 1}: ${problem}` };
+    runs.push(parsed.value);
+  }
+  return { runs };
+}
+
+/** Any red run marks its commit: re-running a red commit green does not help. */
+function tallyCommits(runs, branch) {
+  const red = new Map();
+  let onBranch = 0;
+  for (const run of runs) {
+    if (run.branch !== branch) continue;
+    onBranch += 1;
+    const sha = typeof run.commit_sha === 'string' ? run.commit_sha : '';
+    if (!sha || !Number.isInteger(run.failed)) continue;
+    red.set(sha, red.get(sha) === true || run.failed > 0);
+  }
+  const redCommits = [...red.values()].filter(Boolean).length;
+  return { onBranch, commits: red.size, redCommits };
+}
+
+/**
+ * red-mainline-commits: the run-history NDJSON store's text.
+ *
+ * @param {string} text
+ * @param {{limits?: import('./read.mjs').Limits, branch: string}} opts
+ * @returns {import('./dimension.mjs').Evaluation}
+ */
+export function redMainlineCommits(text, { limits = LIMITS, branch }) {
+  const lines = text.split(/\r\n|\r|\n/);
+  const count = lines.filter((l) => l.trim()).length;
+  if (count > limits.lines) {
+    return {
+      reason: `not read: ${count} lines is over the ${limits.lines}-line limit`,
+    };
+  }
+  const { runs, reason } = parseRuns(lines);
+  if (reason) return { reason };
+  const t = tallyCommits(runs, branch);
+  if (t.commits === 0) {
+    return {
+      reason: `${plural(runs.length, 'run')} read, none on branch ${branch}`,
+    };
+  }
+  return {
+    value: t.redCommits,
+    basis:
+      `${t.redCommits} of ${plural(t.commits, 'commit')} on ${branch} had ` +
+      'a run with a failing test',
+    detail: {
+      runs_read: runs.length,
+      runs_on_branch: t.onBranch,
+      commits: t.commits,
+      red_commits: t.redCommits,
     },
   };
 }

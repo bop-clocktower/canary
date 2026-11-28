@@ -180,19 +180,19 @@ never a string from an input.
 
 ### File layout
 
-| File                                                                                     | Role                                                       |
-| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| [cli.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/cli.mjs)             | entry point, flags, exit codes (five imports)              |
-| [inputs.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/inputs.mjs)       | resolves each flag to a bounded read                       |
-| [read.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/read.mjs)           | bounded file, directory and JSON reads                     |
-| [dimension.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/dimension.mjs) | dimension metadata and constructors                        |
-| [evidence.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/evidence.mjs)   | escaped-defects, coverage-verified-share, closure-exercise |
-| [suite.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/suite.mjs)         | unexplained-switch-offs, vacuous-tests                     |
-| [mainline.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/mainline.mjs)   | red-mainline-commits                                       |
-| [scorecard.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/scorecard.mjs) | assembles the report, JSON rendering                       |
-| [render.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/render.mjs)       | Markdown rendering                                         |
-| [output.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/output.mjs)       | produce the printed text, write `--out`                    |
-| [text.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/text.mjs)           | the one escaping helper (D10)                              |
+| File                                                                                       | Role                                                         |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| [cli.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/cli.mjs)               | entry point, flags, exit codes (five imports)                |
+| [inputs.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/inputs.mjs)         | resolves each flag to a bounded read                         |
+| [read.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/read.mjs)             | bounded file, directory and JSON reads                       |
+| [dimension.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/dimension.mjs)   | dimension metadata and constructors                          |
+| [evidence.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/evidence.mjs)     | escaped-defects, coverage-verified-share, closure-exercise   |
+| [suite.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/suite.mjs)           | unexplained-switch-offs, vacuous-tests, red-mainline-commits |
+| [evaluators.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/evaluators.mjs) | dimension id to evaluator (split for the perf coupling rule) |
+| [scorecard.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/scorecard.mjs)   | assembles the report                                         |
+| [render.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/render.mjs)         | Markdown and JSON rendering                                  |
+| [output.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/output.mjs)         | produce the printed text, write `--out`                      |
+| [text.mjs](../../../agents/skills/claude-code/canary-batgirl/scripts/text.mjs)             | the one escaping helper (D10)                                |
 
 ## Integration points
 

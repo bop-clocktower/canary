@@ -4,8 +4,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { assembleReport, renderJson } from './scorecard.mjs';
-import { renderMarkdown } from './render.mjs';
+import { assembleReport } from './scorecard.mjs';
+import { renderJson, renderMarkdown } from './render.mjs';
 
 /**
  * @param {Record<string, object>} inputs what inputs.gather read

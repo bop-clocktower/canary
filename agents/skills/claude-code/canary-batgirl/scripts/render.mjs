@@ -5,9 +5,43 @@
 // Every value that can carry input text (basis, source, reason) goes through
 // `md`. Titles, directions and numbers are batgirl's own.
 
-import { md } from './text.mjs';
+import { md, plain } from './text.mjs';
 
 const DOT = '\u00b7';
+
+const SCHEMA_VERSION = 1;
+
+const nullable = (v) => (v === null || v === undefined ? null : plain(v));
+
+/** Every string that can carry input text goes through `plain`. */
+function jsonDimension(d) {
+  return {
+    id: d.id,
+    title: d.title,
+    better: d.better,
+    kind: d.kind,
+    status: d.status,
+    value: d.value,
+    basis: nullable(d.basis),
+    source: nullable(d.source),
+    reason: nullable(d.reason),
+    detail: d.detail,
+  };
+}
+
+/** The `--json` report. Every key is batgirl's own; no key comes from input. */
+export function renderJson(report) {
+  return JSON.stringify(
+    {
+      schema_version: SCHEMA_VERSION,
+      abstained: report.abstained,
+      assessed: report.assessed,
+      dimensions: report.dimensions.map(jsonDimension),
+    },
+    null,
+    2,
+  );
+}
 
 function formatValue(d) {
   if (d.status !== 'assessed') return 'not assessed';
