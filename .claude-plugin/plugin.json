@@ -30,6 +30,7 @@
     "./agents/skills/claude-code/canary-fleet-health",
     "./agents/skills/claude-code/canary-generate-test",
     "./agents/skills/claude-code/canary-instrument",
+    "./agents/skills/claude-code/canary-ivy",
     "./agents/skills/claude-code/canary-judomaster",
     "./agents/skills/claude-code/canary-katana",
     "./agents/skills/claude-code/canary-manhunter",

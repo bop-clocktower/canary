@@ -31,6 +31,7 @@ agents/skills/
 │   ├── canary-fleet-health/
 │   ├── canary-generate-test/
 │   ├── canary-instrument/
+│   ├── canary-ivy/
 │   ├── canary-judomaster/
 │   ├── canary-katana/
 │   ├── canary-manhunter/
@@ -233,6 +234,13 @@ slash-command entry points.
   time, a real delay, or the local timezone — the ones that pass all day and
   fail at midnight, across a DST boundary, or on Feb 29 — suppressing itself
   when a frozen-clock idiom is already in use.
+- [`canary-ivy`](./claude-code/canary-ivy/SKILL.md) — Bundled executable skill
+  (`scripts/cli.mjs`). Suite overgrowth report: setup bodies repeated across
+  files, tests whose covered lines are identical (each finding says shared
+  coverage does not show shared assertions), and test and file durations that
+  grew over the run-history store, with the run where each grew. Report only
+  (ADR 0039): it never says which test should go and is never a gate; no input
+  at all abstains with exit 3.
 
 ### Orchestration
 
@@ -335,11 +343,12 @@ Most skills here are documentation, not executable artifacts — they describe
 _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
 `canary-barda`, `canary-batgirl`, `canary-blackhawk`, `canary-cassandra`,
-`canary-cry`, `canary-fail-fast`, `canary-instrument`, `canary-katana`,
-`canary-misfit`, `canary-question`, `canary-savant`, `canary-screech`,
-`canary-shadow`, `canary-signal`, `canary-starling`, `canary-strix`,
-`canary-sweep`, `canary-test-reporter`, and `canary-unquarantine` all ship a
-Node entry (`scripts/cli.mjs`). Run those directly, e.g.:
+`canary-cry`, `canary-fail-fast`, `canary-instrument`, `canary-ivy`,
+`canary-katana`, `canary-misfit`, `canary-question`, `canary-savant`,
+`canary-screech`, `canary-shadow`, `canary-signal`, `canary-starling`,
+`canary-strix`, `canary-sweep`, `canary-test-reporter`, and
+`canary-unquarantine` all ship a Node entry (`scripts/cli.mjs`). Run those
+directly, e.g.:
 
 ```bash
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help

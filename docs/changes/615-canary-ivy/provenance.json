@@ -1,0 +1,92 @@
+{
+  "issues": [615],
+  "slug": "615-canary-ivy",
+  "route": "feature",
+  "fleet": "roadmap-fleet",
+  "run": "roadmap-fleet-2026-11-27",
+  "branch": "feat/615-canary-ivy",
+  "base": "ea020e5e",
+  "date": "2026-11-27",
+  "worktree": "../canary-615",
+  "governingDecision": "docs/knowledge/decisions/0039-canary-ivy-report-only.md",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "The skill ships end to end: all three ADR 0039 signals, the per-test coverage source the ADR delegated to the spec, the invariant tests, registrations and docs. The naming-registry row moves to shipped in this PR, as ADR 0039 Consequences requires. Nothing in the spec is deferred to a follow-up slice.",
+  "specPath": "docs/changes/615-canary-ivy/proposal.md",
+  "planPath": "docs/changes/615-canary-ivy/plans/2026-11-27-canary-ivy-plan.md",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd-red",
+    "tdd-green",
+    "security-fix",
+    "ratchets",
+    "self-review",
+    "four-gates"
+  ],
+  "inlineStages": [
+    "brainstorming",
+    "planning",
+    "execution",
+    "verification",
+    "code-review",
+    "security-review",
+    "soundness-review"
+  ],
+  "stageDetail": [
+    {
+      "stage": "brainstorming",
+      "inline": true,
+      "artifact": "docs/changes/615-canary-ivy/proposal.md",
+      "detail": "harness:brainstorming loaded and followed inline in an unattended lane: EVALUATE questions answered with the recommended default (assumptions below), four approaches weighed (self-contained skill chosen over an engine subcommand, a prompt-only skill and a fold into ci-ready/test-reviewer). The ADR 0039 Decision 4 supersession check was run and found no new decision needed. harness-soundness-review and the SKILLS.md advisor scan were not run as separate tools; the spec was self-checked against every line of ADR 0039 instead. No roadmap promote call: the row was edited by hand to done in the shipping PR (manage_roadmap and `harness roadmap sync --apply` avoided per the repo's roadmap sync hazard)."
+    },
+    {
+      "stage": "autopilot / planning",
+      "inline": true,
+      "artifact": "docs/changes/615-canary-ivy/plans/2026-11-27-canary-ivy-plan.md",
+      "detail": "Seven tasks, one phase, written inline (no harness-planner sub-agent). Plan auto-approved in the unattended lane."
+    },
+    {
+      "stage": "tdd-red / tdd-green",
+      "inline": true,
+      "detail": "Each task's test file was written before its module and run; one commit per task (T1 text, T2 fixtures, T3 coverage, T4 runtime, T5 report/render, T6 cli, T7 docs and registrations). Red was observed as a missing-module failure for T1/T6 and as real assertion failures for T5/T6 (escaped parentheses, positionals)."
+    },
+    {
+      "stage": "security-fix",
+      "inline": true,
+      "detail": "Coordinator-relayed automated commit review (medium, resource exhaustion) on fixtures.mjs: the Python scan had no forward-scan cap. Fixed test-first: MAX_BLOCK_LINES applied to the indented body scan, decoratedDef capped at 20 decorator/blank lines, files over 1,000,000 bytes or 20,000 lines are not parsed and are listed under not_read with a reason. A sweep of every other forward/nested scan found the brace scan re-reading each line's characters per match; per-line facts are now computed once per file. Both generated hostile inputs took 2.7 s and 1.3 s on the previous code and run inside a 1 s test-timeout budget now."
+    },
+    {
+      "stage": "ratchets",
+      "detail": "Measured in clean detached worktrees of base ea020e5e and head with harness 14.1.1. Entropy: 100 vs 100 at the merge base (+0), ceiling 116. Perf: 200 vs 200 (+0), ceiling 201; achieved by moving input reading and output out of cli.mjs (five imports, under the coupling rule) and splitting buildSeries. Arch: 0 newViolations, 0 regressions, totalViolations 8 vs 8 at base; module-size agents/skills 121 -> 122 (the vitest.config.ts include line), not a violation; harness-report-summary exits 0 with the same BASELINE TRIP main has. Docs coverage: 143/524 (27.29%) vs floor 26.73%, OK. No baseline, allowance, ceiling or harness.config.json limit edited; the only harness.config.json change is the canary-ivy cli.mjs entry in entropy.entryPoints and performance.entryPoints."
+    },
+    {
+      "stage": "self-review",
+      "inline": true,
+      "detail": "Full diff read as a reviewer for correctness and security (no parallel review agents). Every input-derived string reaches output through text.mjs (plain in the report object and stderr, md in Markdown); numbers are formatted by ivy. Exit codes match spec D8. Deletion vocabulary absent from every output path the tests drive. Dogfooded on canary's own ts/test and agents/skills/test: 499 files, 90 setup blocks, 3 repeated bodies, exit 0."
+    },
+    {
+      "stage": "four-gates",
+      "detail": "ts/: build, typecheck, format:check, test (398 files, 8321 passed, 3 skipped). agents/skills: test (100 files, 3686 passed; canary-ivy scripts 98.8% lines, 91.1% branches), typecheck, format:check. Repo root: canary-blackhawk --strict and canary-savant --strict over ts/test agents/skills/test (499 files, 0 findings each), node scripts/rehearse.mjs (8 of 8 fired), markdownlint on every touched Markdown file."
+    }
+  ],
+  "assumptions": [
+    "A1: Unattended lane - every brainstorming EVALUATE question answered with the recommended default; plan auto-approved.",
+    "A2: Self-contained skill under agents/skills (like canary-question/screech), not an engine subcommand: ts/src/history has no headroom (#1074) and skill .mjs sits outside the arch module-size measurement.",
+    "A3: Per-test coverage source (delegated by ADR 0039): coverage.py JSON with dynamic contexts, plus a neutral {schema_version: 1, tests} map. Without --coverage the signal is a not-assessed row.",
+    "A4: Overlap means identical covered-line sets; subset relations are never reported, because 'covers nothing another does not' is the pruning premise ADR 0039 removed.",
+    "A5: Duplicated fixtures = body-identical setup blocks (pytest fixtures, setUp/setup_method, beforeEach/beforeAll, PHP setUp/set_up) after normalization, with a two-line body floor.",
+    "A6: Runtime creep = best mean-split changepoint, listed at >= 6 runs, >= 1.5x median ratio and >= 100 ms gap; medians only, never p95. The thresholds are printed as listing rules, not grades.",
+    "A7: Exit 0 whenever any section was assessed; 3 only when none was; 1 for I/O only (named input unreadable, --out unwritable), following canary-question; 2 usage. No --strict.",
+    "A8: No gate-conformance.test.ts row: that registry's row shape assumes advisory exit 0 plus --strict exit 3, and ivy abstains with 3 by default; abstention is asserted in canary-ivy-cli.test.ts instead (canary-question precedent).",
+    "A9: JSON values pass through plain() (control/ANSI stripped, clamped) but are not Markdown-escaped; Markdown output uses md(). Both live in the one helper module text.mjs.",
+    "A10: A file over the size limits is reported as 'not read' (field not_read, files_not_read), not 'skipped': 'skip' is on the ADR 0039 deletion-vocabulary denylist, and the scan must stay exact.",
+    "A11: The naming-registry status vocabulary is shipped/reserved/retired; the brief's 'used' maps to 'shipped'.",
+    "A12: Roadmap row set to done in the shipping PR (canary-question/signal precedent), title kept unchanged so the External-ID link is stable.",
+    "A13: Closes #615: the skill is complete against ADR 0039 and the spec; nothing is deferred."
+  ],
+  "notVerified": [
+    "CI on GitHub for this PR (watched after opening).",
+    "The coverage.py adapter was tested against a synthetic file in the documented --show-contexts shape, not against output from a real coverage.py run."
+  ]
+}
