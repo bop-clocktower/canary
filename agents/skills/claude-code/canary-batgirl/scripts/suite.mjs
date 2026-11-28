@@ -1,0 +1,121 @@
+// suite -- the two dimensions read from what canary records about the suite
+// itself: tests switched off with no usable reason (katana ledger) and tests
+// that pass without proving anything (cassandra report).
+//
+// Both are ABSOLUTE COUNTS on purpose (spec D4). A share over ledger rows is
+// diluted by padding the ledger with caused rows; a share over tests checked
+// is diluted by adding assertion-free tests, which cassandra does not flag (a
+// zero-assertion test is review-test LINT-006, not a VAC finding). A count is
+// moved by neither.
+//
+// The ledger's `author` field is never read (spec D1): only `cause` and
+// `issue` are.
+
+import { isRecord, plural } from './dimension.mjs';
+import { overEntries } from './read.mjs';
+
+/** Mirrors CAUSES in canary-katana/scripts/ledger.mjs. */
+const CAUSES = [
+  'flaky',
+  'product-defect',
+  'blocked-data',
+  'pending-feature',
+  'obsolete',
+  'env-gated',
+];
+
+/** Mirrors CAUSES_REQUIRING_ISSUE in canary-katana/scripts/ledger.mjs. */
+const CAUSES_REQUIRING_ISSUE = [
+  'product-defect',
+  'blocked-data',
+  'pending-feature',
+];
+
+const text = (v) => (typeof v === 'string' ? v.trim() : '');
+
+function emptyLedgerTally() {
+  const causes = {};
+  for (const c of CAUSES) causes[c] = 0;
+  return { no_cause: 0, unrecognised_cause: 0, missing_issue: 0, causes };
+}
+
+function tallyRow(t, row) {
+  const cause = isRecord(row) ? text(row.cause) : '';
+  if (!cause) {
+    t.no_cause += 1;
+    return;
+  }
+  if (!CAUSES.includes(cause)) {
+    t.unrecognised_cause += 1;
+    return;
+  }
+  t.causes[cause] += 1;
+  if (CAUSES_REQUIRING_ISSUE.includes(cause) && !text(row.issue)) {
+    t.missing_issue += 1;
+  }
+}
+
+/** unexplained-switch-offs: `.canary/quarantine.json`. */
+export function unexplainedSwitchOffs(ledger, { limits }) {
+  if (!isRecord(ledger)) return { reason: 'the ledger is not an object' };
+  if (!Array.isArray(ledger.entries)) {
+    return { reason: 'the ledger has no entries array' };
+  }
+  const rows = ledger.entries.length;
+  const over = overEntries(rows, limits);
+  if (over) return { reason: over };
+  if (rows === 0) {
+    return { reason: 'the ledger holds 0 rows: nothing switched off to judge' };
+  }
+  const t = emptyLedgerTally();
+  for (const row of ledger.entries) tallyRow(t, row);
+  const value = t.no_cause + t.unrecognised_cause + t.missing_issue;
+  return {
+    value,
+    basis:
+      `${value} of ${rows} switched-off tests have no usable cause: ` +
+      `${t.no_cause} no cause, ${t.unrecognised_cause} unrecognised cause, ` +
+      `${t.missing_issue} without the issue its cause requires`,
+    detail: { rows, ...t },
+  };
+}
+
+function cassandraProblem(report) {
+  const recognised =
+    isRecord(report) &&
+    report.schema_version === 1 &&
+    Array.isArray(report.findings) &&
+    isRecord(report.summary) &&
+    Number.isInteger(report.summary.tests_checked);
+  if (!recognised) return 'not a canary-cassandra --json report';
+  if (report.summary.abstained === true) {
+    return 'canary-cassandra abstained: it read no test';
+  }
+  if (report.summary.tests_checked <= 0) {
+    return 'canary-cassandra checked 0 tests';
+  }
+  return null;
+}
+
+/** A test is identified by its file and its name (cassandra's `snippet`). */
+const testKey = (f) =>
+  isRecord(f) ? `${text(f.file)}\u0000${text(f.snippet)}` : '\u0000';
+
+/** vacuous-tests: a `canary-cassandra --json` report. */
+export function vacuousTests(report, { limits }) {
+  const problem = cassandraProblem(report);
+  if (problem) return { reason: problem };
+  const over = overEntries(report.findings.length, limits);
+  if (over) return { reason: over };
+  const checked = report.summary.tests_checked;
+  const value = new Set(report.findings.map(testKey)).size;
+  return {
+    value,
+    basis: `${plural(value, 'vacuous test')} among ${checked} tests checked`,
+    detail: {
+      tests_checked: checked,
+      findings: report.findings.length,
+      vacuous_tests: value,
+    },
+  };
+}
