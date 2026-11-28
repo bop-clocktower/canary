@@ -29,7 +29,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** Hard bounds on what one run reads. Printed in the reason when hit. */
+/**
+ * @typedef {{bytes: number, entries: number, lines: number, files: number}} Limits
+ */
+
+/**
+ * Hard bounds on what one run reads. Printed in the reason when hit.
+ *
+ * @type {Readonly<Limits>}
+ */
 export const LIMITS = Object.freeze({
   bytes: 32 * 1024 * 1024,
   entries: 100_000,
@@ -97,7 +105,7 @@ const ctxOf = (ctx) => ({
  * Read a regular file as UTF-8 text, if it is within the byte limit.
  *
  * @param {string} file
- * @param {{root?: string, limits?: typeof LIMITS}} [ctx]
+ * @param {{root?: string, limits?: Limits}} [ctx]
  */
 export function readText(file, ctx = {}) {
   const { root, limits } = ctxOf(ctx);
@@ -168,7 +176,7 @@ function listDirectory(abs, prefix, limits) {
  *
  * @param {string} target file or directory
  * @param {string} prefix file-name prefix every file must carry
- * @param {{root?: string, limits?: typeof LIMITS}} [ctx]
+ * @param {{root?: string, limits?: Limits}} [ctx]
  */
 export function readJsonFiles(target, prefix, ctx = {}) {
   const { root, limits } = ctxOf(ctx);
@@ -196,6 +204,10 @@ export function readJsonFiles(target, prefix, ctx = {}) {
 /**
  * The not-read reason for a collection of `count` entries, or null when it is
  * within the entry limit.
+ *
+ * @param {number} count
+ * @param {Limits} [limits]
+ * @returns {string|null}
  */
 export function overEntries(count, limits = LIMITS) {
   if (count <= limits.entries) return null;

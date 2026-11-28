@@ -55,7 +55,13 @@ function tallyCommits(runs, branch) {
   return { onBranch, commits: red.size, redCommits };
 }
 
-/** red-mainline-commits: the run-history NDJSON store's text. */
+/**
+ * red-mainline-commits: the run-history NDJSON store's text.
+ *
+ * @param {string} text
+ * @param {{limits: import('./read.mjs').Limits, branch: string}} opts
+ * @returns {import('./dimension.mjs').Evaluation}
+ */
 export function redMainlineCommits(text, { limits, branch }) {
   const lines = text.split(/\r\n|\r|\n/);
   const count = lines.filter((l) => l.trim()).length;

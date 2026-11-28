@@ -37,7 +37,13 @@ function escapeLogProblem(log) {
   return null;
 }
 
-/** escaped-defects: `.canary/escapes.json` plus its `caught` list. */
+/**
+ * escaped-defects: `.canary/escapes.json` plus its `caught` list.
+ *
+ * @param {any} log
+ * @param {{limits: import('./read.mjs').Limits}} opts
+ * @returns {import('./dimension.mjs').Evaluation}
+ */
 export function escapedDefects(log, { limits }) {
   const problem = escapeLogProblem(log);
   if (problem) return { reason: problem };
@@ -106,8 +112,15 @@ function tallyRecords(files) {
   return { ...t, not_counted: notCounted };
 }
 
-/** coverage-verified-share: guardian analysis records (`.harness/analyses`). */
-export function coverageShare(files) {
+/**
+ * coverage-verified-share: guardian analysis records (`.harness/analyses`).
+ * The directory read already bounded the record count, so no option is used.
+ *
+ * @param {Array<{name: string, read: any}>} files
+ * @param {object} [_opts] every evaluator takes the same arguments
+ * @returns {import('./dimension.mjs').Evaluation}
+ */
+export function coverageShare(files, _opts) {
   if (files.length === 0) {
     return { reason: `no ${GUARDIAN_SOURCE}-*.json records` };
   }
@@ -185,11 +198,17 @@ function tallyClosures(files, limits) {
   return t;
 }
 
-/** closure-exercise: batwoman `--json` reports. */
+/**
+ * closure-exercise: batwoman `--json` reports.
+ *
+ * @param {Array<{name: string, read: any}>} files
+ * @param {{limits: import('./read.mjs').Limits}} opts
+ * @returns {import('./dimension.mjs').Evaluation}
+ */
 export function closureExercise(files, { limits }) {
   if (files.length === 0) return { reason: 'no batwoman reports' };
   const t = tallyClosures(files, limits);
-  if (t.reason) return t;
+  if (t.reason) return { reason: t.reason };
   const claims = t.exercised + t['not-exercised'];
   const across = plural(t.closures, 'closure');
   const others =

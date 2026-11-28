@@ -55,7 +55,13 @@ function tallyRow(t, row) {
   }
 }
 
-/** unexplained-switch-offs: `.canary/quarantine.json`. */
+/**
+ * unexplained-switch-offs: `.canary/quarantine.json`.
+ *
+ * @param {any} ledger
+ * @param {{limits: import('./read.mjs').Limits}} opts
+ * @returns {import('./dimension.mjs').Evaluation}
+ */
 export function unexplainedSwitchOffs(ledger, { limits }) {
   if (!isRecord(ledger)) return { reason: 'the ledger is not an object' };
   if (!Array.isArray(ledger.entries)) {
@@ -101,7 +107,13 @@ function cassandraProblem(report) {
 const testKey = (f) =>
   isRecord(f) ? `${text(f.file)}\u0000${text(f.snippet)}` : '\u0000';
 
-/** vacuous-tests: a `canary-cassandra --json` report. */
+/**
+ * vacuous-tests: a `canary-cassandra --json` report.
+ *
+ * @param {any} report
+ * @param {{limits: import('./read.mjs').Limits}} opts
+ * @returns {import('./dimension.mjs').Evaluation}
+ */
 export function vacuousTests(report, { limits }) {
   const problem = cassandraProblem(report);
   if (problem) return { reason: problem };

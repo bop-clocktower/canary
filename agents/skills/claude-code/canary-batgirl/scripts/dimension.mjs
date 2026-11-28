@@ -56,6 +56,12 @@ const BY_ID = new Map(DIMENSIONS.map((d) => [d.id, d]));
 export const isRecord = (v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * What an evaluator returns: a value with its basis and detail, or a reason.
+ *
+ * @typedef {{value?: number, basis?: string, detail?: any, reason?: string}} Evaluation
+ */
+
 /** `n noun` or `n nouns`. */
 export const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
@@ -64,7 +70,7 @@ export const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
  *
  * @param {string} id one of DIMENSIONS
  * @param {{source: string|null, read: {kind: string, value?: any, reason?: string}}} input
- * @param {(value: any, opts: object) => {value?: number, basis?: string, detail?: object, reason?: string}} evaluator
+ * @param {(value: any, opts: any) => Evaluation} evaluator
  * @param {{limits: object, branch: string}} opts
  */
 export function evaluate(id, input, evaluator, opts) {
