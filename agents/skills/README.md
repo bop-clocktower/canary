@@ -13,7 +13,7 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (38)
+├── claude-code/                    # Claude Code skills (40)
 │   ├── canary-add-framework/
 │   ├── canary-barda/
 │   ├── canary-batwoman/
@@ -29,6 +29,7 @@ agents/skills/
 │   ├── canary-failure-impact/
 │   ├── canary-fleet-health/
 │   ├── canary-generate-test/
+│   ├── canary-hawk-dove/
 │   ├── canary-instrument/
 │   ├── canary-ivy/
 │   ├── canary-judomaster/
@@ -233,6 +234,12 @@ slash-command entry points.
   grew over the run-history store, with the run where each grew. Report only
   (ADR 0039): it never says which test should go and is never a gate; no input
   at all abstains with exit 3.
+- [`canary-hawk-dove`](./claude-code/canary-hawk-dove/SKILL.md) — Bundled
+  executable skill (#618, slice). Outcome labels for past gate findings (real,
+  noise, intentional, or an escape the gate missed) in an append-only ledger
+  with provenance, and a per-gate count report. Derives the ADR 0025 guardian
+  labels; anything else is one `label` or `escape` command. Abstains with exit 3
+  below 30 adjudicated labels per gate and never proposes a threshold.
 
 ### Orchestration
 
@@ -335,11 +342,12 @@ Most skills here are documentation, not executable artifacts — they describe
 _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
 `canary-barda`, `canary-blackhawk`, `canary-cassandra`, `canary-cry`,
-`canary-fail-fast`, `canary-instrument`, `canary-ivy`, `canary-katana`,
-`canary-misfit`, `canary-question`, `canary-savant`, `canary-screech`,
-`canary-shadow`, `canary-signal`, `canary-starling`, `canary-strix`,
-`canary-sweep`, `canary-test-reporter`, and `canary-unquarantine` all ship a
-Node entry (`scripts/cli.mjs`). Run those directly, e.g.:
+`canary-fail-fast`, `canary-hawk-dove`, `canary-instrument`, `canary-ivy`,
+`canary-katana`, `canary-misfit`, `canary-question`, `canary-savant`,
+`canary-screech`, `canary-shadow`, `canary-signal`, `canary-starling`,
+`canary-strix`, `canary-sweep`, `canary-test-reporter`, and
+`canary-unquarantine` all ship a Node entry (`scripts/cli.mjs`). Run those
+directly, e.g.:
 
 ```bash
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help

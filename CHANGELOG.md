@@ -16,6 +16,18 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **canary-hawk-dove: outcome labels for past gate findings** (#618, slice).
+  `canary skills run canary-hawk-dove -- record --gate guardian --from run.json`
+  takes a gate run's JSON into an append-only ledger. Each finding gets a stable
+  line-free id, and the ADR 0025 guardian labels are derived from it: an `fp:`
+  suppression is noise, any other reasoned suppression is intentional, and a
+  coverage-verified finding covered later in the same PR is real. Anything else
+  is one `label <id>` or `escape --gate` command with `--by` and `--evidence`,
+  never a reaction. An unknown id is rejected. `report` prints the real, noise,
+  intentional and escape counts per gate, and abstains with exit 3 until a gate
+  has 30 adjudicated labels. It never tunes or proposes a threshold; the tuner
+  is still to come under #618.
+
 - **canary-ivy: suite overgrowth report** (#615).
   `canary skills run canary-ivy -- tests --coverage coverage.json --history <jsonl>`
   reports setup bodies repeated across files, tests whose covered lines are

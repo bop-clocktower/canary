@@ -110,7 +110,7 @@ function fromCoverage(state, run, at, changed) {
 /**
  * @param {{state: object, run: object, at: string, repo?: string,
  *          changed?: () => ({files: Set<string>} | {unknown: string})}} input
- * @returns {{labels: object[], ambiguous: number, unresolved: number}}
+ * @returns {{labels: any[], ambiguous: number, unresolved: number}}
  */
 export function deriveLabels({ state, run, at, repo = '.', changed }) {
   if (run.gate !== 'guardian')

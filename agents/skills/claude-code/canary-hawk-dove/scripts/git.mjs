@@ -27,7 +27,7 @@ const GIT_OPTS = {
  * @param {string} repo
  * @param {string|null} base
  * @param {string|null} head
- * @returns {{files: Set<string>} | {unknown: string}}
+ * @returns {{files?: Set<string>, unknown?: string}}
  */
 export function changedFiles(repo, base, head) {
   if (!base || !head) return { unknown: 'the run names no diff endpoints' };

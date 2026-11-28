@@ -89,7 +89,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-fleet-health`        | shipped  | —     | Fleet-wide test health summary across suites                               |
 | `canary-generate-test`       | shipped  | —     | Batch test generation through the classify → recommend → generate pipeline |
 | `canary-harley`              | reserved | 616   | Property-based and fuzz test generation                                    |
-| `canary-hawk-dove`           | reserved | 618   | Gate threshold auto-tuner                                                  |
+| `canary-hawk-dove`           | shipped  | 618   | slice: outcome labels and report; tuner deferred, #618                     |
 | `canary-huntress`            | reserved | 617   | Targeted regression pursuit                                                |
 | `canary-instrument`          | shipped  | —     | OpenTelemetry instrumentation of a Playwright run                          |
 | `canary-ivy`                 | shipped  | 615   | Suite overgrowth report (never a deletion list, ADR 0039)                  |

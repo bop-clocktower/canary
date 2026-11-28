@@ -85,11 +85,11 @@ last_manual_edit: 2026-11-24T20:33:52.210Z
 
 ### canary-hawk-dove — gate threshold auto-tuner
 
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Ideation rank 13 (score 1.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Balance aggression against noise by tuning gate thresholds from the historical false-positive vs. escaped-defect record - the recurring "erodes trust" worry across the guardian items, solved with data instead of guesswork. Accepted risk to handle in spec: it requires ground-truth labels on past findings (was this finding real?) that nobody records, so without them it tunes on noise and produces a confidently wrong threshold - it is blocked behind both a history substrate and a labeling ritual humans will not reliably perform. High effort / low confidence; treat as a stretch item. Next: spike the labeling question before /harness:brainstorming.
-- **Blockers:** no ground-truth outcome labels exist on past findings (the history store itself EXISTS - agent/history/, 2026-06-10 - so the substrate is not the blocker; the missing labels are)
-- **Plan:** —
+- **Status:** in-progress
+- **Spec:** docs/changes/618-hawk-dove-outcome-labels/proposal.md
+- **Summary:** Ideation rank 13 (score 1.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Balance aggression against noise by tuning gate thresholds from the historical false-positive vs. escaped-defect record - the recurring "erodes trust" worry across the guardian items, solved with data instead of guesswork. Accepted risk to handle in spec: it requires ground-truth labels on past findings (was this finding real?) that nobody records, so without them it tunes on noise and produces a confidently wrong threshold - it is blocked behind both a history substrate and a labeling ritual humans will not reliably perform. High effort / low confidence; treat as a stretch item. Labeling spike done: the labels-first slice ships as the canary-hawk-dove skill (append-only outcome-label ledger, ADR 0025 derived labels, one-command explicit labels and escapes, a per-gate count report). The tuner itself is deferred.
+- **Blockers:** the tuner needs at least 30 adjudicated (real + noise) labels per gate before any threshold means anything (ADR 0025 floor); label capture now exists, the labels themselves do not yet
+- **Plan:** docs/changes/618-hawk-dove-outcome-labels/plans/2026-11-27-hawk-dove-outcome-labels-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#618
 

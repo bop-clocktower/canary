@@ -44,8 +44,9 @@ function addRecord(state, rec) {
 /**
  * @param {string} root
  * @param {string} rel
- * @returns {{state: object, malformed: number, missing: boolean,
- *            endsClean: boolean, notRead?: string}}
+ * @returns {{state: {findings: Map<string, any>, runs: any[], labels: any[]},
+ *           malformed: number, missing?: boolean, endsClean: boolean,
+ *           notRead?: string}}
  */
 export function loadLedger(root, rel) {
   const read = readInside(root, rel, {

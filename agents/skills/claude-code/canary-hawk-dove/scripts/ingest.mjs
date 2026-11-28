@@ -110,7 +110,7 @@ function collect(entries, gate, root) {
 /**
  * @param {string} text the input's bytes
  * @param {{gate: string, name: string, root: string}} opts
- * @returns {{error: string} | {run: object, findings: object[], notRead: number}}
+ * @returns {{error?: string, run?: any, findings?: any, notRead?: number}}
  */
 export function parseRun(text, { gate, name, root }) {
   const parsed = parseError(text, name);
@@ -131,7 +131,8 @@ export function parseRun(text, { gate, name, root }) {
  * Read `rel` (inside `root`, a regular `.json` file, under the size cap) and
  * parse it. A refusal names the input and the reason, never its bytes.
  *
- * @returns {{error: string} | {run, findings, notRead, source: string}}
+ * @returns {{error?: string, run?: any, findings?: any, notRead?: number,
+ *            source?: string}}
  */
 export function readRun(root, rel, gate) {
   const read = readInside(root, rel, {

@@ -28,6 +28,7 @@
     "./agents/skills/claude-code/canary-failure-impact",
     "./agents/skills/claude-code/canary-fleet-health",
     "./agents/skills/claude-code/canary-generate-test",
+    "./agents/skills/claude-code/canary-hawk-dove",
     "./agents/skills/claude-code/canary-instrument",
     "./agents/skills/claude-code/canary-ivy",
     "./agents/skills/claude-code/canary-judomaster",

@@ -52,7 +52,7 @@ const relOf = (realRoot, abs) =>
  * @param {string} root
  * @param {string} rel
  * @param {{ext: string, maxBytes: number}} gate
- * @returns {{text: string, rel: string} | {notRead: string}}
+ * @returns {{text?: string, rel?: string, notRead?: string}}
  */
 export function readInside(root, rel, { ext, maxBytes }) {
   const where = locate(root, rel);
