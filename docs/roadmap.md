@@ -95,11 +95,11 @@ last_manual_edit: 2026-11-24T20:33:52.210Z
 
 ### canary-batgirl — developer and team quality scorecard
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** done
+- **Spec:** docs/changes/619-canary-batgirl/proposal.md
 - **Summary:** Ideation rank 14 (score 1.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Streaks, badges, and rank derived from canary audit scores, recognizing sound and stable code. Serves STRATEGY.md track 5 (Quality made legible); the track legitimizes the goal but does not resolve the objection, which is why confidence stays low. Accepted risk to handle in spec - THE SHARPEST IN THE BATCH: Goodhart's law points this at canary itself. Scoring engineers on canary metrics makes them optimize the score, and the cheapest way to raise almost any coverage-derived score is to write more assertion-free tests - so a naive reward system would actively MANUFACTURE canary's own target problem. Safe only if it scores things that are expensive to fake (escaped-defect ratio, coverage-verified finding share) and never anything a developer can inflate by adding green. Medium effort / low confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** — (history substrate EXISTS: agent/history/, 2026-06-10; the Goodhart objection remains the real gate, not a missing store)
-- **Plan:** —
+- **Plan:** docs/changes/619-canary-batgirl/plans/2026-11-27-canary-batgirl-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#619
 

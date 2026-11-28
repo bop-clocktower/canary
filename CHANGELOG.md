@@ -14,6 +14,21 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **canary-batgirl: team quality scorecard** (#619).
+  `canary skills run canary-batgirl -- [--cassandra PATH] [--batwoman PATH]`
+  scores a repository on six dimensions read from evidence other canary tools
+  record: escaped-defect ratio, coverage-verified share of changed units,
+  closure exercise share, unexplained switch-offs, vacuous tests and red
+  mainline commits. Each was admitted because adding green or assertion-free
+  tests cannot raise it, and a planted test that adds 200 assertion-free and 50
+  vacuous passing tests asserts no dimension improves. Team-level only (nothing
+  per person, nothing grouped by author), no composite score, report only. A
+  dimension with no input prints as not assessed; none assessed abstains with
+  exit 3. The escape log gains an optional `caught` array, which the release
+  dossier ignores.
+
 ## [10.0.0] - 2026-11-26
 
 A major release. It comes from a cross-dimensional audit of the repo: several

@@ -15,6 +15,7 @@
   ],
   "skills": [
     "./agents/skills/claude-code/canary-barda",
+    "./agents/skills/claude-code/canary-batgirl",
     "./agents/skills/claude-code/canary-batwoman",
     "./agents/skills/claude-code/canary-blackhawk",
     "./agents/skills/claude-code/canary-cassandra",
