@@ -37,6 +37,7 @@ import { main as starlingMain } from '../claude-code/canary-starling/scripts/cli
 import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
 import { main as unquarantineMain } from '../claude-code/canary-unquarantine/scripts/cli.mjs';
 import { main as cryMainAny } from '../claude-code/canary-cry/scripts/cli.mjs';
+import { main as hawkDoveMain } from '../claude-code/canary-hawk-dove/scripts/cli.mjs';
 
 // Only a confirmed `run` returns a Promise; these argv never confirm.
 const cryMain = (argv: string[]) => cryMainAny(argv) as number;
@@ -85,11 +86,50 @@ interface SkillGateRow {
   require?: string[];
   /** Build the zero-denominator fixture and run the real CLI (advisory). */
   run: (base: string) => { code: number; stdout: string };
+  /**
+   * The exit code of `run`. Advisory skills exit 0 (D3) unless they have no
+   * `--strict` to carry the contract, in which case the default run itself
+   * exits 3 -- canary-hawk-dove's `report` (#618), whose maintainer decision
+   * is that below the label floor it abstains with exit 3.
+   */
+  advisoryCode?: number;
   /** The same fixture under `--strict`, which must inherit exit 3. */
-  strict: (base: string) => { code: number; stdout: string };
+  strict?: (base: string) => { code: number; stdout: string };
 }
 
 const ROWS: SkillGateRow[] = [
+  {
+    // No --strict: the report's abstention exit is its default (#618). No
+    // ledger means no label was read, so nothing was verified.
+    command: 'canary-hawk-dove report (no ledger)',
+    forbid: ['at floor'],
+    require: ['no ledger at'],
+    advisoryCode: EXIT_ABSTAINED,
+    run: (base) => run(hawkDoveMain, ['report', '--repo', base]),
+  },
+  {
+    // A ledger with findings but not one label: the denominator is labels.
+    command: 'canary-hawk-dove report (findings, zero labels)',
+    forbid: ['at floor'],
+    require: ['no labels in the ledger'],
+    advisoryCode: EXIT_ABSTAINED,
+    run: (base) => {
+      fs.writeFileSync(
+        path.join(base, 's.json'),
+        JSON.stringify({ findings: [{ file: 'a.ts', rule: 'r', anchor: '' }] }),
+      );
+      run(hawkDoveMain, [
+        'record',
+        '--repo',
+        base,
+        '--gate',
+        'savant',
+        '--from',
+        's.json',
+      ]);
+      return run(hawkDoveMain, ['report', '--repo', base]);
+    },
+  },
   {
     command: 'canary-blackhawk (zero scanned files)',
     forbid: ['No temporal-dependency findings'],
@@ -400,12 +440,15 @@ describe('gate conformance registry -- skill layer (#508)', () => {
         expect(res.stdout).toContain(text);
       }
       // Advisory by default: the line is loud, the exit is not (D3).
-      expect(res.code).toBe(0);
+      expect(res.code).toBe(row.advisoryCode ?? 0);
     });
 
-    it(`${row.command} inherits exit 3 under --strict`, () => {
-      const res = row.strict(tmp());
-      expect(res.code).toBe(EXIT_ABSTAINED);
-    });
+    const strict = row.strict;
+    if (strict) {
+      it(`${row.command} inherits exit 3 under --strict`, () => {
+        const res = strict(tmp());
+        expect(res.code).toBe(EXIT_ABSTAINED);
+      });
+    }
   }
 });

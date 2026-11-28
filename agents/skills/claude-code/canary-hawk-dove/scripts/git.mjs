@@ -10,7 +10,7 @@
 import { execFileSync } from 'node:child_process';
 
 /** Paths read from one diff; a larger diff cannot vouch for anything. */
-export const MAX_CHANGED = 5000;
+const MAX_CHANGED = 5000;
 
 const REV = /^[0-9A-Za-z][0-9A-Za-z._/~^-]{0,199}$/;
 

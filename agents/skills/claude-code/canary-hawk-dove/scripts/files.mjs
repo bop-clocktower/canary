@@ -24,7 +24,12 @@ function within(root, p) {
  * ends the walk: nothing below it can be a link yet.
  */
 function locate(root, rel) {
-  const realRoot = fs.realpathSync(path.resolve(root));
+  let realRoot;
+  try {
+    realRoot = fs.realpathSync(path.resolve(root));
+  } catch {
+    return { reason: 'repository not found' };
+  }
   const abs = path.resolve(realRoot, String(rel ?? ''));
   if (!within(realRoot, abs)) return { reason: 'outside the repository' };
   let cur = realRoot;

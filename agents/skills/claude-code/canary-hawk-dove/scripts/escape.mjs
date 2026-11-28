@@ -7,7 +7,7 @@
 // module; none escapes locally.
 
 /** Default clamp for a printed value. */
-export const MAX_TEXT = 200;
+const MAX_TEXT = 200;
 
 // CSI, OSC (BEL- or ST-terminated) and the remaining two-byte escapes.
 const ANSI =

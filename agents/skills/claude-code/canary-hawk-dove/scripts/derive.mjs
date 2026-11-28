@@ -19,7 +19,7 @@
 
 import { changedFiles } from './git.mjs';
 
-export const RULES = {
+const RULES = {
   fp: 'guardian-fp-suppression',
   reasoned: 'guardian-reasoned-suppression',
   coveredLater: 'guardian-covered-later',

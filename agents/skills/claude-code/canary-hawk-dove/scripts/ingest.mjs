@@ -15,6 +15,10 @@ import crypto from 'node:crypto';
 
 import { identityOf } from '../../../lib/scan-baseline.mjs';
 import { clean } from './escape.mjs';
+import { readInside } from './files.mjs';
+
+/** A gate JSON over this size is reported as not read, never read in part. */
+const MAX_INPUT_BYTES = 5 * 1024 * 1024;
 
 /** Findings read from one input; the rest are counted as not read. */
 export const MAX_FINDINGS = 5000;
@@ -121,4 +125,20 @@ export function parseRun(text, { gate, name, root }) {
     findings,
     notRead,
   };
+}
+
+/**
+ * Read `rel` (inside `root`, a regular `.json` file, under the size cap) and
+ * parse it. A refusal names the input and the reason, never its bytes.
+ *
+ * @returns {{error: string} | {run, findings, notRead, source: string}}
+ */
+export function readRun(root, rel, gate) {
+  const read = readInside(root, rel, {
+    ext: '.json',
+    maxBytes: MAX_INPUT_BYTES,
+  });
+  if (read.notRead) return { error: `${clean(rel)} not read: ${read.notRead}` };
+  const parsed = parseRun(read.text, { gate, name: read.rel, root });
+  return parsed.error ? parsed : { ...parsed, source: read.rel };
 }

@@ -11,11 +11,10 @@
 
 import { appendInside, readInside } from './files.mjs';
 
-export const DEFAULT_LEDGER = '.canary/hawk-dove/ledger.jsonl';
-export const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 1;
 
 /** A ledger past this size is reported as not read, never read in part. */
-export const MAX_LEDGER_BYTES = 20 * 1024 * 1024;
+const MAX_LEDGER_BYTES = 20 * 1024 * 1024;
 
 const KINDS = new Set(['finding', 'run', 'label']);
 

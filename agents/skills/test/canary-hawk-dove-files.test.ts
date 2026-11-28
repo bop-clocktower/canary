@@ -93,6 +93,13 @@ describe('readInside', () => {
     });
   });
 
+  it('reports a missing repository instead of throwing', () => {
+    const root = path.join(tmp(), 'gone');
+    expect(readInside(root, 'x.json', JSON_GATE)).toEqual({
+      notRead: 'repository not found',
+    });
+  });
+
   it('reports a missing file as missing', () => {
     const root = tmp();
     expect(readInside(root, 'nope.json', JSON_GATE)).toEqual({
